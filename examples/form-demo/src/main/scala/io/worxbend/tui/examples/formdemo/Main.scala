@@ -1,10 +1,10 @@
 package io.worxbend.tui.examples.formdemo
 
 import io.worxbend.tui.dsl.*
-import io.worxbend.tui.macros.{deriveForm, Field}
+import io.worxbend.tui.macros.deriveForm
 
-/** form-demo: a form derived at compile time from a case class (`deriveForm`, zero reflection) with cue4s-style
-  * `Field.mapValidated` validation surfacing errors in the UI.
+/** form-demo: a form derived at compile time from a case class (`deriveForm`, zero reflection) with typed field
+  * validation surfacing errors in the UI.
   *
   * Keys: type in fields · `Tab` next field · `Space` toggles the checkbox · `Ctrl+S` submit · `Esc` quit.
   */
@@ -12,14 +12,11 @@ final case class Signup(username: String, age: Int, subscribe: Boolean)
 
 class FormDemoApp extends TuiApp:
 
+  private val spec                 = deriveForm[Signup]
   val formState: FormState[Signup] = FormState.of(
-    deriveForm[Signup],
-    Field
-      .text("username")
-      .mapValidated(name => if name.trim.nonEmpty then Right(name.trim) else Left("required")),
-    Field
-      .int("age")
-      .mapValidated(age => if age >= 18 then Right(age) else Left("must be 18 or older")),
+    spec,
+    spec.field(_.username).validate(_.trim.nonEmpty, "required"),
+    spec.field(_.age).validate(_ >= 18, "must be 18 or older"),
   )
 
   /** The two app-wide keys are bindings rather than a panel-level handler: one declaration drives dispatch, the

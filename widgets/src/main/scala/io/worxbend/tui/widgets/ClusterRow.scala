@@ -53,13 +53,13 @@ private[widgets] object ClusterRow:
     x + width
 
   /** The columns clusters `[from, until)` occupy together. */
-  def visibleWidth(clusters: Vector[String], from: Int, until: Int): Int =
+  def visibleWidth(clusters: IndexedSeq[String], from: Int, until: Int): Int =
     clusters.slice(from, until).map(renderedWidth).sum
 
   /** The furthest-right offset worth scrolling to: the one that just fits the end of the row, cursor column included.
     * Scrolling past it only pushes text off the left edge to leave blanks on the right.
     */
-  def rightmostUsefulScroll(clusters: Vector[String], width: Int): Int =
+  def rightmostUsefulScroll(clusters: IndexedSeq[String], width: Int): Int =
     var index = clusters.size
     var used  = 1 // the end-of-row cursor always occupies one column
     while index > 0 && used + renderedWidth(clusters(index - 1)) <= width do
@@ -77,10 +77,20 @@ private[widgets] object ClusterRow:
     * forward: deleting text or widening the terminal both leave an offset further right than the row now needs, and the
     * row would render blank with its content off the left edge.
     */
-  def scrolledTo(clusters: Vector[String], scrollFrom: Int, cursor: Int, width: Int): Int =
+  def scrolledTo(clusters: IndexedSeq[String], scrollFrom: Int, cursor: Int, width: Int): Int =
     val cursorWidth = if cursor < clusters.size then renderedWidth(clusters(cursor)) else 1
-    var scroll      = math.min(math.min(scrollFrom, cursor), rightmostUsefulScroll(clusters, width))
-    while visibleWidth(clusters, scroll, cursor) + cursorWidth > width && scroll < cursor do scroll += 1
+    val earliest    = math.min(math.min(scrollFrom, cursor), rightmostUsefulScroll(clusters, width))
+    var scroll      = cursor
+    var used        = cursorWidth.toLong
+    var stopped     = false
+    // Walk backwards through the width budget once, rather than re-measuring every successively shorter suffix.
+    // Stop at the old (clamped) offset: when it already fits, preserving it is the smallest possible change.
+    while scroll > earliest && !stopped do
+      val nextWidth = renderedWidth(clusters(scroll - 1))
+      if used + nextWidth <= width.toLong then
+        used += nextWidth
+        scroll -= 1
+      else stopped = true
     scroll
 
   /** Where a column offset falls in a row: the first cluster that starts at or after `column`, and the column it
@@ -94,7 +104,7 @@ private[widgets] object ClusterRow:
     * The returned column is never less than `column`, and the returned index is `clusters.size` when the row ends
     * before the offset (that row is scrolled entirely off the left edge).
     */
-  def clusterAtColumn(clusters: Vector[String], column: Int): (Int, Int) =
+  def clusterAtColumn(clusters: IndexedSeq[String], column: Int): (Int, Int) =
     var index = 0
     var used  = 0
     while index < clusters.size && used < column do
@@ -103,7 +113,7 @@ private[widgets] object ClusterRow:
     (index, used)
 
   /** The column cluster `index` starts at — the inverse of [[clusterAtColumn]] on a cluster boundary. */
-  def columnOfCluster(clusters: Vector[String], index: Int): Int = visibleWidth(clusters, 0, index)
+  def columnOfCluster(clusters: IndexedSeq[String], index: Int): Int = visibleWidth(clusters, 0, index)
 
   /** Paints one row of clusters starting at `scroll`, left to right from `x` up to (but not including) `right`.
     *
@@ -122,7 +132,7 @@ private[widgets] object ClusterRow:
       x0: Int,
       y: Int,
       right: Int,
-      clusters: Vector[String],
+      clusters: IndexedSeq[String],
       scroll: Int,
       cursorAt: Int,
       showCursor: Boolean,

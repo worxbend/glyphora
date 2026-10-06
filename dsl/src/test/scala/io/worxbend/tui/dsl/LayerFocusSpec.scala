@@ -14,7 +14,7 @@ import org.scalatest.funsuite.AnyFunSuite
   * clamped the base index into the layer's much shorter range, so a dialog opened while the fifth control was focused
   * started on the dialog's last field.
   */
-final class LayerFocusSpec extends AnyFunSuite:
+final class LayerFocusSpec extends AnyFunSuite with PilotFixture:
 
   private final class DialogApp extends TuiApp:
     val one                                       = TextInputState()
@@ -37,7 +37,7 @@ final class LayerFocusSpec extends AnyFunSuite:
 
   private def start(app: DialogApp): Pilot =
     val backend = HeadlessBackend(Size(30, 12))
-    Pilot.start(backend) { app.runWith(backend) }.waitForIdle()
+    startPilot(backend) { app.runWith(backend) }.waitForIdle()
 
   private def quitApp(pilot: Pilot): Unit =
     pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)

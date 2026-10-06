@@ -2,7 +2,6 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.Size
 import io.worxbend.tui.terminal.HeadlessBackend
-import io.worxbend.tui.testsupport.Pilot
 import io.worxbend.tui.widgets.TextAreaState
 
 import org.scalatest.funsuite.AnyFunSuite
@@ -10,7 +9,7 @@ import org.scalatest.funsuite.AnyFunSuite
 /** End-to-end coverage for the built-in key handling of the text-editing DSL elements: `textArea` and `input`, driven
   * through a whole app so focus traversal and paste routing are exercised too.
   */
-final class TextEditingElementsSpec extends AnyFunSuite:
+final class TextEditingElementsSpec extends AnyFunSuite with PilotFixture:
 
   test("a focused textArea edits multi-line text, consumes Enter, and undoes with Ctrl+Z"):
     val backend = HeadlessBackend(Size(30, 6))
@@ -23,7 +22,7 @@ final class TextEditingElementsSpec extends AnyFunSuite:
             true
           case _                                                             => false
         }
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.typeText("one").pressKey(KeyCode.Enter).typeText("two").waitForIdle()
     assert(state.value == "one\ntwo")
@@ -45,7 +44,7 @@ final class TextEditingElementsSpec extends AnyFunSuite:
             true
           case _                           => false
         }
-    val pilot       = Pilot.start(backend) { app.runWith(backend) }
+    val pilot       = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.typeText("a").pressKey(KeyCode.Tab).typeText("b").waitForIdle()
     assert(editorState.value == "a")
@@ -60,7 +59,7 @@ final class TextEditingElementsSpec extends AnyFunSuite:
     val app      = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = column(input(inputSt), textArea(editorSt))
-    val pilot    = Pilot.start(backend) { app.runWith(backend) }
+    val pilot    = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     backend.postEvent(io.worxbend.tui.core.Event.Paste("one\ntwo"))
     pilot.waitForIdle()
@@ -79,7 +78,7 @@ final class TextEditingElementsSpec extends AnyFunSuite:
     val app      = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = column(input(inputSt), textArea(editorSt))
-    val pilot    = Pilot.start(backend) { app.runWith(backend) }
+    val pilot    = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     backend.postEvent(io.worxbend.tui.core.Event.Paste("a\tb" + Escape + "[31mc"))
     pilot.waitForIdle()

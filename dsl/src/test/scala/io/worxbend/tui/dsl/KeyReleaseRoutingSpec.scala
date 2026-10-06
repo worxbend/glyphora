@@ -2,7 +2,6 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{KeyCode, KeyEvent, Size}
 import io.worxbend.tui.terminal.HeadlessBackend
-import io.worxbend.tui.testsupport.Pilot
 import io.worxbend.tui.widgets.TextInputState
 
 import org.scalatest.funsuite.AnyFunSuite
@@ -10,7 +9,7 @@ import org.scalatest.funsuite.AnyFunSuite
 /** Where a key release goes, and — more importantly — where it does not. Getting the second half wrong is how one
   * keystroke runs an action twice on a kitty-protocol terminal and once everywhere else.
   */
-final class KeyReleaseRoutingSpec extends AnyFunSuite:
+final class KeyReleaseRoutingSpec extends AnyFunSuite with PilotFixture:
 
   test("a release reaches onKeyRelease and never the press handler"):
     val backend  = HeadlessBackend(Size(30, 6))
@@ -26,7 +25,7 @@ final class KeyReleaseRoutingSpec extends AnyFunSuite:
           .onKeyRelease { key =>
             observed += s"release ${key.code}"; true
           }
-    val pilot    = Pilot.start(backend) { app.runWith(backend) }
+    val pilot    = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
 
     pilot.release("a").waitForIdle()
@@ -52,7 +51,7 @@ final class KeyReleaseRoutingSpec extends AnyFunSuite:
       override def bindings: KeyBindings            =
         KeyBindings(binding("ctrl+s", "save")(saves += 1), binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = input(state).autofocus
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
 
     pilot.release("ctrl+s").waitForIdle()
@@ -72,7 +71,7 @@ final class KeyReleaseRoutingSpec extends AnyFunSuite:
     val app     = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = input(state).autofocus
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
 
     pilot.press("x").waitForIdle()
@@ -92,7 +91,7 @@ final class KeyReleaseRoutingSpec extends AnyFunSuite:
         column(input(state).autofocus).onKeyRelease { key =>
           observed += key.code.toString; true
         }
-    val pilot    = Pilot.start(backend) { app.runWith(backend) }
+    val pilot    = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
 
     pilot.release("a").waitForIdle()

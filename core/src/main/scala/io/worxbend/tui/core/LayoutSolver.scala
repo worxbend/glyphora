@@ -179,13 +179,13 @@ object LayoutSolver:
     * clamped to its `limits` entry.
     */
   private def weightedShares(amount: Int, weights: Seq[Int], limits: Seq[Int]): IndexedSeq[Int] =
-    val totalWeight = weights.sum
+    val totalWeight = weights.iterator.map(_.toLong).sum
     if totalWeight == 0 then IndexedSeq.fill(weights.size)(0)
     else
       val base           = weights.map(w => amount.toLong * w / totalWeight).toIndexedSeq
-      // remainders are strictly below `totalWeight`, an `Int` sum, so widening them to `Double` to rank by loses nothing
-      val remainders     = weights.indices.map(i => (amount.toLong * weights(i) % totalWeight).toDouble).toIndexedSeq
-      val remainderCells = distributeRemainder((amount - base.sum).toInt, remainders)
+      // Keep remainder ranking integral too: a widened total need not be exactly representable as a Double.
+      val remainders     = weights.indices.map(i => amount.toLong * weights(i) % totalWeight).toIndexedSeq
+      val remainderCells = distributeRemainder((amount.toLong - base.sum).toInt, remainders)
       weights.indices.map(i => math.min(base(i).toInt + remainderCells(i), limits(i)))
 
   /** Hands out `amount` single cells among `keys.size` claimants, largest key first and ties to the earlier index,
@@ -200,13 +200,17 @@ object LayoutSolver:
     * Internal to the layout implementation — [[Layout]] shares it so the even splits behind [[Flex]] round the same way
     * the constraints do — rather than part of what `tui-core` publishes.
     */
-  private[core] def distributeRemainder(amount: Int, keys: IndexedSeq[Double]): IndexedSeq[Int] =
+  private[core] def distributeRemainder[A: Ordering](amount: Int, keys: IndexedSeq[A]): IndexedSeq[Int] =
     if keys.isEmpty then IndexedSeq.empty
     else
-      val order   = keys.indices.sortBy(index => (-keys(index), index))
-      val granted = Array.fill(keys.size)(0)
-      var pending = amount
-      var turn    = 0
+      val ordering = summon[Ordering[A]]
+      val order    = keys.indices.sortWith { (left, right) =>
+        val compared = ordering.compare(keys(left), keys(right))
+        compared > 0 || (compared == 0 && left < right)
+      }
+      val granted  = Array.fill(keys.size)(0)
+      var pending  = amount
+      var turn     = 0
       while pending > 0 do
         granted(order(turn % order.length)) += 1
         pending -= 1

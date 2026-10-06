@@ -12,21 +12,26 @@ import org.scalatest.funsuite.AnyFunSuite
   */
 final class HelloWorldSpec extends AnyFunSuite:
 
-  private def start(): Pilot =
+  private def withApp[A](body: Pilot => A): A =
     val backend = HeadlessBackend(Size(40, 8))
-    Pilot.start(backend) { HelloWorldApp().runWith(backend) }.waitForIdle()
+    Pilot.using(backend) { HelloWorldApp().runWith(backend) } { pilot =>
+      pilot.waitForIdle()
+      body(pilot)
+    }
 
   test("the panel renders its title and both lines"):
-    val pilot = start()
-    assert(pilot.screenText.contains("Hello"))
-    assert(pilot.screenText.contains("Welcome to glyphora!"))
-    assert(pilot.screenText.contains("Press 'q' to quit"))
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
+    withApp { pilot =>
+      assert(pilot.screenText.contains("Hello"))
+      assert(pilot.screenText.contains("Welcome to glyphora!"))
+      assert(pilot.screenText.contains("Press 'q' to quit"))
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+    }
 
   test("q quits and anything else does not"):
-    val pilot = start()
-    pilot.pressKey(KeyCode.Char('x')).waitForIdle()
-    assert(pilot.isRunning, "an unbound key should not end the app")
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
+    withApp { pilot =>
+      pilot.pressKey(KeyCode.Char('x')).waitForIdle()
+      assert(pilot.isRunning, "an unbound key should not end the app")
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+    }

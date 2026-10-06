@@ -76,57 +76,73 @@ final class PilotEventPostingSpec extends AnyFunSuite:
   test("paste posts the pasted text as one event, not one key event per character"):
     val observed = Observed()
     val pilot    = start(observed, consumeInterrupt = false)
-    pilot.paste("hello world").waitForIdle()
-    assert(observed.pastes.get() == Seq("hello world"))
+    try
+      pilot.paste("hello world").waitForIdle()
+      assert(observed.pastes.get() == Seq("hello world"))
+    finally pilot.close()
 
   test("paste keeps a multi-line, non-ASCII payload whole"):
     val observed = Observed()
     val pilot    = start(observed, consumeInterrupt = false)
-    // a tab and a newline are not key specs and an emoji is two UTF-16 code units: the value of a paste is that none
-    // of that is the harness's business, because the terminal hands the string over in one piece
-    pilot.paste("a\tb\n日本👍").waitForIdle()
-    assert(observed.pastes.get() == Seq("a\tb\n日本👍"))
+    try
+      // a tab and a newline are not key specs and an emoji is two UTF-16 code units: the value of a paste is that none
+      // of that is the harness's business, because the terminal hands the string over in one piece
+      pilot.paste("a\tb\n日本👍").waitForIdle()
+      assert(observed.pastes.get() == Seq("a\tb\n日本👍"))
+    finally pilot.close()
 
   test("tick posts exactly as many ticks as asked for, with no tick rate on the app"):
     val observed = Observed()
     val pilot    = start(observed, consumeInterrupt = false)
-    pilot.tick(3).waitForIdle()
-    assert(observed.ticks.get() == 3)
-    assert(pilot.screenText.contains("ticks 3"))
+    try
+      pilot.tick(3).waitForIdle()
+      assert(observed.ticks.get() == 3)
+      assert(pilot.screenText.contains("ticks 3"))
+    finally pilot.close()
 
   test("tick(0) posts nothing"):
     val observed = Observed()
     val pilot    = start(observed, consumeInterrupt = false)
-    pilot.tick(0).waitForIdle()
-    assert(observed.ticks.get() == 0)
+    try
+      pilot.tick(0).waitForIdle()
+      assert(observed.ticks.get() == 0)
+    finally pilot.close()
 
   test("focusLost and focusGained arrive as the two halves of the focus report"):
     val observed = Observed()
     val pilot    = start(observed, consumeInterrupt = false)
-    pilot.focusLost().focusGained().focusLost().waitForIdle()
-    assert(observed.focus.get() == Seq(false, true, false))
+    try
+      pilot.focusLost().focusGained().focusLost().waitForIdle()
+      assert(observed.focus.get() == Seq(false, true, false))
+    finally pilot.close()
 
   test("an interrupt an app ignores ends the run"):
     val observed = Observed()
     val pilot    = start(observed, consumeInterrupt = false)
-    pilot.waitForIdle().interrupt()
-    assert(pilot.awaitTermination())
-    assert(observed.interrupts.get() == 1)
+    try
+      pilot.waitForIdle().interrupt()
+      assert(pilot.awaitTermination())
+      assert(observed.interrupts.get() == 1)
+    finally pilot.close()
 
   test("an interrupt an app consumes leaves it running"):
     val observed = Observed()
     val pilot    = start(observed, consumeInterrupt = true)
-    pilot.interrupt().waitForIdle()
-    assert(observed.interrupts.get() == 1)
-    assert(pilot.isRunning)
+    try
+      pilot.interrupt().waitForIdle()
+      assert(observed.interrupts.get() == 1)
+      assert(pilot.isRunning)
+    finally pilot.close()
 
   test("the new verbs chain like the existing ones"):
     val observed = Observed()
     val pilot    = start(observed, consumeInterrupt = true)
-    pilot.focusLost().tick(2).paste("x").focusGained().waitForIdle()
-    assert(observed.ticks.get() == 2)
-    assert(observed.pastes.get() == Seq("x"))
-    assert(observed.focus.get() == Seq(false, true))
+    try
+      pilot.focusLost().tick(2).paste("x").focusGained().waitForIdle()
+      assert(observed.ticks.get() == 2)
+      assert(observed.pastes.get() == Seq("x"))
+      assert(observed.focus.get() == Seq(false, true))
+    finally pilot.close()
 
   // ------------------------------------------------------------------ the mouse gestures
 
@@ -139,46 +155,54 @@ final class PilotEventPostingSpec extends AnyFunSuite:
   test("drag posts Down, Drag and Up in order, from the start point to the end point"):
     val observed = Observed()
     val pilot    = start(observed, consumeInterrupt = false)
-    pilot.drag(1, 2, 3, 4).waitForIdle()
-    assert(
-      observed.mice.get() == Seq(
-        MouseEvent(Position(1, 2), MouseEventKind.Down, KeyModifiers.None, MouseButton.Left),
-        MouseEvent(Position(3, 4), MouseEventKind.Drag, KeyModifiers.None, MouseButton.Left),
-        MouseEvent(Position(3, 4), MouseEventKind.Up, KeyModifiers.None, MouseButton.Left),
+    try
+      pilot.drag(1, 2, 3, 4).waitForIdle()
+      assert(
+        observed.mice.get() == Seq(
+          MouseEvent(Position(1, 2), MouseEventKind.Down, KeyModifiers.None, MouseButton.Left),
+          MouseEvent(Position(3, 4), MouseEventKind.Drag, KeyModifiers.None, MouseButton.Left),
+          MouseEvent(Position(3, 4), MouseEventKind.Up, KeyModifiers.None, MouseButton.Left),
+        )
       )
-    )
+    finally pilot.close()
 
   test("drag names the modifiers and the button it is given"):
     val observed = Observed()
     val pilot    = start(observed, consumeInterrupt = false)
-    pilot.drag(Position(0, 0), Position(2, 2), KeyModifiers.Shift, MouseButton.Right).waitForIdle()
-    assert(
-      observed.mice.get() == Seq(
-        MouseEvent(Position(0, 0), MouseEventKind.Down, KeyModifiers.Shift, MouseButton.Right),
-        MouseEvent(Position(2, 2), MouseEventKind.Drag, KeyModifiers.Shift, MouseButton.Right),
-        MouseEvent(Position(2, 2), MouseEventKind.Up, KeyModifiers.Shift, MouseButton.Right),
+    try
+      pilot.drag(Position(0, 0), Position(2, 2), KeyModifiers.Shift, MouseButton.Right).waitForIdle()
+      assert(
+        observed.mice.get() == Seq(
+          MouseEvent(Position(0, 0), MouseEventKind.Down, KeyModifiers.Shift, MouseButton.Right),
+          MouseEvent(Position(2, 2), MouseEventKind.Drag, KeyModifiers.Shift, MouseButton.Right),
+          MouseEvent(Position(2, 2), MouseEventKind.Up, KeyModifiers.Shift, MouseButton.Right),
+        )
       )
-    )
+    finally pilot.close()
 
   test("mouseMove posts a Moved with no button, the way a motion report reads"):
     val observed = Observed()
     val pilot    = start(observed, consumeInterrupt = false)
-    pilot.mouseMove(5, 6).waitForIdle()
-    assert(
-      observed.mice.get() ==
-        Seq(MouseEvent(Position(5, 6), MouseEventKind.Moved, KeyModifiers.None, MouseButton.Unknown))
-    )
+    try
+      pilot.mouseMove(5, 6).waitForIdle()
+      assert(
+        observed.mice.get() ==
+          Seq(MouseEvent(Position(5, 6), MouseEventKind.Moved, KeyModifiers.None, MouseButton.Unknown))
+      )
+    finally pilot.close()
 
   test("drag and mouseMove chain like the key verbs"):
     val observed = Observed()
     val pilot    = start(observed, consumeInterrupt = false)
-    pilot.mouseMove(0, 0).drag(1, 1, 2, 2).mouseMove(3, 3).waitForIdle()
-    assert(
-      observed.mice.get() == Seq(
-        MouseEvent(Position(0, 0), MouseEventKind.Moved, KeyModifiers.None, MouseButton.Unknown),
-        MouseEvent(Position(1, 1), MouseEventKind.Down, KeyModifiers.None, MouseButton.Left),
-        MouseEvent(Position(2, 2), MouseEventKind.Drag, KeyModifiers.None, MouseButton.Left),
-        MouseEvent(Position(2, 2), MouseEventKind.Up, KeyModifiers.None, MouseButton.Left),
-        MouseEvent(Position(3, 3), MouseEventKind.Moved, KeyModifiers.None, MouseButton.Unknown),
+    try
+      pilot.mouseMove(0, 0).drag(1, 1, 2, 2).mouseMove(3, 3).waitForIdle()
+      assert(
+        observed.mice.get() == Seq(
+          MouseEvent(Position(0, 0), MouseEventKind.Moved, KeyModifiers.None, MouseButton.Unknown),
+          MouseEvent(Position(1, 1), MouseEventKind.Down, KeyModifiers.None, MouseButton.Left),
+          MouseEvent(Position(2, 2), MouseEventKind.Drag, KeyModifiers.None, MouseButton.Left),
+          MouseEvent(Position(2, 2), MouseEventKind.Up, KeyModifiers.None, MouseButton.Left),
+          MouseEvent(Position(3, 3), MouseEventKind.Moved, KeyModifiers.None, MouseButton.Unknown),
+        )
       )
-    )
+    finally pilot.close()

@@ -2,6 +2,7 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Effect, Event, KeyCode, KeyEvent, KeyModifiers, Size, Widget}
 import io.worxbend.tui.runtime.{
+  Cleanup,
   EventOutcome,
   Frame,
   GenerationalScope,
@@ -99,12 +100,21 @@ trait TuiApp:
 
   /** Called once on the way out of [[runWith]], whatever ended the run: [[quit]], an unconsumed `Ctrl+C`, a backend
     * failure, or an event handler that threw. The place to cancel timers, stop pollers, and close whatever [[onStart]]
-    * opened — nothing else cancels a repeating `Async.every` for you.
+    * opened — nothing else cancels a repeating `Async.every` for you. It can also run before [[onStart]] when
+    * preparation (for example, evaluating [[config]] or [[splash]]) fails, so cleanup must tolerate resources not yet
+    * being opened.
     *
-    * By the time this runs the loop has exited and the terminal has been handed back, so the app's terminal services
-    * ([[quit]], [[suspend]], [[printAbove]], [[copyToClipboard]]) are no-ops here; this hook is for the app's own
-    * resources. It does not run when [[runWith]] was never reached — a [[createBackend]] that fails means there was no
-    * run to stop.
+    * After the event loop exits, its owner remains registered until cleanup completes. Preparation failure instead
+    * installs a temporary registered cleanup owner; signal updates remain render-thread-confined in either case.
+    * Terminal services ([[quit]], [[suspend]], [[printAbove]], [[copyToClipboard]]) are already no-ops here. Screen
+    * callbacks run first; root subscriptions and clocks, when acquired, are disposed afterwards even if a callback
+    * throws.
+    *
+    * Normal non-fatal runner failures are returned as `RunnerError`, preserving a prior run failure and exposing
+    * secondary cleanup failures in `cleanupFailures` (also suppressed on its throwable, when present). A preparation
+    * exception, or a throwable escaping the runner, escapes unchanged after cleanup with cleanup failures suppressed on
+    * it instead of being converted to `RunnerError`. This hook does not run when backend acquisition fails in
+    * [[createBackend]]: [[runWith]] was never reached and there was no owned backend to release.
     */
   def onStop(): Unit = ()
 
@@ -491,53 +501,67 @@ trait TuiApp:
     * the loop, then [[onStop]] — in a `finally`, so a backend failure or a handler that threw does not skip it.
     */
   final def runWith(backend: Backend, nanoTime: () => Long = () => System.nanoTime()): Either[RunnerError, Unit] =
-    val intro     = splash
-    // read once: `config` is an overridable def, and the runner, the tick decision and the resize path must all agree
-    // on one value for the whole run
-    val runConfig = config
-    val run       = RunState(SplashPlayer(intro, nanoTime), runConfig)
-    // the toast and effect stacks outlive a single run, so they reach the clock through [[RunClock]] rather than
-    // through `runWith`'s parameter directly
-    runClock.use(nanoTime)
-    val scope     = ReactiveScope.generational(() => run.invalidated = true)
-    run.runnerTicks = runConfig.tickRate.isDefined
-    try
-      TerminalRunner(backend, runConfig, nanoTime, redrawRequested = () => run.invalidated).run(
-        handle =>
-          activeHandle.set(Some(handle))
-          // published for the same reason and with the same lifetime as the handle: `focusTo`/`clearFocus` are called
-          // from app code that cannot see this run's `RunState`, and must be inert once the run is over
-          activeFocus.set(Some(run.tracker))
-          // on the render thread, and while this run is still registered on it: the clock this app's animations read
-          // is the one belonging to this loop, and the exit path below can no longer resolve it for itself
-          run.renderLoop = Some(AnimationClock.attachToCurrentLoop())
-          onStart()
-        ,
-        handleEvent(_, run, _),
-        frame => renderFrame(frame, run, scope),
-      )
-    finally
-      // dropped *before* `onStop`, so the terminal services an app might reach for during teardown are inert rather
-      // than talking to a backend the runner has already closed
-      activeHandle.set(None)
-      activeFocus.set(None)
-      ambientTicker.cancel(run)
-      // a screen still on the stack when the run ends gets its `onLeave`, innermost first, *before* the app's own
-      // `onStop`: a screen's cleanup runs while whatever the app opened for it is still there, and every `onEnter` on
-      // every exit path — a quit, a Ctrl+C, a handler that threw — is matched by exactly one `onLeave`
-      leaveRemainingScreens()
-      onStop()
-      // after `onStop`, so an app cancelling timers there still animates whatever its last frames show
-      run.renderLoop.foreach(AnimationClock.releaseLoop)
+    val (runConfig, run, scope) =
+      try
+        val intro     = splash
+        // read once: `config` is overridable, so the runner, tick decision and resize path must agree
+        val runConfig = config
+        val run       = RunState(SplashPlayer(intro, nanoTime), runConfig)
+        // the toast and effect stacks outlive a single run and reach this clock through RunClock
+        runClock.use(nanoTime)
+        val scope     = ReactiveScope.generational(() => run.invalidated = true)
+        run.runnerTicks = runConfig.tickRate.isDefined
+        (runConfig, run, scope)
+      catch
+        case error: Throwable =>
+          // Ownership starts at entry, before any user override is evaluated. Preserve its escaping throwable while
+          // releasing the backend and callbacks even when no configured runner could be constructed.
+          TerminalRunner.cleanupBeforeStart(
+            backend,
+            error,
+            () => Cleanup.all(() => leaveRemainingScreens(), () => onStop()),
+          )
+          throw error
+    TerminalRunner(
+      backend,
+      runConfig,
+      nanoTime,
+      redrawRequested = () => run.invalidated,
+      onStop = () => stopRun(run, scope),
+    ).run(
+      handle =>
+        activeHandle.set(Some(handle))
+        // published for the same reason and with the same lifetime as the handle: `focusTo`/`clearFocus` are called
+        // from app code that cannot see this run's `RunState`, and must be inert once the run is over
+        activeFocus.set(Some(run.tracker))
+        // on the render thread, and while this run is still registered on it: the clock this app's animations read
+        // is the one belonging to this loop, and the exit path below can no longer resolve it for itself
+        run.renderLoop = Some(AnimationClock.attachToCurrentLoop())
+        onStart()
+      ,
+      handleEvent(_, run, _),
+      frame => renderFrame(frame, run, scope),
+    )
+
+  /** Releases all run-owned resources while the runner is still registered. Terminal services become inert first;
+    * screen callbacks precede app cleanup, and framework releases cannot be skipped by a callback failure.
+    */
+  private def stopRun(run: RunState, scope: GenerationalScope): Unit =
+    activeHandle.set(None)
+    activeFocus.set(None)
+    Cleanup.all(
+      () => ambientTicker.cancel(run),
+      () => leaveRemainingScreens(),
+      () => onStop(),
+      () => scope.dispose(),
+      () => run.renderLoop.foreach(AnimationClock.releaseLoop),
+    )
 
   /** Runs `Screen.onLeave` for everything still on the stack when a run ends, innermost first, so every `onEnter` is
     * matched exactly once however the run finished.
     *
-    * It deliberately does *not* clear the stack, which is why this is not simply [[resetScreens]]. By the time the
-    * `finally` runs, the runner has already handed its render loop back, so this thread is no longer a render thread —
-    * and a `Signal` write from here throws the render-thread guard whenever some other runner in the process is still
-    * registered. Leaving the value alone also matches every other piece of per-instance state, none of which `runWith`
-    * resets: running the same instance a second time keeps whatever the first run left behind.
+    * It deliberately does not clear the stack: per-instance state survives repeated runs. Each callback is attempted on
+    * the registered owner; the first failure carries the later failures as suppressed exceptions.
     */
   private def leaveRemainingScreens(): Unit = screenStack.leaveAll()
 

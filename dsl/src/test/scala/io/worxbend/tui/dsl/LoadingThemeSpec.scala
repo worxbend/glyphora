@@ -12,7 +12,7 @@ import scala.concurrent.duration.DurationInt
 /** The loading elements resolve their colors from the ambient [[Theme]] at construction, the way `statusBar` does, so a
   * re-themed app re-themes its spinners and bars without touching a call site.
   */
-final class LoadingThemeSpec extends AnyFunSuite:
+final class LoadingThemeSpec extends AnyFunSuite with PilotFixture:
 
   /** The view is a `Theme ?=>` context function on purpose: these elements resolve their palette where the element is
     * *written*, so a given installed anywhere else would not reach them — which is exactly the property under test.
@@ -22,7 +22,7 @@ final class LoadingThemeSpec extends AnyFunSuite:
     val app     = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = view0(using chosen)
-    Pilot.start(backend) { app.runWith(backend) }.waitForIdle()
+    startPilot(backend) { app.runWith(backend) }.waitForIdle()
 
   private def close(pilot: Pilot): Unit =
     pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)

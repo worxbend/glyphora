@@ -39,10 +39,12 @@ final class PilotTypeTextSpec extends AnyFunSuite:
           EventOutcome.Ignored
         case _                                      => EventOutcome.Ignored
     val pilot = Pilot.start(backend)(TerminalRunner(backend).run(_ => (), handleEvent, (_: Frame) => ()))
-    pilot.typeText(text).waitForIdle()
-    pilot.pressKey(KeyCode.Escape)
-    assert(pilot.awaitTermination())
-    seen.toSeq
+    try
+      pilot.typeText(text).waitForIdle()
+      pilot.pressKey(KeyCode.Escape)
+      assert(pilot.awaitTermination())
+      seen.toSeq
+    finally pilot.close()
 
   test("ASCII text arrives as one key event per character"):
     assert(keysDeliveredFor("hi") == Seq(KeyCode.Char('h'), KeyCode.Char('i')))

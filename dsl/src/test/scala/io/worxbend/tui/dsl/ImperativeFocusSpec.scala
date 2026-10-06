@@ -13,7 +13,7 @@ import org.scalatest.funsuite.AnyFunSuite
   * Where the keystroke lands is the assertion throughout: each field is a separate `TextInputState`, so typing a
   * character says which element focus was actually on, without reading any framework internals.
   */
-final class ImperativeFocusSpec extends AnyFunSuite:
+final class ImperativeFocusSpec extends AnyFunSuite with PilotFixture:
 
   /** Three keyed inputs and bindings that move focus between them from application code. */
   private final class FormApp extends TuiApp:
@@ -46,7 +46,7 @@ final class ImperativeFocusSpec extends AnyFunSuite:
 
   private def start(app: FormApp): Pilot =
     val backend = HeadlessBackend(Size(30, 8))
-    Pilot.start(backend) { app.runWith(backend) }.waitForIdle()
+    startPilot(backend) { app.runWith(backend) }.waitForIdle()
 
   private def quitApp(pilot: Pilot): Unit =
     pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)

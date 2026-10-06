@@ -14,11 +14,12 @@ object ScreenshotMain:
     val height  = args.lift(1).flatMap(_.toIntOption).getOrElse(18)
     val backend = HeadlessBackend(Size(width, height))
     val app     = ShowcaseApp()
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
-    pilot.waitForIdle()
-    pilot.pressKey(KeyCode.Enter).waitForIdle() // skip the splash
-    pilot.pressKey(KeyCode.Tab).waitForIdle()   // focus the note input
-    pilot.typeText("ship it").waitForIdle()
-    println(pilot.screenLines.mkString("\n"))
-    pilot.pressKey(KeyCode.Escape)
-    val _ = pilot.awaitTermination()
+    Pilot.using(backend) { app.runWith(backend) } { pilot =>
+      pilot.waitForIdle()
+      pilot.pressKey(KeyCode.Enter).waitForIdle() // skip the splash
+      pilot.pressKey(KeyCode.Tab).waitForIdle()   // focus the note input
+      pilot.typeText("ship it").waitForIdle()
+      println(pilot.screenLines.mkString("\n"))
+      pilot.pressKey(KeyCode.Escape)
+      val _ = pilot.awaitTermination()
+    }

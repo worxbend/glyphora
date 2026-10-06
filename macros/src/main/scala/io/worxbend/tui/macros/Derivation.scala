@@ -10,10 +10,8 @@ import scala.deriving.Mirror
   * no instance in scope is a compile error, not a runtime surprise, and a type of your own joins the set by declaring
   * `given FormFieldType[YourType]` in its companion — see [[FormFieldType]].
   *
-  * The returned spec's `assemble` takes one value per derived field, in declaration order, each already of that field's
-  * declared type; see [[FormSpec]] for the full contract. A call with the wrong number of values throws an
-  * `IllegalArgumentException` naming the fields it wanted, the same programmer-error convention `FormState.of` uses for
-  * a validator that names a field the form does not declare.
+  * The returned spec exposes typed handles for direct case-class field selections. Its original parsers and ordered
+  * product assembly remain internal; validation checks the typed candidate and never replaces field values.
   *
   * No runtime reflection anywhere: `constValueTuple` and `summonAll` are resolved during compilation and `fromProduct`
   * is a direct call, so a native image needs no reflect-config entry for the derived type.

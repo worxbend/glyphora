@@ -12,14 +12,14 @@ import org.scalatest.funsuite.AnyFunSuite
   * away, and every mouse handler had to open by matching on the event kind. These tests pin the composition order and
   * the per-kind builders.
   */
-final class HandlerCompositionSpec extends AnyFunSuite:
+final class HandlerCompositionSpec extends AnyFunSuite with PilotFixture:
 
   private def startApp(size: Size)(body: ReactiveScope ?=> Element): Pilot =
     val backend = HeadlessBackend(size)
     val testApp = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = body
-    Pilot.start(backend) { testApp.runWith(backend) }.waitForIdle()
+    startPilot(backend) { testApp.runWith(backend) }.waitForIdle()
 
   private def mouseEvent(kind: MouseEventKind): MouseEvent =
     MouseEvent(Position(0, 0), kind, KeyModifiers.None)

@@ -75,17 +75,17 @@ final class ElementHost:
     * element under it. `true` when focus moved or an element consumed the event.
     */
   def dispatchMouse(mouse: MouseEvent): Boolean =
-    val hit        = tracker.hitTest(mouse.position)
+    val target     = tracker.mouseHit(mouse.position)
     val focusMoved =
       if mouse.kind == MouseEventKind.Down then
-        hit match
+        target.flatMap(_.target.focusIndex) match
           case Some(index) if index != tracker.focusedIndex =>
             tracker.focusTo(index)
             true
           case _                                            => false
       else false
-    val target     = hit.flatMap(index => tracker.areaOf(index).map(MouseHit(index, _)))
-    val consumed   = lastTree.exists(EventRouter.dispatchMouse(_, mouse, target))
+
+    val consumed = lastTree.exists(EventRouter.dispatchMouse(_, mouse, target))
     consumed || focusMoved
 
   /** Offers a key release to the focused element and its ancestors — see [[EventRouter.dispatchKeyRelease]]. */

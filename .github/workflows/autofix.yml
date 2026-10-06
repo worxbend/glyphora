@@ -1,0 +1,62 @@
+name: Autofix
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: autofix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  autofix:
+    name: Autofix (same-repo PRs)
+    runs-on: ubuntu-latest
+    # Formatting is not a thing to fail a review over when a machine can just do it. This
+    # applies scalafmt and any auto-fixable scalafix rule and pushes the result back to
+    # the branch.
+    #
+    # Skipped for forks on purpose: a fork's token is read-only, so the push would fail
+    # and the run would go red for something the contributor cannot act on. Those PRs are
+    # covered by the `lint` gate instead.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.head_ref }}
+          # Token-generated PR synchronization runs require maintainer approval;
+          # approve full CI on the resulting SHA before merging (see versioning docs).
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: ./.github/actions/mill
+
+      - name: Apply scalafmt and scalafix
+        run: |
+          ./mill mill.scalalib.scalafmt.ScalafmtModule/reformatAll __.sources
+          ./mill __.fix
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' .scalafmt.conf)
+          curl -sL -o /tmp/scalafmt-native "https://github.com/scalameta/scalafmt/releases/download/v${v}/scalafmt-linux-glibc"
+          chmod +x /tmp/scalafmt-native
+          /tmp/scalafmt-native build.mill $(git ls-files '*package.mill')
+
+      - name: Test the fixed tree
+        # Exercise the fixed sources before pushing. This is not full CI: maintainers
+        # must approve the token-generated CI run on the resulting commit before merge.
+        run: ./mill __.test
+
+      - name: Commit anything that changed
+        run: |
+          if git diff --quiet; then
+            echo "already clean"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "style: apply scalafmt and scalafix"
+          git push
+          echo "::notice::pushed a formatting commit — pull it locally and approve the full CI run for its SHA before merging"

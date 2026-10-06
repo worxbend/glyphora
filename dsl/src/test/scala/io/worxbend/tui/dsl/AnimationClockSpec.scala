@@ -15,7 +15,7 @@ import scala.concurrent.duration.{DurationInt, FiniteDuration}
 /** The ambient clock exists to delete four steps of ceremony — a `tickRate`, a `Signal[Int]`, an `onTick` override, and
   * threading the counter through every call site. These pin what it replaced them with.
   */
-final class AnimationClockSpec extends AnyFunSuite:
+final class AnimationClockSpec extends AnyFunSuite with PilotFixture:
 
   private def app(rate: Option[FiniteDuration])(view0: ReactiveScope ?=> Element): (HeadlessBackend, Pilot) =
     val backend = HeadlessBackend(Size(24, 4))
@@ -23,7 +23,7 @@ final class AnimationClockSpec extends AnyFunSuite:
       override def config: RunnerConfig             = RunnerConfig(tickRate = rate)
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = view0
-    (backend, Pilot.start(backend) { started.runWith(backend) }.waitForIdle())
+    (backend, startPilot(backend) { started.runWith(backend) }.waitForIdle())
 
   private def close(pilot: Pilot): Unit =
     pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)

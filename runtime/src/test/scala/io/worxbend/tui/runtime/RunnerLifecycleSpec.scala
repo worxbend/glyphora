@@ -10,6 +10,119 @@ import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
 /** Regressions for event-loop lifecycle defects found by the terminal audit. */
 final class RunnerLifecycleSpec extends AnyFunSuite:
 
+  test("a first cleanup failure exposes aggregated secondaries through cleanupFailures"):
+    val first   = IllegalStateException("first cleanup")
+    val second  = IllegalStateException("second cleanup")
+    val backend = HeadlessBackend(Size(20, 3))
+    val result  = TerminalRunner(
+      backend,
+      onStop = () => Cleanup.all(() => throw first, () => throw second),
+    ).run(_.quit(), (_, _) => EventOutcome.Ignored, _ => ())
+    result match
+      case Left(error @ RunnerError.Handler(primary)) =>
+        assert(primary eq first)
+        assert(error.cleanupFailures == Vector(second))
+        assert(first.getSuppressed.toVector == Vector(second))
+      case other                                      => fail(s"expected the first cleanup failure, got $other")
+    assert(!backend.isRawMode)
+    assert(!backend.isAlternateScreen)
+
+  test("a clean quit exposes aggregated backend-close secondaries without changing the Backend error"):
+    val first                                  = IllegalStateException("first close")
+    val second                                 = IllegalStateException("second close")
+    first.addSuppressed(second)
+    val backend                                = ReportingCloseBackend(first)
+    var owner: Option[RenderThread.RenderLoop] = None
+    val result                                 = TerminalRunner(backend).run(
+      handle =>
+        owner = Some(RenderThread.capture())
+        handle.quit()
+      ,
+      (_, _) => EventOutcome.Ignored,
+      _ => (),
+    )
+    result match
+      case Left(error @ RunnerError.Backend(BackendError.Io(primary), tasks)) =>
+        assert(primary eq first)
+        assert(tasks.isEmpty)
+        assert(error.cleanupFailures == Vector(second))
+        assert(first.getSuppressed.toVector == Vector(second))
+      case other => fail(s"expected the backend-close failure, got $other")
+    assert(backend.closes == 1)
+    assert(!backend.terminal.isRawMode)
+    assert(!backend.terminal.isAlternateScreen)
+    assert(backend.terminal.isCursorVisible)
+    assert(owner.exists(loop => !loop.execute(())), "cleanup must retire its registered owner")
+
+  test("an aggregated close failure shared with onStop exposes each secondary only once"):
+    val first   = IllegalStateException("shared cleanup")
+    val second  = IllegalStateException("second cleanup")
+    val backend = ReportingCloseBackend(first)
+    val result  = TerminalRunner(
+      backend,
+      onStop = () => Cleanup.all(() => throw first, () => throw second),
+    ).run(_.quit(), (_, _) => EventOutcome.Ignored, _ => ())
+    result match
+      case Left(error @ RunnerError.Handler(primary)) =>
+        assert(primary eq first)
+        assert(error.cleanupFailures == Vector(second))
+        assert(first.getSuppressed.toVector == Vector(second))
+      case other                                      => fail(s"expected the original stop failure, got $other")
+    assert(backend.closes == 1)
+
+  for kind <- List("handler", "backend", "queued task") do
+    test(s"aggregated close failures preserve a prior $kind failure without duplicate secondaries"):
+      val runFailure = IllegalStateException("run failure")
+      val first      = IllegalStateException("first close")
+      val second     = IllegalStateException("shared secondary")
+      first.addSuppressed(second)
+      val backend    = ReportingCloseBackend(
+        first,
+        if kind == "backend" then Some(BackendError.Io(runFailure)) else None,
+      )
+      val result     = TerminalRunner(backend, onStop = () => throw second).run(
+        handle =>
+          if kind == "handler" then throw runFailure
+          if kind == "queued task" then RenderThread.runLater(throw runFailure)
+          handle.quit()
+        ,
+        (_, _) => EventOutcome.Ignored,
+        _ => (),
+      )
+      val expected   = kind match
+        case "handler"     => RunnerError.Handler(runFailure)
+        case "backend"     => RunnerError.Backend(BackendError.Io(runFailure))
+        case "queued task" => RunnerError.QueuedTask(QueuedTaskFailures(runFailure, 1))
+        case other         => fail(s"unexpected failure kind: $other")
+      result match
+        case Left(error) =>
+          assert(error == expected)
+          assert(error.cleanupFailures == Vector(second, first))
+          assert(runFailure.getSuppressed.toVector == Vector(second, first))
+          assert(first.getSuppressed.toVector == Vector(second))
+        case other       => fail(s"expected the original run failure, got $other")
+      assert(backend.closes == 1)
+
+  /** Restores a real headless terminal, then reports an aggregated close failure like the JLine backend. */
+  private final class ReportingCloseBackend(failure: Throwable, setupFailure: Option[BackendError] = None)
+      extends Backend:
+    val terminal                                         = HeadlessBackend(Size(20, 3))
+    var closes                                           = 0
+    def size: Either[BackendError, Size]                 = terminal.size
+    def draw(buffer: Buffer): Either[BackendError, Unit] = terminal.draw(buffer)
+    def enableRawMode(): Either[BackendError, Unit]  = setupFailure.toLeft(()).flatMap(_ => terminal.enableRawMode())
+    def disableRawMode(): Either[BackendError, Unit] = terminal.disableRawMode()
+    def enterAlternateScreen(): Either[BackendError, Unit]                = terminal.enterAlternateScreen()
+    def leaveAlternateScreen(): Either[BackendError, Unit]                = terminal.leaveAlternateScreen()
+    def enableMouseCapture(): Either[BackendError, Unit]                  = terminal.enableMouseCapture()
+    def disableMouseCapture(): Either[BackendError, Unit]                 = terminal.disableMouseCapture()
+    def hideCursor(): Either[BackendError, Unit]                          = terminal.hideCursor()
+    def showCursor(): Either[BackendError, Unit]                          = terminal.showCursor()
+    def readEvent(timeout: Duration): Either[BackendError, Option[Event]] = terminal.readEvent(timeout)
+    def close(): Either[BackendError, Unit]                               =
+      closes += 1
+      terminal.close().flatMap(_ => Left(BackendError.Io(failure)))
+
   /** Records every timeout the runner asks for and never delivers an event. */
   private final class TimeoutSpy(reported: Size, stopAfter: Int) extends Backend:
     val asked                                       = scala.collection.mutable.ArrayBuffer.empty[Duration]
@@ -73,6 +186,29 @@ final class RunnerLifecycleSpec extends AnyFunSuite:
       val next = if answers.isEmpty then Right(Event.EndOfInput) else answers.dequeue()
       next.map(Some(_))
     def close(): Either[BackendError, Unit]                               = Right(())
+
+  test("a failed teardown remains primary when terminal restoration also fails"):
+    val failure = IllegalStateException("stop failed")
+    val result  = TerminalRunner(UnrestorableBackend(), onStop = () => throw failure).run(
+      _.quit(),
+      (_, _) => EventOutcome.Ignored,
+      _ => (),
+    )
+    assert(result == Left(RunnerError.Handler(failure)))
+    assert(failure.getSuppressed.toList.map(_.getMessage) == List("terminal not supported: cannot restore"))
+
+  test("an escaping task reporter keeps terminal restoration failures as suppressed"):
+    val primary = IllegalStateException("reporter")
+    val runner  = TerminalRunner(UnrestorableBackend(), RunnerConfig(onTaskError = Some(_ => throw primary)))
+    val thrown  = intercept[IllegalStateException] {
+      runner.run(
+        _ => RenderThread.runLater(throw IllegalStateException("task")),
+        (_, _) => EventOutcome.Ignored,
+        _ => (),
+      )
+    }
+    assert(thrown eq primary)
+    assert(primary.getSuppressed.toList.map(_.getMessage) == List("terminal not supported: cannot restore"))
 
   test("a clean run that cannot restore the terminal reports the failure instead of exiting silently"):
     // the most user-visible failure the library has: the shell comes back raw, on the alternate screen, or with no

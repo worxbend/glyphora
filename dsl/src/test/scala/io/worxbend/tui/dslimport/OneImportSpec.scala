@@ -2,7 +2,6 @@ package io.worxbend.tui.dslimport
 
 import io.worxbend.tui.dsl.*
 import io.worxbend.tui.terminal.HeadlessBackend
-import io.worxbend.tui.testsupport.Pilot
 
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -25,7 +24,7 @@ import org.scalatest.funsuite.AnyFunSuite
   * `tui-terminal` job, so `HeadlessBackend` is not re-exported and a test that wires one is expected to say so. `Pilot`
   * is a test tool, not part of the promise.
   */
-final class OneImportSpec extends AnyFunSuite:
+final class OneImportSpec extends AnyFunSuite with PilotFixture:
 
   test("an app can be written, wired to a backend and run with `io.worxbend.tui.dsl.*` as its only glyphora import"):
     val backend = HeadlessBackend(Size(24, 4))
@@ -54,7 +53,7 @@ final class OneImportSpec extends AnyFunSuite:
     // `run()` rather than `runWith(backend)`, so the overridden `createBackend` is the thing under test; the result
     // type is written out because that is the fourth name the rule owes us.
     var outcome: Option[Either[RunnerError, Unit]] = None
-    val pilot                                      = Pilot.start(backend) {
+    val pilot                                      = startPilot(backend) {
       val result: Either[RunnerError, Unit] = app.run()
       outcome = Some(result)
       result

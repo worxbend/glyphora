@@ -82,21 +82,28 @@ Effects are post-render buffer transforms; compose with `sequence`/`parallel`/
 ## Forms with compile-time derivation
 
 ```scala
+import io.worxbend.tui.macros.deriveForm
+
 final case class Signup(username: String, age: Int, subscribe: Boolean)
+val spec = deriveForm[Signup]
 val form = FormState.of(
-  deriveForm[Signup],
-  Field.int("age").mapValidated(a => if a >= 18 then Right(a) else Left("must be 18+")),
+  spec,
+  spec.field(_.age).validate(_ >= 18, "must be 18+"),
 )
 // view: Form(form)   submit: form.submit()   result: form.result / form.errors
 ```
 
+The spec retains its original parsers. Submission parses all controls, constructs a
+candidate only on parse success, then runs rejection-only typed checks; no check
+replaces a value. See [Forms & validation](../website/docs/forms-and-validation.md).
+
 ## Testing headlessly
 
 ```scala
-val backend = HeadlessBackend(Size(60, 16))
-val pilot = Pilot.start(backend) { app.runWith(backend) }
-pilot.typeText("hi").press("enter").waitForIdle()
-assert(pilot.screenText.contains("hi"))
+Pilot.using(Size(60, 16))(backend => app.runWith(backend)) { pilot =>
+  pilot.waitForIdle().typeText("hi").press("enter").waitForIdle()
+  assert(pilot.screenText.contains("hi"))
+}
 ```
 
 ## Charts

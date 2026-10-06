@@ -1,7 +1,7 @@
 package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.Size
-import io.worxbend.tui.macros.{Field, FieldInput, FormFieldType, deriveForm}
+import io.worxbend.tui.macros.{FieldInput, FormFieldType, deriveForm}
 import io.worxbend.tui.terminal.HeadlessBackend
 import io.worxbend.tui.testsupport.Pilot
 
@@ -17,7 +17,7 @@ object Environment:
 final case class Deployment(service: String, environment: Environment, dryRun: Boolean)
 
 /** A derived form with an enum field: how the picklist renders, what it submits, and what a validator on it can do. */
-final class FormEnumFieldSpec extends AnyFunSuite:
+final class FormEnumFieldSpec extends AnyFunSuite with PilotFixture:
 
   /** Starts an app around `view0`, with `Ctrl+S` bound to `submit()`.
     *
@@ -33,7 +33,7 @@ final class FormEnumFieldSpec extends AnyFunSuite:
         binding("ctrl+q", "quit")(quit()),
       )
       def view(using ReactiveScope, Theme): Element = view0
-    Pilot.start(backend) { testApp.runWith(backend) }.waitForIdle()
+    startPilot(backend) { testApp.runWith(backend) }.waitForIdle()
 
   private def submit(pilot: Pilot): Unit =
     val _ = pilot.pressKey(KeyCode.Char('s'), KeyModifiers.Ctrl).waitForIdle()
@@ -68,11 +68,12 @@ final class FormEnumFieldSpec extends AnyFunSuite:
     assert(state.result.peek.map(_.environment).contains(Environment.Development))
 
   test("a validator on the enum field rejects a choice and its message lands beside that field"):
+    val spec  = deriveForm[Deployment]
     val state = FormState.of(
-      deriveForm[Deployment],
-      Field.enumeration[Environment]("environment").mapValidated {
+      spec,
+      spec.field(_.environment).validate {
         case Environment.Production => Left("production needs an approval")
-        case other                  => Right(other)
+        case _                      => Right(())
       },
     )
     val pilot = startApp(state)(Form(state))
@@ -84,13 +85,12 @@ final class FormEnumFieldSpec extends AnyFunSuite:
     assert(state.result.peek.isEmpty)
     quitApp(pilot)
 
-  test("a validator built with the wrong factory for an enum field is refused, naming the right one"):
-    // The same static check the other field kinds get. Without it the wrong parser would run and hand the case class a
-    // value of the wrong type, which only surfaces as a ClassCastException on submit.
-    val refused = intercept[IllegalArgumentException] {
-      FormState.of(deriveForm[Deployment], Field.text("environment"))
-    }
-    assert(refused.getMessage.contains("Field.enumeration"))
+  test("an enum validator cannot replace the choice with a String"):
+    val errors = scala.compiletime.testing.typeCheckErrors("""
+      val spec = deriveForm[Deployment]
+      spec.field(_.environment).validate(value => Right(value.toString))
+    """)
+    assert(errors.nonEmpty)
 
   test("the accessible rendering spells out the chosen option and how many there are"):
     val state = FormState.of(deriveForm[Deployment])
@@ -102,13 +102,9 @@ final class FormEnumFieldSpec extends AnyFunSuite:
   test("a picklist with no options submits an error rather than throwing on the render thread"):
     // Only an empty enum can produce this, but `submit` runs where an exception would take the whole app down, so the
     // impossible case still has to answer with a field error.
-    val empty = FormState.of(
-      io.worxbend.tui.macros
-        .FormSpec[String](
-          Seq(FormFieldType.ofLabels[String](Seq.empty).field("choice")),
-          values => values.head.toString,
-        )
-    )
+    final case class EmptyChoice(choice: String)
+    given FormFieldType[String] = FormFieldType.ofLabels[String](Seq.empty)
+    val empty                   = FormState.of(deriveForm[EmptyChoice])
     empty.submit()
     assert(empty.errors.peek.get("choice").exists(_.contains("no option to choose")))
     assert(empty.result.peek.isEmpty)

@@ -84,7 +84,7 @@ with `-Wunused:all -Werror`, so an unused import or an unused private field is a
 **build failure**, not a warning. That is why each constant below arrives in the step
 that first uses it rather than all at once — paste them early and the build stops.
 
-(`Pilot.start(backend) { app.runWith(backend) }` in step 13 hands the runner's own
+(`Pilot.using(backend)(app.runWith(backend))` in step 13 hands the runner's own
 `Either[RunnerError, Unit]` to the pilot rather than discarding it, so a run that
 failed is reported as a test failure instead of reading as a clean exit.)
 
@@ -709,35 +709,37 @@ final class ProcmonAppSpec extends AnyFunSuite:
     val deadline = System.nanoTime() + timeout.toNanos
     while !predicate && System.nanoTime() < deadline do Thread.sleep(20)
 
-  private def startedApp(): (ProcmonApp, Pilot) =
+  private def withApp[A](body: (ProcmonApp, Pilot) => A): A =
     val backend = HeadlessBackend(Size(96, 24))
     val app     = ProcmonApp(SyntheticProcessSource())
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
-    pilot.waitForIdle()
-    waitUntil()(app.sampleCount.peek > 0)
-    pilot.waitForIdle()
-    (app, pilot)
+    Pilot.using(backend)(app.runWith(backend)) { pilot =>
+      pilot.waitForIdle()
+      waitUntil()(app.sampleCount.peek > 0)
+      pilot.waitForIdle()
+      body(app, pilot)
+    }
 
   test("the selection follows its process across a re-sort and across a refresh"):
-    val (app, pilot) = startedApp()
-    pilot.press("down", "down", "down").waitForIdle()
+    withApp { (app, pilot) =>
+      pilot.press("down", "down", "down").waitForIdle()
 
-    val pinned = app.selectedProcessId
-    assert(app.tableState.selected.contains(2))
+      val pinned = pilot.readOnRenderThread(app.selectedProcessId)
+      assert(pilot.readOnRenderThread(app.tableState.selected).contains(2))
 
-    pilot.press("p").waitForIdle()
-    assert(app.selectedProcessId == pinned)
-    assert(app.visibleProcessIds(app.tableState.selected.get) == pinned.get)
+      pilot.press("p").waitForIdle()
+      assert(pilot.readOnRenderThread(app.selectedProcessId) == pinned)
+      assert(pilot.readOnRenderThread(app.visibleProcessIds(app.tableState.selected.get)) == pinned.get)
 
-    val samplesBefore = app.sampleCount.peek
-    pilot.press("r")
-    waitUntil()(app.sampleCount.peek > samplesBefore)
-    pilot.waitForIdle()
-    assert(app.selectedProcessId == pinned)
-    assert(app.visibleProcessIds(app.tableState.selected.get) == pinned.get)
+      val samplesBefore = app.sampleCount.peek
+      pilot.press("r")
+      waitUntil()(app.sampleCount.peek > samplesBefore)
+      pilot.waitForIdle()
+      assert(pilot.readOnRenderThread(app.selectedProcessId) == pinned)
+      assert(pilot.readOnRenderThread(app.visibleProcessIds(app.tableState.selected.get)) == pinned.get)
 
-    pilot.press("q")
-    assert(pilot.awaitTermination())
+      pilot.press("q")
+      assert(pilot.awaitTermination())
+    }
 ```
 
 `Pilot.waitForIdle` proves the posted event queue drained; it says nothing about a

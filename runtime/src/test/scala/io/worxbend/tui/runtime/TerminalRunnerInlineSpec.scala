@@ -36,23 +36,27 @@ final class TerminalRunnerInlineSpec extends AnyFunSuite:
   test("an inline run stays on the primary screen and reserves its rows there"):
     val backend = HeadlessBackend(Size(10, 6))
     val pilot   = inlineRunner(backend, 2)(fillFrame("#"))
-    pilot.waitForIdle()
-    assert(!backend.isAlternateScreen, "an inline app must not take the alternate screen")
-    assert(backend.reservedInlineRows == 2)
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
+    try
+      pilot.waitForIdle()
+      assert(!backend.isAlternateScreen, "an inline app must not take the alternate screen")
+      assert(backend.reservedInlineRows == 2)
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+    finally pilot.close()
 
   test("the frame is composed into the bottom rows and nothing above them is touched"):
     val backend = HeadlessBackend(Size(4, 5))
     val pilot   = inlineRunner(backend, 2)(fillFrame("#"))
-    pilot.waitForIdle()
-    val frame   = pilot.lastFrame
-    assert(frame.area.height == 2)
-    assert(frame.area.y == 3)
-    assert(BufferAssertions.line(frame, 3) == "####")
-    assert(BufferAssertions.line(frame, 4) == "####")
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
+    try
+      pilot.waitForIdle()
+      val frame = pilot.lastFrame
+      assert(frame.area.height == 2)
+      assert(frame.area.y == 3)
+      assert(BufferAssertions.line(frame, 3) == "####")
+      assert(BufferAssertions.line(frame, 4) == "####")
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+    finally pilot.close()
 
   test("the strip re-anchors to the bottom when the terminal is resized"):
     val backend                         = HeadlessBackend(Size(4, 5))
@@ -61,12 +65,14 @@ final class TerminalRunnerInlineSpec extends AnyFunSuite:
       composed = Some(frame.area.y)
       fillFrame("#")(frame)
     }
-    pilot.waitForIdle()
-    assert(composed.contains(3))
-    pilot.resize(4, 9).waitForIdle()
-    assert(composed.contains(7))
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
+    try
+      pilot.waitForIdle()
+      assert(composed.contains(3))
+      pilot.resize(4, 9).waitForIdle()
+      assert(composed.contains(7))
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+    finally pilot.close()
 
   test("a terminal shorter than the strip shrinks the composed area instead of failing"):
     val backend                         = HeadlessBackend(Size(4, 6))
@@ -75,20 +81,24 @@ final class TerminalRunnerInlineSpec extends AnyFunSuite:
       composed = Some(frame.area.height)
       fillFrame("#")(frame)
     }
-    pilot.waitForIdle()
-    assert(composed.contains(4))
-    pilot.resize(4, 2).waitForIdle()
-    assert(composed.contains(2))
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
+    try
+      pilot.waitForIdle()
+      assert(composed.contains(4))
+      pilot.resize(4, 2).waitForIdle()
+      assert(composed.contains(2))
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+    finally pilot.close()
 
   test("a full-screen run is unchanged: the alternate screen and the whole area"):
     // The regression guard for the default path, which is what every existing app uses.
     val backend = HeadlessBackend(Size(4, 3))
     val pilot   = Pilot.start(backend)(TerminalRunner(backend).run(_ => (), quitOnQ, fillFrame("#")))
-    pilot.waitForIdle()
-    assert(backend.isAlternateScreen)
-    assert(backend.reservedInlineRows == 0)
-    assert(pilot.lastFrame.area == Rect(0, 0, 4, 3))
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
+    try
+      pilot.waitForIdle()
+      assert(backend.isAlternateScreen)
+      assert(backend.reservedInlineRows == 0)
+      assert(pilot.lastFrame.area == Rect(0, 0, 4, 3))
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+    finally pilot.close()

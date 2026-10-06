@@ -1,7 +1,7 @@
 package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{CharWidth, Color}
-import io.worxbend.tui.macros.{Field, FieldInput, FieldSpec, FormSpec}
+import io.worxbend.tui.macros.{FieldInput, FieldSpec, FieldValidation, FormSpec}
 import io.worxbend.tui.runtime.{ReactiveScope, Signal}
 import io.worxbend.tui.widgets.TextInputState
 
@@ -47,107 +47,49 @@ private[dsl] object FieldBinding:
         .map(parse)
         .getOrElse(Left(s"no option to choose for '${spec.name}'"))
 
-/** Live state for a compile-time-derived form: boolean fields become checkboxes, everything else an input; [[submit]]
-  * runs each field's parser/validators — errors land in [[errors]] per field, a fully valid form lands in [[result]].
-  *
-  * Custom validation attaches per field name via cue4s-style [[Field]] composition:
-  * `FormState.of(deriveForm[Signup], Field.int("age").mapValidated(...))`.
+/** Live state for a derived form. Submission first parses all controls with the spec's original parsers. If parsing
+  * succeeds, typed field checks validate the candidate without changing it; only a valid candidate is published. Parser
+  * errors therefore precede validation errors. Writes and callbacks run on the render thread.
   */
-final class FormState[A] private (private[dsl] val bindings: Seq[FieldBinding], assemble: Seq[Any] => A):
-
+final class FormState[A] private (
+    private[dsl] val bindings: Seq[FieldBinding],
+    spec: FormSpec[A],
+    validators: Seq[FieldValidation[A]],
+):
   val errors: Signal[Map[String, String]] = Signal(Map.empty)
   val result: Signal[Option[A]]           = Signal(None)
 
-  /** Validates every field; either publishes per-field errors or the assembled value. */
+  /** Parses every control, then validates the typed candidate. Failure always clears the previous result. */
   def submit(): Unit =
-    val parsed: Seq[(String, Either[String, Any])] = bindings.map(binding => binding.spec.name -> binding.parsed)
-    val failed                                     = parsed.collect { case (name, Left(message)) => name -> message }
+    val parsed = bindings.map(binding => binding.spec.name -> binding.parsed)
+    val failed = parsed.collect { case (name, Left(message)) => name -> message }.toMap
     if failed.nonEmpty then
-      errors.set(failed.toMap)
+      errors.set(failed)
       result.set(None)
     else
-      errors.set(Map.empty)
-      result.set(Some(assemble(parsed.collect { case (_, Right(value)) => value })))
+      val candidate = spec.assemble(parsed.collect { case (_, Right(value)) => value })
+      val invalid   = spec.validate(candidate, validators)
+      errors.set(invalid)
+      result.set(Option.when(invalid.isEmpty)(candidate))
 
 object FormState:
-
-  /** The `Field` factory that produces `input`, named so a rejected validator can say what to write instead. */
-  private def factoryFor(input: FieldInput): String = input match
-    case FieldInput.TextField      => "Field.text"
-    case FieldInput.IntField       => "Field.int"
-    case FieldInput.DecimalField   => "Field.double"
-    case FieldInput.BoolField      => "Field.bool"
-    case FieldInput.SelectField(_) => "Field.enumeration"
-
-  /** Rejects a validator naming a field the spec does not declare. */
-  private def checkUnknown(spec: FormSpec[?], validators: Seq[Field[?]]): Unit =
-    val declared = spec.fields.map(_.name).toSet
-    val unknown  = validators.map(_.spec.name).distinct.filterNot(declared.contains)
-    if unknown.nonEmpty then
-      throw IllegalArgumentException(
-        s"validator(s) for field(s) ${unknown.mkString(", ")} that the form does not declare; " +
-          s"it declares ${spec.fields.map(_.name).mkString(", ")}"
-      )
-
-  /** Rejects two validators naming the same field. */
-  private def checkRepeated(validators: Seq[Field[?]]): Unit =
-    val repeated =
-      validators.groupBy(_.spec.name).collect { case (name, declaredTwice) if declaredTwice.sizeIs > 1 => name }
-    if repeated.nonEmpty then
-      throw IllegalArgumentException(s"more than one validator for field(s) ${repeated.mkString(", ")}")
-
-  /** Rejects a validator built from the wrong `Field` factory for the field's declared type. */
-  private def checkMismatched(spec: FormSpec[?], validators: Seq[Field[?]]): Unit =
-    val declaredInput = spec.fields.map(field => field.name -> field.input).toMap
-    val mismatched    = validators.flatMap { validator =>
-      declaredInput
-        .get(validator.spec.name)
-        .filterNot(_ == validator.spec.input)
-        .map(declared =>
-          s"field '${validator.spec.name}' is declared as $declared but its validator produces " +
-            s"${validator.spec.input}; use ${factoryFor(declared)}(\"${validator.spec.name}\")"
-        )
-    }
-    if mismatched.nonEmpty then throw IllegalArgumentException(mismatched.mkString("; "))
-
-  /** Builds live state from a derived [[FormSpec]]; `validators` override the default per-type parsers by field name
-    * (only the name and the input kind are taken from their own `FieldSpec` — position comes from the derived spec).
-    *
-    * Three things are programmer errors and throw here, the way a malformed key spec throws from [[binding]]: a
-    * validator naming a field the spec does not declare, two validators naming the same field, and a validator built
-    * from the wrong `Field` factory for the field's declared type. All three are static declarations, and all three are
-    * invisible at runtime otherwise — the first two silently drop the validator so the form submits unvalidated data
-    * and looks like it passed, and the third hands a value of the wrong type to the case class's constructor, which
-    * fails as a `ClassCastException` out of `Mirror.fromProduct` on the render thread when the user presses submit.
-    *
-    * The type check compares [[FieldInput]]s, which is what a `Field.*` factory stamps into its spec. It cannot see
-    * through a `map` that changes the value type without changing the factory — `Field.int("age").map(_.toString)`
-    * still says `IntField` — so [[Field.map]] keeps its own warning about that one residual case.
+  /** Builds state from a spec and checks made through `spec.field(_.name).validate(...)`. Standalone `Field` parsers
+    * are deliberately not accepted: a UI control kind is not a Scala value type. Duplicate checks must be composed with
+    * `.and`; checks belonging to another spec are rejected at construction.
     */
-  def of[A](spec: FormSpec[A], validators: Field[?]*): FormState[A] =
-    checkUnknown(spec, validators)
-    checkRepeated(validators)
-    checkMismatched(spec, validators)
-
-    val byName = validators.map(field => field.spec.name -> field).toMap
-
-    val bindings = spec.defaults.map { derived =>
-      // A field with no caller-supplied validator falls back to the one the derivation already built for it, whose
-      // parser came from the field type's own `FormFieldType`. Nothing here maps an input kind back to a parser, which
-      // is what lets an application's own field type carry a parser this module has never heard of.
-      val field     = byName.getOrElse(derived.spec.name, derived)
-      val fieldSpec = derived.spec
+  def of[A](spec: FormSpec[A], validators: FieldValidation[A]*): FormState[A] =
+    spec.checkValidators(validators)
+    val bindings = spec.defaults.map { field =>
+      val fieldSpec = field.spec
       fieldSpec.input match
         case FieldInput.BoolField            =>
-          // a checkbox holds a Boolean, so its validator sees the same `"true"`/`"false"` text `Field.bool` parses
-          FieldBinding.BoolLike(fieldSpec, Signal(false), checked => field.parse(checked.toString).map(v => v: Any))
+          FieldBinding.BoolLike(fieldSpec, Signal(false), checked => field.parse(checked.toString))
         case FieldInput.SelectField(options) =>
-          // the cycler starts on the first option, so a picklist always submits something rather than a blank
-          FieldBinding.SelectLike(fieldSpec, options, Signal(0), raw => field.parse(raw).map(value => value: Any))
+          FieldBinding.SelectLike(fieldSpec, options, Signal(0), raw => field.parse(raw))
         case _                               =>
-          FieldBinding.TextLike(fieldSpec, TextInputState(), raw => field.parse(raw).map(value => value: Any))
+          FieldBinding.TextLike(fieldSpec, TextInputState(), raw => field.parse(raw))
     }
-    new FormState(bindings, spec.assemble)
+    new FormState(bindings, spec, validators)
 
 /** Renders a [[FormState]] as labeled controls with inline validation errors, composed from `input`/`checkbox` so it
   * inherits focus traversal for free.

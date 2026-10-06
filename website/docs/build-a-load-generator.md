@@ -978,12 +978,13 @@ import scala.jdk.CollectionConverters.*
 
 final class LoadTestAppSpec extends AnyFunSuite:
 
-  private def startedApp(target: Target, plan: Plan): (LoadTestApp, Pilot) =
+  private def withApp[A](target: Target, plan: Plan)(body: (LoadTestApp, Pilot) => A): A =
     val backend = HeadlessBackend(Size(88, 30))
     val app     = LoadTestApp(target, plan)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
-    pilot.waitForIdle()
-    (app, pilot)
+    Pilot.using(backend)(app.runWith(backend)) { pilot =>
+      pilot.waitForIdle()
+      body(app, pilot)
+    }
 
   /** Polls rather than sleeping a fixed time. */
   private def waitUntil(timeout: FiniteDuration = 20.seconds)(condition: => Boolean): Boolean =
@@ -998,7 +999,7 @@ final class LoadTestAppSpec extends AnyFunSuite:
 ```
 
 Passing `app.runWith(backend)` straight through is not noise: `runWith` returns an
-`Either[RunnerError, Unit]`, and `Pilot.start` takes that result so a run that failed
+`Either[RunnerError, Unit]`, and `Pilot.using` takes that result so a run that failed
 — an unrestorable terminal, a handler that threw — fails the test rather than reading
 as a clean exit. `waitForIdle` proves the posted key events were consumed; it says nothing
 about a background run finishing, whose results only reach the UI on a later render
@@ -1008,32 +1009,33 @@ than sleeping.
 
 ```scala title="examples/loadtest/src/test/scala/io/worxbend/tui/examples/loadtest/LoadTestAppSpec.scala"
   test("a completed run accounts for every request and raises the summary screen"):
-    val (app, pilot) = startedApp(FakeTarget(failureRate = 0.0), Plan(requests = 60, concurrency = 6))
-    pilot.press("s")
+    withApp(FakeTarget(failureRate = 0.0), Plan(requests = 60, concurrency = 6)) { (app, pilot) =>
+      pilot.press("s")
 
-    assert(waitUntil()(app.phase.peek == Phase.Finished(RunOutcome.Completed)))
-    val finished = app.stats.peek
-    assert(finished.sent == 60)
-    assert(finished.ok == 60)
-    assert(finished.latencies.size == 60)
-    assert(waitUntil()(pilot.screenText.contains("Run summary")))
-    assert(pilot.screenText.contains("no errors"))
+      assert(waitUntil()(app.phase.peek == Phase.Finished(RunOutcome.Completed)))
+      val finished = app.stats.peek
+      assert(finished.sent == 60)
+      assert(finished.ok == 60)
+      assert(finished.latencies.size == 60)
+      assert(waitUntil()(pilot.screenText.contains("Run summary")))
+      assert(pilot.screenText.contains("no errors"))
 
-    pilot.press("q")
-    assert(pilot.awaitTermination(5.seconds))
+      pilot.press("q")
+      assert(pilot.awaitTermination(5.seconds))
+    }
 
   test("quitting mid-run leaves no worker thread behind"):
-    val (app, pilot) =
-      startedApp(FakeTarget(failureRate = 0.0, pace = 2.millis), Plan(requests = 5000, concurrency = 8))
-    pilot.press("s")
-    assert(waitUntil()(app.stats.peek.sent > 0))
-    assert(liveThreadsNamed(app.workerThreadPrefix).nonEmpty, "the pool should be busy before we quit")
+    withApp(FakeTarget(failureRate = 0.0, pace = 2.millis), Plan(requests = 5000, concurrency = 8)) { (app, pilot) =>
+      pilot.press("s")
+      assert(waitUntil()(app.stats.peek.sent > 0))
+      assert(liveThreadsNamed(app.workerThreadPrefix).nonEmpty, "the pool should be busy before we quit")
 
-    pilot.press("q")
-    assert(pilot.awaitTermination(5.seconds))
+      pilot.press("q")
+      assert(pilot.awaitTermination(5.seconds))
 
-    assert(waitUntil()(app.workersAlive == 0))
-    assert(waitUntil(5.seconds)(liveThreadsNamed(app.workerThreadPrefix).isEmpty))
+      assert(waitUntil()(app.workersAlive == 0))
+      assert(waitUntil(5.seconds)(liveThreadsNamed(app.workerThreadPrefix).isEmpty))
+    }
 ```
 
 Both tests need `workersAlive` and `workerThreadPrefix` on the app, forwarding to the

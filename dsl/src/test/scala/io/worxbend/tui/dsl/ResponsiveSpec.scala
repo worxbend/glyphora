@@ -10,7 +10,7 @@ import org.scalatest.funsuite.AnyFunSuite
 /** Responsive-layout acceptance tests: a view that branches on [[TuiApp.terminalSize]], a tree that swaps subtrees
   * through [[Element.responsive]], and the focus/mouse routing that has to keep working across the swap.
   */
-final class ResponsiveSpec extends AnyFunSuite:
+final class ResponsiveSpec extends AnyFunSuite with PilotFixture:
 
   /** Wide: a sidebar beside a detail pane. Narrow: the sidebar is gone and the detail input is the only focusable —
     * different components, not merely different constraints.
@@ -54,7 +54,7 @@ final class ResponsiveSpec extends AnyFunSuite:
 
   private def start(app: TuiApp, size: Size): Pilot =
     val backend = HeadlessBackend(size)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot
 

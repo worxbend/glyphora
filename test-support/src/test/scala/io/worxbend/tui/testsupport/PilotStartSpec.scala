@@ -17,28 +17,29 @@ import java.util.concurrent.atomic.AtomicReference
 final class PilotStartSpec extends AnyFunSuite:
 
   test("start(size) builds a backend of that size"):
-    val pilot = Pilot.start(Size(12, 3)) { backend =>
+    Pilot.using(Size(12, 3)) { backend =>
       TerminalRunner(backend).run(
         _ => (),
         (_, _) => EventOutcome.Ignored,
         frame => frame.renderWidget((area, buffer) => buffer.setString(area.x, area.y, "hi", Style.Default), frame.area),
       )
+    } { pilot =>
+      pilot.waitForIdle()
+      assert(pilot.backend.size == Right(Size(12, 3)))
+      assert(pilot.screenLines.size == 3)
+      assert(pilot.screenText.startsWith("hi"))
     }
-    pilot.waitForIdle()
-    assert(pilot.backend.size == Right(Size(12, 3)))
-    assert(pilot.screenLines.size == 3)
-    assert(pilot.screenText.startsWith("hi"))
 
   test("start(size) hands the body the very backend it exposes afterwards"):
-    val seen  = AtomicReference[Option[HeadlessBackend]](None)
-    val pilot = Pilot.start(Size(8, 2)) { backend =>
+    val seen = AtomicReference[Option[HeadlessBackend]](None)
+    Pilot.using(Size(8, 2)) { backend =>
       seen.set(Some(backend))
       TerminalRunner(backend).run(_ => (), (_, _) => EventOutcome.Ignored, _ => ())
+    } { pilot =>
+      pilot.waitForIdle()
+      // Reference equality: a second backend would have a different event queue.
+      assert(seen.get().exists(_ eq pilot.backend))
     }
-    pilot.waitForIdle()
-    // reference equality, not equality of size: a second backend of the same shape would be a different event queue,
-    // and every posted key would then go somewhere the test cannot see
-    assert(seen.get().exists(_ eq pilot.backend))
 
   test("start(size) reports a failed run the same way the backend-owning overload does"):
     val failure = RunnerError.Backend(BackendError.UnsupportedTerminal("cannot restore"))

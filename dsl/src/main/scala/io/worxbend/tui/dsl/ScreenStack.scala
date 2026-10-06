@@ -50,18 +50,18 @@ private[dsl] final class ScreenStack:
   def reset(): Unit =
     val unwound = stack.peek
     stack.set(Nil)
-    unwound.foreach(_.onLeave())
+    leave(unwound)
 
   /** Runs `onLeave` for everything still on the stack, innermost first, *without* writing the signal — so every
     * `onEnter` is matched exactly once however a run finished.
     *
-    * The missing write is the point, which is why this is not [[reset]]. By the time a run's `finally` calls this, the
-    * runner has already handed its render loop back, so the calling thread is no longer a render thread — and a
-    * `Signal` write from there throws the render-thread guard whenever some other runner in the process is still
-    * registered. Leaving the value alone also matches every other piece of per-instance state, none of which a run
-    * resets: running the same app a second time keeps whatever the first run left behind.
+    * Unlike [[reset]], this preserves per-instance state across runs. Every callback is attempted even if an earlier
+    * one throws; later failures are suppressed on the first.
     */
-  def leaveAll(): Unit = stack.peek.foreach(_.onLeave())
+  def leaveAll(): Unit = leave(stack.peek)
+
+  private def leave(screens: List[Screen]): Unit =
+    io.worxbend.tui.runtime.Cleanup.all(screens.map(screen => () => screen.onLeave())*)
 
   /** The screen on top as a reactive read — `None` means the app's own view is showing. */
   def top(using scope: ReactiveScope): Option[Screen] = stack.get(using scope).headOption

@@ -3,7 +3,6 @@ package io.worxbend.tui.dsl
 import io.worxbend.tui.core.Size
 import io.worxbend.tui.runtime.RunnerConfig
 import io.worxbend.tui.terminal.HeadlessBackend
-import io.worxbend.tui.testsupport.Pilot
 import io.worxbend.tui.widgets.TextInputState
 
 import org.scalatest.funsuite.AnyFunSuite
@@ -11,7 +10,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import scala.concurrent.duration.DurationInt
 
 /** End-to-end coverage for the 0.4.0 app services: screen stack, toasts, and the command palette. */
-final class AppServicesSpec extends AnyFunSuite:
+final class AppServicesSpec extends AnyFunSuite with PilotFixture:
 
   private final class NavApp extends TuiApp:
     val baseField                                 = TextInputState()
@@ -37,7 +36,7 @@ final class AppServicesSpec extends AnyFunSuite:
   test("a modal screen renders over the base and traps focus; pop restores"):
     val backend = HeadlessBackend(Size(30, 8))
     val app     = NavApp()
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.typeText("a").waitForIdle()
     assert(app.baseField.value == "a")
@@ -63,7 +62,7 @@ final class AppServicesSpec extends AnyFunSuite:
         binding("ctrl+q", "quit")(quit()),
       )
       def view(using ReactiveScope, Theme): Element = text("base screen")
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     assert(pilot.screenText.contains("base screen"))
     pilot.pressKey(KeyCode.Char('f'), KeyModifiers.Ctrl).waitForIdle()
@@ -87,7 +86,7 @@ final class AppServicesSpec extends AnyFunSuite:
         binding("ctrl+q", "quit")(quit()),
       )
       def view(using ReactiveScope, Theme): Element = text("base screen")
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.pressKey(KeyCode.Char('1')).waitForIdle()
     assert(pilot.screenText.contains("screen one"))
@@ -107,7 +106,7 @@ final class AppServicesSpec extends AnyFunSuite:
         binding("ctrl+q", "quit")(quit()),
       )
       def view(using ReactiveScope, Theme): Element = text("base screen")
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.pressKey(KeyCode.Char('r')).waitForIdle()
     assert(pilot.screenText.contains("only screen"))
@@ -133,7 +132,7 @@ final class AppServicesSpec extends AnyFunSuite:
         binding("ctrl+q", "quit")(quit()),
       )
       def view(using ReactiveScope, Theme): Element = text(s"base depth=$screenDepth")
-    val pilot              = Pilot.start(backend) { app.runWith(backend) }
+    val pilot              = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     assert(pilot.screenText.contains("base depth=0"))
     pilot.pressKey(KeyCode.Char('p')).waitForIdle()
@@ -161,7 +160,7 @@ final class AppServicesSpec extends AnyFunSuite:
         binding("ctrl+q", "quit")(quit()),
       )
       def view(using ReactiveScope, Theme): Element = text("content")
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.pressKey(KeyCode.Char('n')).waitForIdle()
     assert(pilot.screenText.contains("saved ok"))
@@ -179,7 +178,7 @@ final class AppServicesSpec extends AnyFunSuite:
         binding("ctrl+q", "quit")(quit()),
       )
       def view(using ReactiveScope, Theme): Element = text("content")
-    val pilot    = Pilot.start(backend) { app.runWith(backend) }
+    val pilot    = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.pressKey(KeyCode.Char('p'), KeyModifiers.Ctrl).waitForIdle()
     assert(pilot.screenText.contains("Commands"))
@@ -201,7 +200,7 @@ final class AppServicesSpec extends AnyFunSuite:
         binding("ctrl+q", "quit")(quit()),
       )
       def view(using ReactiveScope, Theme): Element = text("content")
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     assert(backend.clipboardContents.isEmpty)
     pilot.pressKey(KeyCode.Char('c')).waitForIdle()
@@ -218,7 +217,7 @@ final class AppServicesSpec extends AnyFunSuite:
         binding("ctrl+q", "quit")(quit()),
       )
       def view(using ReactiveScope, Theme): Element = text("content")
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.pressKey(KeyCode.Char('p'), KeyModifiers.Ctrl).waitForIdle()
     assert(pilot.screenText.contains("Commands"))

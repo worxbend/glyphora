@@ -2,7 +2,7 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Buffer, Rect, Size}
 import io.worxbend.tui.terminal.HeadlessBackend
-import io.worxbend.tui.testsupport.{BufferAssertions, Pilot}
+import io.worxbend.tui.testsupport.BufferAssertions
 
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -17,7 +17,7 @@ private def leaveSettings(using services: AppServices): Unit =
 private def quitFooter(using AppServices): Element =
   button("Quit")(summon[AppServices].quit())
 
-final class AppServicesHandleSpec extends AnyFunSuite:
+final class AppServicesHandleSpec extends AnyFunSuite with PilotFixture:
 
   private final class NavApp extends TuiApp:
     // nothing passes `services` explicitly: the app's own `given` resolves it for both helpers
@@ -29,7 +29,7 @@ final class AppServicesHandleSpec extends AnyFunSuite:
 
   test("an outside helper pushes and pops a screen through AppServices"):
     val backend = HeadlessBackend(Size(30, 6))
-    val pilot   = Pilot.start(backend)(NavApp().runWith(backend))
+    val pilot   = startPilot(backend)(NavApp().runWith(backend))
     pilot.waitForIdle()
     assert(!pilot.screenText.contains("settings pane"))
     pilot.press("o").waitForIdle()
@@ -41,7 +41,7 @@ final class AppServicesHandleSpec extends AnyFunSuite:
 
   test("quit reaches the runner from a helper that only has AppServices"):
     val backend = HeadlessBackend(Size(30, 6))
-    val pilot   = Pilot.start(backend)(NavApp().runWith(backend))
+    val pilot   = startPilot(backend)(NavApp().runWith(backend))
     pilot.waitForIdle()
     pilot.press("tab").waitForIdle() // focus the footer button
     pilot.press("enter")

@@ -2,7 +2,6 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.Size
 import io.worxbend.tui.terminal.HeadlessBackend
-import io.worxbend.tui.testsupport.Pilot
 import io.worxbend.tui.widgets.ScrollViewState
 
 import org.scalatest.funsuite.AnyFunSuite
@@ -20,7 +19,7 @@ import org.scalatest.funsuite.AnyFunSuite
   * call to `view`. A given installed around the call is not in scope *inside* the body, which is how an app that
   * overrode `theme` used to get `Theme.Dark` out of a `statusBar(bindings)` written in its own `view`.
   */
-final class ContainerMeasurementSpec extends AnyFunSuite:
+final class ContainerMeasurementSpec extends AnyFunSuite with PilotFixture:
 
   // ---- an explicit constraint on a container outranks the arithmetic over its children ----
 
@@ -51,7 +50,7 @@ final class ContainerMeasurementSpec extends AnyFunSuite:
     val app     = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = scrollView(content, state)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     assert(pilot.screenLines.head.startsWith("row 0"))
     pilot.press("end").waitForIdle()
@@ -75,7 +74,7 @@ final class ContainerMeasurementSpec extends AnyFunSuite:
       override def theme: Theme                     = Theme.Light
       override def bindings: KeyBindings            = KeyBindings(binding("q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = statusBar(Seq("q" -> "quit"))
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     assert(pilot.cellAt(0, 0).style.bg == Theme.Light.surface.bg)
     assert(pilot.cellAt(0, 0).style.bg != Theme.Dark.surface.bg, "the default theme leaked past the app's override")
@@ -94,7 +93,7 @@ final class ContainerMeasurementSpec extends AnyFunSuite:
       // the body is written here, under the app's own Light theme, but runs under the palette `themedAs` supplies
       def view(using ReactiveScope, Theme): Element =
         themedAs(Theme.HighContrast)(statusBar(Seq("q" -> "quit")))
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     assert(pilot.cellAt(0, 0).style.bg == Theme.HighContrast.surface.bg)
     assert(pilot.cellAt(0, 0).style.bg != Theme.Light.surface.bg, "the body was themed where it was written")

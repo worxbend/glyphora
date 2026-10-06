@@ -13,7 +13,7 @@ import scala.collection.mutable
   * Every test records the hooks in call order into one buffer, because the ordering is most of the contract — a
   * screen's cleanup has to run before the app's, and a replace has to release before it claims.
   */
-final class ScreenLifecycleSpec extends AnyFunSuite:
+final class ScreenLifecycleSpec extends AnyFunSuite with PilotFixture:
 
   private final class TracedApp extends TuiApp:
     val trace: mutable.Buffer[String] = mutable.Buffer.empty
@@ -48,7 +48,7 @@ final class ScreenLifecycleSpec extends AnyFunSuite:
 
   private def start(app: TracedApp): Pilot =
     val backend = HeadlessBackend(Size(30, 5))
-    Pilot.start(backend) { app.runWith(backend) }.waitForIdle()
+    startPilot(backend) { app.runWith(backend) }.waitForIdle()
 
   private def press(pilot: Pilot, c: Char): Unit =
     val _ = pilot.pressKey(KeyCode.Char(c)).waitForIdle()

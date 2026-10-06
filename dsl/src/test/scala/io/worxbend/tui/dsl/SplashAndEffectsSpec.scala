@@ -2,13 +2,13 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{KeyCode, Size}
 import io.worxbend.tui.terminal.HeadlessBackend
-import io.worxbend.tui.testsupport.{ManualClock, Pilot}
+import io.worxbend.tui.testsupport.ManualClock
 
 import org.scalatest.funsuite.AnyFunSuite
 
 import scala.concurrent.duration.DurationInt
 
-final class SplashAndEffectsSpec extends AnyFunSuite:
+final class SplashAndEffectsSpec extends AnyFunSuite with PilotFixture:
 
   private final class SplashApp extends TuiApp:
     override def splash: Option[SplashScreen]     = Some(
@@ -51,7 +51,7 @@ final class SplashAndEffectsSpec extends AnyFunSuite:
     val backend = HeadlessBackend(Size(30, 5))
     val clock   = ManualClock()
     val app     = SplashApp()
-    val pilot   = Pilot.start(backend) { app.runWith(backend, clock.reading) }
+    val pilot   = startPilot(backend) { app.runWith(backend, clock.reading) }
     pilot.waitForIdle()
     assert(pilot.screenText.contains("LOADING"))
     assert(!pilot.screenText.contains("main view"))
@@ -69,7 +69,7 @@ final class SplashAndEffectsSpec extends AnyFunSuite:
       )
       override def bindings: KeyBindings            = KeyBindings(binding("q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = text("main view")
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     assert(pilot.screenText.contains("INTRO"))
     pilot.pressKey(KeyCode.Enter).waitForIdle()
@@ -87,7 +87,7 @@ final class SplashAndEffectsSpec extends AnyFunSuite:
         binding("q", "quit")(quit()),
       )
       def view(using ReactiveScope, Theme): Element = text("solid content here")
-    val pilot   = Pilot.start(backend) { app.runWith(backend, clock.reading) }
+    val pilot   = startPilot(backend) { app.runWith(backend, clock.reading) }
     pilot.waitForIdle()
     assert(pilot.screenText.contains("solid content here"))
     pilot.pressKey(KeyCode.Char('e')).waitForIdle()
@@ -115,7 +115,7 @@ final class SplashAndEffectsSpec extends AnyFunSuite:
       override def onTick(): Unit                   = { val _ = ticks.incrementAndGet() }
       override def bindings: KeyBindings            = KeyBindings(binding("q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = text("main view")
-    val pilot   = Pilot.start(backend) { app.runWith(backend, clock.reading) }
+    val pilot   = startPilot(backend) { app.runWith(backend, clock.reading) }
     pilot.waitForIdle()
     assert(pilot.screenText.contains("INTRO"))
     // the intro lasts 20 ms; stepping well past it has to end the intro on the next tick

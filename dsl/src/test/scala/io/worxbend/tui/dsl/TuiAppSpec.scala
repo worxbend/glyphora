@@ -2,11 +2,10 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.Size
 import io.worxbend.tui.terminal.HeadlessBackend
-import io.worxbend.tui.testsupport.Pilot
 
 import org.scalatest.funsuite.AnyFunSuite
 
-final class TuiAppSpec extends AnyFunSuite:
+final class TuiAppSpec extends AnyFunSuite with PilotFixture:
 
   /** A miniature counter app exercising the full reactive path: Signal → view → key handler → redraw. */
   private final class CounterApp extends TuiApp:
@@ -48,7 +47,7 @@ final class TuiAppSpec extends AnyFunSuite:
   test("the documented counter app binds '+' and '-' through KeyBindings"):
     val backend = HeadlessBackend(Size(40, 12))
     val app     = DocumentedCounterApp()
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.press("+", "+", "-").waitForIdle()
     assert(app.count.peek == 1)
@@ -58,7 +57,7 @@ final class TuiAppSpec extends AnyFunSuite:
   test("a TuiApp renders its view and reacts to signal updates from key handlers"):
     val backend = HeadlessBackend(Size(20, 4))
     val app     = CounterApp()
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     assert(pilot.screenLines(1).startsWith("│count: 0"))
     pilot.press("+", "+").waitForIdle()
@@ -69,7 +68,7 @@ final class TuiAppSpec extends AnyFunSuite:
   test("an unconsumed Ctrl+C quits by default"):
     val backend = HeadlessBackend(Size(20, 4))
     val app     = CounterApp()
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.press("ctrl+c")
     assert(pilot.awaitTermination())
@@ -77,7 +76,7 @@ final class TuiAppSpec extends AnyFunSuite:
   test("an event that touches no signal the view read schedules no redraw"):
     val backend     = HeadlessBackend(Size(20, 4))
     val app         = CounterApp()
-    val pilot       = Pilot.start(backend) { app.runWith(backend) }
+    val pilot       = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     val drawsBefore = backend.drawCount
     pilot.press("x").waitForIdle()

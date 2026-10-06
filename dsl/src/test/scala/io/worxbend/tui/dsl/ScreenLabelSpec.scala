@@ -12,7 +12,7 @@ import org.scalatest.funsuite.AnyFunSuite
   * unnamed screens skipped, the app's own view absent — and that reading it from a `view` subscribes that view to
   * navigation, so the trail repaints when a screen is pushed or popped.
   */
-final class ScreenLabelSpec extends AnyFunSuite:
+final class ScreenLabelSpec extends AnyFunSuite with PilotFixture:
 
   private final class BreadcrumbApp extends TuiApp:
     /** Every screen here is a full-screen page that draws the breadcrumb itself, so the trail is visible on screen at
@@ -39,7 +39,7 @@ final class ScreenLabelSpec extends AnyFunSuite:
 
   private def start(): Pilot =
     val backend = HeadlessBackend(Size(60, 3))
-    Pilot.start(backend) { BreadcrumbApp().runWith(backend) }.waitForIdle()
+    startPilot(backend) { BreadcrumbApp().runWith(backend) }.waitForIdle()
 
   private def press(pilot: Pilot, key: Char): Unit =
     val _ = pilot.pressKey(KeyCode.Char(key)).waitForIdle()

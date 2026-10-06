@@ -19,8 +19,15 @@ dependency. The repository directory is `test-support/`; the Scala package is
   pin colours and modifiers with cell assertions alongside.
 
 ```scala
-val backend = HeadlessBackend(Size(40, 10))
-val pilot = Pilot.start(backend) { app.runWith(backend) }
-pilot.typeText("hi").press("enter").waitForIdle()
-assert(pilot.screenText.contains("hi"))
+Pilot.using(Size(40, 10))(backend => app.runWith(backend)) { pilot =>
+  pilot.waitForIdle().typeText("hi").press("enter").waitForIdle()
+  assert(pilot.screenText.contains("hi"))
+}
 ```
+
+`using` always requests non-consumable runner cancellation, including after a failing
+assertion. `close()` waits at most 2 seconds; `close(timeout)` accepts a custom finite
+deadline. A test-body failure stays primary if shutdown also fails. Use
+`readOnRenderThread` while the pilot is live for thread-confined state; it targets
+only that pilot's owner and rejects reads after termination. See the
+[testing guide](../website/docs/testing.md).

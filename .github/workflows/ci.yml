@@ -4,6 +4,14 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
+    outputs:
+      validated-sha:
+        description: Exact checkout SHA that passed every required validation job
+        value: ${{ jobs.validated.outputs.sha }}
+
+permissions:
+  contents: read
 
 # A new push to the same branch makes the running build irrelevant. Cancelling it frees
 # a runner immediately, which matters more than the partial result it would have printed.
@@ -87,9 +95,8 @@ jobs:
     # Independent of compilation: scalafmt reads sources and the enabled scalafix rules
     # are syntactic, so neither waits for a build it does not need.
     #
-    # On a pull request from this repository the `autofix` job has already pushed any
-    # formatting fix, so this is the gate for pushes to main and for fork branches,
-    # where a bot cannot write.
+    # The separate Autofix workflow can fix same-repository PRs. This read-only gate
+    # always validates the checkout it received, including when Publish calls it.
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/mill
@@ -106,58 +113,6 @@ jobs:
           /tmp/scalafmt-native --check build.mill $(git ls-files '*package.mill')
       - name: Lints
         run: ./mill __.fix --check
-
-  autofix:
-    name: Autofix (same-repo PRs)
-    runs-on: ubuntu-latest
-    # Formatting is not a thing to fail a review over when a machine can just do it. This
-    # applies scalafmt and any auto-fixable scalafix rule and pushes the result back to
-    # the branch.
-    #
-    # Skipped for forks on purpose: a fork's token is read-only, so the push would fail
-    # and the run would go red for something the contributor cannot act on. Those PRs are
-    # covered by the `lint` gate instead.
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.head_ref }}
-          # the default token's pushes do not retrigger workflows, which is what stops
-          # this job from looping on its own commit
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: ./.github/actions/mill
-
-      - name: Apply scalafmt and scalafix
-        run: |
-          ./mill mill.scalalib.scalafmt.ScalafmtModule/reformatAll __.sources
-          ./mill __.fix
-          v=$(sed -n 's/^version = "\(.*\)"/\1/p' .scalafmt.conf)
-          curl -sL -o /tmp/scalafmt-native "https://github.com/scalameta/scalafmt/releases/download/v${v}/scalafmt-linux-glibc"
-          chmod +x /tmp/scalafmt-native
-          /tmp/scalafmt-native build.mill $(git ls-files '*package.mill')
-
-      - name: Test the fixed tree
-        # A push made with the default token retriggers no workflows, so this job is the
-        # only CI the formatting commit will ever see — run the full suite before pushing
-        # rather than after. Formatting and syntactic rewrites are semantics-preserving,
-        # but "should be" is not a gate.
-        run: ./mill __.test
-
-      - name: Commit anything that changed
-        run: |
-          if git diff --quiet; then
-            echo "already clean"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "style: apply scalafmt and scalafix"
-          git push
-          echo "::notice::pushed a formatting commit — pull before you push again"
 
   # ── build the library once, then reuse it ─────────────────────────────────────────
   build:
@@ -344,3 +299,37 @@ jobs:
         run: |
           npm ci
           npm run build
+
+  packaged-consumer:
+    name: Verify published POMs and isolated consumer
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/mill
+        with:
+          build-output: restore
+      - name: Release gate regression tests
+        run: python3 -m unittest discover -s scripts/tests -v
+      - name: Resolve and exercise the actual packaged artifacts
+        run: python3 scripts/verify-packaged-consumer.py
+
+  # An output exists only when every gate above succeeded for this exact checkout.
+  # Publish consumes this SHA, not a branch name or an unrelated successful CI run.
+  validated:
+    name: Record validated commit
+    needs: [discipline, lint, build, test, example, native-image, website-build, packaged-consumer]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - id: commit
+        run: |
+          actual=$(git rev-parse HEAD)
+          test "$actual" = "$GITHUB_SHA"
+          printf 'sha=%s\n' "$actual" >> "$GITHUB_OUTPUT"

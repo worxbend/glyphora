@@ -343,10 +343,21 @@ final class Buffer(val area: Rect):
   def blit(source: Buffer, at: Position, region: Rect): Unit =
     if source eq this then blit(source.snapshot, at, region)
     else
-      val clipped = region.intersection(source.area)
-      val originX = at.x + (clipped.x - region.x)
-      val originY = at.y + (clipped.y - region.y)
-      var dy      = 0
+      val sourceWindow = region.intersection(source.area)
+      val landingX     = at.x + (sourceWindow.x - region.x)
+      val landingY     = at.y + (sourceWindow.y - region.y)
+      val destination  = Rect(landingX, landingY, sourceWindow.width, sourceWindow.height).intersection(area)
+      // Treat destination clipping as a source window too. Its first visible continuation has no copied owner and
+      // must be blanked by the same seam rules as an explicitly cropped source region.
+      val clipped      = Rect(
+        sourceWindow.x + (destination.x - landingX),
+        sourceWindow.y + (destination.y - landingY),
+        destination.width,
+        destination.height,
+      )
+      val originX      = destination.x
+      val originY      = destination.y
+      var dy           = 0
       while dy < clipped.height do
         val y  = clipped.y + dy
         var dx = 0

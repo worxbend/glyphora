@@ -13,7 +13,7 @@ import org.scalatest.funsuite.AnyFunSuite
   * really does leave the value alone — and that opening the list makes room for it in the layout rather than painting
   * over whatever is below.
   */
-final class DropdownElementSpec extends AnyFunSuite:
+final class DropdownElementSpec extends AnyFunSuite with PilotFixture:
 
   private val regions = Seq("eu-west", "us-east", "ap-south")
 
@@ -34,7 +34,7 @@ final class DropdownElementSpec extends AnyFunSuite:
   private def start(): (PickerApp, Pilot) =
     val backend = HeadlessBackend(Size(24, 10))
     val app     = PickerApp()
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     (app, pilot)
 
@@ -129,7 +129,7 @@ final class DropdownElementSpec extends AnyFunSuite:
 
     val backend = HeadlessBackend(Size(24, 6))
     val app     = TwoControls()
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.pressKey(KeyCode.Tab).waitForIdle()
     pilot.pressKey(KeyCode.Enter).waitForIdle()
@@ -146,7 +146,7 @@ final class DropdownElementSpec extends AnyFunSuite:
 
     val backend = HeadlessBackend(Size(24, 6))
     val app     = EmptyApp()
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.pressKey(KeyCode.Enter).waitForIdle()
     assert(!app.state.open)

@@ -149,6 +149,23 @@ trait RunnerHandle:
 final case class QueuedTaskFailures(first: Throwable, count: Int)
 
 enum RunnerError:
+  private var cleanupErrors: Vector[Throwable] = Vector.empty
+
+  /** Secondary teardown failures, in release order. The error case and its primary failure are unchanged. Populated by
+    * the owning runner before returning; read only after `run` finishes.
+    */
+  def cleanupFailures: Vector[Throwable] = cleanupErrors
+
+  private[tui] def addCleanupFailure(error: Throwable): Unit =
+    val primary = this match
+      case Handler(cause)                     => Some(cause)
+      case QueuedTask(failures)               => Some(failures.first)
+      case Backend(BackendError.Io(cause), _) => Some(cause)
+      case _                                  => None
+    if !primary.exists(_ eq error) && !cleanupErrors.exists(_ eq error) then
+      cleanupErrors = cleanupErrors :+ error
+      primary.foreach(Cleanup.suppress(_, error))
+
   /** The backend failed, which ends the loop. `queuedTasks` carries whatever queued-body failures the loop had already
     * absorbed, so they are still reported when a terminal failure happens to follow them.
     */

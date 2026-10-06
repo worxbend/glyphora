@@ -12,9 +12,8 @@ final case class Field[A](spec: FieldSpec, parse: String => Either[String, A]):
 
   /** Runs `f` on every successfully parsed value, leaving parse failures untouched.
     *
-    * Use `map` to normalise a value — trim it, lower-case it — not to change what it is. `map` keeps the spec it was
-    * called on, so changing the type here falls under the residual `ClassCastException` caveat documented on the
-    * [[Field$ companion object]].
+    * This standalone parser can change its result type. It cannot be attached to a derived form: use a `FormSpec.field`
+    * handle for validation, or supply a `FormFieldType[B]` for domain parsing.
     */
   def map[B](f: A => B): Field[B] =
     mapValidated(value => Right(f(value)))
@@ -22,32 +21,13 @@ final case class Field[A](spec: FieldSpec, parse: String => Either[String, A]):
   /** Chains a validation step onto the parser: `f` may reject a parsed value by returning `Left(message)`, and that
     * message is what the form shows next to the field.
     *
-    * `mapValidated` is for rejecting values, not for changing their type — when this field validates a derived
-    * [[FormSpec]], `B` must remain the case class's declared field type, or the residual `ClassCastException` caveat
-    * documented on the [[Field$ companion object]] applies.
+    * A standalone parser transformation, separate from the type-preserving checks on a derived field handle.
     */
   def mapValidated[B](f: A => Either[String, B]): Field[B] =
     Field(spec, raw => parse(raw).flatMap(f))
 
-/** The starting points for a validator. Each one is the field a derivation would have produced for that type, so
-  * `Field.int("age").mapValidated(…)` and the derived `age` field parse identically until the extra step runs — both
-  * come from the same [[FormFieldType]].
-  *
-  * A type of your own needs no factory here: `summon[FormFieldType[Email]].field("email")` builds its field from
-  * whatever instance the type supplies.
-  *
-  * One limit is worth knowing before reaching for these on a derived form. `Form` catches "this validator was built for
-  * the wrong type" by comparing the [[FieldSpec.input]] the factory stamped in, and several types deliberately share a
-  * control: `int` and `long` are both the whole-number field, `double` and `bigDecimal` are both the decimal one, and
-  * `text`, `uuid`, `localDate`, `localTime`, `localDateTime` and `duration` are all the plain text field. So attaching
-  * a `Field.int("count")` validator to a field the case class declares as `Long` passes that check and instead fails on
-  * submit with a `ClassCastException` from the case class's constructor. Pick the factory named after the field's
-  * declared type, not after the control it happens to render as.
-  *
-  * The same residual case can also be reached through [[Field.map]] and [[Field.mapValidated]]: both keep the spec they
-  * were called on, so `Field.int("age").map(_.toString)` still claims to be an `IntField` while producing a `String`.
-  * The assembled values reach the case class's constructor with no type check, so that one fails on submit with a
-  * `ClassCastException` pointing at the constructor rather than at the offending call.
+/** Standalone parsers. `map` and `mapValidated` may change their result type, but `FormState.of` accepts only
+  * spec-owned [[FieldValidation]] rules, never these parsers. Customize derivation through [[FormFieldType]] instead.
   */
 object Field:
 
@@ -73,8 +53,8 @@ object Field:
 
   def duration(name: String): Field[Duration] = FormFieldType.duration.field(name)
 
-  /** The starting point for a validator on a picklist field derived from an enum — see [[FormFieldType.ofEnum]]. It
-    * builds the same field the derivation would, so its spec carries the same options and the form accepts it.
+  /** A standalone enum parser with the options supplied by [[FormFieldType.ofEnum]]. For a derived form's checks, use
+    * its typed field handle instead.
     */
   inline def enumeration[A](name: String)(using Mirror.SumOf[A]): Field[A] =
     FormFieldType.ofEnum[A].field(name)

@@ -86,12 +86,15 @@ export Element.{
   tree,
   widget,
 }
+// Form signatures are part of the one-import application surface too.
+export io.worxbend.tui.macros.{DerivedField, FieldValidation, FormSpec}
+
 // Every core type the exported API's own signatures mention, so a view never needs a second import.
 //
 // The rule this block and the two below are kept to: if a name appears in the *signature* of anything this package
 // exports, it is re-exported here. The regression test is the examples directory — eight of the ten example apps take
 // `io.worxbend.tui.dsl.*` and nothing else from glyphora; `form-demo` adds only
-// `io.worxbend.tui.macros.{deriveForm, Field}`, a genuinely separate module a form-less app never touches, and
+// `io.worxbend.tui.macros.deriveForm`, a genuinely separate module a form-less app never touches, and
 // `loadtest` separately imports `io.worxbend.tui.runtime.Async`. An example that needs a second glyphora import means
 // this list is short.
 //

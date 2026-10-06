@@ -2,12 +2,12 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.Size
 import io.worxbend.tui.terminal.HeadlessBackend
-import io.worxbend.tui.testsupport.{BufferAssertions, Pilot}
+import io.worxbend.tui.testsupport.BufferAssertions
 
 import org.scalatest.funsuite.AnyFunSuite
 
 /** Covers [[Snapshot]]: composing a view into a buffer with no runner and no terminal. */
-final class SnapshotSpec extends AnyFunSuite:
+final class SnapshotSpec extends AnyFunSuite with PilotFixture:
 
   test("a view renders into a buffer of the size it was given"):
     val buffer = Snapshot.render(Size(10, 1))(text("hi"))
@@ -67,7 +67,7 @@ final class SnapshotSpec extends AnyFunSuite:
       def stop(): Unit                              = quit()
     val app = SnapshotApp()
     val backend = HeadlessBackend(size)
-    val pilot   = Pilot.start(backend)(app.runWith(backend))
+    val pilot   = startPilot(backend)(app.runWith(backend))
     pilot.waitForIdle()
     val live    = pilot.screenLines
     app.stop()

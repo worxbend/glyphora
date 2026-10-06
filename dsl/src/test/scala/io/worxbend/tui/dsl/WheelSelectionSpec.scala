@@ -18,14 +18,14 @@ import java.nio.file.{Files, Path}
   * handler while binding the identical keyboard vocabulary, so `tree` and `list` rendered side by side and only one of
   * them answered the wheel.
   */
-final class WheelSelectionSpec extends AnyFunSuite:
+final class WheelSelectionSpec extends AnyFunSuite with PilotFixture:
 
   private def startApp(view0: ReactiveScope ?=> Element): Pilot =
     val backend = HeadlessBackend(Size(40, 10))
     val testApp = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = view0
-    Pilot.start(backend) { testApp.runWith(backend) }.waitForIdle()
+    startPilot(backend) { testApp.runWith(backend) }.waitForIdle()
 
   private def quitApp(pilot: Pilot): Unit =
     pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)

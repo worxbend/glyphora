@@ -2,11 +2,10 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Color, Rect, Size, Style}
 import io.worxbend.tui.terminal.HeadlessBackend
-import io.worxbend.tui.testsupport.Pilot
 
 import org.scalatest.funsuite.AnyFunSuite
 
-final class SuspendSpec extends AnyFunSuite:
+final class SuspendSpec extends AnyFunSuite with PilotFixture:
 
   test("suspend hands the terminal back during the body and restores the app screen afterward"):
     val backend          = HeadlessBackend(Size(20, 4))
@@ -17,7 +16,7 @@ final class SuspendSpec extends AnyFunSuite:
         binding("ctrl+q", "quit")(quit()),
       )
       def view(using ReactiveScope, Theme): Element = text("editor host")
-    val pilot            = Pilot.start(backend) { app.runWith(backend) }.waitForIdle()
+    val pilot            = startPilot(backend) { app.runWith(backend) }.waitForIdle()
     assert(backend.isAlternateScreen) // the app runs on the alternate screen
     pilot.typeText("e").waitForIdle()
     assert(backend.suspendCount == 1)
@@ -34,7 +33,7 @@ final class SuspendSpec extends AnyFunSuite:
         binding("ctrl+q", "quit")(quit()),
       )
       def view(using ReactiveScope, Theme): Element = text("app")
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }.waitForIdle()
+    val pilot   = startPilot(backend) { app.runWith(backend) }.waitForIdle()
     pilot.typeText("l").waitForIdle()
     assert(backend.printedAbove == Seq("build ok", "deployed ✓"))
     pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)
@@ -54,7 +53,7 @@ final class SuspendSpec extends AnyFunSuite:
         binding("ctrl+q", "quit")(quit()),
       )
       def view(using ReactiveScope, Theme): Element = text("app")
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }.waitForIdle()
+    val pilot   = startPilot(backend) { app.runWith(backend) }.waitForIdle()
     pilot.typeText("l").waitForIdle()
 
     val block = backend.insertedAbove.head
@@ -77,7 +76,7 @@ final class SuspendSpec extends AnyFunSuite:
         binding("ctrl+q", "quit")(quit()),
       )
       def view(using ReactiveScope, Theme): Element = text("app")
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }.waitForIdle()
+    val pilot   = startPilot(backend) { app.runWith(backend) }.waitForIdle()
     pilot.typeText("l").waitForIdle()
     assert(backend.insertedAbove.isEmpty)
     assert(backend.printedAbove.isEmpty)

@@ -2,7 +2,7 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Buffer, Rect, Size}
 import io.worxbend.tui.terminal.HeadlessBackend
-import io.worxbend.tui.testsupport.{BufferAssertions, Pilot}
+import io.worxbend.tui.testsupport.BufferAssertions
 import io.worxbend.tui.widgets.{MenuEntry, MenuState, TextInputState}
 
 import org.scalatest.funsuite.AnyFunSuite
@@ -13,7 +13,7 @@ import org.scalatest.funsuite.AnyFunSuite
   * root has collected and drawn it — rendering the element by hand exercises only the in-place fallback, which is
   * itself the subject of one deliberate case below.
   */
-final class PortalElementSpec extends AnyFunSuite:
+final class PortalElementSpec extends AnyFunSuite with PilotFixture:
 
   /** An app with a two-line panel and an overlay anchored inside it, wide and tall enough to run past the border. */
   private final class PanelApp(useEscapingPortal: Boolean) extends TuiApp:
@@ -36,7 +36,7 @@ final class PortalElementSpec extends AnyFunSuite:
   private def framesOf(useEscapingPortal: Boolean): Seq[String] =
     val backend = HeadlessBackend(Size(12, 6))
     val app     = PanelApp(useEscapingPortal)
-    val pilot   = Pilot.start(backend)(app.runWith(backend))
+    val pilot   = startPilot(backend)(app.runWith(backend))
     pilot.waitForIdle()
     val lines   = pilot.screenLines
     pilot.interrupt()
@@ -51,7 +51,7 @@ final class PortalElementSpec extends AnyFunSuite:
           layers(text("left"), portal(dx = 4, dy = 0, width = 12, height = 1)(text("OVEROVEROVER"))),
           text("rightrightri"),
         )
-    val pilot   = Pilot.start(backend)(app.runWith(backend))
+    val pilot   = startPilot(backend)(app.runWith(backend))
     pilot.waitForIdle()
     val top     = pilot.screenLines.head
     pilot.interrupt()
@@ -66,7 +66,7 @@ final class PortalElementSpec extends AnyFunSuite:
     val app     = new TuiApp:
       def view(using ReactiveScope, Theme): Element =
         layers(text("base"), portal(dx = 7, dy = 2, width = 20, height = 8)(text("ABCDEFGH")))
-    val pilot   = Pilot.start(backend)(app.runWith(backend))
+    val pilot   = startPilot(backend)(app.runWith(backend))
     pilot.waitForIdle()
     val lines   = pilot.screenLines
     pilot.interrupt()
@@ -94,7 +94,7 @@ final class PortalElementSpec extends AnyFunSuite:
             layers(text("OUTEROUTEROUTER"), portal(dx = 5, dy = 0, width = 6, height = 1)(text("INNER")))
           ),
         )
-    val pilot   = Pilot.start(backend)(app.runWith(backend))
+    val pilot   = startPilot(backend)(app.runWith(backend))
     pilot.waitForIdle()
     val middle  = pilot.screenLines(1)
     pilot.interrupt()
@@ -112,7 +112,7 @@ final class PortalElementSpec extends AnyFunSuite:
     val app                        = new TuiApp:
       def view(using ReactiveScope, Theme): Element =
         layers(text(""), portal(dx = 0, dy = 0, width = 12, height = 1)(level(0)))
-    val pilot                      = Pilot.start(backend)(app.runWith(backend))
+    val pilot                      = startPilot(backend)(app.runWith(backend))
     pilot.waitForIdle()
     val lines                      = pilot.screenLines
     pilot.interrupt()
@@ -134,7 +134,7 @@ final class PortalElementSpec extends AnyFunSuite:
             ),
           )
         ).length(4)
-    val pilot    = Pilot.start(backend)(app.runWith(backend))
+    val pilot    = startPilot(backend)(app.runWith(backend))
     pilot.waitForIdle()
     // the menu is drawn at the panel's inner top-left, which is screen (1, 1); the second entry is one row below
     val menuText = pilot.screenText
@@ -156,7 +156,7 @@ final class PortalElementSpec extends AnyFunSuite:
           input(outside),
           layers(text("body"), portal(dx = 0, dy = 1, width = 20, height = 1)(input(inside))),
         )
-    val pilot   = Pilot.start(backend)(app.runWith(backend))
+    val pilot   = startPilot(backend)(app.runWith(backend))
     pilot.waitForIdle()
     pilot.typeText("a").waitForIdle()
     pilot.press("tab").waitForIdle()
@@ -182,7 +182,7 @@ final class PortalElementSpec extends AnyFunSuite:
           ),
           column(button("B") { pressed = true }, text("x")),
         )
-    val pilot   = Pilot.start(backend)(app.runWith(backend))
+    val pilot   = startPilot(backend)(app.runWith(backend))
     pilot.waitForIdle()
     // the portal is 22 columns wide, so its menu covers the right pane's button; column 14 is inside both, and
     // row 2 is the menu's second entry
@@ -199,7 +199,7 @@ final class PortalElementSpec extends AnyFunSuite:
     val app     = new TuiApp:
       def view(using ReactiveScope, Theme): Element =
         layers(text("base"), portal(dx = -5, dy = 0, width = 10, height = 1)(text("ABCDEFGHIJ")))
-    val pilot   = Pilot.start(backend)(app.runWith(backend))
+    val pilot   = startPilot(backend)(app.runWith(backend))
     pilot.waitForIdle()
     val top     = pilot.screenLines.head
     pilot.interrupt()

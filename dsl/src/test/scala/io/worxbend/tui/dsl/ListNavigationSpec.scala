@@ -11,7 +11,7 @@ import org.scalatest.funsuite.AnyFunSuite
   * [[Pilot]], because key routing is the half of the feature the user actually touches. Also pins the bottom-anchored
   * list, whose keys must behave exactly as they do the other way up.
   */
-final class ListNavigationSpec extends AnyFunSuite:
+final class ListNavigationSpec extends AnyFunSuite with PilotFixture:
 
   private val Width  = 20
   private val Height = 5
@@ -23,7 +23,7 @@ final class ListNavigationSpec extends AnyFunSuite:
     val testApp = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = view0
-    Pilot.start(backend) { testApp.runWith(backend) }.waitForIdle()
+    startPilot(backend) { testApp.runWith(backend) }.waitForIdle()
 
   private def quitApp(pilot: Pilot): Unit =
     pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)

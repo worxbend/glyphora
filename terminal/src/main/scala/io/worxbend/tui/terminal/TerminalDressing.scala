@@ -1,7 +1,5 @@
 package io.worxbend.tui.terminal
 
-import scala.util.control.NonFatal
-
 /** Owns the dress/undress choreography of [[JLine3Backend]]: handing the terminal back to the shell and taking it
   * again, together with the snapshot of modes carried between the two.
   *
@@ -44,7 +42,7 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
         backend.isRawMode,
         backend.alternateScreenActive,
         backend.cursorHidden,
-        backend.cursorShaped,
+        backend.cursorShape,
         backend.mouseCaptureActive,
         backend.cursorBlinkSuppressed,
       )
@@ -58,28 +56,20 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
         }
 
     undress(state.mouse.isDefined, backend.disableMouseCapture())
+    undress(state.cursorShape != CursorShape.Default, backend.setCursorShape(CursorShape.Default))
+    undress(state.cursorBlinkSuppressed, backend.setCursorBlink(true))
     undress(state.cursorHidden, backend.showCursor())
-    if backend.inlineRows > 0 then parkBelowInlineFrame()
+    undress(backend.inlineRows > 0, parkBelowInlineFrame())
     undress(state.alternateScreen, backend.leaveAlternateScreen())
     undress(state.raw, backend.disableRawMode())
-    flushSilently()
+    // Each output step flushes and checks the writer. An unconditional silent flush here would hide device failures
+    // and touch an already-closed JLine handle during an otherwise harmless repeated close.
     TerminalRelease(state, failures.result().headOption)
 
   /** An inline run leaves its last frame on the primary screen on purpose, so park the cursor on the line below the
     * strip: without this the shell's next prompt would be drawn straight over the frame the app just left behind.
     */
-  private def parkBelowInlineFrame(): Unit =
-    try
-      backend.terminal.writer().write("\r\n")
-      backend.terminal.writer().flush()
-    catch case NonFatal(_) => ()
-
-  /** Each undress step already flushed its own sequence; this is belt-and-braces and stays silent, so that closing an
-    * already-closed terminal (the shutdown hook racing the normal teardown) reports nothing rather than a scare.
-    */
-  private def flushSilently(): Unit =
-    try backend.terminal.writer().flush()
-    catch case NonFatal(_) => ()
+  private def parkBelowInlineFrame(): Either[BackendError, Unit] = backend.writeRaw("\r\n")
 
   /** Restores what [[releaseTerminal]] undressed. Same two callers, same two threads, same monitor.
     *
@@ -93,11 +83,9 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
     if state.raw then bestEffort(backend.dressRawMode(probe = false))
     if state.alternateScreen then bestEffort(backend.enterAlternateScreen())
     if state.cursorHidden then bestEffort(backend.hideCursor())
+    if state.cursorShape != CursorShape.Default then bestEffort(backend.setCursorShape(state.cursorShape))
+    // DECSCUSR also selects blinking/steady: restore the app's explicit blink suppression after its shape.
     if state.cursorBlinkSuppressed then bestEffort(backend.setCursorBlink(false))
-
-    // the shape itself is not remembered, so a resumed app is handed a block: whichever shape it wants, it is a mode
-    // change away from asking for it again, and guessing wrongly here would be worse than a known starting point
-    if state.cursorShaped then bestEffort(backend.setCursorShape(CursorShape.SteadyBlock))
     state.mouse.foreach(mode => bestEffort(backend.enableMouseCapture(mode)))
     backend.requestFullRedraw() // whatever ran in between owned the screen: repaint everything
 
@@ -118,7 +106,7 @@ private[terminal] object TerminalDressing:
       raw: Boolean,
       alternateScreen: Boolean,
       cursorHidden: Boolean,
-      cursorShaped: Boolean,
+      cursorShape: CursorShape,
       mouse: Option[MouseCaptureMode],
       cursorBlinkSuppressed: Boolean,
   )
@@ -127,7 +115,7 @@ private[terminal] object TerminalDressing:
     /** Nothing was dressed up: cooked mode, primary screen, visible, blinking cursor of the user's own shape, no mouse
       * capture.
       */
-    val Undressed: TerminalState = TerminalState(false, false, false, false, None, false)
+    val Undressed: TerminalState = TerminalState(false, false, false, CursorShape.Default, None, false)
 
   /** The outcome of handing the terminal back: the modes that were undressed (so they can be re-dressed) and the first
     * step that failed while doing it, if any.

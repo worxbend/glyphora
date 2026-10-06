@@ -29,14 +29,16 @@ final class CompletedFrameSpec extends AnyFunSuite:
         RunnerConfig(onFrame = Some(frame => observed.synchronized { val _ = observed += frame.count })),
       ).run(_ => (), quitOnQ, drawing(() => "hi"))
     }
-    pilot.waitForIdle()
-    pilot.pressKey(KeyCode.Char('a')).pressKey(KeyCode.Char('b')).waitForIdle()
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
-    val counts   = observed.synchronized(observed.toSeq)
-    assert(counts.length >= 3)
-    assert(counts == counts.indices.map(_.toLong))
-    assert(counts.length == backend.drawCount)
+    try
+      pilot.waitForIdle()
+      pilot.pressKey(KeyCode.Char('a')).pressKey(KeyCode.Char('b')).waitForIdle()
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+      val counts = observed.synchronized(observed.toSeq)
+      assert(counts.length >= 3)
+      assert(counts == counts.indices.map(_.toLong))
+      assert(counts.length == backend.drawCount)
+    finally pilot.close()
 
   test("the reported area follows the terminal, including across a resize"):
     val backend                                = HeadlessBackend(Size(20, 3))
@@ -45,13 +47,15 @@ final class CompletedFrameSpec extends AnyFunSuite:
       TerminalRunner(backend, RunnerConfig(onFrame = Some(frame => last = Some(frame))))
         .run(_ => (), quitOnQ, drawing(() => "hi"))
     }
-    pilot.waitForIdle()
-    assert(last.map(_.area).contains(Rect(0, 0, 20, 3)))
-    pilot.resize(30, 6).waitForIdle()
-    assert(last.map(_.area).contains(Rect(0, 0, 30, 6)))
-    assert(last.map(_.buffer.area) == last.map(_.area))
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
+    try
+      pilot.waitForIdle()
+      assert(last.map(_.area).contains(Rect(0, 0, 20, 3)))
+      pilot.resize(30, 6).waitForIdle()
+      assert(last.map(_.area).contains(Rect(0, 0, 30, 6)))
+      assert(last.map(_.buffer.area) == last.map(_.area))
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+    finally pilot.close()
 
   test("the text of a completed frame is what the widgets drew"):
     val backend                                = HeadlessBackend(Size(12, 2))
@@ -60,14 +64,16 @@ final class CompletedFrameSpec extends AnyFunSuite:
       TerminalRunner(backend, RunnerConfig(onFrame = Some(frame => last = Some(frame))))
         .run(_ => (), quitOnQ, drawing(() => "héllo"))
     }
-    pilot.waitForIdle()
-    val frame                                  = last.getOrElse(fail("no frame was observed"))
-    assert(frame.lines.head == "héllo")
-    // Pinned against the assertion helper tests already trust, so the two spellings of "a buffer as text" cannot drift.
-    assert(frame.lines == BufferAssertions.trimmedLines(frame.buffer))
-    assert(frame.text == BufferAssertions.text(frame.buffer))
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
+    try
+      pilot.waitForIdle()
+      val frame = last.getOrElse(fail("no frame was observed"))
+      assert(frame.lines.head == "héllo")
+      // Pinned against the assertion helper tests already trust, so the two spellings of "a buffer as text" cannot drift.
+      assert(frame.lines == BufferAssertions.trimmedLines(frame.buffer))
+      assert(frame.text == BufferAssertions.text(frame.buffer))
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+    finally pilot.close()
 
   test("wide graphemes occupy one entry of the text, not one per column"):
     val backend                                = HeadlessBackend(Size(12, 1))
@@ -78,10 +84,12 @@ final class CompletedFrameSpec extends AnyFunSuite:
       TerminalRunner(backend, RunnerConfig(onFrame = Some(frame => last = Some(frame))))
         .run(_ => (), quitOnQ, drawing(() => "世界👨‍👩‍👧"))
     }
-    pilot.waitForIdle()
-    assert(last.map(_.lines.head).contains("世界👨‍👩‍👧"))
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
+    try
+      pilot.waitForIdle()
+      assert(last.map(_.lines.head).contains("世界👨‍👩‍👧"))
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+    finally pilot.close()
 
   test("a retained frame keeps its own content when a later frame draws something else"):
     // This is the regression test for handing out the composer's reused live buffer instead of a snapshot.
@@ -94,21 +102,25 @@ final class CompletedFrameSpec extends AnyFunSuite:
         RunnerConfig(onFrame = Some(frame => if first.isEmpty then first = Some(frame))),
       ).run(_ => (), quitOnQ, drawing(() => shown))
     }
-    pilot.waitForIdle()
-    shown = "two"
-    pilot.pressKey(KeyCode.Char('x')).waitForIdle()
-    assert(pilot.screenLines.head == "two")
-    assert(first.map(_.lines.head).contains("one"))
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
+    try
+      pilot.waitForIdle()
+      shown = "two"
+      pilot.pressKey(KeyCode.Char('x')).waitForIdle()
+      assert(pilot.screenLines.head == "two")
+      assert(first.map(_.lines.head).contains("one"))
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+    finally pilot.close()
 
   test("a run with no observer behaves exactly as before"):
     val backend = HeadlessBackend(Size(12, 1))
     val pilot   = Pilot.start(backend)(TerminalRunner(backend).run(_ => (), quitOnQ, drawing(() => "plain")))
-    pilot.waitForIdle()
-    assert(pilot.screenLines.head == "plain")
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
+    try
+      pilot.waitForIdle()
+      assert(pilot.screenLines.head == "plain")
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+    finally pilot.close()
 
   test("a throwing observer ends the run as a handler failure with the terminal restored"):
     val backend = HeadlessBackend(Size(12, 1))

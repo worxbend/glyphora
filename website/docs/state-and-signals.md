@@ -109,6 +109,30 @@ whatever owns it goes away. (`map`, below, needs neither.)
 marked stale so it recomputes rather than freezing at its last value, and reading the
 disposed computed again simply re-attaches it.
 
+### Release a view's tracking scope
+
+A caller-owned `ReactiveScope.generational(...)` tracks successive evaluations of a
+view. Call `beginGeneration()` before each evaluation and `dispose()` when that
+owner stops, on its render thread **before the runner unregisters**. Disposal
+releases both generations of subscriptions and is idempotent but terminal:
+subsequent tracked reads and `beginGeneration()` throw. This differs from the
+re-attachable `Computed.dispose()` above.
+
+```scala
+var invalidated = false
+val count = Signal(0)
+val scope = ReactiveScope.generational(() => invalidated = true)
+// On the owning render thread, for each evaluation:
+scope.beginGeneration()
+val current = count.get(using scope)
+// On that same owner, during teardown:
+scope.dispose()
+```
+
+`TuiApp` owns and disposes its root scope automatically, after screen `onLeave`
+callbacks and app `onStop`, even when a callback fails. Do not dispose the scope
+passed to your `view`; only release scopes you created yourself.
+
 ## Derive cheaply with map
 
 `signal.map(f)` returns a `Derived[B]`: a transparent view that applies `f` on every

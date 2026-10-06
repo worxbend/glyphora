@@ -18,7 +18,7 @@ private def announceSaved(name: String)(using notifications: Notifications): Uni
 private def clearEverything()(using notifications: Notifications): Unit =
   notifications.dismissToasts()
 
-final class NotificationsSpec extends AnyFunSuite:
+final class NotificationsSpec extends AnyFunSuite with PilotFixture:
 
   private final class NotifyingApp extends TuiApp:
     // no argument is passed for `Notifications` anywhere below: the app's own `given` resolves it, which is the
@@ -33,7 +33,7 @@ final class NotificationsSpec extends AnyFunSuite:
 
   private def driving(body: Pilot => Unit): Unit =
     val backend = HeadlessBackend(Size(30, 6))
-    val pilot   = Pilot.start(backend)(NotifyingApp().runWith(backend))
+    val pilot   = startPilot(backend)(NotifyingApp().runWith(backend))
     pilot.waitForIdle()
     body(pilot)
     pilot.interrupt()
@@ -60,7 +60,7 @@ final class NotificationsSpec extends AnyFunSuite:
 
   private def frameAfter(key: String): Seq[String] =
     val backend = HeadlessBackend(Size(30, 6))
-    val pilot   = Pilot.start(backend)(NotifyingApp().runWith(backend))
+    val pilot   = startPilot(backend)(NotifyingApp().runWith(backend))
     pilot.waitForIdle()
     pilot.press(key).waitUntil("the toast is on the frame")(pilot.screenText.contains("disk full"))
     val lines   = pilot.screenLines

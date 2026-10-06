@@ -163,22 +163,24 @@ Ticks update a signal on the render thread; charts remain ordinary pure renderer
 ## form-demo: reflection-free derivation
 
 ```scala
+import io.worxbend.tui.dsl.*
+import io.worxbend.tui.macros.deriveForm
+
 final case class Signup(username: String, age: Int, subscribe: Boolean)
 
+val spec = deriveForm[Signup]
 val formState = FormState.of(
-  deriveForm[Signup],
-  Field.text("username").mapValidated { name =>
-    if name.trim.nonEmpty then Right(name.trim) else Left("required")
-  },
-  Field.int("age").mapValidated { age =>
-    if age >= 18 then Right(age) else Left("must be 18 or older")
-  },
+  spec,
+  spec.field(_.username).validate(_.trim.nonEmpty, "required"),
+  spec.field(_.age).validate(_ >= 18, "must be 18 or older"),
 )
 ```
 
-The macro generates metadata and the final constructor call at compile time. The UI
-shows parser/validator errors inline and publishes `Some(Signup(...))` only after a
-valid submit.
+The macro retains the original parsers and generates the constructor call at compile
+time. Submission parses all controls first, constructs a candidate only if parsing
+succeeds, then runs typed checks. Checks reject without replacing values: the username
+check above tests trimmed text but does not trim the submitted username. The UI shows
+errors inline and publishes `Some(Signup(...))` only after every check accepts it.
 
 [Read form-demo source](https://github.com/oleksandr-balyshyn/glyphora/blob/main/examples/form-demo/src/main/scala/io/worxbend/tui/examples/formdemo/Main.scala)
 

@@ -3,14 +3,13 @@ package io.worxbend.tui.dsl
 import io.worxbend.tui.core.{Event, Size}
 import io.worxbend.tui.runtime.RenderThread
 import io.worxbend.tui.terminal.HeadlessBackend
-import io.worxbend.tui.testsupport.Pilot
 
 import org.scalatest.funsuite.AnyFunSuite
 
 /** The bracket around one run: [[TuiApp.onStart]] before the first frame, [[TuiApp.onStop]] on every exit path, and
   * `requestRedraw` for the state in between that the reactive layer cannot see.
   */
-final class AppLifecycleSpec extends AnyFunSuite:
+final class AppLifecycleSpec extends AnyFunSuite with PilotFixture:
 
   /** An app that records its own lifecycle and renders a plain `var`.
     *
@@ -49,7 +48,7 @@ final class AppLifecycleSpec extends AnyFunSuite:
   test("onStart runs once, on the render thread, before the first frame"):
     val backend = HeadlessBackend(Size(20, 3))
     val app     = LifecycleApp(backend)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     assert(app.started == 1)
     assert(app.startedOnRenderThread, "onStart must run on the render thread, or Async.every captures the wrong loop")
@@ -61,7 +60,7 @@ final class AppLifecycleSpec extends AnyFunSuite:
   test("onStop runs once when the app quits itself"):
     val backend = HeadlessBackend(Size(20, 3))
     val app     = LifecycleApp(backend)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     assert(app.stopped == 0, "onStop fired while the app was still running")
     pilot.pressKey(KeyCode.Char('q'))
@@ -73,7 +72,7 @@ final class AppLifecycleSpec extends AnyFunSuite:
     // `onInterrupt` would never run
     val backend = HeadlessBackend(Size(20, 3))
     val app     = LifecycleApp(backend)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.pressKey(KeyCode.Char('c'), KeyModifiers.Ctrl)
     assert(pilot.awaitTermination())
@@ -83,7 +82,7 @@ final class AppLifecycleSpec extends AnyFunSuite:
     // `Ctrl+C` as a signal: the runner quits without the app declining anything
     val backend = HeadlessBackend(Size(20, 3))
     val app     = LifecycleApp(backend)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     backend.postEvent(Event.Interrupt)
     assert(pilot.awaitTermination())
@@ -92,7 +91,7 @@ final class AppLifecycleSpec extends AnyFunSuite:
   test("requestRedraw repaints state that no signal watches"):
     val backend = HeadlessBackend(Size(20, 3))
     val app     = LifecycleApp(backend)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     assert(pilot.screenText.startsWith("before"))
     // queued render-thread work, the way `Async.run` delivers a result: no event, no signal, nothing else to notice

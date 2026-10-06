@@ -36,29 +36,31 @@ final class WeatherAppSpec extends AnyFunSuite:
     val client  = FakeWeatherClient(_ => Right(sampleReport))
     val backend = HeadlessBackend(Size(60, 16))
     val app     = WeatherApp(client)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
-    pilot.waitForIdle()
-    pilot.typeText("Lisbon").pressKey(KeyCode.Enter)
-    pilot.waitUntil("the fetched conditions to render")(pilot.screenText.contains("Lisbon, Portugal"))
+    Pilot.using(backend) { app.runWith(backend) } { pilot =>
+      pilot.waitForIdle()
+      pilot.typeText("Lisbon").pressKey(KeyCode.Enter)
+      pilot.waitUntil("the fetched conditions to render")(pilot.screenText.contains("Lisbon, Portugal"))
 
-    assert(client.lastRequestedCity.contains("Lisbon"))
-    assert(pilot.screenText.contains("Mainly clear"))
-    assert(pilot.screenText.contains("22.5"))
-    pilot.pressKey(KeyCode.Escape)
-    assert(pilot.awaitTermination(2.seconds))
+      assert(client.lastRequestedCity.contains("Lisbon"))
+      assert(pilot.screenText.contains("Mainly clear"))
+      assert(pilot.screenText.contains("22.5"))
+      pilot.pressKey(KeyCode.Escape)
+      assert(pilot.awaitTermination(2.seconds))
+    }
 
   test("a failed lookup shows an error instead of crashing"):
     val client  = FakeWeatherClient(_ => Left(WeatherError.CityNotFound("Nowhereville")))
     val backend = HeadlessBackend(Size(60, 16))
     val app     = WeatherApp(client)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
-    pilot.waitForIdle()
-    pilot.typeText("Nowhereville").pressKey(KeyCode.Enter)
-    pilot.waitUntil("the failure message to render")(pilot.screenText.contains("Couldn't fetch Nowhereville"))
+    Pilot.using(backend) { app.runWith(backend) } { pilot =>
+      pilot.waitForIdle()
+      pilot.typeText("Nowhereville").pressKey(KeyCode.Enter)
+      pilot.waitUntil("the failure message to render")(pilot.screenText.contains("Couldn't fetch Nowhereville"))
 
-    assert(pilot.screenText.contains("Couldn't fetch Nowhereville"))
-    pilot.pressKey(KeyCode.Escape)
-    assert(pilot.awaitTermination(2.seconds))
+      assert(pilot.screenText.contains("Couldn't fetch Nowhereville"))
+      pilot.pressKey(KeyCode.Escape)
+      assert(pilot.awaitTermination(2.seconds))
+    }
 
   test("a slower earlier search cannot overwrite the result of a newer one"):
     // Kyiv answers after 500ms, Lisbon immediately: Kyiv's fetch is still in flight when Lisbon's result lands, and
@@ -71,16 +73,17 @@ final class WeatherAppSpec extends AnyFunSuite:
     )
     val backend = HeadlessBackend(Size(60, 16))
     val app     = WeatherApp(client)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
-    pilot.waitForIdle()
-    pilot.typeText("Kyiv").pressKey(KeyCode.Enter)
-    pilot.typeText("Lisbon").pressKey(KeyCode.Enter)
-    pilot.waitUntil("the fetched conditions to render")(pilot.screenText.contains("Lisbon, Portugal"))
+    Pilot.using(backend) { app.runWith(backend) } { pilot =>
+      pilot.waitForIdle()
+      pilot.typeText("Kyiv").pressKey(KeyCode.Enter)
+      pilot.typeText("Lisbon").pressKey(KeyCode.Enter)
+      pilot.waitUntil("the fetched conditions to render")(pilot.screenText.contains("Lisbon, Portugal"))
 
-    // Wait out Kyiv's in-flight delay (plus its delivery to the render thread), then Lisbon must still own the
-    // screen and Kyiv's temperature must never have appeared.
-    Thread.sleep(750)
-    assert(pilot.screenText.contains("Lisbon, Portugal"))
-    assert(!pilot.screenText.contains("-3.0"))
-    pilot.pressKey(KeyCode.Escape)
-    assert(pilot.awaitTermination(2.seconds))
+      // Wait out Kyiv's in-flight delay (plus its delivery to the render thread), then Lisbon must still own the
+      // screen and Kyiv's temperature must never have appeared.
+      Thread.sleep(750)
+      assert(pilot.screenText.contains("Lisbon, Portugal"))
+      assert(!pilot.screenText.contains("-3.0"))
+      pilot.pressKey(KeyCode.Escape)
+      assert(pilot.awaitTermination(2.seconds))
+    }

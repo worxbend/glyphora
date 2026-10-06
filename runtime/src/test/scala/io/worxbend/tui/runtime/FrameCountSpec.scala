@@ -33,11 +33,13 @@ final class FrameCountSpec extends AnyFunSuite:
           frame.renderWidget((_, _) => (), frame.area),
       )
     }
-    pilot.waitForIdle()
-    drive(pilot)
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
-    counts.synchronized(counts.toSeq)
+    try
+      pilot.waitForIdle()
+      drive(pilot)
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+      counts.synchronized(counts.toSeq)
+    finally pilot.close()
 
   test("the first composed frame of a run is numbered zero"):
     val counts = recordCounts(HeadlessBackend(Size(20, 3)))(_ => ())

@@ -10,11 +10,37 @@ on:
   push:
     tags: ["v*"]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  # This reuses the full CI graph on the tag's exact commit, without exposing signing
+  # credentials. A successful main-branch run on some other SHA is not sufficient.
+  validate:
+    uses: ./.github/workflows/ci.yml
+
   publish:
+    needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.validated-sha }}
+          persist-credentials: false
+      - name: Checkout is the validated tag commit
+        env:
+          VALIDATED_SHA: ${{ needs.validate.outputs.validated-sha }}
+        run: |
+          actual=$(git rev-parse HEAD)
+          if [ -z "$VALIDATED_SHA" ] || [ "$actual" != "$VALIDATED_SHA" ] || [ "$actual" != "$GITHUB_SHA" ]; then
+            echo "::error::refusing to publish a commit other than the validated tag SHA" >&2
+            exit 1
+          fi
       - uses: ./.github/actions/mill
 
       # Publishing needs four repository secrets. Without them `SonatypeCentralPublishModule`

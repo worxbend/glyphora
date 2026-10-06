@@ -10,31 +10,22 @@ enum FieldInput:
   /** A choice between a closed set of labels, rather than free text.
     *
     * The labels travel with the case because they are what the control has to draw and what the parser has to match
-    * against, and because [[FormSpec]] carries no other channel between the derivation and the renderer. They also make
-    * the equality check `FormState.of` performs on this enum do the right thing: a validator built for a picklist over
-    * one set of labels no longer silently passes for a field declared over another.
+    * against, and because [[FormSpec]] carries no other channel between the derivation and the renderer. This describes
+    * the control only, never the Scala value type: typed validation uses a [[DerivedField]], not input-kind equality.
     */
   case SelectField(options: Seq[String])
 
 /** One field of a derived form: the case-class field name and its input kind. */
 final case class FieldSpec(name: String, input: FieldInput)
 
-/** A compile-time-derived description of a form for `A`: the fields to render, the parser each one gets when the
-  * application supplies no validator of its own, and how to assemble the submitted values back into an `A`. Produced by
-  * [[deriveForm]]; owned by `tui-macros` so `tui-dsl` can consume it without a circular dependency.
+/** A compile-time-derived description of a form for `A`: the controls, their original per-type parsers, and internal
+  * product assembly. Produced by [[deriveForm]]; owned by `tui-macros` so `tui-dsl` can consume it without a circular
+  * dependency.
   *
-  * `assemble` is the one untyped seam in this module, and the compiler cannot check its argument for you. Whoever calls
-  * it must pass a `Seq[Any]` that:
-  *
-  *   - has exactly `fields.size` elements — no field omitted, none added;
-  *   - is in the same order as `fields`, which is the case class's declaration order;
-  *   - holds, at every position, a value that is already of the corresponding case-class field's declared type (a
-  *     `String` where the class declares `String`, a boxed `Int` where it declares `Int`, and so on).
-  *
-  * Breaking any of those is a programmer error rather than something a user can trigger. A wrong number of values is
-  * rejected up front with an `IllegalArgumentException` naming the fields that were expected. A value of the wrong type
-  * in the right position cannot be detected here — it surfaces later as a `ClassCastException` thrown from the
-  * `Mirror.fromProduct` call that builds the `A`.
+  * Consumers inspect [[fields]] and obtain typed handles with [[field]]. The existential default parsers and `Seq[Any]`
+  * product assembly are internal to the library: only the original derived parsers supply those values, in declaration
+  * order. Validators check the resulting `A` and cannot replace any field value. The arity assertion protects this
+  * internal seam; no runtime type test or reflection is used to recover erased field types.
   *
   * @param defaults
   *   one [[Field]] per case-class field, in declaration order, each already carrying the [[FieldSpec]] and the parser
@@ -44,10 +35,39 @@ final case class FieldSpec(name: String, input: FieldInput)
   * @param assemble
   *   builds an `A` from one value per field, subject to the contract above
   */
-final case class FormSpec[A](defaults: Seq[Field[?]], assemble: Seq[Any] => A):
+final class FormSpec[A] private[macros] (
+    private[tui] val defaults: Seq[Field[?]],
+    private[tui] val assemble: Seq[Any] => A,
+):
 
   /** The fields to render, in the case class's declaration order. */
   def fields: Seq[FieldSpec] = defaults.map(_.spec)
+
+  /** Selects a direct case-class field without erasing its declared type (including opaque domain types). A computed
+    * expression, method, or explicitly widened value type is a compile error.
+    */
+  inline def field[V](inline select: A => V): DerivedField[A, V] =
+    selectedField(DerivedFieldSelection.fieldName[A, V](select), select)
+
+  private def selectedField[V](name: String, select: A => V): DerivedField[A, V] =
+    if !fields.exists(_.name == name) then throw IllegalArgumentException(s"the form does not declare field '$name'")
+    new DerivedField(this, name, select)
+
+  /** Checks declarations once, before the render thread starts submitting values. */
+  private[tui] def checkValidators(validators: Seq[FieldValidation[A]]): Unit =
+    validators.foreach { validator =>
+      if validator.owner ne this then
+        throw IllegalArgumentException(s"validator for '${validator.name}' belongs to a different form spec")
+    }
+    val repeated = validators.groupBy(_.name).collect { case (name, rules) if rules.sizeIs > 1 => name }
+    if repeated.nonEmpty then
+      throw IllegalArgumentException(
+        s"more than one validator for field(s) ${repeated.mkString(", ")}; compose with .and"
+      )
+
+  /** Validates an already parsed candidate without transforming any of its values. */
+  private[tui] def validate(value: A, validators: Seq[FieldValidation[A]]): Map[String, String] =
+    validators.flatMap(rule => rule.check(value).left.toOption.map(rule.name -> _)).toMap
 
 object FormSpec:
 
@@ -62,8 +82,8 @@ object FormSpec:
     * @param fromProduct
     *   the mirror's constructor: turns a tuple of field values into an `A`
     */
-  def ofProduct[A](fields: Seq[Field[?]], fromProduct: Product => A): FormSpec[A] =
-    FormSpec(
+  private[macros] def ofProduct[A](fields: Seq[Field[?]], fromProduct: Product => A): FormSpec[A] =
+    new FormSpec(
       fields,
       values =>
         if values.sizeIs != fields.size then

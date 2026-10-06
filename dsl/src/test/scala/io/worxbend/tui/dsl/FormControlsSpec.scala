@@ -12,14 +12,14 @@ import org.scalatest.funsuite.AnyFunSuite
 /** A top-level case class so `deriveForm` can summon its `Mirror`. */
 final case class Reservation(name: String, guests: Int)
 
-final class FormControlsSpec extends AnyFunSuite:
+final class FormControlsSpec extends AnyFunSuite with PilotFixture:
 
   private def startApp(view0: ReactiveScope ?=> Element): Pilot =
     val backend = HeadlessBackend(Size(40, 8))
     val testApp = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = view0
-    Pilot.start(backend) { testApp.runWith(backend) }.waitForIdle()
+    startPilot(backend) { testApp.runWith(backend) }.waitForIdle()
 
   private def quitApp(pilot: Pilot): Unit =
     pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)

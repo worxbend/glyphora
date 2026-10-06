@@ -4,7 +4,8 @@ import io.worxbend.tui.core.{Buffer, CharWidth, Rect, StatefulWidget, Style}
 
 /** Caller-owned single-line editing state. The text is stored as grapheme clusters, so the cursor can never land inside
   * a combining sequence or split an emoji; the cursor is a cluster index in `[0, length]` (the top value meaning
-  * "append here").
+  * "append here"). Edits re-segment the line and map the cursor with right affinity: if the splice falls inside a newly
+  * merged grapheme, the cursor lands after that grapheme.
   *
   * Control characters are dropped on the way in — by the constructor as well as by [[insert]], because a field is just
   * as often seeded from a file or an HTTP response as it is typed into. A control is zero columns wide but still fills
@@ -26,19 +27,18 @@ final class TextInputState(initial: String = ""):
   /** Cursor position as a cluster index. */
   def cursor: Int = cursorIndex
 
-  def insert(text: String): Unit =
-    val inserted        = clustersOf(text)
-    val (before, after) = clusters.splitAt(cursorIndex)
-    clusters = before ++ inserted ++ after
-    cursorIndex += inserted.size
+  def insert(text: String): Unit = edit(cursorIndex, 0, text)
 
   def backspace(): Unit =
-    if cursorIndex > 0 then
-      clusters = clusters.patch(cursorIndex - 1, Nil, 1)
-      cursorIndex -= 1
+    if cursorIndex > 0 then edit(cursorIndex - 1, 1, "")
 
   def delete(): Unit =
-    if cursorIndex < clusters.size then clusters = clusters.patch(cursorIndex, Nil, 1)
+    if cursorIndex < clusters.size then edit(cursorIndex, 1, "")
+
+  private def edit(from: Int, removed: Int, inserted: String): Unit =
+    val (edited, cursor) = GraphemeEdit.splice(clusters, from, removed, inserted)
+    clusters = edited
+    cursorIndex = cursor
 
   def moveLeft(): Unit = cursorIndex = math.max(0, cursorIndex - 1)
 
@@ -57,7 +57,7 @@ final class TextInputState(initial: String = ""):
 
   /** The single choke point every entry path goes through: reads no field, so the field initializer may call it. */
   private def clustersOf(text: String): Vector[String] =
-    CharWidth.graphemeClusters(CharWidth.withoutControls(text)).toVector
+    GraphemeEdit.clustersOf(text)
 
 /** A single-line text input with horizontal scrolling and an optional visible cursor.
   *

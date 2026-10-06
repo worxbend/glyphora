@@ -30,13 +30,13 @@ Applications normally need only `tui-dsl`. Lower-tier artifacts are `tui-core`,
 `tui-terminal`, `tui-widgets`, `tui-runtime`, and `tui-macros`; `tui-test` carries the
 headless test harness and belongs in the test configuration only.
 
-**Nothing is on Maven Central yet.** `0.14.0` is tagged, but no artifacts have been
-published, so the coordinates above resolve only after `./mill __.publishLocal` has put
-them in your local Ivy cache — see [Getting started](./getting-started#1-add-glyphora).
-`0.16.0` is the in-development version and is not tagged yet. Once a release lands, check
-[Maven Central](https://search.maven.org/search?q=g:io.worxbend)
-and the [release tags](https://github.com/oleksandr-balyshyn/glyphora/tags) before
-choosing a version.
+**Nothing is on Maven Central yet.** A source release tag does not make artifacts
+available on Maven Central. Until `0.16.0` is published there, the coordinates above
+resolve only after `./mill __.publishLocal` has put them in your local Ivy cache — see
+[Getting started](./getting-started#1-add-glyphora). `0.16.0` is the synchronized release
+version. Check [Maven Central](https://search.maven.org/search?q=g:io.worxbend)
+and the [release tags](https://github.com/oleksandr-balyshyn/glyphora/tags) separately
+before choosing a version.
 
 ## Compatibility policy
 
@@ -81,9 +81,29 @@ terminal cell and a coordinate are.
 
 ## Release process
 
-Releases are Git tags named `vX.Y.Z`. Pushing a tag runs the Publish workflow, which
-publishes every `TuiPublishModule` to Maven Central with the same version and signed
-POM metadata.
+Releases are Git tags named `vX.Y.Z`. Pushing a tag runs the Publish workflow. Before
+signing credentials are made available, it calls the same read-only CI workflow used
+for main and pull requests on the tag's exact commit. Compilation, module and example
+tests, formatting/lints, discipline checks, native images, the site build, and packaged
+consumer validation must all pass. Publication checks out the validated SHA and refuses
+to upload if it differs from the tag commit or if the tag version differs from `build.mill`.
+
+The packaged-consumer gate stages all seven artifacts in a temporary Maven repository,
+checks their coordinates and exact production dependency edges, rejects leaked test
+libraries, and builds/runs a consumer outside the source module graph. That consumer
+resolves `tui-dsl` in production and `tui-test` only in its test configuration, exercises
+external derivation and DSL imports, and checks the resolved jars against the staged
+artifacts. Run it locally with `python3 scripts/verify-packaged-consumer.py`; it does not
+publish remotely or modify the normal local Maven/Ivy repository.
+
+Only after these gates does Publish upload every `TuiPublishModule` to Maven Central
+with the synchronized version and signed POM metadata. The separate Autofix workflow
+remains limited to same-repository pull requests; release validation never rewrites the
+commit being validated. After Autofix pushes with `GITHUB_TOKEN`, maintainers must
+approve the token-generated full CI run for the resulting PR commit before merging.
+The Autofix job's library tests and checks from the previous SHA are not substitutes
+for full validation of that commit. If no run appears, create an ordinary maintainer
+push to trigger it; do not merge based only on the pre-formatting checks.
 
 Before a tag, maintainers should verify:
 

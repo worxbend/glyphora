@@ -410,8 +410,15 @@ constraint that keeps GraalVM native-image builds free of reflect-config JSON.
 - **`FormFieldType[A]`** is that per-type contribution — control plus parser.
   `String`/`Int`/`Double`/`Boolean` and `Option` of those ship with the module; a type
   of your own joins by declaring `given FormFieldType[YourType]` in its companion.
-- **`Field[A]`** is cue4s-style lazily-composed parsing/validation:
-  `Field.int("age").mapValidated(a => if a >= 18 then Right(a) else Left("must be 18+"))`.
+- **`Field[A]`** is a standalone lazily-composed parser. `map` and `mapValidated`
+  may change its result type, for example `Field.int("count").map(_.toString)`.
+  These parsers cannot replace fields in a derived `FormState`.
+- **`spec.field(_.age)`** selects a `DerivedField[A, Int]` with the field's exact
+  declared Scala type. Its `validate(_ >= 18, "must be 18+")` produces a spec-owned
+  `FieldValidation[A]` that rejects without changing values. Derived forms retain
+  the original parser instances: parse errors precede construction of the candidate,
+  and typed checks run after construction but before publication. See
+  [Forms & validation](./forms-and-validation).
 
 CI enforces the zero-reflection rule with a grep over all main sources.
 

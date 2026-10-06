@@ -34,48 +34,62 @@ final class PilotSendBytesSpec extends AnyFunSuite:
 
   test("the byte a terminal sends for Ctrl+S is the key an app binds as ctrl+s"):
     val (pilot, seen) = startRecording()
-    pilot.sendBytes(0x13).waitForIdle()
-    // the same spelling an application declares its binding with, parsed by the same parser the application uses
-    val expected      = KeyEvent.parse("ctrl+s")
-    assert(seen.get() == Seq(Event.Key(expected.getOrElse(fail("ctrl+s is not a valid key spec")))))
+    try
+      pilot.sendBytes(0x13).waitForIdle()
+      // the same spelling an application declares its binding with, parsed by the same parser the application uses
+      val expected = KeyEvent.parse("ctrl+s")
+      assert(seen.get() == Seq(Event.Key(expected.getOrElse(fail("ctrl+s is not a valid key spec")))))
+    finally pilot.close()
 
   test("an arrow key arrives as the named key, not as three characters"):
     val (pilot, seen) = startRecording()
-    pilot.sendEscape("[A").waitForIdle()
-    assert(seen.get() == Seq(Event.Key(KeyEvent(KeyCode.Up, KeyModifiers.None))))
+    try
+      pilot.sendEscape("[A").waitForIdle()
+      assert(seen.get() == Seq(Event.Key(KeyEvent(KeyCode.Up, KeyModifiers.None))))
+    finally pilot.close()
 
   test("a bracketed paste arrives as one paste event carrying the whole payload"):
     val (pilot, seen) = startRecording()
-    // ESC [ 2 0 0 ~  h i 日  ESC [ 2 0 1 ~ — the sequence a terminal wraps pasted text in. It goes in a single call
-    // because one call is one decoder: split across two, the first decoder would reach the end of its input in the
-    // middle of the paste and report the empty paste it had read so far.
-    val esc           = 0x1b.toChar
-    val paste         = s"$esc[200~hi日$esc[201~"
-    pilot.sendBytes(paste.map(_.toInt)*).waitForIdle()
-    assert(seen.get() == Seq(Event.Paste("hi日")))
+    try
+      // ESC [ 2 0 0 ~  h i 日  ESC [ 2 0 1 ~ — the sequence a terminal wraps pasted text in. It goes in a single call
+      // because one call is one decoder: split across two, the first decoder would reach the end of its input in the
+      // middle of the paste and report the empty paste it had read so far.
+      val esc   = 0x1b.toChar
+      val paste = s"$esc[200~hi日$esc[201~"
+      pilot.sendBytes(paste.map(_.toInt)*).waitForIdle()
+      assert(seen.get() == Seq(Event.Paste("hi日")))
+    finally pilot.close()
 
   test("an SGR mouse report arrives at the zero-based position the app works in"):
     val (pilot, seen) = startRecording()
-    // SGR counts columns and rows from one; every coordinate above the terminal boundary counts from zero
-    pilot.sendEscape("[<0;5;3M").waitForIdle()
-    val mouse         = seen.get().collect { case Event.Mouse(event) => event }
-    assert(mouse.map(_.position.x) == Seq(4))
-    assert(mouse.map(_.position.y) == Seq(2))
-    assert(mouse.map(_.kind) == Seq(MouseEventKind.Down))
+    try
+      // SGR counts columns and rows from one; every coordinate above the terminal boundary counts from zero
+      pilot.sendEscape("[<0;5;3M").waitForIdle()
+      val mouse = seen.get().collect { case Event.Mouse(event) => event }
+      assert(mouse.map(_.position.x) == Seq(4))
+      assert(mouse.map(_.position.y) == Seq(2))
+      assert(mouse.map(_.kind) == Seq(MouseEventKind.Down))
+    finally pilot.close()
 
   test("a device-attributes reply reaches the app as no event at all"):
     val (pilot, seen) = startRecording()
-    // a capability probe's answer must never be synthesised into an Escape: that would close the user's dialog
-    pilot.sendEscape("[?62;1;4c").waitForIdle()
-    assert(seen.get().isEmpty)
+    try
+      // a capability probe's answer must never be synthesised into an Escape: that would close the user's dialog
+      pilot.sendEscape("[?62;1;4c").waitForIdle()
+      assert(seen.get().isEmpty)
+    finally pilot.close()
 
   test("plain text arrives one key event per character"):
     val (pilot, seen) = startRecording()
-    pilot.sendBytes('h'.toInt, 'i'.toInt).waitForIdle()
-    val plain         = Seq('h', 'i').map(c => Event.Key(KeyEvent(KeyCode.Char(c), KeyModifiers.None)))
-    assert(seen.get() == plain)
+    try
+      pilot.sendBytes('h'.toInt, 'i'.toInt).waitForIdle()
+      val plain = Seq('h', 'i').map(c => Event.Key(KeyEvent(KeyCode.Char(c), KeyModifiers.None)))
+      assert(seen.get() == plain)
+    finally pilot.close()
 
   test("sending nothing posts nothing"):
     val (pilot, seen) = startRecording()
-    pilot.sendBytes().waitForIdle()
-    assert(seen.get().isEmpty)
+    try
+      pilot.sendBytes().waitForIdle()
+      assert(seen.get().isEmpty)
+    finally pilot.close()

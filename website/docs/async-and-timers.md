@@ -71,6 +71,17 @@ by putting an `AsyncErrorHandler` in scope:
 given AsyncErrorHandler = AsyncErrorHandler.onRenderThread(error => failure.set(Some(error.getMessage)))
 ```
 
+`onRenderThread` and `toRenderThread()` can be long-lived givens: `Async.run`
+binds their destination anew for each invocation, on the thread that arms it.
+Results and errors stay with that invocation's runner, even when two runners share
+the policy. A late delivery to a stopped owner is dropped, not rerouted to a surviving
+runner. Start the call from `onStart`, a handler, or another owner-thread callback.
+
+Direct `policy.handle(error)` calls outside `Async.run` do not get this per-invocation
+binding: `toRenderThread()` uses the loop captured when the policy was constructed,
+while `onRenderThread` uses ordinary `RenderThread.runLater` routing at the call.
+Custom worker-side handlers, `ignore`, and `rethrow` keep their own behavior.
+
 `AsyncErrorHandler.rethrow` throws on the worker thread instead. Avoid it in a
 terminal app: the JVM prints the stack trace to standard error, which is the tty the
 UI is drawn on, so the trace lands on top of the alternate screen and the frame diff

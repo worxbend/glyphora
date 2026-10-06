@@ -10,7 +10,7 @@ import org.scalatest.funsuite.AnyFunSuite
 /** Focus and event-routing acceptance tests: tab-order traversal, focused-first key dispatch, bubbling with
   * stop-propagation, and click-to-focus.
   */
-final class FocusSpec extends AnyFunSuite:
+final class FocusSpec extends AnyFunSuite with PilotFixture:
 
   /** Two inputs and a checkbox; whichever is focused receives typed characters. */
   private final class FormApp extends TuiApp:
@@ -32,7 +32,7 @@ final class FocusSpec extends AnyFunSuite:
   private def startedApp(): (FormApp, Pilot) =
     val backend = HeadlessBackend(Size(30, 5))
     val app     = FormApp()
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     (app, pilot)
 
@@ -111,7 +111,7 @@ final class FocusSpec extends AnyFunSuite:
             true
           case _                              => false
         }
-    val pilot       = Pilot.start(backend) { app.runWith(backend) }
+    val pilot       = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.typeText("x").waitForIdle()            // consumed by the focused input's editing handler
     assert(field.value == "x")
@@ -144,7 +144,7 @@ final class FocusSpec extends AnyFunSuite:
             declined += 1
             false
         }
-    val pilot    = Pilot.start(backend) { app.runWith(backend) }
+    val pilot    = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.typeText("!").waitForIdle()
     assert(claimed == 1)
@@ -170,7 +170,7 @@ final class FocusSpec extends AnyFunSuite:
       def view(using ReactiveScope, Theme): Element =
         val top = if showTop.get then Seq(input(first).key("first")) else Seq.empty
         column((top :+ input(second).key("second"))*)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.typeText("a").waitForIdle()
     assert(second.value == "a") // 'second' is the only focusable, so it has focus
@@ -189,7 +189,7 @@ final class FocusSpec extends AnyFunSuite:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element =
         column(input(first).key("first"), input(second).key("second"))
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.pressKey(KeyCode.Tab).typeText("hi").waitForIdle()
     // an explicit focus move must win over the remembered key, or Tab is a no-op on keyed trees
@@ -206,7 +206,7 @@ final class FocusSpec extends AnyFunSuite:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element =
         column(input(first).key("first"), input(second).key("second"))
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.click(2, 1).waitForIdle()
     pilot.typeText("z").waitForIdle()
@@ -222,7 +222,7 @@ final class FocusSpec extends AnyFunSuite:
       override def theme: Theme                     = Theme.HighContrast
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = checkbox("agree", agreed)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     val cell    = pilot.backend.lastDrawn.map(_.get(0, 0)).getOrElse(fail("no frame"))
     // HighContrast focus = reverse + bold: proves the theme's focus style is applied, not a hardcoded reverse
@@ -293,7 +293,7 @@ final class FocusSpec extends AnyFunSuite:
           case _                                                            => false
         }
       })
-    val pilot     = Pilot.start(backend) { app.runWith(backend) }
+    val pilot     = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.typeText("d").waitForIdle()
     assert(baseKeys.toSeq == Seq("d"))               // the base handler is live to begin with
@@ -329,7 +329,7 @@ final class FocusSpec extends AnyFunSuite:
           true
         }
       })
-    val pilot       = Pilot.start(backend) { app.runWith(backend) }
+    val pilot       = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.click(0, 0).waitForIdle()
     val baseBefore  = baseClicks
@@ -360,7 +360,7 @@ final class FocusSpec extends AnyFunSuite:
       )
       def view(using ReactiveScope, Theme): Element = responsive(_ => column(input(baseField)))
       private def openDialog(): Unit = pushScreen(Screen(centered(30, 5)(panel("Delete?")(text("confirm?")))))
-    val pilot     = Pilot.start(backend) { app.runWith(backend) }
+    val pilot     = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.typeText("a").waitForIdle()
     assert(baseField.value == "a")

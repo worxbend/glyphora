@@ -29,94 +29,100 @@ final class AirSensorAppSpec extends AnyFunSuite:
     */
   private val Manual = 10.seconds
 
-  private def startedApp(
+  private def withApp[A](
       script: Vector[Either[String, Reading]],
       interval: FiniteDuration = Manual,
-  ): (AirSensorApp, Pilot, HeadlessBackend) =
+  )(body: (AirSensorApp, Pilot, HeadlessBackend) => A): A =
     val backend = HeadlessBackend(Size(96, 30))
     val app     = AirSensorApp(FakeSensor(script), interval)
     // `runWith` takes the headless backend; `run()` would open the real TTY. The `val _` discards its Either so the
     // block types as Unit, which `-Wunused:all -Werror` insists on.
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
-    pilot.waitForIdle()
-    (app, pilot, backend)
+    Pilot.using(backend) { app.runWith(backend) } { pilot =>
+      pilot.waitForIdle()
+      body(app, pilot, backend)
+    }
 
   test("the first reading fills the hero panel and every metric card"):
-    val (app, pilot, _) = startedApp(Vector(Right(clean)))
-    pilot.waitUntil("the first reading to render")(pilot.screenText.contains("640 ppm"))
+    withApp(Vector(Right(clean))) { (app, pilot, _) =>
+      pilot.waitUntil("the first reading to render")(pilot.screenText.contains("640 ppm"))
 
-    val screen = pilot.screenText
-    assert(screen.contains("AQI 23")) // 4.1 ug/m3 interpolated onto the EPA's first breakpoint
-    assert(screen.contains("640 ppm"))
-    assert(screen.contains("4.1 ug/m3"))
-    assert(screen.contains("72 index"))
-    assert(screen.contains("21.2 C"))
-    assert(screen.contains("Good"))   // the band as a word, not only as a colour
-    assert(app.status.peek == Status.Ready)
-    assert(app.history.peek == Vector(clean))
-    assert(pilot.readOnRenderThread(app.worstBand.peek) == Band.Good)
+      val screen = pilot.screenText
+      assert(screen.contains("AQI 23")) // 4.1 ug/m3 interpolated onto the EPA's first breakpoint
+      assert(screen.contains("640 ppm"))
+      assert(screen.contains("4.1 ug/m3"))
+      assert(screen.contains("72 index"))
+      assert(screen.contains("21.2 C"))
+      assert(screen.contains("Good"))   // the band as a word, not only as a colour
+      assert(app.status.peek == Status.Ready)
+      assert(app.history.peek == Vector(clean))
+      assert(pilot.readOnRenderThread(app.worstBand.peek) == Band.Good)
 
-    pilot.press("q")
-    assert(pilot.awaitTermination())
+      pilot.press("q")
+      assert(pilot.awaitTermination())
+    }
 
   test("a failed poll explains itself and keeps the last good reading on screen"):
-    val (app, pilot, _) = startedApp(Vector(Right(clean), Left("sensor offline")))
-    pilot.waitUntil("the first reading to render")(pilot.screenText.contains("640 ppm"))
+    withApp(Vector(Right(clean), Left("sensor offline"))) { (app, pilot, _) =>
+      pilot.waitUntil("the first reading to render")(pilot.screenText.contains("640 ppm"))
 
-    pilot.press("r")
-    pilot.waitUntil("the failure message to render")(pilot.screenText.contains("sensor offline"))
+      pilot.press("r")
+      pilot.waitUntil("the failure message to render")(pilot.screenText.contains("sensor offline"))
 
-    val screen = pilot.screenText
-    assert(screen.contains("showing the last good reading"))
-    assert(screen.contains("640 ppm")) // the cards are still there — a failure never blanks the pane
-    assert(app.status.peek == Status.Failed("sensor offline"))
-    assert(app.history.peek == Vector(clean))
+      val screen = pilot.screenText
+      assert(screen.contains("showing the last good reading"))
+      assert(screen.contains("640 ppm")) // the cards are still there — a failure never blanks the pane
+      assert(app.status.peek == Status.Failed("sensor offline"))
+      assert(app.history.peek == Vector(clean))
 
-    pilot.press("q")
-    assert(pilot.awaitTermination())
+      pilot.press("q")
+      assert(pilot.awaitTermination())
+    }
 
   test("readings arrive on the poll timer with no key presses"):
-    val (app, pilot, backend) = startedApp(Vector(Right(clean), Right(foul)), interval = 150.millis)
-    val drawsBefore           = backend.drawCount
-    // poll rather than sleeping a fixed time: under parallel test load the timer thread may be starved for a while
-    pilot.waitUntil("the poll timer to deliver a second reading")(app.history.peek.sizeIs >= 2)
+    withApp(Vector(Right(clean), Right(foul)), interval = 150.millis) { (app, pilot, backend) =>
+      val drawsBefore = backend.drawCount
+      // poll rather than sleeping a fixed time: under parallel test load the timer thread may be starved for a while
+      pilot.waitUntil("the poll timer to deliver a second reading")(app.history.peek.sizeIs >= 2)
 
-    assert(app.history.peek.take(2) == Vector(clean, foul))
-    assert(backend.drawCount > drawsBefore) // the timer alone drove repaints
-    assert(pilot.screenText.contains("History · last"))
+      assert(app.history.peek.take(2) == Vector(clean, foul))
+      assert(backend.drawCount > drawsBefore) // the timer alone drove repaints
+      assert(pilot.screenText.contains("History · last"))
 
-    pilot.press("q")
-    assert(pilot.awaitTermination())
+      pilot.press("q")
+      assert(pilot.awaitTermination())
+    }
 
   test("the band word and the worst-band summary follow the reading"):
-    val (app, pilot, _) = startedApp(Vector(Right(clean), Right(foul)))
-    pilot.waitUntil("the first reading to render")(pilot.screenText.contains("640 ppm"))
-    assert(pilot.readOnRenderThread(app.worstBand.peek) == Band.Good)
-    assert(pilot.screenText.contains("air quality: Good"))
+    withApp(Vector(Right(clean), Right(foul))) { (app, pilot, _) =>
+      pilot.waitUntil("the first reading to render")(pilot.screenText.contains("640 ppm"))
+      assert(pilot.readOnRenderThread(app.worstBand.peek) == Band.Good)
+      assert(pilot.screenText.contains("air quality: Good"))
 
-    pilot.press("r")
-    pilot.waitUntil("the second reading to render")(pilot.screenText.contains("1900 ppm"))
+      pilot.press("r")
+      pilot.waitUntil("the second reading to render")(pilot.screenText.contains("1900 ppm"))
 
-    val screen = pilot.screenText
-    assert(screen.contains("Unhealthy"))
-    assert(screen.contains("Elevated")) // temperature bands on a range, so 31 C is uncomfortable, not unhealthy
-    assert(pilot.readOnRenderThread(app.worstBand.peek) == Band.Unhealthy)
+      val screen = pilot.screenText
+      assert(screen.contains("Unhealthy"))
+      assert(screen.contains("Elevated")) // temperature bands on a range, so 31 C is uncomfortable, not unhealthy
+      assert(pilot.readOnRenderThread(app.worstBand.peek) == Band.Unhealthy)
 
-    pilot.press("q")
-    assert(pilot.awaitTermination())
+      pilot.press("q")
+      assert(pilot.awaitTermination())
+    }
 
   test("h collapses the history pane and ? opens the help overlay"):
-    val (_, pilot, _) = startedApp(Vector(Right(clean)))
-    pilot.waitUntil("the history pane to render")(pilot.screenText.contains("History · last"))
+    withApp(Vector(Right(clean))) { (_, pilot, _) =>
+      pilot.waitUntil("the history pane to render")(pilot.screenText.contains("History · last"))
 
-    pilot.press("h").waitForIdle()
-    assert(!pilot.screenText.contains("History · last"))
+      pilot.press("h").waitForIdle()
+      assert(!pilot.screenText.contains("History · last"))
 
-    pilot.press("?").waitForIdle()
-    assert(pilot.screenText.contains("airsensor keys"))
+      pilot.press("?").waitForIdle()
+      assert(pilot.screenText.contains("airsensor keys"))
 
-    pilot.press("q")
-    assert(pilot.awaitTermination())
+      pilot.press("q")
+      assert(pilot.awaitTermination())
+    }
 
   /** An `HttpClient` whose `send` always throws `InterruptedException`, so the interrupt contract of
     * `AirGradientClient.fetch` is testable without a socket. Every other method is a stub; the client under test never
@@ -183,17 +189,18 @@ final class AirSensorAppSpec extends AnyFunSuite:
     val previous = Locale.getDefault
     try
       Locale.setDefault(Locale.GERMANY)
-      val (_, pilot, _) = startedApp(Vector(Right(clean)))
-      pilot.waitUntil("the first reading to render")(pilot.screenText.contains("640 ppm"))
+      withApp(Vector(Right(clean))) { (_, pilot, _) =>
+        pilot.waitUntil("the first reading to render")(pilot.screenText.contains("640 ppm"))
 
-      val screen = pilot.screenText
-      assert(screen.contains("4.1 ug/m3"))
-      assert(screen.contains("21.2 C"))
-      // the negatives are the half that fails against the old implementation: it still *contained* a number, just
-      // not one any of this file's other assertions would recognise
-      assert(!screen.contains("4,1"))
-      assert(!screen.contains("21,2"))
+        val screen = pilot.screenText
+        assert(screen.contains("4.1 ug/m3"))
+        assert(screen.contains("21.2 C"))
+        // the negatives are the half that fails against the old implementation: it still *contained* a number, just
+        // not one any of this file's other assertions would recognise
+        assert(!screen.contains("4,1"))
+        assert(!screen.contains("21,2"))
 
-      pilot.press("q")
-      assert(pilot.awaitTermination())
+        pilot.press("q")
+        assert(pilot.awaitTermination())
+      }
     finally Locale.setDefault(previous)

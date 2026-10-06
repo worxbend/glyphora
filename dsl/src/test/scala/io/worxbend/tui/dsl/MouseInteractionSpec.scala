@@ -7,7 +7,7 @@ import io.worxbend.tui.widgets.{ListState, ScrollViewState}
 
 import org.scalatest.funsuite.AnyFunSuite
 
-final class MouseInteractionSpec extends AnyFunSuite:
+final class MouseInteractionSpec extends AnyFunSuite with PilotFixture:
 
   private def startApp(view0: ReactiveScope ?=> Element): Pilot = startAppOn(Size(40, 8))(view0)
 
@@ -16,7 +16,7 @@ final class MouseInteractionSpec extends AnyFunSuite:
     val testApp = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = view0
-    Pilot.start(backend) { testApp.runWith(backend) }.waitForIdle()
+    startPilot(backend) { testApp.runWith(backend) }.waitForIdle()
 
   /** Twenty single-row content rows inside a scroll view that is deliberately *not* at the frame origin, so a
     * content-space rect and a screen rect can never coincide.

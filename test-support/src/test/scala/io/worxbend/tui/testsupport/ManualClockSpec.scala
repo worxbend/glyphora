@@ -42,23 +42,27 @@ final class ManualClockSpec extends AnyFunSuite:
   test("a frozen clock produces no ticks at all"):
     val ticks = AtomicInteger(0)
     val pilot = startCounting(ManualClock(), ticks)
-    pilot.waitForIdle()
-    // several poll periods of real time pass while the pilot settles; a wall-clock runner would have ticked by now
-    pilot.press("x").waitForIdle()
-    assert(ticks.get() == 0)
-    assert(pilot.screenText.startsWith("ticks 0"))
+    try
+      pilot.waitForIdle()
+      // several poll periods of real time pass while the pilot settles; a wall-clock runner would have ticked by now
+      pilot.press("x").waitForIdle()
+      assert(ticks.get() == 0)
+      assert(pilot.screenText.startsWith("ticks 0"))
+    finally pilot.close()
 
   test("three advances of one tick rate produce exactly three ticks"):
     val clock = ManualClock()
     val ticks = AtomicInteger(0)
     val pilot = startCounting(clock, ticks)
-    pilot.waitForIdle()
-    pilot.advanceClock(clock, Rate).advanceClock(clock, Rate).advanceClock(clock, Rate)
-    assert(ticks.get() == 3)
-    assert(pilot.screenText.startsWith("ticks 3"))
-    // and the app stays where it was put: no fourth tick arrives from anywhere
-    pilot.press("x").waitForIdle()
-    assert(ticks.get() == 3)
+    try
+      pilot.waitForIdle()
+      pilot.advanceClock(clock, Rate).advanceClock(clock, Rate).advanceClock(clock, Rate)
+      assert(ticks.get() == 3)
+      assert(pilot.screenText.startsWith("ticks 3"))
+      // and the app stays where it was put: no fourth tick arrives from anywhere
+      pilot.press("x").waitForIdle()
+      assert(ticks.get() == 3)
+    finally pilot.close()
 
   test("one long advance is still one tick, because the runner rebases on the reading it fired at"):
     // worth pinning rather than assuming: the loop records `lastTick = nanoTime()` when it fires, so a jump of three
@@ -66,28 +70,34 @@ final class ManualClockSpec extends AnyFunSuite:
     val clock = ManualClock()
     val ticks = AtomicInteger(0)
     val pilot = startCounting(clock, ticks)
-    pilot.waitForIdle()
-    pilot.advanceClock(clock, Rate * 3)
-    pilot.press("x").waitForIdle()
-    assert(ticks.get() == 1)
+    try
+      pilot.waitForIdle()
+      pilot.advanceClock(clock, Rate * 3)
+      pilot.press("x").waitForIdle()
+      assert(ticks.get() == 1)
+    finally pilot.close()
 
   test("an advance shorter than the tick rate produces no tick"):
     val clock = ManualClock()
     val ticks = AtomicInteger(0)
     val pilot = startCounting(clock, ticks)
-    pilot.waitForIdle()
-    pilot.advanceClock(clock, Rate / 2, draws = 0)
-    pilot.press("x").waitForIdle()
-    assert(ticks.get() == 0)
+    try
+      pilot.waitForIdle()
+      pilot.advanceClock(clock, Rate / 2, draws = 0)
+      pilot.press("x").waitForIdle()
+      assert(ticks.get() == 0)
+    finally pilot.close()
 
   test("advances accumulate, so two halves of a tick rate tick once"):
     val clock = ManualClock()
     val ticks = AtomicInteger(0)
     val pilot = startCounting(clock, ticks)
-    pilot.waitForIdle()
-    pilot.advanceClock(clock, Rate / 2, draws = 0)
-    pilot.advanceClock(clock, Rate / 2, draws = 1)
-    assert(ticks.get() == 1)
+    try
+      pilot.waitForIdle()
+      pilot.advanceClock(clock, Rate / 2, draws = 0)
+      pilot.advanceClock(clock, Rate / 2, draws = 1)
+      assert(ticks.get() == 1)
+    finally pilot.close()
 
   test("elapsed reports how far the clock has been moved"):
     val clock = ManualClock(10.seconds)

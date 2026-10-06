@@ -9,22 +9,20 @@ import io.worxbend.tui.core.{KeyEvent, MouseEvent, MouseEventKind, Rect}
   * result consumes the event. With no focusable elements the tree is walked depth-first, leaves before ancestors, with
   * the same stop-propagation contract.
   *
-  * A mouse event is delivered along the chain of elements that actually rendered under the pointer, innermost first:
-  * the handler-carrying descendants of the hit focusable, then the hit focusable itself, then its ancestors. At each
-  * node the user's `onMouseEvent` runs first and the element's built-in behavior second. Each handler sees a given
-  * event at most once — `false` means keep bubbling outward, never deliver again — and an element the pointer is not
-  * over is never offered the event at all.
+  * A mouse event starts at the last-painted input target under the pointer, whether focusable or pointer-only, and
+  * bubbles along that target's ancestor chain, innermost first. At each node the user's `onMouseEvent` runs first and
+  * the element's built-in behavior second. Each handler sees a given event at most once — `false` means keep bubbling
+  * outward, never deliver again or fall through to covered siblings.
   *
   * A built-in that declines only reaches an enclosing control's built-in for the wheel ([[reachesOuterBuiltin]]), so a
   * wheel over a button inside a scroll view still scrolls it while a drag stays with the element it landed on.
   *
-  * Where overlapping *handler-carrying* siblings compete, the last-painted one wins: containers paint children in
-  * order, so the position filter walks them in reverse and the pointer resolves to the topmost subtree covering it.
-  * Focusables follow the same rule by a different route: `FocusTracker` stamps every area it records with the paint
-  * sequence it was recorded at, and `FocusTracker.hitTest` returns the last-painted focusable covering the pointer.
+  * [[FocusTracker]] resolves the target once using the shared paint sequence for both kinds of input node. Deferred
+  * portal painting participates in the same sequence; routing looks up that typed identity, not a second geometric
+  * search in tree order. Click-to-focus derives from the very same resolution.
   *
-  * A subtree marked `props.inert` — every layer a modal or the command palette covers — is skipped by all four walks:
-  * it receives no event and supplies neither a focus path nor a hit-test path.
+  * A subtree marked `props.inert` — every layer a modal or the command palette covers — is skipped by every walk: it
+  * receives no event and supplies neither a focus path nor a hit-test path.
   */
 private[dsl] object EventRouter:
 
@@ -51,48 +49,18 @@ private[dsl] object EventRouter:
   private def hasFocusable(element: Element): Boolean =
     !element.props.inert && (element.props.focusable || element.children.exists(hasFocusable))
 
-  /** Routes a mouse event to the elements that rendered under the pointer, innermost first.
-    *
-    * The chain starts at the [[MouseHit]]'s handler-carrying descendants that also cover the pointer, then the hit
-    * element itself, then its ancestors; with no hit it is the deepest covered path in the tree. Each element on it is
-    * offered the user's `onMouseEvent` and then its own built-in behavior, so an unconsumed event keeps travelling
-    * outward until something takes it. An element that did not render under the pointer is never offered the event, and
-    * no element is offered the same event twice.
+  /** Routes the resolved [[MouseHit]] along its own ancestor path. There is no second hit test or covered-sibling
+    * fallback: a declining overlay bubbles outward, not through to the control it hides. No hit means no delivery.
     */
   def dispatchMouse(root: Element, event: MouseEvent, hit: Option[MouseHit]): Boolean =
-    chainUnder(root, event, hit).exists(handlesMouse(_, event, hit))
+    hit.flatMap(found => pathToTarget(root, found.target)).getOrElse(Nil).exists(handlesMouse(_, event, hit))
 
-  /** The elements the event travels through, innermost first. */
-  private def chainUnder(root: Element, event: MouseEvent, hit: Option[MouseHit]): List[Element] =
-    hit.flatMap(found => pathToTracked(root, found.focusIndex)) match
-      case Some(leafToRoot) => insideOf(leafToRoot.head, event) ::: leafToRoot
-      case None             => pathUnder(root, event).getOrElse(Nil)
-
-  /** The handler-carrying descendants of the hit element that also cover the pointer, innermost first. */
-  private def insideOf(leaf: Element, event: MouseEvent): List[Element] =
-    deepestUnder(leaf.children, event).getOrElse(Nil)
-
-  /** The covered path through the topmost of these sibling subtrees that covers the pointer.
-    *
-    * Every container paints its children in order — [[LayersElement]] most visibly, where later children paint over
-    * earlier ones — so the search runs back to front and a click lands on what the user can actually see rather than on
-    * whatever the topmost layer is drawn over.
-    */
-  private def deepestUnder(children: Seq[Element], event: MouseEvent): Option[List[Element]] =
-    children.reverseIterator.map(pathUnder(_, event)).collectFirst { case Some(path) => path }
-
-  /** The innermost element in this subtree whose recorded area covers the pointer, plus its ancestors up to `element`,
-    * innermost first. Elements that recorded no area are not candidates and carry no mouse handler either — the
-    * decoration pass records an area for every element that does.
-    */
-  private def pathUnder(element: Element, event: MouseEvent): Option[List[Element]] =
-    if element.props.inert then None
-    else
-      val deeper = deepestUnder(element.children, event)
-      val covers = coveredArea(element, event).isDefined
-      deeper match
-        case Some(path) => Some(if covers then path :+ element else path)
-        case None       => Option.when(covers)(List(element))
+  /** Identity of a decorated input node. Focus and pointer numbering occupy distinct typed namespaces. */
+  private def targetOf(element: Element): Option[InputTarget] =
+    element match
+      case tracked: TrackedElement => Some(InputTarget.Focus(tracked.index))
+      case pointer: PointerElement => Some(InputTarget.Pointer(pointer.pointerId))
+      case _                       => None
 
   /** Where this element rendered last frame, for the two wrappers the decoration pass adds. */
   private def recordedArea(element: Element): Option[Rect] =
@@ -119,7 +87,7 @@ private[dsl] object EventRouter:
     element match
       case tracked: TrackedElement =>
         hit
-          .collect { case MouseHit(index, area) if index == tracked.index => area }
+          .collect { case MouseHit(InputTarget.Focus(index), area) if index == tracked.index => area }
           .orElse(if reachesOuterBuiltin(event.kind) then coveredArea(tracked, event) else scala.None)
       case _                       => scala.None
 
@@ -142,7 +110,7 @@ private[dsl] object EventRouter:
       case _ => false
 
   /** The path to the nearest element satisfying `matches` in this subtree, innermost first and including every ancestor
-    * up to `element` — the shared walk behind the tracked-element and focused-element lookups, inert guard included.
+    * up to `element` — the shared walk behind the input-target and focused-element lookups, inert guard included.
     */
   private def pathWhere(element: Element, matches: Element => Boolean): Option[List[Element]] =
     if element.props.inert then None
@@ -153,14 +121,8 @@ private[dsl] object EventRouter:
         .map(pathWhere(_, matches))
         .collectFirst { case Some(path) => path :+ element }
 
-  private def pathToTracked(element: Element, index: Int): Option[List[Element]] =
-    pathWhere(
-      element,
-      {
-        case tracked: TrackedElement => tracked.index == index
-        case _                       => false
-      },
-    )
+  private def pathToTarget(element: Element, target: InputTarget): Option[List[Element]] =
+    pathWhere(element, node => targetOf(node).contains(target))
 
   /** Routes a key *release* to the focused element and its ancestors, innermost first.
     *

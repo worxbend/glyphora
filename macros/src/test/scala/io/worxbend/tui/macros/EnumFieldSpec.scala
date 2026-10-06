@@ -76,7 +76,7 @@ final class EnumFieldSpec extends AnyFunSuite:
     assert(parsed.forall(_.isRight))
     assert(spec.assemble(parsed.collect { case Right(value) => value }) == Member("Ada", Role.Editor, Tier.Paid))
 
-  test("Field.enumeration builds the field the derivation would, so a validator matches it"):
+  test("Field.enumeration builds a standalone parser with the same derived options"):
     val validator = Field.enumeration[Role]("role")
     assert(validator.spec == FieldSpec("role", FieldInput.SelectField(Seq("Admin", "Editor", "Viewer"))))
     val guarded   = validator.mapValidated {

@@ -10,7 +10,7 @@ end-to-end tests in its `test` submodule.
 | `counter` | `./mill examples.counter.run` | declared `KeyBindings` + `scaffold` + `statusBar`, and the signal update → re-render cycle |
 | `todo-list` | `./mill examples.todo-list.run` | `input` + `list`, Tab focus switching |
 | `dashboard` | `./mill examples.dashboard.run` | `gauge`/`sparkline`/`chart`, tick-rate animation |
-| `form-demo` | `./mill examples.form-demo.run` | `deriveForm` + `Field.mapValidated` validation |
+| `form-demo` | `./mill examples.form-demo.run` | `deriveForm` + spec-owned `spec.field(...).validate(...)` typed checks |
 | `weather` | `./mill examples.weather.run` | live public HTTP API call bridged into `Signal` via `Async.runCatching` |
 | `showcase` | `./mill examples.showcase.run` | the app-chrome tour: scaffold, themes, palette, screens, toasts, splash — the manual PTY test bed |
 | `procmon` | `./mill examples.procmon.run` | a sortable/filterable table over refreshing data, with a selection that survives the refresh |

@@ -2,12 +2,11 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Size, Text}
 import io.worxbend.tui.terminal.HeadlessBackend
-import io.worxbend.tui.testsupport.Pilot
 import io.worxbend.tui.widgets.{Paragraph, ScrollViewState}
 
 import org.scalatest.funsuite.AnyFunSuite
 
-final class MeasurementSpec extends AnyFunSuite:
+final class MeasurementSpec extends AnyFunSuite with PilotFixture:
 
   /** Eight rows of content behind a raw widget, which is what the escape hatch has to be able to measure. */
   private def eightRows: Paragraph = Paragraph(Text.raw((0 until 8).map(n => s"row $n").mkString("\n")))
@@ -44,7 +43,7 @@ final class MeasurementSpec extends AnyFunSuite:
     val app     = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = scrollView(content, state)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     assert(pilot.screenLines.head.startsWith("row 0"))
     pilot.pressKey(KeyCode.PageDown).waitForIdle()
@@ -71,7 +70,7 @@ final class MeasurementSpec extends AnyFunSuite:
     val app     = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = scrollView(widget(eightRows), state)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     assert(pilot.screenLines.head.startsWith("row 0"))
     pilot.pressKey(KeyCode.PageDown).waitForIdle()
@@ -89,7 +88,7 @@ final class MeasurementSpec extends AnyFunSuite:
     val app     = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = scrollView(content, state)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.pressKey(KeyCode.PageDown).waitForIdle()
     assert(state.offset == 3, "the gaps have to be in the measured height or the bottom border is unreachable")
@@ -107,7 +106,7 @@ final class MeasurementSpec extends AnyFunSuite:
     val app     = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = scrollView(content, state)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.pressKey(KeyCode.PageDown).waitForIdle()
     assert(state.offset == 1, "the caption's row has to be in the measured height or the last content row is lost")
@@ -128,7 +127,7 @@ final class MeasurementSpec extends AnyFunSuite:
     val app     = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = scrollView(content, state)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.pressKey(KeyCode.PageDown).waitForIdle()
     assert(state.offset == 0)

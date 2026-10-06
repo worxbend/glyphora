@@ -13,7 +13,7 @@ import org.scalatest.funsuite.AnyFunSuite
   * underneath; and every consumer of the key list — dispatch, the status-bar hints, the command palette — reads the
   * same merged list, so what the chrome advertises is what pressing it does.
   */
-final class ScreenBindingsSpec extends AnyFunSuite:
+final class ScreenBindingsSpec extends AnyFunSuite with PilotFixture:
 
   private final class NavApp extends TuiApp:
 
@@ -45,7 +45,7 @@ final class ScreenBindingsSpec extends AnyFunSuite:
   private def start(): (NavApp, Pilot) =
     val backend = HeadlessBackend(Size(110, 4))
     val app     = NavApp()
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     (app, pilot)
 
@@ -116,7 +116,7 @@ final class ScreenBindingsSpec extends AnyFunSuite:
     // a screen's keys are enough to make the palette worth opening.
     val backend = HeadlessBackend(Size(60, 8))
     val app     = PaletteApp()
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.pressKey(KeyCode.Char('p'), KeyModifiers.Ctrl).waitForIdle()
     assert(!pilot.screenLines.mkString("\n").contains("zoom the diagram")) // nothing pushed: no bindings, no palette
@@ -149,7 +149,7 @@ final class ScreenBindingsSpec extends AnyFunSuite:
 
     val backend = HeadlessBackend(Size(40, 4))
     val app     = GuardedApp()
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.pressKey(KeyCode.Char('e')).waitForIdle()
     pilot.pressKey(KeyCode.Char('g')).waitForIdle()
@@ -184,7 +184,7 @@ final class ScreenBindingsSpec extends AnyFunSuite:
 
     val backend = HeadlessBackend(Size(110, 4))
     val app     = PartialApp()
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     press(pilot, 'e')
     assert(pilot.screenLines.mkString("\n").contains("help"))
@@ -215,7 +215,7 @@ final class ScreenBindingsSpec extends AnyFunSuite:
   test("a command with no key at all survives a screen being pushed"):
     val backend = HeadlessBackend(Size(110, 4))
     val app     = KeylessApp()
-    val pilot   = Pilot.start(backend)(app.runWith(backend))
+    val pilot   = startPilot(backend)(app.runWith(backend))
     pilot.waitForIdle()
     assert(pilot.screenText.contains("Export CSV"))
     val _       = pilot.pressKey(KeyCode.Char('e')).waitForIdle()

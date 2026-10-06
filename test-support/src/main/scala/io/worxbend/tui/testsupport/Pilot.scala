@@ -17,7 +17,7 @@ import io.worxbend.tui.runtime.{RenderThread, RunnerError}
 import io.worxbend.tui.terminal.HeadlessBackend
 
 import java.util.concurrent.{CountDownLatch, TimeUnit}
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 import scala.concurrent.duration.{Deadline, DurationInt, FiniteDuration}
 import scala.util.control.NonFatal
 import scala.util.{Failure, Success, Try}
@@ -44,7 +44,10 @@ final class Pilot private (
     thread: Thread,
     appFailure: AtomicReference[Option[Throwable]],
     runFailure: AtomicReference[Option[RunnerError]],
-):
+    owner: AtomicReference[Option[RenderThread.RenderLoop]],
+    ownerReady: CountDownLatch,
+    cancellation: AtomicBoolean,
+) extends AutoCloseable:
 
   /** Posts one key event per key spec, in order: `press("ctrl+s")`, `press("down", "down", "enter")`.
     *
@@ -410,24 +413,32 @@ final class Pilot private (
     * just writes. `Signal`s stay readable straight from the test thread; a `Computed` reached from here is exactly as
     * safe as one read by the view itself.
     *
-    * The read queues behind whatever the loop is doing and lands within one backend poll, which is why the headless
-    * read times out instead of blocking forever: the loop notices the queued work on its own next iteration, so no
-    * synthetic event — nothing user-visible — is injected to hurry it along. A throwable from the read, or one that
-    * already killed the app thread, fails here rather than surfacing as a stale value or a dead wait.
+    * Waits for this pilot's runner registration within the supplied deadline, then queues only to that owner's loop and
+    * wakes its backend without injecting an application event. Another pilot never executes the read, and a stopped
+    * owner rejects it rather than running inline on the caller. Registration and execution share one deadline. A
+    * throwable from the read, or one that already killed the app thread, fails here rather than surfacing as a stale
+    * value or a dead wait. Call while the pilot is live; thread-confined state is not readable through this method
+    * after termination.
     */
   def readOnRenderThread[A](read: => A, timeout: FiniteDuration = Pilot.DefaultTimeout): A =
-    val latch   = CountDownLatch(1)
-    var outcome =
+    val deadline = Deadline.now + timeout
+    if !ownerReady.await(math.max(0L, deadline.timeLeft.toNanos), TimeUnit.NANOSECONDS) then
+      CallSite.fail(s"timed out after $timeout waiting for the pilot's runner to register")
+    rethrowAppFailure()
+    val target   = owner.get().getOrElse(CallSite.fail("the pilot's app never registered a render loop"))
+    if !thread.isAlive then CallSite.fail("cannot read on a stopped pilot's render thread")
+    val latch    = CountDownLatch(1)
+    var outcome  =
       Option.empty[Try[A]] // written on the render thread before `latch` opens: the latch is the happens-before
-    RenderThread.runOnRenderThread {
+    val accepted = target.execute {
       outcome = Some {
         try Success(read)
         catch { case NonFatal(error) => Failure(error) }
       }
       latch.countDown()
     }
-    backend.wake()
-    if !latch.await(timeout.toMillis, TimeUnit.MILLISECONDS) then
+    if !accepted then CallSite.fail("cannot read on a stopped pilot's render thread")
+    if !latch.await(math.max(0L, deadline.timeLeft.toNanos), TimeUnit.NANOSECONDS) then
       CallSite.fail(s"timed out after $timeout waiting for a render-thread read")
     rethrowAppFailure()
     outcome.get match
@@ -555,6 +566,22 @@ final class Pilot private (
     rethrowAppFailure()
     !thread.isAlive
 
+  /** Requests runner-owned cancellation and waits at most the supplied timeout. No key or interrupt is posted, so an
+    * app cannot consume the stop request. Idempotent after termination. Call from the test thread, never from the app
+    * thread. A blocked user callback cannot be forcibly killed; deadline overrun is reported as an assertion failure.
+    * Cancellation requested before registration is remembered for startup. App/run failures are reported after join.
+    */
+  def close(timeout: FiniteDuration): Unit =
+    if Thread.currentThread() eq thread then throw IllegalStateException("a pilot cannot join its own app thread")
+    cancellation.set(true)
+    owner.get().foreach(_.requestStop())
+    thread.join(math.max(1L, timeout.toMillis))
+    if thread.isAlive then CallSite.fail(s"pilot did not terminate within $timeout after cancellation")
+    rethrowAppFailure()
+
+  /** Bounded close using the same default deadline as other Pilot waits. Suitable for `Using.resource`. */
+  override def close(): Unit = close(Pilot.DefaultTimeout)
+
   /** Fails on the test thread if the app did not finish cleanly, so neither kind of failure surfaces as an empty screen
     * or a clean-looking exit. A no-op while the app is healthy.
     *
@@ -588,7 +615,8 @@ object Pilot:
   private[testsupport] val DefaultTimeout: FiniteDuration = 2.seconds
 
   /** Starts `app` — any blocking expression that drives a runner over `backend` — on a daemon thread and hands back the
-    * driver.
+    * driver. The caller owns its lifetime: prefer [[using]], or always call [[Pilot.close]] in a `finally` around
+    * observations, including the first idle wait. Daemon status does not release the registered runner.
     *
     * `app` returns what the runner returned, which in practice means the body is `app.runWith(backend)` or
     * `TerminalRunner(backend).run(...)` and nothing has to be written to discard it. Both ways for that run to be wrong
@@ -604,16 +632,55 @@ object Pilot:
     * blocks on a latch, say — ends its body with `Right(())`.
     */
   def start(backend: HeadlessBackend)(app: => Either[RunnerError, Unit]): Pilot =
-    val appFailure = AtomicReference[Option[Throwable]](None)
-    val runFailure = AtomicReference[Option[RunnerError]](None)
-    val thread     = Thread(
-      () => app.left.foreach(error => runFailure.set(Some(error))),
+    val appFailure   = AtomicReference[Option[Throwable]](None)
+    val runFailure   = AtomicReference[Option[RunnerError]](None)
+    val owner        = AtomicReference[Option[RenderThread.RenderLoop]](None)
+    val ownerReady   = CountDownLatch(1)
+    val cancellation = AtomicBoolean(false)
+    val thread       = Thread(
+      () =>
+        try
+          RenderThread.observingRegistration { loop =>
+            // Publish every registration: an app body may run more than one loop sequentially. Close publishes
+            // cancellation before reading the owner, so either it stops this loop or this check observes its request.
+            owner.set(Some(loop))
+            if cancellation.get() then loop.requestStop()
+            ownerReady.countDown()
+          } {
+            app.left.foreach(error => runFailure.set(Some(error)))
+          }
+        finally ownerReady.countDown(),
       "tui-pilot-app",
     )
     thread.setUncaughtExceptionHandler((_, error) => appFailure.set(Some(error)))
     thread.setDaemon(true)
     thread.start()
-    Pilot(backend, thread, appFailure, runFailure)
+    Pilot(backend, thread, appFailure, runFailure, owner, ownerReady, cancellation)
+
+  /** Starts a scoped Pilot and always closes it, including after a failing assertion. The body's throwable remains
+    * primary if shutdown also fails; shutdown failures are suppressed on it. Close is bounded by the default timeout.
+    */
+  def using[A](backend: HeadlessBackend)(app: => Either[RunnerError, Unit])(body: Pilot => A): A =
+    scoped(start(backend)(app))(body)
+
+  /** Backend-owning variant of [[using]], retaining the production dependency direction (no DSL dependency). */
+  def using[A](size: Size)(app: HeadlessBackend => Either[RunnerError, Unit])(body: Pilot => A): A =
+    scoped(start(size)(app))(body)
+
+  private def scoped[A](pilot: Pilot)(body: Pilot => A): A =
+    var primary: Option[Throwable] = None
+    try body(pilot)
+    catch
+      case error: Throwable =>
+        primary = Some(error)
+        throw error
+    finally
+      try pilot.close()
+      catch
+        case error: Throwable =>
+          primary match
+            case Some(first) => io.worxbend.tui.runtime.Cleanup.suppress(first, error)
+            case None        => throw error
 
   /** Starts an app against a backend this method owns: it builds a [[HeadlessBackend]] of `size`, hands that backend to
     * `app`, and leaves it reachable afterwards as `pilot.backend`.
@@ -623,8 +690,11 @@ object Pilot:
     * test that has no other use for it never has to name it:
     *
     * {{{
-    * val app   = CounterApp()
-    * val pilot = Pilot.start(Size(40, 10))(app.runWith).waitForIdle()
+    * val app = CounterApp()
+    * Pilot.using(Size(40, 10))(backend => app.runWith(backend)) { pilot =>
+    *   pilot.waitForIdle()
+    *   assert(pilot.screenLines.nonEmpty)
+    * }
     * }}}
     *
     * Failure reporting is exactly [[start(backend:io\.worxbend\.tui\.terminal\.HeadlessBackend)*]]'s: this overload

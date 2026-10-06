@@ -819,17 +819,17 @@ final class AirSensorAppSpec extends AnyFunSuite:
   // second reading
   private val Manual = 10.seconds
 
-  private def startedApp(
+  private def withApp[A](
       script: Vector[Either[String, Reading]],
       interval: FiniteDuration = Manual,
-  ): (AirSensorApp, Pilot, HeadlessBackend) =
+  )(body: (AirSensorApp, Pilot, HeadlessBackend) => A): A =
     val backend = HeadlessBackend(Size(96, 30))
     val app     = AirSensorApp(FakeSensor(script), interval)
-    // `runWith` takes the headless backend; `run()` would open the real TTY. The
-    // `val _` discards its Either, which `-Wunused:all -Werror` insists on.
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
-    pilot.waitForIdle()
-    (app, pilot, backend)
+    // Preserve runWith's Either so Pilot reports runner failures on the test thread.
+    Pilot.using(backend)(app.runWith(backend)) { pilot =>
+      pilot.waitForIdle()
+      body(app, pilot, backend)
+    }
 
   private def waitFor(timeout: FiniteDuration = 5.seconds)(predicate: => Boolean): Unit =
     val deadline = System.nanoTime() + timeout.toNanos
@@ -844,31 +844,33 @@ guessed number of milliseconds.
 
 ```scala title="AirSensorAppSpec.scala"
   test("a failed poll explains itself and keeps the last good reading on screen"):
-    val (app, pilot, _) = startedApp(Vector(Right(clean), Left("sensor offline")))
-    waitFor()(pilot.screenText.contains("640 ppm"))
+    withApp(Vector(Right(clean), Left("sensor offline"))) { (app, pilot, _) =>
+      waitFor()(pilot.screenText.contains("640 ppm"))
 
-    pilot.press("r")
-    waitFor()(pilot.screenText.contains("sensor offline"))
+      pilot.press("r")
+      waitFor()(pilot.screenText.contains("sensor offline"))
 
-    val screen = pilot.screenText
-    assert(screen.contains("showing the last good reading"))
-    assert(screen.contains("640 ppm")) // the cards are still there
-    assert(app.status.peek == Status.Failed("sensor offline"))
-    assert(app.history.peek == Vector(clean))
+      val screen = pilot.screenText
+      assert(screen.contains("showing the last good reading"))
+      assert(screen.contains("640 ppm")) // the cards are still there
+      assert(app.status.peek == Status.Failed("sensor offline"))
+      assert(app.history.peek == Vector(clean))
 
-    pilot.press("q")
-    assert(pilot.awaitTermination())
+      pilot.press("q")
+      assert(pilot.awaitTermination())
+    }
 
   test("readings arrive on the poll timer with no key presses"):
-    val (app, pilot, backend) = startedApp(Vector(Right(clean), Right(foul)), interval = 150.millis)
-    val drawsBefore           = backend.drawCount
-    waitFor()(app.history.peek.sizeIs >= 2)
+    withApp(Vector(Right(clean), Right(foul)), interval = 150.millis) { (app, pilot, backend) =>
+      val drawsBefore = backend.drawCount
+      waitFor()(app.history.peek.sizeIs >= 2)
 
-    assert(backend.drawCount > drawsBefore) // the timer alone drove repaints
-    assert(pilot.screenText.contains("History · last"))
+      assert(backend.drawCount > drawsBefore) // the timer alone drove repaints
+      assert(pilot.screenText.contains("History · last"))
 
-    pilot.press("q")
-    assert(pilot.awaitTermination())
+      pilot.press("q")
+      assert(pilot.awaitTermination())
+    }
 
   test("AQI interpolates between the EPA's PM2.5 breakpoints"):
     assert(math.round(AirQuality.aqiFromPm25(9.0)) == 50L)

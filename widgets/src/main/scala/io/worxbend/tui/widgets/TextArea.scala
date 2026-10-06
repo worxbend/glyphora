@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, CharWidth, Rect, StatefulWidget, Style, Text}
+import io.worxbend.tui.core.{Buffer, Rect, StatefulWidget, Style, Text}
 
 import scala.collection.mutable
 
@@ -8,7 +8,8 @@ import scala.collection.mutable
   *
   * Text is a vector of lines, each a vector of grapheme clusters — the cursor is `(line, column)` in cluster
   * coordinates and can never split a combining sequence or emoji. Every editing operation snapshots onto a bounded undo
-  * stack.
+  * stack. Edits and line joins re-segment affected lines; a splice inside a newly merged grapheme maps the cursor to
+  * that grapheme's end (right affinity), identically for insertion, deletion and either join direction.
   *
   * Control characters other than the `\n` that separates lines are dropped on the way in — by the constructor as well
   * as by [[insert]] — because a control is zero columns wide but still fills a whole `Cell`, so storing one
@@ -44,44 +45,49 @@ final class TextAreaState(initial: String = ""):
     * splitting survives — [[newline]] is `insert("\n")`. Reads no field, so the field initializer may call it.
     */
   private def clusterLinesOf(text: String): Vector[Vector[String]] =
-    Text.splitLines(text).toVector.map(seg => CharWidth.graphemeClusters(CharWidth.withoutControls(seg)).toVector)
+    Text.splitLines(text).toVector.map(GraphemeEdit.clustersOf)
 
   def insert(text: String): Unit =
     pushUndo()
     val segments        = clusterLinesOf(text)
     val (before, after) = lines(line).splitAt(column)
-    if segments.size == 1 then
-      lines = lines.updated(line, before ++ segments.head ++ after)
-      column += segments.head.size
+    if segments.size == 1 then editLine(column, 0, segments.head.mkString)
     else
-      val first  = before ++ segments.head
-      val last   = segments.last ++ after
-      val middle = segments.drop(1).dropRight(1)
+      val (first, _)           = GraphemeEdit.joined(before.mkString, segments.head.mkString, "")
+      val (last, mappedColumn) = GraphemeEdit.joined("", segments.last.mkString, after.mkString)
+      val middle               = segments.drop(1).dropRight(1)
       lines = lines.take(line) ++ (first +: middle :+ last) ++ lines.drop(line + 1)
       line += segments.size - 1
-      column = segments.last.size
+      column = mappedColumn
 
   def newline(): Unit = insert("\n")
 
   def backspace(): Unit =
     if column > 0 then
       pushUndo()
-      lines = lines.updated(line, lines(line).patch(column - 1, Nil, 1))
-      column -= 1
+      editLine(column - 1, 1, "")
     else if line > 0 then
       pushUndo()
-      val previousLength = lines(line - 1).size
-      lines = lines.updated(line - 1, lines(line - 1) ++ lines(line)).patch(line, Nil, 1)
-      line -= 1
-      column = previousLength
+      joinLines(line - 1)
 
   def delete(): Unit =
     if column < lines(line).size then
       pushUndo()
-      lines = lines.updated(line, lines(line).patch(column, Nil, 1))
+      editLine(column, 1, "")
     else if line < lines.size - 1 then
       pushUndo()
-      lines = lines.updated(line, lines(line) ++ lines(line + 1)).patch(line + 1, Nil, 1)
+      joinLines(line)
+
+  private def editLine(from: Int, removed: Int, inserted: String): Unit =
+    val (edited, mappedColumn) = GraphemeEdit.splice(lines(line), from, removed, inserted)
+    lines = lines.updated(line, edited)
+    column = mappedColumn
+
+  private def joinLines(first: Int): Unit =
+    val (joined, mappedColumn) = GraphemeEdit.joined(lines(first).mkString, "", lines(first + 1).mkString)
+    lines = lines.updated(first, joined).patch(first + 1, Nil, 1)
+    line = first
+    column = mappedColumn
 
   def moveLeft(): Unit =
     if column > 0 then column -= 1

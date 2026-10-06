@@ -3,7 +3,6 @@ package io.worxbend.tui.dsl
 import io.worxbend.tui.core.{KeyCode, Size}
 import io.worxbend.tui.runtime.{ReactiveScope as Scope, RunnerConfig, Viewport}
 import io.worxbend.tui.terminal.HeadlessBackend
-import io.worxbend.tui.testsupport.Pilot
 
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -14,7 +13,7 @@ import org.scalatest.funsuite.AnyFunSuite
   * publish the first, so an `onResize` override — and any view recomputed from what it wrote — briefly saw a height
   * several times the app's own.
   */
-final class InlineViewportResizeSpec extends AnyFunSuite:
+final class InlineViewportResizeSpec extends AnyFunSuite with PilotFixture:
 
   private final class InlineApp extends TuiApp:
     val seenAtResize: java.util.concurrent.atomic.AtomicReference[Option[Size]] =
@@ -29,7 +28,7 @@ final class InlineViewportResizeSpec extends AnyFunSuite:
   test("a resize publishes the area the app is painted into, not the whole terminal"):
     val backend = HeadlessBackend(Size(80, 30))
     val app     = InlineApp()
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.resize(80, 30).waitForIdle()
     assert(app.seenAtResize.get().contains(Size(80, 10)))

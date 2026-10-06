@@ -32,21 +32,25 @@ final class TerminalRunnerSpec extends AnyFunSuite:
   test("the runner renders an initial frame before any event arrives"):
     val backend = HeadlessBackend(Size(30, 5))
     val pilot   = Pilot.start(backend)(TerminalRunner(backend).run(_ => (), quitOnQ, helloWorldRender))
-    pilot.waitForIdle()
-    assert(pilot.screenLines(1) == "  Hello from glyphora!")
-    assert(pilot.screenLines(3) == "  Press 'q' to quit")
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
+    try
+      pilot.waitForIdle()
+      assert(pilot.screenLines(1) == "  Hello from glyphora!")
+      assert(pilot.screenLines(3) == "  Press 'q' to quit")
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+    finally pilot.close()
 
   test("the runner sets up and tears down the terminal around the loop"):
     val backend = HeadlessBackend(Size(30, 5))
     val pilot   = Pilot.start(backend)(TerminalRunner(backend).run(_ => (), quitOnQ, helloWorldRender))
-    pilot.waitForIdle()
-    assert(backend.isRawMode)
-    assert(backend.isAlternateScreen)
-    assert(!backend.isCursorVisible)
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
+    try
+      pilot.waitForIdle()
+      assert(backend.isRawMode)
+      assert(backend.isAlternateScreen)
+      assert(!backend.isCursorVisible)
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+    finally pilot.close()
 
   test("an event handler answering Redraw triggers a repaint with updated state"):
     val backend = HeadlessBackend(Size(20, 3))
@@ -71,12 +75,14 @@ final class TerminalRunnerSpec extends AnyFunSuite:
           ),
       )
     }
-    pilot.waitForIdle()
-    assert(pilot.screenLines.head == "count=0")
-    pilot.pressKey(KeyCode.Char('+')).pressKey(KeyCode.Char('+')).waitForIdle()
-    assert(pilot.screenLines.head == "count=2")
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
+    try
+      pilot.waitForIdle()
+      assert(pilot.screenLines.head == "count=0")
+      pilot.pressKey(KeyCode.Char('+')).pressKey(KeyCode.Char('+')).waitForIdle()
+      assert(pilot.screenLines.head == "count=2")
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+    finally pilot.close()
 
   test("a resize event recreates the frame at the new size"):
     val backend  = HeadlessBackend(Size(20, 3))
@@ -90,13 +96,15 @@ final class TerminalRunnerSpec extends AnyFunSuite:
           frame.renderWidget((_, _) => (), frame.area),
       )
     }
-    pilot.waitForIdle()
-    assert(lastArea == Size(20, 3))
-    pilot.resize(40, 10).waitForIdle()
-    assert(lastArea == Size(40, 10))
-    assert(pilot.backend.lastDrawn.exists(_.area.width == 40))
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
+    try
+      pilot.waitForIdle()
+      assert(lastArea == Size(20, 3))
+      pilot.resize(40, 10).waitForIdle()
+      assert(lastArea == Size(40, 10))
+      assert(pilot.backend.lastDrawn.exists(_.area.width == 40))
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+    finally pilot.close()
 
   test("a configured tick rate delivers Tick events without input"):
     val backend         = HeadlessBackend(Size(10, 2))
@@ -115,8 +123,10 @@ final class TerminalRunnerSpec extends AnyFunSuite:
         frame => frame.renderWidget((_, _) => (), frame.area),
       )
     }
-    assert(pilot.awaitTermination(2.seconds))
-    assert(ticks >= 3)
+    try
+      assert(pilot.awaitTermination(2.seconds))
+      assert(ticks >= 3)
+    finally pilot.close()
 
   test("the render thread is registered for the duration of the loop"):
     val backend                   = HeadlessBackend(Size(10, 2))
@@ -131,10 +141,12 @@ final class TerminalRunnerSpec extends AnyFunSuite:
         frame => frame.renderWidget((_, _) => (), frame.area),
       )
     }
-    pilot.pressKey(KeyCode.Char('x')).waitForIdle()
-    assert(wasRenderThread)
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
+    try
+      pilot.pressKey(KeyCode.Char('x')).waitForIdle()
+      assert(wasRenderThread)
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+    finally pilot.close()
 
   test("work queued via runLater triggers a redraw without any input event"):
     val backend           = HeadlessBackend(Size(20, 2))
@@ -152,13 +164,15 @@ final class TerminalRunnerSpec extends AnyFunSuite:
           ),
       )
     }
-    pilot.waitForIdle()
-    assert(pilot.screenLines.head.startsWith("before"))
-    RenderThread.runLater {
-      message = "after"
-      dirty = true
-    }
-    pilot.waitUntil("the redrawn frame to land")(pilot.screenLines.headOption.exists(_.startsWith("after")))
-    assert(pilot.screenLines.head.startsWith("after"))
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
+    try
+      pilot.waitForIdle()
+      assert(pilot.screenLines.head.startsWith("before"))
+      RenderThread.runLater {
+        message = "after"
+        dirty = true
+      }
+      pilot.waitUntil("the redrawn frame to land")(pilot.screenLines.headOption.exists(_.startsWith("after")))
+      assert(pilot.screenLines.head.startsWith("after"))
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+    finally pilot.close()

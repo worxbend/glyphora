@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Alignment, Cell, Direction, Flex, Line, Rect, Style, Widget}
+import io.worxbend.tui.core.{Alignment, Buffer, Cell, Direction, Flex, Line, Measured, Rect, Style, Widget}
 import io.worxbend.tui.widgets as w
 
 /** The heights of every child at `width`, or `None` if any one of them cannot say how tall it is.
@@ -216,13 +216,29 @@ final case class RowElement(
     props: ElementProps = ElementProps(),
 ) extends FlexContainer:
   type Self = RowElement
-  def widget: Widget                      = w.Row(children.map(_.layoutItem(Direction.Horizontal)), spacing, flex)
-  def withFlex(mode: Flex): RowElement    = copy(flex = mode)
-  def withSpacing(cells: Int): RowElement = copy(spacing = math.max(0, cells))
+  private def layout: w.Row                                                  =
+    val items = children.map { child =>
+      val item = child.layoutItem(Direction.Horizontal)
+      item.copy(widget = RowChildWidget(child, item.widget))
+    }
+    w.Row(items, spacing, flex)
+  def widget: Widget                                                         = layout
+  def withFlex(mode: Flex): RowElement                                       = copy(flex = mode)
+  def withSpacing(cells: Int): RowElement                                    = copy(spacing = math.max(0, cells))
   private[dsl] def withProps(props: ElementProps): RowElement                = copy(props = props)
   private[dsl] override def withChildren(children: Seq[Element]): RowElement = copy(children = children)
   private[dsl] override def intrinsicHeight(width: Int): Option[Int]         =
-    constrainedHeight(measuredHeights(children, width).map(_.maxOption.getOrElse(0)))
+    constrainedHeight(layout.heightAt(width))
+
+/** A row child's widget with the DSL's cross-axis measurement attached. The child's explicit constraint belongs to its
+  * horizontal slot, not to its height; clear only that node's constraint for the query, preserving vertical constraints
+  * inside its subtree. Row owns allocation and the zero-width policy for both painting and measurement.
+  */
+private final case class RowChildWidget(element: Element, underlying: Widget) extends Widget with Measured:
+  def render(area: Rect, buffer: Buffer): Unit = underlying.render(area, buffer)
+
+  override def heightAt(width: Int): Option[Int] =
+    element.withProps(element.props.copy(constraint = None)).intrinsicHeight(width)
 
 /** Children stacked top to bottom. */
 final case class ColumnElement(

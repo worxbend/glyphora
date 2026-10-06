@@ -16,7 +16,7 @@ import scala.concurrent.duration.DurationInt
   * concurrent claim, the smallest honest window of wall-clock time is kept; everything else is asserted through
   * `pilot.waitUntil`, so a failure is an assertion rather than a hung suite.
   */
-final class AmbientTickSpec extends AnyFunSuite:
+final class AmbientTickSpec extends AnyFunSuite with PilotFixture:
 
   private def quitApp(pilot: Pilot): Unit =
     pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)
@@ -27,7 +27,7 @@ final class AmbientTickSpec extends AnyFunSuite:
     val app     = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = spinner()
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     val first   = pilot.screenText
     pilot.waitUntil("the spinner frame to change", 3.seconds)(pilot.screenText != first)
@@ -48,7 +48,7 @@ final class AmbientTickSpec extends AnyFunSuite:
       )
       def view(using ReactiveScope, Theme): Element =
         if busy.get then spinner() else text("idle")
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.pressKey(KeyCode.Char('s')).waitForIdle()
     assert(pilot.screenText.contains("idle"))
@@ -73,7 +73,7 @@ final class AmbientTickSpec extends AnyFunSuite:
       override def onTick(): Unit                   = ticks += 1
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = spinner()
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.waitUntil("onTick to be driven by the configured rate", 3.seconds)(ticks > 3)
     // at a 10 ms rate, 100 ms of wall-clock time is due exactly ten ticks; a second stream from the ambient path
@@ -96,7 +96,7 @@ final class AmbientTickSpec extends AnyFunSuite:
       override def onTick(): Unit                   = ticks += 1
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = spinner()
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     val first   = pilot.screenText
     pilot.waitUntil("the spinner to animate", 3.seconds)(pilot.screenText != first) // it really is animating
@@ -116,7 +116,7 @@ final class AmbientTickSpec extends AnyFunSuite:
         binding("ctrl+q", "quit")(quit()),
       )
       def view(using ReactiveScope, Theme): Element = text("content")
-    val pilot   = Pilot.start(backend) { app.runWith(backend, clock.reading) }
+    val pilot   = startPilot(backend) { app.runWith(backend, clock.reading) }
     pilot.waitForIdle()
     pilot.pressKey(KeyCode.Char('n')).waitForIdle()
     assert(pilot.screenText.contains("saved ok"))

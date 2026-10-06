@@ -12,7 +12,7 @@ import org.scalatest.funsuite.AnyFunSuite
   * real app through `Pilot` and read the frame. "The dialog is gone" is asserted as "its text is no longer drawn",
   * which is the same thing a user sees.
   */
-final class ScreenDismissalSpec extends AnyFunSuite:
+final class ScreenDismissalSpec extends AnyFunSuite with PilotFixture:
 
   /** 40x12, with the dialog placed at a fixed 20x5 in the middle: columns 10-29, rows 3-7. So (1, 1) is provably
     * outside it, (10, 3) is its top-left corner, and (15, 5) is inside its body.
@@ -39,7 +39,7 @@ final class ScreenDismissalSpec extends AnyFunSuite:
   private def start(how: Dismissal, presentation: Presentation = Presentation.Modal): (DialogApp, Pilot) =
     val backend = HeadlessBackend(terminalSize)
     val app     = DialogApp(how, presentation)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     val _       = pilot.pressKey(KeyCode.Char('o')).waitForIdle()
     assert(pilot.screenLines.mkString("\n").contains("DELETE"))
@@ -74,7 +74,7 @@ final class ScreenDismissalSpec extends AnyFunSuite:
       def view(using ReactiveScope, Theme): Element = text("the page underneath")
 
     val backend = HeadlessBackend(terminalSize)
-    val pilot   = Pilot.start(backend) { ShieldedApp().runWith(backend) }
+    val pilot   = startPilot(backend) { ShieldedApp().runWith(backend) }
     pilot.waitForIdle()
     pilot.pressKey(KeyCode.Char('o')).waitForIdle()
     assert(pilot.screenLines.mkString("\n").contains("BODY"))
@@ -121,7 +121,7 @@ final class ScreenDismissalSpec extends AnyFunSuite:
 
     val backend = HeadlessBackend(terminalSize)
     val app     = EditorApp()
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.pressKey(KeyCode.Char('o')).waitForIdle()
     assert(pilot.screenLines.mkString("\n").contains("Rename"))

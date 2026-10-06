@@ -1,0 +1,20 @@
+package build
+
+import mill.*
+import mill.javalib.{DepSyntax, TestModule}
+import mill.scalalib.SbtModule
+
+object consumer extends SbtModule {
+  def scalaVersion  = "3.9.0"
+  def scalacOptions = Seq("-deprecation", "-feature", "-unchecked", "-Wunused:all", "-Werror", "-release:25")
+  def repositories  = Seq(sys.env("GLYPHORA_MAVEN_REPO"), "https://repo1.maven.org/maven2")
+  def mvnDeps       = Seq(mvn"io.worxbend::tui-dsl:${sys.env("GLYPHORA_VERSION")}")
+  def mainClass     = Some("consumer.Main")
+
+  object test extends SbtTests with TestModule.ScalaTest {
+    def mvnDeps = Seq(
+      mvn"io.worxbend::tui-test:${sys.env("GLYPHORA_VERSION")}",
+      mvn"org.scalatest::scalatest:3.2.20",
+    )
+  }
+}

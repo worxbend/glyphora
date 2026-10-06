@@ -7,7 +7,7 @@ description: Derive reflection-free forms from Scala case classes, add validator
 
 glyphora can derive a live form from a Scala 3 case class at compile time. Each field's
 type becomes a terminal control; submission parses every value, publishes inline errors,
-and assembles the case class only when all fields are valid.
+and publishes the case class only when all fields are valid.
 
 There is no runtime reflection, annotation scanner, or `reflect-config.json`.
 
@@ -15,73 +15,62 @@ There is no runtime reflection, annotation scanner, or `reflect-config.json`.
 
 ```scala
 import io.worxbend.tui.dsl.*
-import io.worxbend.tui.macros.{deriveForm, Field}
+import io.worxbend.tui.macros.deriveForm
 
-final case class Signup(
-  username: String,
-  age: Int,
-  subscribe: Boolean,
-)
+final case class Signup(username: String, age: Int, subscribe: Boolean)
 
+private val spec = deriveForm[Signup]
 private val signup = FormState.of(
-  deriveForm[Signup],
-  Field.text("username").mapValidated { name =>
-    val clean = name.trim
-    if clean.nonEmpty then Right(clean) else Left("required")
-  },
-  Field.int("age").mapValidated { age =>
-    if age >= 18 then Right(age) else Left("must be 18 or older")
-  },
+  spec,
+  spec.field(_.username).validate(_.trim.nonEmpty, "required"),
+  spec.field(_.age).validate(_ >= 18, "must be 18 or older"),
 )
 ```
 
-`deriveForm[Signup]` produces field metadata and a direct constructor call during
-compilation. Validators are matched by field name and replace the default parser for
-that field.
+`deriveForm[Signup]` produces metadata, the original per-type parsers, and a direct
+constructor call during compilation. `spec.field(_.age)` returns a
+`DerivedField[Signup, Int]`: the compiler checks that the selector names a direct
+case-class field and retains its **exact declared type**. Generic substitutions and
+opaque domain types are preserved; sharing an input control does not make `Int` and
+`Long`, `Double` and `BigDecimal`, or `String` and `Email` interchangeable.
 
-**A name that matches nothing is a construction error, not a silent no-op.** A typo, a
-case difference, or a renamed case-class field throws from `FormState.of` at
-declaration time — the same way a malformed key spec throws from `binding`:
+A typo or computed selection is a compile error:
 
 ```scala
-FormState.of(deriveForm[Signup], Field.text("userName"))
-// java.lang.IllegalArgumentException: validator(s) for field(s) userName that the
-// form does not declare; it declares username, age, subscribe
+spec.field(_.userName)             // no such field
+spec.field(_.age.toString)         // not a direct field selection
+spec.field[Any](_.age)             // must retain the exact declared Int type
+spec.field(_.age).map(_.toString)  // handles have no parser-mapping API
 ```
 
-Failing here rather than at submit is the whole point: a dropped validator is
-invisible at runtime, so the form would submit completely unvalidated data and look
-like it had passed. Two validators for the same field are rejected for the same
-reason, instead of silently last-wins.
-
-**Building a validator from the wrong factory is a construction error too.** Each
-`Field.*` factory stamps the kind of input it parses into its spec, so a `Field.text`
-aimed at an `Int` field is caught where the form is declared:
+Validation only accepts or rejects an existing value. It cannot return a replacement:
 
 ```scala
-FormState.of(deriveForm[Signup], Field.text("age"))
-// java.lang.IllegalArgumentException: field 'age' is declared as IntField but its
-// validator produces TextField; use Field.int("age")
-```
-
-Until this check existed, that validator bound as though it fitted and then handed a
-`String` into the `Int` position of the case class's constructor. The failure arrived
-as a `ClassCastException` from deep inside `Mirror.fromProduct`, on the render thread,
-at the moment the user pressed submit — a whole application away from the line that
-caused it.
-
-One case slips past: `.map` keeps the spec it was called on, so
-`Field.int("age").map(_.toString)` still claims to be an `IntField` while producing a
-`String`. Use `.map` to normalise a value, not to change what it is.
-
-Boolean fields are validated like any other — a `Field.bool` validator sees the
-checkbox's own value:
-
-```scala
-Field.bool("subscribe").mapValidated { accepted =>
-  if accepted then Right(accepted) else Left("you must accept the terms")
+spec.field(_.subscribe).validate(identity, "you must accept the terms")
+spec.field(_.age).validate { age =>
+  if age >= 18 then Right(()) else Left("must be 18 or older")
 }
 ```
+
+Use the same `spec` instance for the state and its handles. A validator from a different
+spec is rejected at construction, even when both derive the same case class. Two rules
+for the same field must be explicitly composed with `.and` rather than passed separately.
+
+### Deliberate pre-1.0 API change
+
+`FormState.of(spec, Field.int("age").mapValidated(...))` is no longer accepted.
+Standalone `Field` values are parsers, not derived-field validators. Replace them with
+`spec.field(_.age).validate(...)`. Validators now return `Right(())` rather than a
+replacement value. `FormSpec` no longer exposes construction, `copy`, default-parser
+replacement, or untyped product assembly to consumers.
+
+Submission has two phases: **parse all controls**, then **check the typed candidate**.
+If any parser fails, only parser errors are published and no typed checks run. Once all
+values parse, all field checks run and their errors are collected by field name. The
+case-class constructor therefore runs before these checks, but the candidate is published
+to `result` only when every check accepts it. Keep constructors and checks pure and quick.
+This replaces the old mixed parse-and-replacement pipeline; a blank numeric field can
+show its parse error before a required-text check is evaluated.
 
 ## Which field types derive
 
@@ -118,15 +107,9 @@ define a `given FormFieldType[java.net.URI]` next to your own type to teach the
 derivation about it.
 ```
 
-One consequence worth knowing when you write a validator by hand: `Form` catches "this
-validator was built for the wrong type" by comparing which control the field wants, and
-several types deliberately share one. `Field.int` and `Field.long` are both the
-whole-number control; `Field.double` and `Field.bigDecimal` are both the decimal one;
-`Field.text`, `Field.uuid`, `Field.localDate`, `Field.localTime`, `Field.localDateTime`
-and `Field.duration` are all the plain text one. Attaching a `Field.int("seats")`
-validator to a field the case class declares as `Long` therefore slips past that check
-and fails on submit instead. Name the factory after the field's declared type, not after
-the control it happens to look like.
+Typed handles do not compare control kinds to establish value identity: the compiler
+uses the declared Scala field type, so same-control and opaque-domain mismatches are
+compile errors rather than submission-time casts.
 
 ## Teach the derivation about your own type
 
@@ -193,14 +176,15 @@ given FormFieldType[Tier] = FormFieldType.ofLabels(Seq("no charge" -> Tier.Free,
 
 A picklist always has something showing, so unlike a text field there is no "nothing
 entered" state: an untouched form submits the first option. Validate it like any other
-field, with `Field.enumeration`:
+field, with its typed handle:
 
 ```scala
+val deploymentSpec = deriveForm[Deployment]
 FormState.of(
-  deriveForm[Deployment],
-  Field.enumeration[Environment]("environment").mapValidated {
+  deploymentSpec,
+  deploymentSpec.field(_.environment).validate {
     case Environment.Production => Left("production needs an approval")
-    case other                  => Right(other)
+    case _                      => Right(())
   },
 )
 ```
@@ -228,31 +212,33 @@ def view(using ReactiveScope, Theme): Element =
 Calling `submit()` validates the entire form. On failure it replaces `errors` and
 clears `result`; on success it clears errors and publishes the case class.
 
-## Compose validators
+## Compose validators and separate parser mapping
 
-`Field` parsers compose in a small, typed pipeline:
+Compose checks on one handle; the first failed check wins for that field:
 
 ```scala
-val port = Field
-  .int("port")
-  .mapValidated(value =>
-    if value >= 1 && value <= 65535 then Right(value)
-    else Left("must be between 1 and 65535")
-  )
-
-val slug = Field
-  .text("project")
-  .map(_.trim.toLowerCase)
-  .mapValidated(value =>
-    if value.matches("[a-z0-9-]+") then Right(value)
-    else Left("use lowercase letters, numbers, and dashes")
-  )
+val name = spec.field(_.username)
+val required = name.validate(_.trim.nonEmpty, "required")
+val short = name.validate(_.length <= 40, "at most 40 characters")
+val signup = FormState.of(spec, required.and(short))
 ```
 
-Use `.map` for an infallible transformation and `.mapValidated` when the transform
-can return a user-facing error. Neither may change the *type* of a field validating a
-derived form: the assembled values go to the case class's constructor unchecked, and
-the declaration-time guard above sees the factory, not the transformed type.
+These checks never trim or replace the submitted name. Normalize through a domain
+parser before validation, using the open `FormFieldType` extension point. For example,
+the `Email` parser above trims input and returns an actual `Email`, and its handle
+validates that domain value rather than an erased `String`.
+
+Standalone parsers still support type-changing `map` and `mapValidated`:
+
+```scala
+import io.worxbend.tui.macros.Field
+val countAsText = Field.int("count").map(_.toString)
+val parsed: Either[String, String] = countAsText.parse("42")
+```
+
+This parser is useful for a manual form but cannot be passed to `FormState.of`.
+A derived form obtains all its parsers from the `FormFieldType` instances selected by
+`deriveForm`; validation does not replace or re-summon them.
 
 ## Accessible form output
 

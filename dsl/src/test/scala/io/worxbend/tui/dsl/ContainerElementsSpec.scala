@@ -3,12 +3,11 @@ package io.worxbend.tui.dsl
 import io.worxbend.tui.core.Size
 import io.worxbend.tui.terminal.HeadlessBackend
 import io.worxbend.tui.testsupport.BufferAssertions.{rendered, trimmedLines}
-import io.worxbend.tui.testsupport.Pilot
 import io.worxbend.tui.widgets.ScrollViewState
 
 import org.scalatest.funsuite.AnyFunSuite
 
-final class ContainerElementsSpec extends AnyFunSuite:
+final class ContainerElementsSpec extends AnyFunSuite with PilotFixture:
 
   /** These tests build elements outside a running app, so nothing needs subscribing. */
   private given ReactiveScope = ReactiveScope.untracked
@@ -49,7 +48,7 @@ final class ContainerElementsSpec extends AnyFunSuite:
     val app     = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = scrollView(content, contentHeight = 8, state)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     assert(pilot.screenLines.head.startsWith("row 0"))
     pilot.pressKey(KeyCode.Down).pressKey(KeyCode.Down).waitForIdle()
@@ -67,7 +66,7 @@ final class ContainerElementsSpec extends AnyFunSuite:
       def view(using ReactiveScope, Theme): Element =
         // no explicit `selected.get`: the factory reads the signal tracked, so switching pages re-renders on its own
         tabbedContent("One" -> text("page one"), "Two" -> text("page two"))(selected)
-    val pilot    = Pilot.start(backend) { app.runWith(backend) }
+    val pilot    = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     assert(pilot.screenText.contains("page one"))
     pilot.pressKey(KeyCode.Right).waitForIdle()

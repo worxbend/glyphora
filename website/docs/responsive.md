@@ -138,13 +138,14 @@ the view respond to size — that happens on its own.
 an ordinary assertion:
 
 ```scala
-val backend = HeadlessBackend(Size(100, 20))
-val pilot   = Pilot.start(backend) { DashboardApp().runWith(backend) }
-pilot.waitForIdle()
-assert(pilot.screenText.contains("Services"))
+val app = DashboardApp()
+Pilot.using(Size(100, 20))(backend => app.runWith(backend)) { pilot =>
+  pilot.waitForIdle()
+  assert(pilot.screenText.contains("Services"))
 
-pilot.resize(50, 20).waitForIdle()
-assert(pilot.screenText.contains("Overview")) // tabs replaced the sidebar
+  pilot.resize(50, 20).waitForIdle()
+  assert(pilot.screenText.contains("Overview")) // tabs replaced the sidebar
+}
 ```
 
 Worth covering in tests, because they are the cases a manual pass misses:

@@ -15,10 +15,9 @@ and make two changes that exercise state, layout, styling, and keyboard commands
 
 :::caution Not on Maven Central yet
 
-`0.14.0` is tagged, but no artifacts are published and `0.16.0` — the current development
-version — is not tagged or released yet, so the coordinates below will not
-resolve from a public repository. Until the first release lands, build the artifacts
-locally:
+A source release tag does not make artifacts available on Maven Central. Until `0.16.0`
+is published there, the coordinates below will not resolve from a public repository.
+Build the artifacts locally:
 
 ```bash
 git clone https://github.com/oleksandr-balyshyn/glyphora.git
@@ -118,7 +117,7 @@ TuiApp`? Because a test needs a *fresh* app for each scenario. `TuiApp` keeps it
 — the signals, the screen stack, any running effect — on the instance and never resets
 it between runs, so running the same object twice starts the second run holding
 whatever the first left behind. Splitting it lets [Testing](./testing) write
-`Pilot.start(Size(40, 10))(CounterApp().runWith)` per test while the launcher still has
+`Pilot.using(Size(40, 10))(backend => CounterApp().runWith(backend))(testBody)` per test while the launcher still has
 its `object Counter`. The
 runnable twin of this app is [`examples/counter`](./examples).
 

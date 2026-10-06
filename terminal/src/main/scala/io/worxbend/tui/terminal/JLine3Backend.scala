@@ -5,7 +5,7 @@ import io.worxbend.tui.core.{Buffer, Event, Position, Size, Widget}
 import org.jline.terminal.{Attributes, Terminal, TerminalBuilder}
 import org.jline.utils.InfoCmp
 
-import java.io.{FileDescriptor, FileOutputStream}
+import java.io.{FileDescriptor, FileOutputStream, IOException, PrintWriter}
 import java.nio.charset.StandardCharsets.UTF_8
 import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.{Duration, FiniteDuration}
@@ -43,11 +43,11 @@ final class JLine3Backend private (private[terminal] val terminal: Terminal, col
   // glyphora app that exits, including the ones that never touched blink at all.
   @volatile private[terminal] var cursorBlinkSuppressed                        = false
 
-  /** Whether this backend has moved the cursor's shape away from the user's own configuration, and so owes a reset. */
-  @volatile private[terminal] var cursorShaped = false
+  /** Last successfully requested shape. Non-default shapes owe a reset and are restored exactly after a handover. */
+  @volatile private[terminal] var cursorShape = CursorShape.Default
   // how many rows an inline run reserved on the primary screen, so the dressing choreography can park the cursor below
   // the frame such a run leaves behind
-  @volatile private[terminal] var inlineRows   = 0
+  @volatile private[terminal] var inlineRows  = 0
 
   /** The terminal modes [[TerminalDressing]] found active when SIGTSTP handed the terminal back, so SIGCONT can put
     * them back. Written and read on JLine's signal-dispatch thread alone.
@@ -192,11 +192,7 @@ final class JLine3Backend private (private[terminal] val terminal: Terminal, col
     * Under the monitor, so a Ctrl+Z landing mid-frame cannot leave the alternate screen between the two writes and
     * spill this frame's cursor moves and box-drawing over the user's shell.
     */
-  private def writeFrameAtomically(frame: String): Unit =
-    screenOwnership.synchronized {
-      terminal.writer().write(frame)
-      terminal.writer().flush()
-    }
+  private def writeFrameAtomically(frame: String): Unit = write(frame)
 
   /** Asks the next [[draw]] to repaint every cell. Safe to call from any thread.
     *
@@ -258,17 +254,19 @@ final class JLine3Backend private (private[terminal] val terminal: Terminal, col
     cookedAttributes match
       case None             => Left(BackendError.NotInRawMode)
       case Some(attributes) =>
-        Backend.attempt {
-          write(AnsiSequences.PopKittyKeyboard)
-          write(AnsiSequences.DisableFocusReporting)
-          write(AnsiSequences.DisableBracketedPaste)
-          terminal.setAttributes(attributes)
-          // last, so the shell resumes on the line it started on rather than wherever the final frame left the cursor.
-          // Every restore is matched to the save in `enableRawMode`, which is why this is paired with raw mode and not
-          // added to the unconditional `RestoreAll` string.
-          write(AnsiSequences.RestoreCursor)
-          cookedAttributes = None
-        }
+        // Output failure must not prevent restoring the shell's cooked attributes. Attempt every release and retain
+        // the first error; ownership is only cleared when the whole sequence has succeeded.
+        var failure                      = Option.empty[BackendError]
+        def release(step: => Unit): Unit =
+          Backend.attempt(step).left.foreach(error => if failure.isEmpty then failure = Some(error))
+        release(write(AnsiSequences.PopKittyKeyboard))
+        release(write(AnsiSequences.DisableFocusReporting))
+        release(write(AnsiSequences.DisableBracketedPaste))
+        release(terminal.setAttributes(attributes))
+        // Last, paired with the save in enableRawMode, so the shell resumes where its prompt started.
+        release(write(AnsiSequences.RestoreCursor))
+        if failure.isEmpty then cookedAttributes = None
+        failure.fold[Either[BackendError, Unit]](Right(()))(Left(_))
 
   /** Enters the alternate screen, or reports that the terminal has none.
     *
@@ -299,10 +297,7 @@ final class JLine3Backend private (private[terminal] val terminal: Terminal, col
     if rows <= 0 then Right(())
     else
       Backend.attempt {
-        screenOwnership.synchronized {
-          terminal.writer().write("\n".repeat(rows))
-          terminal.writer().flush()
-        }
+        write("\n".repeat(rows))
         inlineRows = rows
         requestFullRedraw()
       }
@@ -341,14 +336,13 @@ final class JLine3Backend private (private[terminal] val terminal: Terminal, col
 
   /** Writes DECSCUSR (`CSI n SP q`) to pick the hardware cursor's shape.
     *
-    * The flag it keeps is "did this app change the shape", not the shape itself, because that is the only question the
-    * release and reacquire paths ask: whichever shape was chosen, handing the terminal back means asking for
-    * [[CursorShape.Default]], and taking it back means asking for the app's shape again.
+    * The last successful request is remembered: handing the terminal back resets it to [[CursorShape.Default]], and
+    * taking it back restores the exact shape from the handover snapshot rather than guessing a block.
     */
   override def setCursorShape(shape: CursorShape): Either[BackendError, Unit] =
     Backend.attempt {
       write(AnsiSequences.cursorShape(shape))
-      cursorShaped = shape != CursorShape.Default
+      cursorShape = shape
     }
 
   /** Writes CUP (`CSI row ; column H`) to park the terminal's own caret on `position`.
@@ -462,11 +456,14 @@ final class JLine3Backend private (private[terminal] val terminal: Terminal, col
     * [[insertBefore]], run inside their `suspend` so the rows land in real scrollback.
     */
   private def writeScrollbackRows(rows: Seq[String]): Unit =
-    rows.foreach { row =>
-      terminal.writer().write(row)
-      terminal.writer().write("\r\n")
+    screenOwnership.synchronized {
+      val writer = terminal.writer()
+      rows.foreach { row =>
+        writer.write(row)
+        writer.write("\r\n")
+      }
+      flushOutput(writer)
     }
-    terminal.writer().flush()
 
   /** Scrolls the screen up by `n` rows with SU (`CSI n S`).
     *
@@ -491,6 +488,8 @@ final class JLine3Backend private (private[terminal] val terminal: Terminal, col
     */
   def close(): Either[BackendError, Unit] =
     val released     = dressing.releaseTerminal()
+    // Unlike a temporary handover, close owes no future inline parking after a successful release.
+    if released.failure.isEmpty then inlineRows = 0
     val titleFailure = titleStack.release()
     val closed       = Backend.attempt(terminal.close())
     // first failure wins, but by this line everything has been attempted either way — stopping early would leave the
@@ -567,9 +566,17 @@ final class JLine3Backend private (private[terminal] val terminal: Terminal, col
     */
   private def write(sequence: String): Unit =
     screenOwnership.synchronized {
-      terminal.writer().write(sequence)
-      terminal.writer().flush()
+      val writer = terminal.writer()
+      writer.write(sequence)
+      flushOutput(writer)
     }
+
+  /** PrintWriter swallows device IOExceptions. Check its error latch before committing any mode or frame accounting;
+    * the original exception is not exposed, so report a fresh IOException through Backend.attempt.
+    */
+  private def flushOutput(writer: PrintWriter): Unit =
+    writer.flush()
+    if writer.checkError() then throw new IOException("terminal output writer reported an I/O failure")
 
 object JLine3Backend:
 

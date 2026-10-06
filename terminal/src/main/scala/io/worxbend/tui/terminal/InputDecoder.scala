@@ -57,6 +57,9 @@ private[terminal] final class InputDecoder(
     */
   private var ended = false
 
+  /** In-flight paste progress belongs to the decoder, not a decode call: a wake only suspends its read. */
+  private var paste: Option[PasteProgress] = None
+
   /** Events decoded while a reply round trip was waiting for its reply, waiting their turn.
     *
     * A cursor-position query is a round trip: the reply travels back on the same stream the user's keystrokes do, and a
@@ -126,6 +129,7 @@ private[terminal] final class InputDecoder(
   /** [[decode]] without the deferred queue: one read, one decode. */
   private def decodeOnce(timeoutMillis: Long): Option[Event] =
     if ended then Some(Event.EndOfInput)
+    else if paste.nonEmpty then paste.flatMap(decodePaste)
     else
       val first = next(timeoutMillis)
       if first == EndOfStream then
@@ -492,7 +496,10 @@ private[terminal] final class InputDecoder(
       case 'I'                                            => Some(Event.FocusGained)
       case 'O'                                            => Some(Event.FocusLost)
       case 'u'                                            => decodeKittyKey(numbers, modifiers)
-      case '~' if numbers.headOption.contains(PasteStart) => Some(decodePaste())
+      case '~' if numbers.headOption.contains(PasteStart) =>
+        val progress = PasteProgress()
+        paste = Some(progress)
+        decodePaste(progress)
       case '~'                                            => decodeTilde(numbers, modifiers)
       case _                                              => None
 
@@ -633,8 +640,9 @@ private[terminal] final class InputDecoder(
     * [[PasteLimit]] caps how much of the payload is *kept*, never how much is read. Stopping the loop at the cap left
     * the rest of the payload — and its terminator — in the buffer, where the following `decode` calls read it as
     * ordinary keystrokes and dispatch it into whatever has focus: a `q` quits, an Enter submits. Past the cap the text
-    * is truncated but the terminator is still consumed, so the stream stays aligned. [[PasteDrainLimit]] bounds even
-    * that, so a paste whose terminator never arrives cannot spin here forever.
+    * is truncated but the terminator is still consumed, so the stream stays aligned. [[PasteDrainLimit]] bounds each
+    * batch, so a paste whose terminator never arrives cannot spin here forever. At a budget boundary its retained
+    * prefix is delivered once; subsequent calls keep discarding in bounded batches until the stream is aligned again.
     *
     * The two negative answers the reader can give are told apart here, exactly as [[decodeOnce]] tells them apart for
     * an event's first byte — and for the same reason, one sequence deeper. [[EndOfStream]] is permanent: no later read
@@ -644,43 +652,62 @@ private[terminal] final class InputDecoder(
     * the paste there truncated it *and* left the rest of the payload and the `CSI 201~` terminator in the buffer, to be
     * dispatched into the focused widget one keystroke at a time — a paste containing a `q` quit the application and one
     * containing a newline submitted the form. So a stall is waited out instead, up to [[PasteStallLimit]] consecutive
-    * empty reads, and the counter resets the moment a character arrives; only a sender that has gone quiet for the
-    * whole of that budget gives up, and then there is nothing left in the buffer to misread anyway.
+    * empty reads, and the counter resets the moment a character arrives. Exhausting that budget yields the retained
+    * prefix once, but keeps the rolling terminator: a sender that resumes even later must still not dispatch commands.
+    *
+    * A reader interrupt is a wake, not silence or EOF: it yields `None` and leaves the payload, rolling terminator and
+    * both budgets intact. The next decode resumes this paste before interpreting any more bytes as keys.
     */
-  private def decodePaste(): Event =
-    val content = StringBuilder()
-    val tail    = StringBuilder()
-    var read    = 0
-    var stalls  = 0
-    var done    = false
+  private def decodePaste(progress: PasteProgress): Option[Event] =
+    // The reader clears the interrupt and consumes no character. Keep every counter and the rolling tail so a wake
+    // inside the terminator, or while draining oversized input, resumes exactly where it stopped.
+    try
+      var done = false
+      while !done && progress.batchRead < PasteDrainLimit && progress.stalls < PasteStallLimit do
+        val c = next(PasteTimeoutMillis)
+        if c == EndOfStream then
+          ended = true
+          done = true
+        else if c < 0 then progress.stalls += 1
+        else done = progress.consume(c)
+      // A budget is a yield, not a trustworthy end marker. Keep discarding until the terminator or permanent EOF;
+      // otherwise a late q/newline becomes an application command. Only the retained prefix is delivered, once.
+      if done then paste = None
+      progress.batchRead = 0
+      progress.stalls = 0
+      if progress.delivered then None
+      else
+        val event = Event.Paste(progress.content.result())
+        progress.delivered = true
+        progress.content.clear()
+        Some(event)
+    catch case _: InterruptedIOException => None
 
-    /** Whether the sender has gone quiet for the whole of [[PasteStallLimit]]: the point at which the rest of the
-      * payload is given up on.
-      */
-    def stallExpired: Boolean = stalls >= PasteStallLimit
+  /** Mutable progress confined to the decoder's one reading thread, retained only until this paste completes. */
+  private final class PasteProgress:
+    val content   = StringBuilder()
+    val tail      = StringBuilder()
+    var read      = 0
+    var batchRead = 0
+    var stalls    = 0
+    var delivered = false
 
     /** Folds one arrived character into the payload and the rolling tail, answering whether it completed the
       * terminator.
       */
-    def consumePayloadChar(c: Int): Boolean =
+    def consume(c: Int): Boolean =
       stalls = 0
-      read += 1
-      if content.length < PasteLimit then content.append(c.toChar)
+      batchRead += 1
+      // Payload accounting stops when its one event is delivered, so an endless drain cannot overflow it.
+      if !delivered then
+        read += 1
+        if content.length < PasteLimit then content.append(c.toChar)
       tail.append(c.toChar)
       if tail.length > PasteEnd.length then tail.deleteCharAt(0)
       if isTerminator(tail) then
-        trimTerminator(content, read)
+        if !delivered then trimTerminator(content, read)
         true
       else false
-
-    while !done && read < PasteDrainLimit do
-      val c = next(PasteTimeoutMillis)
-      if c == EndOfStream then done = true
-      else if c < 0 then
-        stalls += 1
-        if stallExpired then done = true
-      else done = consumePayloadChar(c)
-    Event.Paste(content.result())
 
   /** Drops whatever part of the paste terminator was appended to `content`.
     *
@@ -875,18 +902,17 @@ private[terminal] object InputDecoder:
   private val KittyPress   = 1
   private val KittyRelease = 3
 
-  /** How much of an oversized paste is read (and discarded) while looking for the terminator, so that a payload whose
-    * terminator never arrives cannot hold the event loop indefinitely.
+  /** How many paste characters one batch may consume before yielding, without abandoning resynchronization. A wake
+    * preserves the unfinished batch's budget, so repeated wakes cannot postpone its boundary indefinitely.
     */
   private val PasteDrainLimit = PasteLimit * 16
 
-  /** How many consecutive empty reads — [[PasteTimeoutMillis]] apiece — a paste waits through before giving up on the
-    * rest of its payload.
+  /** How many consecutive empty reads — [[PasteTimeoutMillis]] apiece — a paste waits through before yielding its
+    * retained prefix and continuing in discard-only mode.
     *
     * It bounds only a sender that has gone *silent*: the count resets on every character that arrives, so a slow paste
-    * that keeps trickling is never abandoned, however long it takes in total. Two seconds of silence is far longer than
-    * any gap inside one real paste, and short enough that a terminal which dropped the terminator on the floor cannot
-    * hold the render thread.
+    * that keeps trickling is never abandoned, however long it takes in total. After yielding, each subsequent batch has
+    * a fresh stall budget; silence never restores ordinary key decoding without a terminator.
     */
   private val PasteStallLimit = 10
 

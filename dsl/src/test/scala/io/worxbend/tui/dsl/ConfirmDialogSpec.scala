@@ -3,7 +3,6 @@ package io.worxbend.tui.dsl
 import io.worxbend.tui.core.{KeyCode, Size}
 import io.worxbend.tui.terminal.HeadlessBackend
 import io.worxbend.tui.testsupport.BufferAssertions.{rendered, trimmedLines}
-import io.worxbend.tui.testsupport.Pilot
 
 import scala.collection.mutable
 
@@ -12,7 +11,7 @@ import org.scalatest.funsuite.AnyFunSuite
 /** `dialog` paints a dialog and answers no keys, so every "really quit?" was three pieces of hand-written wiring. These
   * tests pin the controller node's keys and the ready-made screen that owns the selection for you.
   */
-final class ConfirmDialogSpec extends AnyFunSuite:
+final class ConfirmDialogSpec extends AnyFunSuite with PilotFixture:
 
   private given Theme = Theme.Dark
 
@@ -85,7 +84,7 @@ final class ConfirmDialogSpec extends AnyFunSuite:
         binding("ctrl+q", "quit")(quit()),
       )
       def view(using ReactiveScope, Theme): Element = text("main view")
-    val pilot     = Pilot.start(backend) { app.runWith(backend) }.waitForIdle()
+    val pilot     = startPilot(backend) { app.runWith(backend) }.waitForIdle()
 
     pilot.pressKey(KeyCode.Char('d'), KeyModifiers.Ctrl).waitForIdle()
     assert(pilot.screenText.contains("Discard changes?"))
@@ -119,7 +118,7 @@ final class ConfirmDialogSpec extends AnyFunSuite:
               true
             case _                                                       => false
         }
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }.waitForIdle()
+    val pilot   = startPilot(backend) { app.runWith(backend) }.waitForIdle()
     pilot.typeText("a").waitForIdle()
     assert(typed == 1)
     pilot.pressKey(KeyCode.Char('d'), KeyModifiers.Ctrl).waitForIdle()

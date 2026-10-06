@@ -18,7 +18,7 @@ import java.nio.file.Files
   * accessibility theme — gets its selection cue everywhere rather than in whichever element happened to be focused.
   * Each test therefore parks focus on a button and asserts on a collection element that does *not* have it.
   */
-final class SelectionHighlightSpec extends AnyFunSuite:
+final class SelectionHighlightSpec extends AnyFunSuite with PilotFixture:
 
   private val Width  = 40
   private val Height = 12
@@ -34,7 +34,7 @@ final class SelectionHighlightSpec extends AnyFunSuite:
       override def theme: Theme                     = Theme.HighContrast
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = view0
-    Pilot.start(backend) { testApp.runWith(backend) }.waitForIdle()
+    startPilot(backend) { testApp.runWith(backend) }.waitForIdle()
 
   private def quitApp(pilot: Pilot): Unit =
     pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)

@@ -266,29 +266,21 @@ final class TwoRunnerRoutingSpec extends AnyFunSuite:
       )
     }
 
-  test("CHARACTERISATION: AsyncErrorHandler.onRenderThread reports to the runner that did not arm the work"):
-    // NOT an assertion that this is correct. `onRenderThread` is `error => RenderThread.runLater(report(error))`, so
-    // it resolves its target loop at *failure* time, on the worker thread — the exact mistake the rest of `Async` is
-    // written to avoid. The worker belongs to no runner and there is no sole loop to fall back to, so the report goes
-    // to the detached queue and is picked up by whichever render thread drains it first: deterministically runner B
-    // here, because runner A is parked. `AsyncErrorHandler.toRenderThread()` does resolve on the arming thread, which
-    // is why it is the default for `Async.run`; whether the long-lived-`given` variant should do the same needs a
-    // design decision. This test exists only so that decision cannot be taken silently — if it is taken, rewrite this
-    // to assert the arming runner instead of deleting it.
+  test("a long-lived async reporting policy binds its destination per invocation"):
+    val landing             = Landing(2)
+    given AsyncErrorHandler = AsyncErrorHandler.onRenderThread(_ => landing.record())
     withTwoRunners { (a, b) =>
-      val landing = Landing(1)
-
       a.armAndPark {
-        given AsyncErrorHandler = AsyncErrorHandler.onRenderThread(_ => landing.record())
-        Async.run[Int](throw IllegalStateException("boom"))(_ => ())
+        Async.run[Int](throw IllegalStateException("boom-a"))(_ => ())
       }
-
-      assert(landing.awaitWithin(AwaitMillis), "the failure never reached any render thread")
-      assert(
-        landing.threads == List(b.threadName),
-        s"the report no longer lands on the runner that did not arm the work (${landing.threads}); if " +
-          "`AsyncErrorHandler.onRenderThread` was changed to capture its loop at construction time, this " +
-          "characterisation has served its purpose — rewrite it to assert the arming runner",
-      )
+      assert(!landing.awaitWithin(WrongRunnerMillis))
+      assert(landing.count == 0, s"runner B delivered A's error: ${landing.threads}")
+      b.armAndPark {
+        Async.run[Int](throw IllegalStateException("boom-b"))(_ => ())
+      }
       a.resume()
+      b.resume()
+      assert(landing.awaitWithin(AwaitMillis))
+      assert(landing.threads.toSet == Set(a.threadName, b.threadName))
+      assert(landing.count == 2)
     }

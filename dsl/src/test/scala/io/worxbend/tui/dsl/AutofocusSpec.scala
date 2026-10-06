@@ -2,7 +2,6 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{KeyCode, Size}
 import io.worxbend.tui.terminal.HeadlessBackend
-import io.worxbend.tui.testsupport.Pilot
 import io.worxbend.tui.widgets.TextInputState
 
 import org.scalatest.funsuite.AnyFunSuite
@@ -11,7 +10,7 @@ import org.scalatest.funsuite.AnyFunSuite
   * otherwise. `.autofocus` says it. The interesting part is not that it takes focus — it is that it takes focus exactly
   * once, so Tab still works afterwards.
   */
-final class AutofocusSpec extends AnyFunSuite:
+final class AutofocusSpec extends AnyFunSuite with PilotFixture:
 
   test("autofocus starts the keyboard on the element that asked, not on the first one"):
     val backend = HeadlessBackend(Size(30, 6))
@@ -21,7 +20,7 @@ final class AutofocusSpec extends AnyFunSuite:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element =
         column(input(first), input(second).autofocus)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.typeText("x").waitForIdle()
     assert(second.value == "x")
@@ -37,7 +36,7 @@ final class AutofocusSpec extends AnyFunSuite:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element =
         column(input(first).autofocus.key("first"), input(second).key("second"))
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.typeText("a").waitForIdle()
     assert(first.value == "a")
@@ -62,7 +61,7 @@ final class AutofocusSpec extends AnyFunSuite:
       def view(using ReactiveScope, Theme): Element =
         val box = if open.get then Seq(input(search).autofocus.key("search")) else Seq.empty
         column((input(body).key("body") +: box)*)
-    val pilot   = Pilot.start(backend) { app.runWith(backend) }
+    val pilot   = startPilot(backend) { app.runWith(backend) }
     pilot.waitForIdle()
     pilot.typeText("a").waitForIdle()
     assert(body.value == "a")

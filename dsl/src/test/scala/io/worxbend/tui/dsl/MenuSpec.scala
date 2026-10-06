@@ -6,7 +6,7 @@ import io.worxbend.tui.testsupport.Pilot
 
 import org.scalatest.funsuite.AnyFunSuite
 
-final class MenuSpec extends AnyFunSuite:
+final class MenuSpec extends AnyFunSuite with PilotFixture:
 
   private val items = Seq(
     MenuEntry.Item("Open"),
@@ -20,7 +20,7 @@ final class MenuSpec extends AnyFunSuite:
     val testApp = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = view0
-    Pilot.start(backend) { testApp.runWith(backend) }.waitForIdle()
+    startPilot(backend) { testApp.runWith(backend) }.waitForIdle()
 
   private def quitApp(pilot: Pilot): Unit =
     pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)

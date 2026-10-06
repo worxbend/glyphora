@@ -9,8 +9,8 @@ import scala.concurrent.duration.Duration
 /** The caret-blink contract: the escape sequences, the defaulted [[Backend]] member, and what [[HeadlessBackend]]
   * records so a test above this module can assert on it.
   *
-  * [[JLine3Backend]] needs a controlling terminal and cannot be built here (see [[JLine3BackendSpec]]), so its half of
-  * the story is the sequences pinned below plus the deliberate *absence* of the re-enable from `RestoreAll`.
+  * [[JLineContractSpec]] exercises normal JLine teardown and handover through a real writer; this suite pins the
+  * sequences and the deliberate *absence* of the re-enable from the unconditional `RestoreAll` string.
   */
 final class CursorBlinkSpec extends AnyFunSuite:
 

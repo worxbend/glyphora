@@ -47,7 +47,7 @@ trait FormFieldType[A]:
   /** Turns the raw text of the control into an `A`, or into the message the form shows next to the field. */
   def parse(raw: String): Either[String, A]
 
-  /** The parser a derived field gets when the application supplies no validator of its own.
+  /** The parser a derived field gets; typed validation checks its value without replacing this parser.
     *
     * It lives here rather than in [[deriveForm]] because a `FormFieldType[?]` cannot be taken apart from the outside:
     * writing `Field(spec, control.parse)` against a wildcard instance loses the connection between the parser's result

@@ -90,9 +90,9 @@
 ## 🚀 Your first app
 
 > [!NOTE]
-> **Not on Maven Central yet.** `0.14.0` is tagged, but no artifacts have been published, so the
-> coordinates below will not resolve. `0.16.0` is not tagged or released yet either. Until the first
-> release lands, clone the repo and run `./mill __.publishLocal`
+> **Not on Maven Central yet.** A source release tag does not make artifacts available on Maven
+> Central. Until `0.16.0` is published there, the coordinates below will not resolve from a public
+> repository. Clone the repo and run `./mill __.publishLocal`
 > — that puts `tui-core`, `tui-terminal`, `tui-widgets`, `tui-runtime`, `tui-macros`, `tui-dsl`
 > and `tui-test` at `0.16.0` into `~/.ivy2/local`. Mill reads that cache by default; sbt needs
 > `resolvers += Resolver.defaultLocal`. See [Build from source](#-build-from-source).
@@ -143,7 +143,7 @@ The app is a **class** with a one-line `object` on the end so that tests can bui
 fresh one per scenario: `TuiApp` keeps its state on the instance and never resets it
 between runs, so re-running a single `object` starts holding whatever the last run left
 behind. The launcher gets `object Counter`; a test writes
-`Pilot.start(Size(40, 10))(CounterApp().runWith)`.
+`Pilot.using(Size(40, 10))(backend => CounterApp().runWith(backend))(testBody)`.
 
 Three ideas carry through the entire toolkit:
 
@@ -238,23 +238,21 @@ decision this library has already made, the reasoning is written down next to th
 ## 🧪 Test the terminal without a terminal
 
 ```scala
-val backend = HeadlessBackend(Size(50, 10))
 val app = TodoApp()
-val pilot = Pilot.start(backend) {
-  app.runWith(backend)
+Pilot.using(Size(50, 10))(backend => app.runWith(backend)) { pilot =>
+  pilot
+    .waitForIdle()
+    .typeText("ship docs")
+    .press("enter")
+    .waitForIdle()
+
+  assert(pilot.screenText.contains("· ship docs"))
 }
-
-pilot
-  .waitForIdle()
-  .typeText("ship docs")
-  .press("enter")
-  .waitForIdle()
-
-assert(pilot.screenText.contains("· ship docs"))
 ```
 
 `Pilot` posts the same event ADT used in production and exposes the last rendered screen as
 text. Buffer helpers skip wide-character continuation cells, so assertions match what users see.
+`using` closes the runner even when an assertion fails.
 
 > [!TIP]
 > `Pilot`, `BufferAssertions` and `GoldenFrames` ship as `io.worxbend::tui-test`, so add it as a

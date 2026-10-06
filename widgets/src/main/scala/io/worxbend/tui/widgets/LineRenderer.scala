@@ -64,13 +64,39 @@ private[widgets] object LineRenderer:
     val cursor     = RowCursor(buffer, y, start, x + maxWidth)
     val lineStyle  = baseStyle.patch(line.style)
     var remaining  = math.max(0, skipWidth)
-    line.spans.foreach { span =>
-      if remaining <= 0 then cursor.write(span.content, lineStyle.patch(span.style))
-      else
-        val spanWidth = CharWidth.of(span.content)
-        if spanWidth <= remaining then remaining -= spanWidth
+    var truncated  = false
+    val spans      = line.spans.iterator
+    while spans.hasNext && cursor.remaining > 0 && !truncated do
+      val span                  = spans.next()
+      val text                  =
+        if remaining <= 0 then span.content
         else
-          cursor.write(CharWidth.dropByWidth(span.content, remaining), lineStyle.patch(span.style))
-          remaining = 0
-    }
+          val spanWidth = CharWidth.of(span.content)
+          if spanWidth <= remaining then
+            remaining -= spanWidth
+            ""
+          else
+            val tail = CharWidth.dropByWidth(span.content, remaining)
+            remaining = 0
+            tail
+      // Retain the first half-fitting cluster as evidence of truncation, but never scan the invisible tail.
+      val budget                = math.min(cursor.remaining, math.max(0, buffer.area.right - cursor.at))
+      val (prefix, prefixWidth) = boundedPrefix(CharWidth.graphemeClusters(text), budget)
+      val before                = cursor.at
+      cursor.write(prefix, lineStyle.patch(span.style))
+      // A half-fitting wide cluster leaves one column unused; it still ends the entire line, not just this span.
+      truncated = budget <= 0 || cursor.at - before < prefixWidth
     cursor.at - x
+
+  /** Takes only the clusters needed for a write, including the first cluster that would half-fit. Its measured width
+    * lets the caller distinguish that stop from an exhausted span without measuring the rest of the source. The
+    * iterator is single-use and owned by this call; zero-width clusters are consumed but spend no column budget.
+    */
+  private[widgets] def boundedPrefix(clusters: Iterator[String], maxWidth: Int): (String, Int) =
+    val prefix = StringBuilder()
+    var used   = 0
+    while used < maxWidth && clusters.hasNext do
+      val cluster = clusters.next()
+      prefix.append(cluster)
+      used += CharWidth.of(cluster)
+    (prefix.result(), used)

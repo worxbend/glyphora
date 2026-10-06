@@ -8,7 +8,7 @@ import org.jline.utils.{InfoCmp, NonBlockingReader}
 
 import org.scalatest.funsuite.AnyFunSuite
 
-import java.io.ByteArrayOutputStream
+import java.io.{ByteArrayOutputStream, IOException, PrintWriter}
 import java.nio.charset.StandardCharsets.UTF_8
 
 /** What [[JLine3Backend]] assumes about JLine, asserted against a real JLine terminal.
@@ -215,6 +215,71 @@ final class JLineContractSpec extends AnyFunSuite:
       assert(prompt > screen, undressed)
     }
 
+  test("close restores owned cursor shape and blink before making the cursor visible"):
+    wired("xterm-256color") { harness =>
+      assert(harness.backend.hideCursor().isRight)
+      assert(harness.backend.setCursorShape(CursorShape.SteadyBar).isRight)
+      assert(harness.backend.setCursorBlink(false).isRight)
+      harness.forget()
+
+      assert(harness.backend.close().isRight)
+      assert(
+        harness.written == AnsiSequences.ResetCursorShape + AnsiSequences.EnableCursorBlink + AnsiSequences.ShowCursor
+      )
+      harness.forget()
+      assert(harness.backend.close().isRight)
+      assert(harness.written.isEmpty)
+    }
+
+  test("cursor restoration failures do not skip later releases or closing the JLine handle"):
+    val sink     = ByteArrayOutputStream()
+    val first    = new IOException("shape reset failed")
+    val second   = new IOException("blink restore failed")
+    val attempts = List.newBuilder[String]
+    var faults   = Map.empty[String, IOException]
+    val terminal = new LineDisciplineTerminal(
+      "glyphora-teardown-failure",
+      "xterm-256color",
+      sink,
+      UTF_8,
+      Terminal.SignalHandler.SIG_IGN,
+    ):
+      override def writer(): PrintWriter =
+        val delegate = super.writer()
+        if faults.isEmpty then delegate
+        else
+          new PrintWriter(delegate):
+            override def write(sequence: String): Unit =
+              attempts += sequence
+              faults.get(sequence) match
+                case Some(error) => throw error
+                case None        => super.write(sequence)
+    val backend  = JLine3Backend.wrapping(terminal, ColorDepth.TrueColor)
+    try
+      assert(backend.enableRawMode().isRight)
+      assert(backend.enterAlternateScreen().isRight)
+      assert(backend.hideCursor().isRight)
+      assert(backend.setCursorShape(CursorShape.SteadyBar).isRight)
+      assert(backend.setCursorBlink(false).isRight)
+      faults = Map(AnsiSequences.ResetCursorShape -> first, AnsiSequences.EnableCursorBlink -> second)
+      sink.reset()
+      assert(backend.close() == Left(BackendError.Io(first)))
+      assert(
+        attempts.result() == List(
+          AnsiSequences.ResetCursorShape,
+          AnsiSequences.EnableCursorBlink,
+          AnsiSequences.ShowCursor,
+          AnsiSequences.LeaveAlternateScreen,
+          AnsiSequences.PopKittyKeyboard,
+          AnsiSequences.DisableFocusReporting,
+          AnsiSequences.DisableBracketedPaste,
+          AnsiSequences.RestoreCursor,
+        )
+      )
+      assert(sink.toString(UTF_8).contains(AnsiSequences.ShowCursor))
+      intercept[IllegalStateException](terminal.writer()) // close was attempted despite both mode failures
+    finally terminal.close()
+
   /** The title stack is the one piece of terminal state where doing the work twice is worse than not doing it: a second
     * push leaves an entry nobody pops, and a second pop discards the title of whatever is above us. `close()` runs
     * twice in the ordinary case — the shutdown hook races the runner's teardown — so "exactly once" has to survive it.
@@ -271,6 +336,79 @@ final class JLineContractSpec extends AnyFunSuite:
       assert(redressed.contains(AnsiSequences.EnableBracketedPaste))
       assert(redressed.contains(AnsiSequences.EnableFocusReporting))
       assert(redressed.contains(AnsiSequences.PushKittyKeyboard))
+    }
+
+  test("a temporary handover restores the shell modes and then the exact app cursor shape"):
+    for shape <- CursorShape.values if shape != CursorShape.Default do
+      wired("xterm-256color") { harness =>
+        assert(harness.backend.hideCursor().isRight)
+        assert(harness.backend.setCursorShape(shape).isRight)
+        assert(harness.backend.setCursorBlink(false).isRight)
+        harness.forget()
+
+        assert(harness.backend.suspend {
+          assert(
+            harness.written == AnsiSequences.ResetCursorShape + AnsiSequences.EnableCursorBlink + AnsiSequences.ShowCursor
+          )
+          harness.forget()
+        } == Right(()))
+        assert(
+          harness.written == AnsiSequences.HideCursor + AnsiSequences.cursorShape(
+            shape
+          ) + AnsiSequences.DisableCursorBlink
+        )
+        harness.forget()
+        assert(harness.backend.close().isRight)
+        assert(
+          harness.written == AnsiSequences.ResetCursorShape + AnsiSequences.EnableCursorBlink + AnsiSequences.ShowCursor
+        )
+      }
+
+  test("untouched or explicitly reset cursor modes are not changed by close or handover"):
+    wired("xterm-256color") { harness =>
+      assert(harness.backend.suspend(()) == Right(()))
+      assert(harness.written.isEmpty)
+      assert(harness.backend.setCursorShape(CursorShape.SteadyBar).isRight)
+      assert(harness.backend.setCursorShape(CursorShape.Default).isRight)
+      assert(harness.backend.setCursorBlink(false).isRight)
+      assert(harness.backend.setCursorBlink(true).isRight)
+      harness.forget()
+      assert(harness.backend.suspend(()) == Right(()))
+      assert(harness.written.isEmpty)
+      assert(harness.backend.close().isRight)
+      assert(harness.written.isEmpty)
+    }
+
+  test("handover restores shape-only and blink-only ownership independently"):
+    wired("xterm-256color") { harness =>
+      assert(harness.backend.setCursorShape(CursorShape.SteadyUnderline).isRight)
+      harness.forget()
+      assert(harness.backend.suspend {
+        assert(harness.written == AnsiSequences.ResetCursorShape)
+        harness.forget()
+      } == Right(()))
+      assert(harness.written == AnsiSequences.cursorShape(CursorShape.SteadyUnderline))
+      assert(harness.backend.setCursorShape(CursorShape.Default).isRight)
+      assert(harness.backend.setCursorBlink(false).isRight)
+      harness.forget()
+      assert(harness.backend.suspend {
+        assert(harness.written == AnsiSequences.EnableCursorBlink)
+        harness.forget()
+      } == Right(()))
+      assert(harness.written == AnsiSequences.DisableCursorBlink)
+    }
+
+  test("a failing handover body still reacquires its remembered cursor modes"):
+    wired("xterm-256color") { harness =>
+      assert(harness.backend.setCursorShape(CursorShape.SteadyBar).isRight)
+      assert(harness.backend.setCursorBlink(false).isRight)
+      harness.forget()
+      val failure = new IllegalStateException("body failed")
+      assert(harness.backend.suspend(throw failure) == Left(BackendError.Io(failure)))
+      assert(
+        harness.written == AnsiSequences.ResetCursorShape + AnsiSequences.EnableCursorBlink +
+          AnsiSequences.cursorShape(CursorShape.SteadyBar) + AnsiSequences.DisableCursorBlink
+      )
     }
 
   // ---------------------------------------------------------------- windowSize's pixel query

@@ -38,7 +38,24 @@ object RenderThread:
     private val dropped = AtomicLong(0)
 
     // read by every thread that queues work, written by the runner thread that owned this loop
-    @volatile private var closed = false
+    @volatile private var closed   = false
+    @volatile private var stopping = false
+
+    /** Non-consumable cancellation: runner state, never an application input event. Safe from any thread. */
+    private[tui] def requestStop(): Unit =
+      stopping = true
+      if !closed then wake()
+
+    private[runtime] def stopRequested: Boolean = stopping
+
+    /** Owner-specific execution for runtime integrations. Unlike global routing, a retired owner rejects work. */
+    private[tui] def execute(body: => Unit): Boolean =
+      if closed then false
+      else
+        val own = loops.get(Thread.currentThread())
+        if own != null && (own.head eq this) then body // scalafix:ok DisableSyntax; java.util.concurrent interop
+        else enqueue(() => body)
+        true
 
     /** Queues `body` and nudges the runner, so it is picked up on the next iteration rather than at the next poll.
       *
@@ -114,6 +131,17 @@ object RenderThread:
   // (innermost registration first) so a runner started from inside another runner's loop restores its host on exit
   // instead of deregistering the thread outright.
   private val loops = ConcurrentHashMap[Thread, List[RenderLoop]]()
+
+  // Test-support observes startup on the app thread, rather than resolving a destination on its calling thread.
+  private val registrationObserver = new ThreadLocal[RenderLoop => Unit]()
+
+  private[tui] def observingRegistration[A](observe: RenderLoop => Unit)(body: => A): A =
+    val enclosing = registrationObserver.get()
+    registrationObserver.set(observe)
+    try body
+    finally
+      if enclosing == null then registrationObserver.remove() // scalafix:ok DisableSyntax; java interop
+      else registrationObserver.set(enclosing)
 
   /** How many bodies may wait on the unattributed queue before the oldest start being dropped.
     *
@@ -218,11 +246,12 @@ object RenderThread:
       thread,
       (_, enclosing) => loop :: (if enclosing == null then Nil else enclosing),
     ) // scalafix:ok DisableSyntax; java.util.concurrent interop
+    Option(registrationObserver.get()).foreach(observe => observe(loop))
     loop
 
   /** Pops the calling thread's innermost registration, restoring an enclosing runner's if there is one. */
   private[tui] def unregister(): Unit =
-    val _ = loops.compute(
+    val _        = loops.compute(
       Thread.currentThread(),
       (_, registered) =>
         val enclosing =
@@ -230,6 +259,10 @@ object RenderThread:
           else registered.drop(1) // scalafix:ok DisableSyntax; java.util.concurrent interop
         if enclosing.isEmpty then null else enclosing, // scalafix:ok DisableSyntax; java.util.concurrent interop
     )
+    // Returning from a nested runner restores its enclosing owner for integrations observing this app thread.
+    val restored = loops.get(Thread.currentThread())
+    if restored != null then // scalafix:ok DisableSyntax; java.util.concurrent interop
+      Option(registrationObserver.get()).foreach(observe => observe(restored.head))
 
   /** Runs everything queued for `loop`, plus anything that could not be attributed to a specific runner. Unattributed
     * failures are reported through `loop`'s handler: the detached queue has no owner of its own, and `loop` is the one

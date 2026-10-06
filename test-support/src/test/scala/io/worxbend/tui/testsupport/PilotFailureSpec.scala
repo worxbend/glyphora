@@ -58,13 +58,15 @@ final class PilotFailureSpec extends AnyFunSuite:
   test("a clean quit still reports success and never throws"):
     val backend = HeadlessBackend(Size(20, 3))
     val pilot   = Pilot.start(backend)(TerminalRunner(backend).run(_ => (), quitOnQ, render))
-    pilot.waitForIdle()
-    assert(pilot.screenLines.nonEmpty)
-    assert(pilot.isRunning)
-    pilot.pressKey(KeyCode.Char('q'))
-    assert(pilot.awaitTermination())
-    assert(pilot.screenLines.nonEmpty)
-    assert(!pilot.isRunning)
+    try
+      pilot.waitForIdle()
+      assert(pilot.screenLines.nonEmpty)
+      assert(pilot.isRunning)
+      pilot.pressKey(KeyCode.Char('q'))
+      assert(pilot.awaitTermination())
+      assert(pilot.screenLines.nonEmpty)
+      assert(!pilot.isRunning)
+    finally pilot.close()
 
   test("a runner that returned Left is not a clean exit"):
     // the silent pass this replaces: the app thread finished without throwing, so every observation read as healthy
@@ -88,7 +90,9 @@ final class PilotFailureSpec extends AnyFunSuite:
       val error = intercept[AssertionError](pilot.waitForIdle(100.millis))
       assert(error.getMessage.contains("did not go idle"))
       assert(Option(error.getCause).isEmpty)
-    finally release.countDown()
+    finally
+      release.countDown()
+      pilot.close()
     assert(pilot.awaitTermination()) // and the app really is gone before the next test starts
 
   private def render(frame: Frame): Unit =

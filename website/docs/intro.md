@@ -20,8 +20,8 @@ structured enough for dashboards, forms, file browsers, and full-screen tools.
 
 :::caution Not on Maven Central yet
 
-`0.14.0` is tagged, but no artifacts are published and `0.16.0` is not tagged or released
-yet either, so `io.worxbend::tui-dsl:0.16.0` will not resolve from a public repository.
+A source release tag does not make artifacts available on Maven Central. Until `0.16.0`
+is published there, `io.worxbend::tui-dsl:0.16.0` will not resolve from a public repository.
 Clone the repository and run `./mill __.publishLocal`, which
 installs `tui-core`, `tui-terminal`, `tui-widgets`, `tui-runtime`, `tui-macros`,
 `tui-dsl` and `tui-test` at `0.16.0` into `~/.ivy2/local`; Mill reads that cache by
@@ -62,7 +62,7 @@ single `object`, for one reason: a test needs a fresh app for every scenario. `T
 keeps its state — signals, the screen stack, running effects — on the instance and
 never resets it between runs, so running one `object` twice starts the second run with
 whatever the first run left behind. Writing it as a class lets a test say
-`Pilot.start(Size(40, 10))(CounterApp().runWith)` once per test while the launcher
+`Pilot.using(Size(40, 10))(backend => CounterApp().runWith(backend))(testBody)` once per test while the launcher
 still gets its `object Counter`.
 
 ## The mental model

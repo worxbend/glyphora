@@ -63,9 +63,10 @@ object Async:
       onError: AsyncErrorHandler = AsyncErrorHandler.toRenderThread()
   ): Unit =
     val deliver = deliverToRenderThread(onResult)
+    val errors  = onError.forInvocation(captureTarget())
     onWorker {
       try deliver(work)
-      catch case NonFatal(error) => onError.handle(error)
+      catch case NonFatal(error) => errors.handle(error)
     }
 
   /** Like [[run]] but delivers `Right(value)` or `Left(throwable)` to `onDone` on the render thread — no ambient error
@@ -182,6 +183,11 @@ object Async:
 trait AsyncErrorHandler:
   def handle(error: Throwable): Unit
 
+  /** Binds a reporting policy to the runner arming this invocation. Worker-side policies keep their behavior. */
+  private[runtime] def forInvocation(target: RenderThread.RenderLoop): AsyncErrorHandler =
+    val _ = target
+    this
+
 object AsyncErrorHandler:
   /** Rethrows on the worker thread, where the JVM's default uncaught-exception handler prints the stack trace to
     * standard error.
@@ -201,15 +207,23 @@ object AsyncErrorHandler:
     * through its `RenderTaskErrorHandler` and reports it as `RunnerError.QueuedTask` — count, first throwable and
     * suppressed stack traces — once the app exits. The default for [[Async.run]].
     *
-    * **Construct it on the arming thread**, which the default argument does automatically: like the result delivery
-    * itself, it resolves the target loop *now*, so a two-runner app reports each failure to the runner that started the
-    * work rather than to whichever loop the worker thread happens to resolve. A handler installed once as a long-lived
-    * `given` should be [[onRenderThread]] instead, which resolves per failure.
+    * `Async.run` binds the destination per invocation, so this policy is also safe as a long-lived `given` shared
+    * between runners. Direct calls to `handle` retain the loop captured when the policy was constructed.
     */
   def toRenderThread(): AsyncErrorHandler =
-    val target = Async.captureTarget()
-    error => target.enqueue(() => throw error)
+    bound(Async.captureTarget(), error => throw error)
 
-  /** Reports the error by running `report` on the render thread. */
+  /** Reports on the runner arming each `Async.run`, not the worker's globally resolved destination. Safe to share as a
+    * long-lived given. A direct `handle` outside `Async.run` uses ordinary render-thread routing.
+    */
   def onRenderThread(report: Throwable => Unit): AsyncErrorHandler =
-    error => RenderThread.runLater(report(error))
+    new AsyncErrorHandler:
+      def handle(error: Throwable): Unit = RenderThread.runLater(report(error))
+      override private[runtime] def forInvocation(target: RenderThread.RenderLoop): AsyncErrorHandler =
+        bound(target, report)
+
+  private def bound(target: RenderThread.RenderLoop, report: Throwable => Unit): AsyncErrorHandler =
+    new AsyncErrorHandler:
+      def handle(error: Throwable): Unit = target.enqueue(() => report(error))
+      override private[runtime] def forInvocation(owner: RenderThread.RenderLoop): AsyncErrorHandler =
+        bound(owner, report)

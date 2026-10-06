@@ -37,24 +37,30 @@ final class PilotCursorSpec extends AnyFunSuite:
   test("a view that parks the caret is visible to assertCursorAt"):
     val wanted = AtomicReference[Option[Position]](Some(Position(4, 1)))
     val pilot  = pilotOver(wanted)
-    pilot.waitForIdle()
-    assert(pilot.cursorPosition == Some(Position(4, 1)))
-    val _      = pilot.assertCursorAt(4, 1)
+    try
+      pilot.waitForIdle()
+      assert(pilot.cursorPosition == Some(Position(4, 1)))
+      val _ = pilot.assertCursorAt(4, 1)
+    finally pilot.close()
 
   test("assertCursorAt names the position the caret actually holds"):
     val wanted = AtomicReference[Option[Position]](Some(Position(4, 1)))
     val pilot  = pilotOver(wanted)
-    pilot.waitForIdle()
-    val error  = intercept[AssertionError](pilot.assertCursorAt(0, 0))
-    // an assertion that only said "wrong" would leave the reader running the app again to find out where it went
-    assert(error.getMessage.contains("Position(4,1)"))
+    try
+      pilot.waitForIdle()
+      val error = intercept[AssertionError](pilot.assertCursorAt(0, 0))
+      // an assertion that only said "wrong" would leave the reader running the app again to find out where it went
+      assert(error.getMessage.contains("Position(4,1)"))
+    finally pilot.close()
 
   test("assertCursorAt says so when the app never asked for a caret at all"):
     val pilot = pilotOver(AtomicReference[Option[Position]](None))
-    pilot.waitForIdle()
-    val error = intercept[AssertionError](pilot.assertCursorAt(0, 0))
-    assert(error.getMessage.contains("no cursor position was requested"))
-    val _     = pilot.assertNoCursor()
+    try
+      pilot.waitForIdle()
+      val error = intercept[AssertionError](pilot.assertCursorAt(0, 0))
+      assert(error.getMessage.contains("no cursor position was requested"))
+      val _     = pilot.assertNoCursor()
+    finally pilot.close()
 
   test("a caret the app withdraws stops being reported, so it cannot be left owned by a pane the user has left"):
     // the regression this pair exists for: withdrawing a caret is a `hideCursor`, because there is nowhere to move a
@@ -62,28 +68,34 @@ final class PilotCursorSpec extends AnyFunSuite:
     // say a text field still owns the insertion point after the user tabbed away.
     val wanted = AtomicReference[Option[Position]](Some(Position(2, 0)))
     val pilot  = pilotOver(wanted)
-    pilot.waitForIdle()
-    val _      = pilot.assertCursorAt(2, 0)
-    wanted.set(None)
-    pilot.press("r").waitForIdle()
-    val _      = pilot.assertNoCursor()
-    // the stale value is still readable straight off the backend, for a test that wants to assert on the withdrawal
-    assert(pilot.backend.cursorPosition == Some(Position(2, 0)))
+    try
+      pilot.waitForIdle()
+      val _ = pilot.assertCursorAt(2, 0)
+      wanted.set(None)
+      pilot.press("r").waitForIdle()
+      val _ = pilot.assertNoCursor()
+      // the stale value is still readable straight off the backend, for a test that wants to assert on the withdrawal
+      assert(pilot.backend.cursorPosition == Some(Position(2, 0)))
+    finally pilot.close()
 
   test("assertNoCursor names where the caret is when one is being shown"):
     val pilot = pilotOver(AtomicReference[Option[Position]](Some(Position(1, 2))))
-    pilot.waitForIdle()
-    val error = intercept[AssertionError](pilot.assertNoCursor())
-    assert(error.getMessage.contains("Position(1,2)"))
+    try
+      pilot.waitForIdle()
+      val error = intercept[AssertionError](pilot.assertNoCursor())
+      assert(error.getMessage.contains("Position(1,2)"))
+    finally pilot.close()
 
   test("the caret follows the view rather than the drawn frame"):
     // the whole reason this is not a `cellAt` assertion: the frame is identical either way, so a test reading only the
     // buffer cannot tell a caret that moved from one that did not.
     val wanted = AtomicReference[Option[Position]](Some(Position(0, 0)))
     val pilot  = pilotOver(wanted)
-    pilot.waitForIdle()
-    val before = pilot.screenText
-    wanted.set(Some(Position(3, 2)))
-    pilot.press("r").waitForIdle()
-    val _      = pilot.assertCursorAt(3, 2)
-    assert(pilot.screenText == before)
+    try
+      pilot.waitForIdle()
+      val before = pilot.screenText
+      wanted.set(Some(Position(3, 2)))
+      pilot.press("r").waitForIdle()
+      val _      = pilot.assertCursorAt(3, 2)
+      assert(pilot.screenText == before)
+    finally pilot.close()

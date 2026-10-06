@@ -39,11 +39,12 @@ private[dsl] object PortalQueue:
   /** Whether a frame root is collecting on this thread — that is, whether [[offer]] will actually be drawn later. */
   def isCollecting: Boolean = current.get().isDefined
 
-  /** Hands `content` to the frame root, to be drawn at the absolute `target` rectangle after the tree. Does nothing
-    * when nothing is collecting; callers check [[isCollecting]] first and draw in place instead.
+  /** Hands `content` to the frame root, translating its local `target` to screen coordinates without viewport clipping.
+    * It is drawn after the tree, once the enclosing content coordinate scopes have ended. Does nothing when nothing is
+    * collecting; callers check [[isCollecting]] first and draw in place instead.
     */
   def offer(target: Rect, content: Element): Unit =
-    current.get().foreach(pending => pending.entries += (target -> content))
+    current.get().foreach(pending => pending.entries += (FrameCoordinates.translate(target) -> content))
 
   /** Takes everything queued so far and empties the queue.
     *

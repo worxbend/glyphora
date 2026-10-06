@@ -13,7 +13,8 @@ trait ReactiveScope:
   */
 final class GenerationalScope private[runtime] (onInvalidate: () => Unit) extends ReactiveScope:
 
-  private val subscriber: Subscriber = () => onInvalidate()
+  private var disposed               = false
+  private val subscriber: Subscriber = () => if !disposed then onInvalidate()
 
   // Two buffers swapped per generation, never reallocated: `track` adds every value the in-progress generation reads;
   // `beginGeneration` unsubscribes whatever the previous generation read but the new one did not, then hands the
@@ -23,11 +24,15 @@ final class GenerationalScope private[runtime] (onInvalidate: () => Unit) extend
   private var current: scala.collection.mutable.Set[Subscribable]  = scala.collection.mutable.Set.empty
 
   private[runtime] def track(dependency: Subscribable): Unit =
+    RenderThread.checkRenderThread()
+    if disposed then throw IllegalStateException("a disposed reactive scope cannot track reads")
     dependency.subscribe(subscriber)
     val _ = current.add(dependency)
 
   /** Marks the start of a new evaluation: values read two generations ago but not renewed since are dropped. */
   def beginGeneration(): Unit =
+    RenderThread.checkRenderThread()
+    if disposed then throw IllegalStateException("a disposed reactive scope cannot begin a generation")
     previous.foreach { dependency =>
       if !current.contains(dependency) then dependency.unsubscribe(subscriber)
     }
@@ -35,6 +40,17 @@ final class GenerationalScope private[runtime] (onInvalidate: () => Unit) extend
     previous = current
     current = swap
     current.clear()
+
+  /** Releases subscriptions from both generations. Idempotent; call on the owning render thread before its runner
+    * unregisters. The scope cannot be reused after disposal.
+    */
+  def dispose(): Unit =
+    RenderThread.checkRenderThread()
+    if !disposed then
+      disposed = true
+      (previous ++ current).foreach(_.unsubscribe(subscriber))
+      previous.clear()
+      current.clear()
 
 object ReactiveScope:
 

@@ -2,7 +2,6 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Event, MouseEvent, MouseEventKind, Position, Size}
 import io.worxbend.tui.terminal.HeadlessBackend
-import io.worxbend.tui.testsupport.Pilot
 
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -13,7 +12,7 @@ import org.scalatest.funsuite.AnyFunSuite
   * is dispatch — which kinds a handler claims and which it passes on — and not what anything renders. The last test
   * drives a real app so that the wiring from a terminal mouse report all the way to `.onClick` is covered end to end.
   */
-final class MouseGrammarSpec extends AnyFunSuite:
+final class MouseGrammarSpec extends AnyFunSuite with PilotFixture:
 
   private def at(kind: MouseEventKind, x: Int = 0, y: Int = 0): MouseEvent =
     MouseEvent(Position(x, y), kind, KeyModifiers.None)
@@ -103,7 +102,7 @@ final class MouseGrammarSpec extends AnyFunSuite:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element =
         column(text("target").length(1).onClick { clicks += 1 }, text("elsewhere").length(1))
-    val pilot                       = Pilot.start(backend) { testApp.runWith(backend) }
+    val pilot                       = startPilot(backend) { testApp.runWith(backend) }
     pilot.waitForIdle()
     def press(x: Int, y: Int): Unit =
       backend.postEvent(Event.Mouse(MouseEvent(Position(x, y), MouseEventKind.Down, KeyModifiers.None)))

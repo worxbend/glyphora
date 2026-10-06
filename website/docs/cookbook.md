@@ -248,19 +248,15 @@ not scroll at all — give that content an explicit `.length(n)` or pass `conten
 ## Create and validate a case-class form
 
 ```scala
-import io.worxbend.tui.macros.{deriveForm, Field}
+import io.worxbend.tui.macros.deriveForm
 
 final case class Deploy(name: String, replicas: Int, dryRun: Boolean)
 
+private val spec = deriveForm[Deploy]
 private val form = FormState.of(
-  deriveForm[Deploy],
-  Field.text("name").mapValidated { value =>
-    if value.trim.nonEmpty then Right(value.trim) else Left("required")
-  },
-  Field.int("replicas").mapValidated { value =>
-    if value >= 1 && value <= 20 then Right(value)
-    else Left("must be from 1 to 20")
-  },
+  spec,
+  spec.field(_.name).validate(_.trim.nonEmpty, "required"),
+  spec.field(_.replicas).validate(value => value >= 1 && value <= 20, "must be from 1 to 20"),
 )
 
 def formView(using ReactiveScope): Element =
@@ -268,7 +264,10 @@ def formView(using ReactiveScope): Element =
 ```
 
 Read `form.result.get` to react to valid submission and `form.errors.get` when you
-need custom error presentation.
+need custom error presentation. Checks belong to this exact spec instance and reject
+without normalizing values; the name check leaves accepted text unchanged. Parser
+errors precede construction and typed checks. See [Forms & validation](./forms-and-validation)
+for parser customization and check composition.
 
 ## Switch themes at runtime
 
@@ -315,23 +314,21 @@ Call `timer.start()`, `stop()`, `toggle()`, or `reset()` from handlers.
 ## Test an interaction end to end
 
 ```scala
-val backend = HeadlessBackend(Size(50, 10))
 val app = TodoApp()
-val pilot = Pilot.start(backend) {
-  app.runWith(backend)
+Pilot.using(Size(50, 10))(backend => app.runWith(backend)) { pilot =>
+  pilot
+    .waitForIdle()
+    .typeText("ship docs")
+    .press("enter")
+    .waitForIdle()
+
+  assert(pilot.screenText.contains("· ship docs"))
 }
-
-pilot
-  .waitForIdle()
-  .typeText("ship docs")
-  .press("enter")
-  .waitForIdle()
-
-assert(pilot.screenText.contains("· ship docs"))
 ```
 
-`Pilot` is currently repository test support; the same pattern can be implemented
-directly over the public `HeadlessBackend`. See [Testing](./testing).
+`Pilot` ships in the test-only `tui-test` artifact. `using` closes the runner even
+after a failing assertion. See [Testing](./testing) for shutdown deadlines and
+render-thread observations.
 
 ## Render a custom widget through the DSL
 

@@ -146,6 +146,37 @@ final class DerivationSpec extends AnyFunSuite:
       )
     )
 
+  test("typed field handles name the selected accessor and check without modifying the candidate"):
+    val spec                           = deriveForm[Signup]
+    val age: DerivedField[Signup, Int] = spec.field(_.age)
+    assert(age.name == "age")
+    val rules                          = Seq(age.validate(_ >= 18, "adult"))
+    val candidate                      = Signup("ada", 36, true)
+    spec.checkValidators(rules)
+    assert(spec.validate(candidate, rules).isEmpty)
+    assert(candidate == Signup("ada", 36, true))
+    assert(spec.validate(Signup("ada", 12, true), rules) == Map("age" -> "adult"))
+
+  test("named lambda selection works without changing the original parser"):
+    val spec   = deriveForm[Signup]
+    val handle = spec.field((signup: Signup) => signup.username)
+    assert(handle.name == "username")
+    val rules  = Seq(handle.validate(_.nonEmpty, "required"))
+    spec.checkValidators(rules)
+    assert(spec.defaults.head.parse(" ada ") == Right(" ada "))
+    assert(spec.validate(Signup(" ada ", 36, true), rules).isEmpty)
+
+  test("typed handles reject replacement values rather than relying on Unit value discard"):
+    val errors = scala.compiletime.testing.typeCheckErrors("""
+      deriveForm[Signup].field(_.age).validate(value => Right(value.toString))
+    """)
+    assert(errors.exists(_.message.contains("Unit")))
+
+  test("the last field of a wide product has a typed handle without recursive inline lookup"):
+    val spec                               = deriveForm[Wide]
+    val handle: DerivedField[Wide, String] = spec.field(_.f40)
+    assert(handle.name == "f40")
+
   test("assemble rebuilds the case class from submitted values"):
     val spec = deriveForm[Signup]
     assert(spec.assemble(Seq("ada", 36, true)) == Signup("ada", 36, true))

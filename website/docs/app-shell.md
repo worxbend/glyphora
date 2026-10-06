@@ -550,6 +550,12 @@ or still on the stack when the run ends, in which case it runs before the app's 
 there. Every `onEnter` is matched by exactly one `onLeave`, on every exit path including
 a `Ctrl+C` or a handler that threw, because the run's teardown is in a `finally`.
 
+Teardown attempts every screen's `onLeave` before the app's `onStop`; one failing
+callback does not skip the others or the framework's own cleanup. The render owner
+remains registered through these callbacks, so signal writes are still confined to
+it. Terminal-facing app services are already inert; use these hooks to release
+resources, not to start more work.
+
 Before these existed, a screen that polls had to arm its poller in the app's `onStart`
 and cancel it in the app's `onStop` — so it kept polling for a screen the user had
 closed long ago.
@@ -907,9 +913,10 @@ That is the same seam headless tests use; see [Testing](./testing).
 `onStart()` runs on the render thread after the terminal is ready and before the first
 frame. That matters for background work: `Async` captures the render loop of the
 thread that calls it, and your app object is constructed long before any loop
-exists — so `Async.every(...)` in a field initialiser attaches to no loop at all and
-its results are discarded forever. Calling `quit()` from `onStart()` exits before
-anything is drawn, which is how a start-up check declines to run.
+exists — so `Async.every(...)` in a field initialiser attaches to the unattributed
+queue instead of this app and can accumulate a backlog before startup. Calling
+`quit()` from `onStart()` exits before anything is drawn, which is how a start-up
+check declines to run.
 
 `onStop()` runs on the way out of every exit path: `quit()`, an unconsumed `Ctrl+C`, a
 backend failure, an event handler that threw. Nothing cancels a repeating `Async.every`
@@ -922,9 +929,19 @@ override def onStart(): Unit = poller = Some(Async.every(5.seconds)(refresh()))
 override def onStop(): Unit  = poller.foreach(_.cancel())
 ```
 
-By the time `onStop()` runs the terminal has already been handed back, so `quit()`,
-`suspend`, `printAbove` and `copyToClipboard` are no-ops there — it is for your own
-resources, not for the screen.
+At `onStop()` the event loop has ended and app service handles have been detached,
+so `quit()`, `suspend`, `printAbove` and `copyToClipboard` are no-ops. The render
+owner is still registered, however: thread-confined cleanup and signal writes must
+still run on that owner. Terminal restoration happens later, not before this hook.
+
+The order is: detach app service handles and cancel the ambient ticker, screen
+`onLeave` callbacks (innermost first), app `onStop`, root-scope disposal and clock
+release, then queue closure, owner unregistration and backend closure.
+Every release is attempted even if an earlier one throws. A prior run failure stays
+primary and later failures are available through `RunnerError.cleanupFailures`
+(and suppressed on the primary throwable when it has one). With no earlier failure,
+a non-fatal cleanup exception is returned as `RunnerError.Handler`; an escaping
+throwable is rethrown only after cleanup, with later failures suppressed on it.
 
 ### Ask for a frame
 

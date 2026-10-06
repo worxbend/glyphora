@@ -14,12 +14,20 @@ import scala.util.control.NonFatal
   * `redrawRequested` is the host's own "is a frame owed?" question, asked once per iteration — a `TuiApp` answers it
   * from its signal-invalidation flag. It is read alongside, not instead of, [[RunnerHandle.requestRedraw]]: the handle
   * serves code that has no reactive state to invalidate.
+  *
+  * `onStop` is the registered-loop teardown seam: it runs once on the owner thread after the final queued-work drain,
+  * before the queue is closed, the owner is unregistered and the backend is closed. It also runs after partial setup
+  * failure. Use it to dispose thread-confined subscriptions and services. Every release is attempted even if an earlier
+  * one throws; a prior run failure stays primary, with secondary failures exposed by [[RunnerError.cleanupFailures]]
+  * (and suppressed on its throwable when it has one). A first non-fatal teardown throwable is returned as
+  * [[RunnerError.Handler]]; fatal throwables escape only after cleanup completes.
   */
 final class TerminalRunner(
     backend: Backend,
     config: RunnerConfig = RunnerConfig(),
     nanoTime: () => Long = () => System.nanoTime(),
     redrawRequested: () => Boolean = () => false,
+    onStop: () => Unit = () => (),
 ) extends Runner:
 
   def run(
@@ -33,14 +41,7 @@ final class TerminalRunner(
     // Installing it early costs nothing: every sequence the hook writes is an idempotent DEC private-mode reset, so it
     // is harmless against a terminal on which nothing was ever enabled.
     val restoreOnShutdown = installRestoreHook()
-    try
-      setup() match
-        case Left(error) =>
-          // the partial setup still dressed part of the terminal up; undo whatever took effect, both ways
-          val _ = backend.close()
-          backend.emergencyRestore()
-          Left(RunnerError.Backend(error))
-        case Right(())   => runRegistered(onStart, handleEvent, render)
+    try runRegistered(onStart, handleEvent, render)
     finally removeRestoreHook(restoreOnShutdown)
 
   /** Runs the loop with this thread registered as the render thread, and tears that registration down around it.
@@ -60,38 +61,69 @@ final class TerminalRunner(
       config.onTaskError.getOrElse(recorder),
     )
 
-    // written by the `finally` below and read after it, so the terminal-restore failure can be folded into the result
-    var closed: Either[BackendError, Unit] = Right(())
+    var result: Either[RunnerError, Unit] = Right(())
+    var thrown: Option[Throwable]         = None
+    var setupIncomplete                   = true
 
-    val result =
-      try
-        val outcome = runLoop(onStart, handleEvent, render, loop)
-        // work queued during the loop's final iteration still belongs to this run: drain it once more before the queue
-        // stops accepting anything, so a quit-time continuation is not silently dropped
-        RenderThread.drainPending(loop)
-        report(outcome, recorder.collected)
-      finally
-        RenderThread.unregister()
-        // the scheduler is a process-lifetime singleton, so an uncancelled `Async.every` still holds this loop and
-        // would keep filling a queue nothing will ever drain again
-        loop.close()
-        closed = backend.close()
+    def recordCleanup(error: Throwable): Unit =
+      thrown match
+        case Some(primary) => Cleanup.suppress(primary, error)
+        case None          =>
+          result match
+            case Left(primary) =>
+              primary.addCleanupFailure(error)
+              error.getSuppressed.foreach(primary.addCleanupFailure)
+            case Right(())     =>
+              if NonFatal(error) then
+                val primary = RunnerError.Handler(error)
+                error.getSuppressed.foreach(primary.addCleanupFailure)
+                result = Left(primary)
+              else thrown = Some(error)
 
-    withRestoreFailure(result, closed)
+    def release(body: => Unit): Unit =
+      val cleanup = new Cleanup
+      cleanup.attempt(body)
+      cleanup.collected.foreach(recordCleanup)
 
-  /** Folds a failed terminal restore into what [[run]] returns.
-    *
-    * A run that finished cleanly but could not hand the terminal back has failed in the way the user will most
-    * certainly notice, so it reports as [[RunnerError.Backend]]. A run that already failed keeps its original error:
-    * that is the one that explains why the app exited, and the restore failure is usually its consequence.
-    */
-  private def withRestoreFailure(
-      result: Either[RunnerError, Unit],
-      closed: Either[BackendError, Unit],
-  ): Either[RunnerError, Unit] =
-    result match
-      case Left(_)   => result
-      case Right(()) => closed.left.map(RunnerError.Backend(_))
+    try
+      setup() match
+        case Left(error) =>
+          result = Left(RunnerError.Backend(error))
+        case Right(())   =>
+          setupIncomplete = false
+          val outcome = runLoop(onStart, handleEvent, render, loop)
+          result = report(outcome, recorder.collected)
+          RenderThread.drainPending(loop)
+          result = report(outcome, recorder.collected)
+    catch
+      case error: Throwable =>
+        result match
+          case Left(primary) => primary.addCleanupFailure(error)
+          case Right(())     => thrown = Some(error)
+    finally
+      // Confined resources are disposed while their owner remains registered. Each release is attempted independently.
+      release(onStop())
+      release(loop.close())
+      release(RenderThread.unregister())
+      release {
+        backend.close() match
+          case Left(error) =>
+            if result.isRight && thrown.isEmpty then
+              val primary = RunnerError.Backend(error)
+              error match
+                case BackendError.Io(cause) => cause.getSuppressed.foreach(primary.addCleanupFailure)
+                case _                      => ()
+              result = Left(primary)
+            else
+              val cause = error match
+                case BackendError.Io(primary) => primary
+                case _                        => IllegalStateException(error.message)
+              recordCleanup(cause)
+          case Right(())   => ()
+      }
+      if setupIncomplete then release(backend.emergencyRestore())
+    thrown.foreach(error => throw error)
+    result
 
   /** Combines the loop's own outcome with the queued-task failures it absorbed into what [[run]] returns.
     *
@@ -167,6 +199,25 @@ final class TerminalRunner(
   ): Option[LoopFailure] =
     LoopBody(backend, config, nanoTime, redrawRequested, onStart, handleEvent, render, loop).run()
 
+object TerminalRunner:
+  /** Releases an already-owned backend when application preparation failed before a runner existed. No terminal modes
+    * are entered. Cleanup callbacks still have a registered owner, and their failures cannot replace `primary`.
+    */
+  private[tui] def cleanupBeforeStart(backend: Backend, primary: Throwable, onStop: () => Unit): Unit =
+    val cleanup = new Cleanup
+    cleanup.attempt(throw primary)
+    val loop    = RenderThread.register(Thread.currentThread(), () => backend.wake())
+    cleanup.attempt(onStop())
+    cleanup.attempt(loop.close())
+    cleanup.attempt(RenderThread.unregister())
+    cleanup.attempt {
+      backend.close() match
+        case Left(BackendError.Io(error)) => throw error
+        case Left(error)                  => throw IllegalStateException(error.message)
+        case Right(())                    => ()
+    }
+    cleanup.rethrow()
+
 /** The event loop of one [[TerminalRunner.run]]: the per-iteration phases (redraw, guarded callback, dispatch,
   * frame-owed check) and the loop itself, gathered out of `runLoop` so each phase is one named method on the state it
   * closes over rather than one of four nested closures sharing locals.
@@ -188,6 +239,8 @@ private final class LoopBody(
   private val ticks    = TickSchedule(config.tickRate, nanoTime)
   private val handle   = BackendHandle(backend, state)
   private val composer = FrameComposer(backend, render, config.onFrame, config.viewport)
+
+  private def isLive: Boolean = state.isLive && !loop.stopRequested
 
   /** Composes and flushes one frame.
     *
@@ -254,27 +307,28 @@ private final class LoopBody(
     // Before the first frame and after the terminal is dressed: the earliest point at which this is certainly the
     // render thread, so background work armed here captures this loop. A `quit()` from it exits without rendering.
     val _ = guarded { onStart(handle); EventOutcome.Ignored }
-    if state.isLive then redraw()
-    while state.isLive do
+    if isLive then redraw()
+    while isLive do
       RenderThread.drainPending(loop)
       // queued work (runLater/runOnRenderThread) may have invalidated state between events
-      if frameOwed() && state.isLive then redraw()
-      backend.readEvent(ticks.pollTimeout) match
-        case Left(error)        => state.fail(error)
-        case Right(Some(event)) =>
-          // deliberately one event per redraw: the element tree that routes focus and hit-testing is published *by*
-          // rendering, so folding several key events into one frame would dispatch the later ones against a stale
-          // tree — Tab would move focus and the next keystroke would still go to the previous element. Floods are
-          // bounded anyway: a paste arrives as a single `Event.Paste`, and resizes coalesce inside the backend.
-          if dispatch(event) == DispatchOutcome.Repaint && state.isLive then redraw()
-        case Right(None)        => ()
+      if frameOwed() && isLive then redraw()
+      if isLive then
+        backend.readEvent(ticks.pollTimeout) match
+          case Left(error)                  => state.fail(error)
+          case Right(Some(event)) if isLive =>
+            // deliberately one event per redraw: the element tree that routes focus and hit-testing is published *by*
+            // rendering, so folding several key events into one frame would dispatch the later ones against a stale
+            // tree — Tab would move focus and the next keystroke would still go to the previous element. Floods are
+            // bounded anyway: a paste arrives as a single `Event.Paste`, and resizes coalesce inside the backend.
+            if dispatch(event) == DispatchOutcome.Repaint && isLive then redraw()
+          case Right(_)                     => ()
       // the loop may have stopped inside dispatch above — a quit(), the end of input, a failed backend call — and a
       // tick that falls due now is not owed to an app that has already exited: only a live loop delivers one
-      if state.isLive then
+      if isLive then
         // when no tick is due the handler is not invoked at all
         val tickDue     = ticks.takeDue()
         val tickOutcome = if tickDue then guarded(handleEvent(Event.Tick, handle)) else EventOutcome.Ignored
-        if tickDue && tickOutcome == EventOutcome.Redraw && state.isLive then redraw()
+        if tickDue && tickOutcome == EventOutcome.Redraw && isLive then redraw()
     state.outcome
 
 /** What [[LoopBody.dispatch]] settled about the frame that follows the event it handled — named so the loop reads
@@ -381,17 +435,20 @@ private final class FrameComposer(
     * first would place it and then move it away again. Position first and *then* show, so the cursor is never briefly
     * visible at its stale spot.
     *
-    * Nothing is emitted when the request has not changed since the previous frame. Without that comparison a static
-    * frame with a caret in it would emit a move and a show on every tick, which is a visible flicker on a terminal that
-    * blinks its cursor.
+    * Every draw may move the physical cursor, even when the declaration is unchanged. Restore its position after every
+    * draw; deduplicate visibility separately so a steady caret is not repeatedly shown.
     */
   private def placeCursor(requested: Option[Position]): Either[BackendError, Unit] =
-    if requested == shownCursor then Right(())
-    else
-      shownCursor = requested
-      requested match
-        case Some(position) => backend.setCursorPosition(position).flatMap(_ => backend.showCursor())
-        case None           => backend.hideCursor()
+    val visibilityChanged = requested.isDefined != shownCursor.isDefined
+    requested match
+      case Some(position) =>
+        backend.setCursorPosition(position).flatMap { _ =>
+          val result = if visibilityChanged then backend.showCursor() else Right(())
+          result.map { _ => shownCursor = requested }
+        }
+      case None           =>
+        val result = if visibilityChanged then backend.hideCursor() else Right(())
+        result.map { _ => shownCursor = None }
 
 /** Why a [[TerminalRunner]] loop stopped early, when it did.
   *

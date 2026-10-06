@@ -248,35 +248,55 @@ import io.worxbend.tui.testsupport.Pilot
 
 val backend = HeadlessBackend(Size(44, 8))
 val app = CounterApp()
-val pilot = Pilot.start(backend) {
-  app.runWith(backend)
+Pilot.using(backend)(app.runWith(backend)) { pilot =>
+  pilot.waitForIdle()
+  assert(pilot.screenText.contains("Count: 0"))
+
+  pilot.press("+", "+").waitForIdle()
+  assert(pilot.screenText.contains("Count: 2"))
+
+  pilot.press("q")
+  assert(pilot.awaitTermination())
 }
-
-pilot.waitForIdle()
-assert(pilot.screenText.contains("Count: 0"))
-
-pilot.press("+", "+").waitForIdle()
-
-assert(pilot.screenText.contains("Count: 2"))
-
-pilot.press("q")
-assert(pilot.awaitTermination())
 ```
 
-A test with no other use for the backend can let the pilot own it. `Pilot.start(size)`
-builds the `HeadlessBackend`, hands it to the block, and leaves it reachable afterwards
-as `pilot.backend`:
+A test with no other use for the backend can let the pilot construct it.
+`Pilot.using(size)` hands that backend to the app function and exposes it inside the
+test body as `pilot.backend`:
 
 ```scala
 val app = CounterApp()
-val pilot = Pilot.start(Size(44, 8))(app.runWith).waitForIdle()
+Pilot.using(Size(44, 8))(backend => app.runWith(backend)) { pilot =>
+  pilot.waitForIdle()
+  assert(pilot.screenText.contains("Count: 0"))
+}
 ```
 
 The block takes the backend as its parameter rather than closing over a `val`, which is
-what collapses the three lines above into one. It takes a function of the backend and
+what removes the explicit backend variable. It takes a function of the backend and
 not the application itself because `tui-test` is built on `tui-core`, `tui-terminal`
 and `tui-runtime` and on nothing above them — a `TuiApp` overload would point the
 dependency edge upward at `tui-dsl`.
+
+Always scope the pilot **before the first wait or assertion**. `Pilot.using` calls
+`close()` even if the test body throws; the body's failure stays primary and any
+shutdown failure is suppressed on it. An assertion followed by a quit key is not
+cleanup: when the assertion fails, that key is never posted.
+
+`close()` requests runner-owned, non-consumable cancellation and waits at most
+**2 seconds** by default. It posts neither a key nor an interrupt, so an app that
+consumes `Ctrl+C` cannot veto it. `close(timeout: FiniteDuration)` sets a different
+finite deadline; a blocked user callback cannot be forcibly killed and timeout is an
+assertion failure. For a custom timeout, wrap `Pilot.start(...)` in `try`/`finally`
+with `pilot.close(5.seconds)` in the `finally`. `awaitTermination` only waits for a
+natural exit; it does not request cancellation. Daemon-thread status is not cleanup.
+
+Use `pilot.readOnRenderThread { computed.peek }` for thread-confined observations.
+It waits for **this pilot's** runner registration, then executes only on that owner;
+startup and execution share the supplied deadline. It never falls back to another
+runner or runs inline on the test thread. Call it while the pilot is live: a stopped
+owner rejects the read. The backend's last-frame snapshots remain safe to inspect
+after a clean termination, but they do not make app-owned state readable off-thread.
 
 `press` takes **the same key specs `binding` takes** — `"q"`, `"ctrl+s"`,
 `"shift+tab"` (or its alias `"backtab"`), `"esc"`, `"f2"`, `"up"`, `"+"`. Both go
@@ -480,13 +500,13 @@ parameter for exactly this reason, and `ManualClock` is that parameter:
 
 ```scala
 val clock = ManualClock()
-val pilot = Pilot.start(Size(20, 3)) { backend =>
+Pilot.using(Size(20, 3)) { backend =>
   TerminalRunner(backend, RunnerConfig(tickRate = Some(50.millis)), clock.reading)
     .run(onStart, handleEvent, render)
+} { pilot =>
+  pilot.waitForIdle()
+  pilot.advanceClock(clock, 50.millis)   // exactly one tick, and the frame it painted
 }
-
-pilot.waitForIdle()
-pilot.advanceClock(clock, 50.millis)   // exactly one tick, and the frame it painted
 ```
 
 `advanceClock` moves the clock and then waits for the frames the tick is expected to
@@ -565,11 +585,13 @@ frame becomes reproducible without waiting for wall time to pass:
 
 ```scala
 AnimationClock.freezeAt(0.millis)
-val pilot = Pilot.start(backend) { app.runWith(backend) }.waitForIdle()
-assert(pilot.screenLines.head.startsWith("⠋"))
+Pilot.using(backend)(app.runWith(backend)) { pilot =>
+  pilot.waitForIdle()
+  assert(pilot.screenLines.head.startsWith("⠋"))
 
-AnimationClock.freezeAt(SpinnerPreset.Dots.frameDuration)
-// …the next frame, deterministically
+  AnimationClock.freezeAt(SpinnerPreset.Dots.frameDuration)
+  // …the next frame, deterministically
+}
 ```
 
 `freezeAt` marshals onto the render thread, so it is safe to call from a test thread

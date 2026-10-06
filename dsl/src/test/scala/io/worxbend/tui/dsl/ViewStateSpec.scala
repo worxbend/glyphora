@@ -3,7 +3,6 @@ package io.worxbend.tui.dsl
 import io.worxbend.tui.core.Size
 import io.worxbend.tui.runtime.Signal
 import io.worxbend.tui.terminal.HeadlessBackend
-import io.worxbend.tui.testsupport.Pilot
 
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -12,7 +11,7 @@ import org.scalatest.funsuite.AnyFunSuite
   * Everything here drives a real app through `Pilot`, because the whole feature is about what survives from one frame
   * to the next — a single evaluation could not tell a working slot from one recreated every time.
   */
-final class ViewStateSpec extends AnyFunSuite:
+final class ViewStateSpec extends AnyFunSuite with PilotFixture:
 
   /** A reusable piece of view that owns its own counter, written the way a library author would write it: no state
     * parameter, nothing for the caller to declare.
@@ -30,7 +29,7 @@ final class ViewStateSpec extends AnyFunSuite:
     val backend = HeadlessBackend(Size(20, 3))
     val app     = new TuiApp:
       def view(using ReactiveScope, Theme): Element = counter("n")
-    val pilot   = Pilot.start(backend)(app.runWith(backend))
+    val pilot   = startPilot(backend)(app.runWith(backend))
     pilot.waitForIdle()
     assert(pilot.screenLines.head.startsWith("n=0"))
     // each press repaints, and a slot recreated per frame would read 0 again every time
@@ -46,7 +45,7 @@ final class ViewStateSpec extends AnyFunSuite:
     val app     = new TuiApp:
       def view(using ReactiveScope, Theme): Element =
         column(counter("left"), counter("right"))
-    val pilot   = Pilot.start(backend)(app.runWith(backend))
+    val pilot   = startPilot(backend)(app.runWith(backend))
     pilot.waitForIdle()
     assert(pilot.screenLines.head.startsWith("left=0"))
     assert(pilot.screenLines(1).startsWith("right=0"))
@@ -64,7 +63,7 @@ final class ViewStateSpec extends AnyFunSuite:
         KeyBindings(binding("d", "drop the middle item")(items.update(_.filterNot(_ == "b"))))
       def view(using ReactiveScope, Theme): Element =
         column(items.get.map(id => keyed(id)(counter(id)))*)
-    val pilot   = Pilot.start(backend)(app.runWith(backend))
+    val pilot   = startPilot(backend)(app.runWith(backend))
     pilot.waitForIdle()
     // give each of the three a different value, walking focus along with Tab
     pilot.typeText("+").waitForIdle()
@@ -86,7 +85,7 @@ final class ViewStateSpec extends AnyFunSuite:
       override def bindings: KeyBindings            = KeyBindings(binding("t", "toggle")(shown.update(!_)))
       def view(using ReactiveScope, Theme): Element =
         if shown.get then counter("only") else text("hidden")
-    val pilot   = Pilot.start(backend)(app.runWith(backend))
+    val pilot   = startPilot(backend)(app.runWith(backend))
     pilot.waitForIdle()
     pilot.typeText("+").waitForIdle()
     assert(pilot.screenLines.head.startsWith("only=1"))
