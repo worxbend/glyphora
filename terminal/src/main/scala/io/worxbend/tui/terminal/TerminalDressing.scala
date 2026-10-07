@@ -59,17 +59,23 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
     undress(state.cursorShape != CursorShape.Default, backend.setCursorShape(CursorShape.Default))
     undress(state.cursorBlinkSuppressed, backend.setCursorBlink(true))
     undress(state.cursorHidden, backend.showCursor())
-    undress(backend.inlineRows > 0, parkBelowInlineFrame())
     undress(state.alternateScreen, backend.leaveAlternateScreen())
     undress(state.raw, backend.disableRawMode())
+    // Raw-mode release restores the saved shell cursor. Inline parking must be later or that restore undoes it.
+    undress(backend.inlineRows > 0, parkBelowInlineFrame())
     // Each output step flushes and checks the writer. An unconditional silent flush here would hide device failures
     // and touch an already-closed JLine handle during an otherwise harmless repeated close.
     TerminalRelease(state, failures.result().headOption)
 
   /** An inline run leaves its last frame on the primary screen on purpose, so park the cursor on the line below the
-    * strip: without this the shell's next prompt would be drawn straight over the frame the app just left behind.
+    * strip: without this the shell's next prompt would be drawn straight over the frame the app just left behind. The
+    * frame ends at the terminal's current bottom row; neither the app's caret nor the restored shell cursor necessarily
+    * does. Move there explicitly before scrolling one fresh line into view.
     */
-  private def parkBelowInlineFrame(): Either[BackendError, Unit] = backend.writeRaw("\r\n")
+  private def parkBelowInlineFrame(): Either[BackendError, Unit] =
+    backend.size.flatMap { size =>
+      backend.writeRaw(AnsiSequences.moveTo(0, math.max(0, size.height - 1)) + "\r\n")
+    }
 
   /** Restores what [[releaseTerminal]] undressed. Same two callers, same two threads, same monitor.
     *

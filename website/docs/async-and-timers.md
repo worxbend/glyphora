@@ -106,7 +106,9 @@ poller.cancel()
 
 Both callbacks run on the render thread. Returned `Cancelable` handles make
 lifecycle ownership explicit and prevent a screen that no longer exists from
-continuing to update app state.
+continuing to update app state. `cancel()` also discards callbacks already queued
+for delivery but not yet started. It is thread-safe and idempotent; a callback
+that has already started is allowed to finish without interruption.
 
 ## Use the app tick for frame-oriented work
 

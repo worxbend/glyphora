@@ -543,14 +543,28 @@ val liveMetrics = new Screen:
   override def onLeave(): Unit = poller.foreach(_.cancel())
 ```
 
-`onEnter` runs on the render thread the moment the screen goes on the stack, before the
-frame that first shows it. `onLeave` runs when it leaves — popped, replaced, reset away,
-or still on the stack when the run ends, in which case it runs before the app's own
-`onStop`, so the screen releases what it holds while the app's resources are still
-there. Every `onEnter` is matched by exactly one `onLeave`, on every exit path including
-a `Ctrl+C` or a handler that threw, because the run's teardown is in a `finally`.
+A push during a run calls `onEnter` immediately on the render thread, after writing
+navigation and before the first frame showing the entry. This includes pushes from
+`onStart`. Popping, replacing, or resetting an active entry calls `onLeave`; teardown
+leaves active entries innermost first, before the app's `onStop`, while app resources
+are still available.
 
-Teardown attempts every screen's `onLeave` before the app's `onStop`; one failing
+Navigation state survives repeated runs of the same app, but resource activation does
+not. On the next run, retained inactive entries re-enter outermost first **after
+`onStart` returns successfully**, before any frame. `onStart` can remove or replace
+retained entries without leaving them again. Entries already entered by a startup
+push are not entered a second time, and entries removed by an earlier `onEnter`
+callback are skipped. Pushing the same `Screen` value twice creates independent
+entries, each with its own enter/leave pair per active lifetime.
+
+Every attempted `onEnter` is matched by one `onLeave`, even if acquisition throws
+part-way through. An entry becomes inactive before its leave callback runs, so a
+throwing cleanup or navigation from a callback cannot release it twice. Removing an
+inactive entry invokes neither hook. Navigation before a run or from `onLeave`/`onStop`
+during teardown only changes the retained stack; newly added entries stay inactive
+until a later startup.
+
+Teardown attempts every active entry's `onLeave` before the app's `onStop`; one failing
 callback does not skip the others or the framework's own cleanup. The render owner
 remains registered through these callbacks, so signal writes are still confined to
 it. Terminal-facing app services are already inert; use these hooks to release
@@ -918,9 +932,15 @@ queue instead of this app and can accumulate a backlog before startup. Calling
 `quit()` from `onStart()` exits before anything is drawn, which is how a start-up
 check declines to run.
 
-`onStop()` runs on the way out of every exit path: `quit()`, an unconsumed `Ctrl+C`, a
-backend failure, an event handler that threw. Nothing cancels a repeating `Async.every`
-for you, so this is where it is cancelled.
+`onStop()` runs on the way out of every owned run: `quit()`, an unconsumed `Ctrl+C`, a
+backend failure, or a handler that threw. It also runs if evaluating `config` or
+`splash` fails before `onStart`, under a temporary registered cleanup owner. In that
+case retained screens stay inactive and receive neither hook, and the preparation
+exception escapes unchanged with cleanup failures suppressed on it. Cleanup must
+tolerate resources never having been opened. If `createBackend()` fails, no backend
+was acquired and `onStop` is not called.
+
+Nothing cancels a repeating `Async.every` for you, so `onStop` is where it is cancelled.
 
 ```scala
 private var poller: Option[Cancelable] = None

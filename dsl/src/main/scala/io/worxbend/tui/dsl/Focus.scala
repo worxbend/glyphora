@@ -13,9 +13,10 @@ private[dsl] enum InputTarget:
     case Focus(index) => Some(index)
     case Pointer(_)   => None
 
-/** The last-painted input target under the pointer. Focus capability is metadata of that target, not another hit test.
+/** The last-painted input target under the pointer. `layoutArea` is translated but not clipped: handlers need the
+  * control's original origin and size. Eligibility was already checked against its clipped hit area.
   */
-private[dsl] final case class MouseHit(target: InputTarget, area: Rect)
+private[dsl] final case class MouseHit(target: InputTarget, layoutArea: Rect)
 
 /** Where an input target rendered this frame, and *when* in the frame's paint order it rendered.
   *
@@ -25,7 +26,7 @@ private[dsl] final case class MouseHit(target: InputTarget, area: Rect)
   * painted later means painted *over*. That makes the greatest sequence covering a cell the thing the user actually
   * sees there, which is the rule [[FocusTracker.hitTest]] resolves a click by.
   */
-private[dsl] final case class PaintedArea(area: Rect, sequence: Int)
+private[dsl] final case class PaintedArea(layoutArea: Rect, hitArea: Rect, sequence: Int)
 
 /** An element in the tree about to render asking to be given focus: where it sits in the tab order, and what identifies
   * it across renders.
@@ -54,6 +55,9 @@ private object FocusAnchor:
     */
   val Cleared: FocusAnchor = FocusAnchor(-1, scala.None)
 
+/** Focus and the autofocus request already handled by one covered layer; both must survive its absence. */
+private final case class CoveredFocus(anchor: FocusAnchor, autofocus: Option[AutofocusRequest])
+
 /** A single paint-ordered map of focusable and pointer-only input targets. Both kinds increment the same sequence,
   * including deferred portal content, so tree order and focus capability cannot override what was painted last. Owned
   * by one [[FocusTracker]] and touched only on its render thread.
@@ -65,18 +69,17 @@ private[dsl] final class PaintedAreas:
   /** How many areas have been recorded so far this frame; the paint sequence the next [[record]] stamps. */
   private var paintCounter = 0
 
-  /** Records where the focusable at `index` rendered, mapped out of any offscreen scroll buffers it rendered inside:
-    * translated into screen coordinates and clipped to every enclosing viewport. A focusable scrolled out of view clips
-    * to nothing and is not recorded at all, so [[hitTest]] can never return it and [[areaOf]] never hands an empty area
-    * to a built-in mouse handler.
+  /** Records both layout and visible bounds, mapped out of every offscreen scroll buffer. Only hit bounds are clipped
+    * to each enclosing viewport: handlers still need the translated layout origin and size. A focusable scrolled out of
+    * view is not recorded at all, so neither hit testing nor ancestor wheel bubbling can reach it.
     */
   def record(index: Int, area: Rect): Unit =
     recordTarget(InputTarget.Focus(index), area)
 
   private def recordTarget(target: InputTarget, area: Rect): Unit =
-    val onScreen = onScreenArea(area)
+    val onScreen = FrameCoordinates.visible(area)
     if !onScreen.isEmpty then
-      areas(target) = PaintedArea(onScreen, paintCounter)
+      areas(target) = PaintedArea(FrameCoordinates.translate(area), onScreen, paintCounter)
       paintCounter += 1
 
   /** Records where an element that carries an `onMouseEvent` but is not focusable rendered, keyed by the pointer id the
@@ -92,12 +95,6 @@ private[dsl] final class PaintedAreas:
 
   def popViewport(): Unit = FrameCoordinates.pop()
 
-  /** A rendered rect translated out of every offscreen scroll buffer it was drawn into, innermost first: an inner
-    * scroll view's transform maps into the *enclosing* content space, and the enclosing one then maps that onward.
-    */
-  private def onScreenArea(area: Rect): Rect =
-    FrameCoordinates.visible(area)
-
   /** Starts a frame: everything recorded for the previous one is dropped, and the next [[record]] paints first. */
   def clear(): Unit =
     areas.clear()
@@ -105,14 +102,18 @@ private[dsl] final class PaintedAreas:
     paintCounter = 0
     FrameCoordinates.clear()
 
-  def areaOf(index: Int): Option[Rect] = areas.get(InputTarget.Focus(index)).map(_.area)
+  /** Visible screen bounds, for hit eligibility only. */
+  def areaOf(index: Int): Option[Rect] = areas.get(InputTarget.Focus(index)).map(_.hitArea)
 
-  def pointerAreaOf(id: Int): Option[Rect] = areas.get(InputTarget.Pointer(id)).map(_.area)
+  def pointerAreaOf(id: Int): Option[Rect] = areas.get(InputTarget.Pointer(id)).map(_.hitArea)
+
+  /** Unclipped screen bounds of a visible control, for local-coordinate and size arithmetic in its handlers. */
+  def layoutAreaOf(index: Int): Option[Rect] = areas.get(InputTarget.Focus(index)).map(_.layoutArea)
 
   /** The input target painted last at this absolute screen position, whether or not it accepts focus. */
   def mouseHit(pos: Position): Option[MouseHit] =
-    val hits = areas.filter((_, area) => area.area.contains(pos))
-    hits.maxByOption((_, area) => area.sequence).map((target, painted) => MouseHit(target, painted.area))
+    val hits = areas.filter((_, area) => area.hitArea.contains(pos))
+    hits.maxByOption((_, area) => area.sequence).map((target, painted) => MouseHit(target, painted.layoutArea))
 
   /** The winning target's focus index, if it has one. Never looks through a pointer-only target. */
   def hitTest(pos: Position): Option[Int] = mouseHit(pos).flatMap(_.target.focusIndex)
@@ -231,20 +232,23 @@ private[dsl] final class FocusTracker:
     */
   def clearFocus(): Unit = anchor = FocusAnchor.Cleared
 
-  /** Focus as each covering layer found it — see [[pushLayer]]; innermost layer first. */
-  private var covered = List.empty[FocusAnchor]
+  /** Focus and autofocus history as each covering layer found them; innermost layer first. */
+  private var covered = List.empty[CoveredFocus]
 
   /** Called when a layer goes over the current tree — a modal or full screen is pushed, the command palette opens.
     *
     * Remembers where focus was and anchors it at the top of the tab order, so the incoming layer starts on its *first*
     * control. Without this the old index is merely clamped into the new layer's range, which is why opening a
     * three-field dialog while the app's fifth control was focused used to land the cursor on the dialog's last field.
+    * Autofocus starts fresh too: equal keys and indices on distinct layers are distinct requests.
     */
   def pushLayer(): Unit =
-    covered = anchor :: covered
+    covered = CoveredFocus(anchor, lastAutofocus) :: covered
     anchor = FocusAnchor(0, scala.None)
+    lastAutofocus = None
 
-  /** Called when that layer goes away. Puts focus back where the layer found it.
+  /** Called when that layer goes away. Puts focus back where the layer found it, including autofocus history so an
+    * unchanged request underneath does not steal the restored focus. A genuinely changed request still runs normally.
     *
     * `reconcile` still runs afterwards, so a tree that changed shape underneath the layer cannot restore an index that
     * is now out of range: the restored key re-anchors when it is still there, and the index is clamped when it is not.
@@ -255,9 +259,12 @@ private[dsl] final class FocusTracker:
   def popLayer(): Unit =
     covered match
       case frame :: rest =>
-        anchor = frame
+        anchor = frame.anchor
+        lastAutofocus = frame.autofocus
         covered = rest
-      case Nil           => anchor = FocusAnchor(0, scala.None)
+      case Nil           =>
+        anchor = FocusAnchor(0, scala.None)
+        lastAutofocus = None
 
   /** `Tab`. From the no-focus state this lands on the *first* focusable rather than the second one. */
   def focusNext(): Boolean =
@@ -296,6 +303,9 @@ private[dsl] final class FocusTracker:
 
   /** @see [[PaintedAreas.areaOf]] */
   def areaOf(index: Int): Option[Rect] = painted.areaOf(index)
+
+  /** @see [[PaintedAreas.layoutAreaOf]] */
+  def layoutAreaOf(index: Int): Option[Rect] = painted.layoutAreaOf(index)
 
   /** @see [[PaintedAreas.pointerAreaOf]] */
   def pointerAreaOf(id: Int): Option[Rect] = painted.pointerAreaOf(id)

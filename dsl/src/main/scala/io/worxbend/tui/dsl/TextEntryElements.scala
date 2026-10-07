@@ -7,6 +7,9 @@ import io.worxbend.tui.widgets as w
 enum NumberFormat:
   case Integer, Decimal
 
+/** Single-line editors preserve pasted words without retaining terminal control line breaks. */
+private def singleLineText(text: String): String = text.replace("\r", "").replace("\n", " ")
+
 /** Single-line text input. Editing state (value + cursor) is app-owned; editing keys are handled by the built-in
   * handler while focused, and any consumed key triggers a redraw.
   */
@@ -24,7 +27,7 @@ final case class InputElement(
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     = Some(handleKey)
   private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler] = Some { text =>
     if props.focused then
-      state.insert(text.replace("\r", "").replace("\n", " ")) // single-line input: fold newlines to spaces
+      state.insert(singleLineText(text))
       true
     else false
   }
@@ -63,7 +66,7 @@ final case class AutocompleteElement(
   private def highlightedIndex(visible: Seq[String]): Int =
     math.max(0, math.min(state.highlighted, math.max(0, visible.size - 1)))
 
-  def widget: Widget                                                     =
+  def widget: Widget                                                         =
     val visible   = matches
     val highlight = highlightedIndex(visible)
     val input     = w.TextInput(showCursor = props.focused, style = props.style)
@@ -73,15 +76,24 @@ final case class AutocompleteElement(
         val rowStyle = if index == highlight && props.focused then focusStyled(props) else props.style.dim
         buffer.setString(area.x + 2, area.y + 1 + index, candidate, rowStyle)
       }
-  private[dsl] def withProps(props: ElementProps): AutocompleteElement   = copy(props = props)
-  private[dsl] override def claim: SizeClaim                             = SizeClaim.rows(1 + matches.size)
-  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler] = Some(handleKey)
+  private[dsl] def withProps(props: ElementProps): AutocompleteElement       = copy(props = props)
+  private[dsl] override def claim: SizeClaim                                 = SizeClaim.rows(1 + matches.size)
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     = Some(handleKey)
+  private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler] = Some { text =>
+    if props.focused then
+      insertText(singleLineText(text))
+      true
+    else false
+  }
+
+  private def insertText(text: String): Unit =
+    state.input.insert(text)
+    state.highlighted = 0
 
   private def handleKey(event: KeyEvent): Boolean =
     event.code match
       case KeyCode.Char(c) if isPlainTyping(event) =>
-        state.input.insert(Character.toString(c))
-        state.highlighted = 0
+        insertText(Character.toString(c))
         true
       case KeyCode.Backspace                       =>
         state.input.backspace()
@@ -127,20 +139,34 @@ final case class NumberInputElement(
   private[dsl] override def claim: SizeClaim                             = SizeClaim.OneRow
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler] = Some(handleKey)
 
-  // deliberately an explicit match rather than a `keys` table: a rejected character is still consumed, and that rule
-  // has to stay visible at the place it happens
+  /** A paste is accepted as one edit or rejected whole; rejected payload never becomes application key commands. */
+  private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler] = Some { text =>
+    if props.focused then
+      insertNumber(text)
+      true
+    else false
+  }
+
+  // Rejected printable characters are consumed too: they must not bubble as global keys while typing.
   private def handleKey(event: KeyEvent): Boolean =
     event.code match
-      case KeyCode.Char(c) if event.modifiers.isEmpty =>
-        if accepts(c) then state.insert(Character.toString(c))
-        true // swallow rejected characters too: they must not bubble as global keys while typing
-      case _ => cursorKeys(state)(event)
+      case KeyCode.Char(c) if isPlainTyping(event) =>
+        insertNumber(Character.toString(c))
+        true
+      case _                                       => cursorKeys(state)(event)
 
-  private def accepts(codePoint: Int): Boolean =
-    if Character.isDigit(codePoint) then true
-    else if codePoint == '-' then state.cursor == 0 && !state.value.startsWith("-")
-    else if codePoint == '.' then format == NumberFormat.Decimal && !state.value.contains('.')
-    else false
+  /** Check the prospective value, not just the inserted character: a digit before an existing minus would otherwise
+    * turn a valid number into `3-12`. The cursor is a grapheme index, including for caller-supplied initial text.
+    */
+  private def insertNumber(text: String): Unit =
+    val clusters = CharWidth.graphemeClusters(state.value).toVector
+    val proposed = clusters.patch(state.cursor, Seq(text), 0).mkString
+    val points   = proposed.codePoints().toArray
+    val valid    = points.zipWithIndex.forall { (point, index) =>
+      Character.isDigit(point) || (point == '-' && index == 0) ||
+      (point == '.' && format == NumberFormat.Decimal)
+    } && points.count(_ == '.') <= 1
+    if valid then state.insert(text)
 
 /** A template-driven input (`##/##/####`): `#` accepts a digit, `A` a letter, literals insert themselves. */
 final case class TemplateInputElement(
@@ -149,16 +175,22 @@ final case class TemplateInputElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = TemplateInputElement
-  def widget: Widget                                                     =
+  def widget: Widget                                                         =
     val input = w.TextInput(placeholder = template, showCursor = props.focused, style = props.style)
     (area, buffer) => input.render(area, buffer, state)
-  private[dsl] def withProps(props: ElementProps): TemplateInputElement  = copy(props = props)
-  private[dsl] override def claim: SizeClaim                             = SizeClaim.OneRow
-  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler] =
+  private[dsl] def withProps(props: ElementProps): TemplateInputElement      = copy(props = props)
+  private[dsl] override def claim: SizeClaim                                 = SizeClaim.OneRow
+  private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler] = Some { text =>
+    if props.focused then
+      text.codePoints().forEach(point => typeChar(point))
+      true
+    else false
+  }
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
     Some(
       keys {
-        case KeyEvent(KeyCode.Char(c), modifiers) if modifiers.isEmpty => typeChar(c)
-        case KeyEvent(KeyCode.Backspace, _)                            => eraseSlot()
+        case event @ KeyEvent(KeyCode.Char(c), _) if isPlainTyping(event) => typeChar(c)
+        case KeyEvent(KeyCode.Backspace, _)                               => eraseSlot()
       }
     )
 

@@ -93,7 +93,9 @@ trait Screen:
     */
   def dismissal: Dismissal = Dismissal.Never
 
-  /** Runs on the render thread the moment this screen goes on the stack, before the frame that first shows it.
+  /** Runs on the render thread when this stack entry becomes active, before the frame that first shows it. A push
+    * during a run enters immediately, including from `TuiApp.onStart`. Retained inactive entries enter outermost first
+    * after `onStart` returns successfully on the next run; entries removed during startup are not entered.
     *
     * This is a screen's own "now I am running", the counterpart of `TuiApp.onStart` for a subtree that comes and goes.
     * Without it, a screen that polls had to arm its poller in the app's `onStart` and cancel it in the app's `onStop`,
@@ -106,16 +108,19 @@ trait Screen:
     * override def onLeave(): Unit = poller.foreach(_.cancel())
     * }}}
     *
-    * A screen pushed twice gets two `onEnter` calls and two matching [[onLeave]] calls.
+    * A screen pushed twice is two independent entries, each with one `onEnter` and matching [[onLeave]] per active
+    * lifetime. Navigation outside a run or from cleanup retains inactive entries until a later startup.
     */
   def onEnter(): Unit = ()
 
-  /** Runs on the render thread when this screen leaves the stack: popped, replaced, reset away, or still on the stack
-    * when the run ends — in which case it runs before `TuiApp.onStop`, so the app's own resources are still alive.
+  /** Runs on the render thread when an active entry is popped, replaced, reset away, or still on the stack when the run
+    * ends — in which case it runs before `TuiApp.onStop`, so the app's own resources are still alive. Teardown leaves
+    * entries innermost first without clearing navigation; a later run re-enters retained entries.
     *
-    * Always paired with exactly one [[onEnter]], including on the exit paths a `Ctrl+C` or a handler that threw takes,
-    * because the run's teardown is in a `finally`. Cancel here whatever `onEnter` started; nothing else cancels a
-    * repeating `Async.every` for you.
+    * Always paired with exactly one attempted [[onEnter]], including when acquisition itself threw part-way through. An
+    * entry becomes inactive before this callback runs: a throwing cleanup or navigation from a hook cannot leave it
+    * twice. Removing an inactive retained entry calls neither hook. Cancel here whatever `onEnter` started; nothing
+    * else cancels a repeating `Async.every` for you.
     */
   def onLeave(): Unit = ()
 

@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.Modifiers
+import io.worxbend.tui.core.{Buffer, Cell, Modifiers, Rect, Style}
 import io.worxbend.tui.testsupport.BufferAssertions.{line, rendered, trimmedLines}
 
 import org.scalatest.funsuite.AnyFunSuite
@@ -18,8 +18,56 @@ final class SliderSpec extends AnyFunSuite:
     assert(trimmedLines(rendered(Slider(-50, SliderRange.of(0, 100)), 11, 1)) == Seq("├●────────┤"))
     assert(trimmedLines(rendered(Slider(500, SliderRange.of(0, 100)), 11, 1)) == Seq("├────────●┤"))
 
+  for (minimum, maximum, value, trackColumn) <- Seq(
+      (-1500000000, 1500000000, -1499999998, 0),
+      (-1500000000, 1500000000, 0, 1),
+      (-1500000000, 1500000000, 1500000000, 2),
+      (Int.MinValue, Int.MaxValue, Int.MinValue, 0),
+      (Int.MinValue, Int.MaxValue, 0, 1),
+      (Int.MinValue, Int.MaxValue, Int.MaxValue, 2),
+      (-1500000000, 1500000000, Int.MinValue, 0),
+      (-1500000000, 1500000000, Int.MaxValue, 2),
+      (Int.MinValue, Int.MinValue, Int.MaxValue, 0),
+      (Int.MaxValue, Int.MaxValue, Int.MinValue, 0),
+    )
+  do
+    test(s"range $minimum..$maximum places $value on the track without overwriting neighboring cells"):
+      val area     = Rect(2, 1, 5, 1)
+      val buffer   = Buffer(Rect(0, 0, 10, 3))
+      val sentinel = Cell("~", Style.Default.reverse)
+      buffer.fill(buffer.area, sentinel)
+      Slider(value, SliderRange.of(minimum, maximum)).render(area, buffer)
+      for
+        y <- 0 until buffer.area.height
+        x <- 0 until buffer.area.width
+        if !area.contains(x, y)
+      do assert(buffer.get(x, y) == sentinel, s"outside write at ($x, $y)")
+      assert(buffer.get(area.x, area.y).symbol == "├")
+      assert(buffer.get(area.right - 1, area.y).symbol == "┤")
+      assert(buffer.get(area.x + 1 + trackColumn, area.y).symbol == "●")
+      assert((area.x until area.right).count(x => buffer.get(x, area.y).symbol == "●") == 1)
+
+  test("the full Int range stays contained when the track has one column or no room to paint"):
+    for
+      width  <- 0 to 3
+      height <- 0 to 1
+      value  <- Seq(Int.MinValue, 0, Int.MaxValue)
+    do
+      val area     = Rect(2, 1, width, height)
+      val buffer   = Buffer(Rect(0, 0, 8, 3))
+      val sentinel = Cell("~", Style.Default.reverse)
+      buffer.fill(buffer.area, sentinel)
+      Slider(value, SliderRange.of(Int.MinValue, Int.MaxValue)).render(area, buffer)
+      for
+        y <- 0 until buffer.area.height
+        x <- 0 until buffer.area.width
+      do
+        val expected =
+          if width == 3 && height == 1 && area.contains(x, y) then Seq("├", "●", "┤")(x - area.x)
+          else sentinel.symbol
+        assert(buffer.get(x, y).symbol == expected)
+
   test("an empty range puts the knob at the start instead of dividing by zero"):
-    // `max - min` is 0 here; the `math.max(1, ...)` guard is what stops the position arithmetic throwing mid-render
     assert(trimmedLines(rendered(Slider(7, SliderRange.of(7, 7)), 11, 1)) == Seq("├●────────┤"))
 
   test("SliderRange orders the bounds it is given and refuses a step that cannot move"):

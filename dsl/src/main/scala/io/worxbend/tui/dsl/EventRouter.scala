@@ -62,16 +62,12 @@ private[dsl] object EventRouter:
       case pointer: PointerElement => Some(InputTarget.Pointer(pointer.pointerId))
       case _                       => None
 
-  /** Where this element rendered last frame, for the two wrappers the decoration pass adds. */
-  private def recordedArea(element: Element): Option[Rect] =
-    element match
-      case tracked: TrackedElement => tracked.tracker.areaOf(tracked.index)
-      case pointer: PointerElement => pointer.tracker.pointerAreaOf(pointer.pointerId)
-      case _                       => None
-
-  /** Where this element rendered last frame, if the pointer is inside it. */
-  private def coveredArea(element: Element, event: MouseEvent): Option[Rect] =
-    recordedArea(element).filter(_.contains(event.position))
+  /** Original layout bounds, only while the pointer is inside the control's visible portion. */
+  private def coveredArea(element: TrackedElement, event: MouseEvent): Option[Rect] =
+    element.tracker
+      .areaOf(element.index)
+      .filter(_.contains(event.position))
+      .flatMap(_ => element.tracker.layoutAreaOf(element.index))
 
   /** The user's `onMouseEvent` first, then the framework's own behavior for this element. */
   private def handlesMouse(element: Element, event: MouseEvent, hit: Option[MouseHit]): Boolean =
@@ -80,8 +76,9 @@ private[dsl] object EventRouter:
 
   /** The area a built-in behavior runs against, and the gate on whether it runs at all.
     *
-    * On the hit element that is the area the hit resolved to. On an *outer* tracked element it is that element's own
-    * recorded area, only while the pointer is inside it, and only for a wheel event — see [[reachesOuterBuiltin]].
+    * On the hit element that is its translated layout area, not the clipped bounds used to resolve the hit. On an
+    * *outer* tracked element it is that element's own layout area, only while the pointer is inside its visible bounds,
+    * and only for a wheel event — see [[reachesOuterBuiltin]].
     */
   private def builtinArea(element: Element, event: MouseEvent, hit: Option[MouseHit]): Option[Rect] =
     element match

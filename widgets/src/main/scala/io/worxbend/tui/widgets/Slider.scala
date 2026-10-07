@@ -24,7 +24,5 @@ final case class Slider(
       while x < area.right - 1 do
         buffer.set(x, area.y, Cell("─", style))
         x += 1
-      val span       = math.max(1, range.max - range.min)
-      val clamped    = math.max(range.min, math.min(value, range.max))
-      val knob       = area.x + 1 + math.round((clamped - range.min).toDouble / span * (trackWidth - 1)).toInt
+      val knob       = area.x + 1 + range.positionOf(value, trackWidth - 1)
       buffer.set(knob, area.y, Cell("●", knobStyle))

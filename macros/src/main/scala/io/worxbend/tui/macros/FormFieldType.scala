@@ -4,6 +4,7 @@ import java.time.{Duration, LocalDate, LocalDateTime, LocalTime}
 import java.util.UUID
 
 import scala.annotation.implicitNotFound
+import scala.collection.immutable.TreeMap
 import scala.compiletime.{constValueTuple, summonAll}
 import scala.deriving.Mirror
 import scala.util.Try
@@ -203,15 +204,22 @@ object FormFieldType:
     * every call site, so keeping the matching and the error message here means the program holds one copy of them
     * instead of one per call.
     *
-    * Matching ignores surrounding whitespace and case, because the label makes the round trip through a control as
-    * text. An empty `options` produces a field that rejects everything, which is the honest answer for a choice with
-    * nothing to choose from.
+    * Matching ignores surrounding whitespace and case on both declared labels and submitted text. Display labels keep
+    * their original spelling. Ambiguous labels fail at construction rather than silently submitting the first value. An
+    * empty `options` produces a field that rejects everything.
+    *
+    * @throws IllegalArgumentException
+    *   if two labels compare equal after trimming, ignoring case
     */
   def ofLabels[A](options: Seq[(String, A)]): FormFieldType[A] =
+    val empty   = TreeMap.empty[String, A](using Ordering.comparatorToOrdering(using String.CASE_INSENSITIVE_ORDER))
+    val choices = options.foldLeft(empty) { case (indexed, (label, value)) =>
+      val key = label.trim
+      require(!indexed.contains(key), s"duplicate form option label '$label' (ignoring whitespace and case)")
+      indexed.updated(key, value)
+    }
     apply(FieldInput.SelectField(options.map(_._1))) { raw =>
-      options
-        .collectFirst { case (label, value) if label.equalsIgnoreCase(raw.trim) => value }
-        .toRight(s"'$raw' is not one of ${options.map(_._1).mkString(", ")}")
+      choices.get(raw.trim).toRight(s"'$raw' is not one of ${options.map(_._1).mkString(", ")}")
     }
 
   /** An optional field renders with the same control as the type inside it, and treats blank input as "not given"

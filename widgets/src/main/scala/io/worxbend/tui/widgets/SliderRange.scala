@@ -19,7 +19,27 @@ package io.worxbend.tui.widgets
   * @param step
   *   how many units Left/Right move the value, always at least 1
   */
-final case class SliderRange private (min: Int, max: Int, step: Int)
+final case class SliderRange private (min: Int, max: Int, step: Int):
+
+  // A valid pair of Int bounds can span more than Int.MaxValue; widen before every operation on that span.
+  private val span: Long = max.toLong - min.toLong
+
+  /** Clamps a widened value before narrowing it, including the result of a keyboard step. */
+  private[tui] def clamp(value: Long): Int = math.max(min.toLong, math.min(value, max.toLong)).toInt
+
+  /** The nearest track position, bounded by the last usable column even at the full signed-Int scale. */
+  private[widgets] def positionOf(value: Int, lastPosition: Int): Int =
+    if span == 0 || lastPosition <= 0 then 0
+    else
+      val fraction = (clamp(value.toLong).toLong - min.toLong).toDouble / span.toDouble
+      math.max(0L, math.min(lastPosition.toLong, math.round(fraction * lastPosition))).toInt
+
+  /** Maps a pointer offset back to a value, clamping positions outside the track before interpolation. */
+  private[tui] def valueAt(position: Long, lastPosition: Int): Int =
+    if lastPosition <= 0 then min
+    else
+      val fraction = math.max(0L, math.min(position, lastPosition.toLong)).toDouble / lastPosition.toDouble
+      clamp(min.toLong + math.round(fraction * span.toDouble))
 
 object SliderRange:
 

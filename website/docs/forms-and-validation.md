@@ -174,6 +174,11 @@ are not what the user should read:
 given FormFieldType[Tier] = FormFieldType.ofLabels(Seq("no charge" -> Tier.Free, "billed" -> Tier.Paid))
 ```
 
+Labels keep their display spelling, but matching trims both the declared label and the
+submitted text and ignores case. Labels that collide under that comparison (for example,
+`"Admin"` and `" admin "`) throw `IllegalArgumentException` when the field type is built,
+rather than silently submitting the first option's value.
+
 A picklist always has something showing, so unlike a text field there is no "nothing
 entered" state: an untouched form submits the first option. Validate it like any other
 field, with its typed handle:

@@ -430,29 +430,43 @@ final case class DataTable[K](
     math.max(0, math.min(window.page, lastPage))
 
   def render(area: Rect, buffer: Buffer, state: DataTableState[K]): Unit =
+    clampPage(state)
+    val view       = visibleRows(state)
+    val footerRows = if footer.isDefined && area.height > 1 then 1 else 0
+    val bodyHeight = math.max(0, area.height - 1 - footerRows)
+    reconcileSelection(state, view, bodyHeight)
     if !area.isEmpty then
-      clampPage(state)
-      val view        = visibleRows(state)
       // the gutter is carved off the left of the whole table, header included, so every column keeps one x position
       val symbolWidth = math.min(CharWidth.of(highlightSymbol), area.width)
       val grid        = area.copy(x = area.x + symbolWidth, width = area.width - symbolWidth)
       // an empty `widths` means equal columns; a DataTable always names its columns, so the header settles the count
       val constraints = TableColumns.resolve(widths, Iterator(columns.size), grid.width)
       val segments    = Layout(Direction.Horizontal, constraints, columnSpacing, flex).split(grid)
+      // a column index past the last column would highlight nothing and hide the fact that it was set wrong
+      state.selectedColumn = Selection.clamped(state.selectedColumn, segments.size)
       renderHeader(buffer, segments, state)
-      val footerRows  = if footer.isDefined && area.height > 1 then 1 else 0
-      val bodyHeight  = area.height - 1 - footerRows
       if footerRows == 1 then
         footer.foreach(cells => renderRow(buffer, segments, cells, area.bottom - 1, _ => footerStyle))
       if bodyHeight > 0 && view.nonEmpty then renderBody(area, buffer, state, view, segments, symbolWidth, bodyHeight)
 
-  /** Repairs the selection and the column cursor against the view that survived the filter, scrolls the selection into
-    * view, and paints the window of body rows that fits — the body half of [[render]], which keeps the layout solving.
+  /** Reconciles caller-owned state on every render, including an empty view or an area with no body to paint.
     *
-    * The selection is anchored to the selected row's *key*: a key recorded last frame is re-resolved to its index in
-    * this frame's view, so a re-sort or a refreshed data set keeps the highlight on the same record. A key that no
-    * longer resolves — the record left the data — falls back to the clamped index, the only answer left.
+    * A key recorded last frame is re-resolved to its index in this frame's view. A key that no longer resolves falls
+    * back to the clamped index; an empty view clears both. Even with no body rows, a one-row scroll window keeps the
+    * offset anchored to an existing row rather than one past the selection.
     */
+  private def reconcileSelection(state: DataTableState[K], view: Seq[KeyedRow[K]], bodyHeight: Int): Unit =
+    val anchored = state.selectedRowKey.flatMap { key =>
+      val index = view.indexWhere(_.key == key)
+      Option.when(index >= 0)(index)
+    }
+    val selected = Selection.clamped(anchored.orElse(state.selected), view.size)
+    state.selected = selected
+    // assigning `selected` clears the recorded key, so the anchor is written after it, from the resolved row
+    state.selectedRowKey = selected.map(index => view(index).key)
+    state.offset = ScrollWindow.offsetFor(state.offset, selected, view.size, math.max(1, bodyHeight))
+
+  /** Paints the reconciled window of body rows that fits; layout and state repair belong to [[render]]. */
   private def renderBody(
       area: Rect,
       buffer: Buffer,
@@ -462,19 +476,9 @@ final case class DataTable[K](
       symbolWidth: Int,
       bodyHeight: Int,
   ): Unit =
-    val anchored = state.selectedRowKey.flatMap { key =>
-      val index = view.indexWhere(_.key == key)
-      Option.when(index >= 0)(index)
-    }
-    val selected = Selection.clamped(anchored.orElse(state.selected), view.size)
-    state.selected = selected
-    // assigning `selected` clears the recorded key, so the anchor is written after it, from the resolved row
-    state.selectedRowKey = selected.map(index => view(index).key)
-    state.offset = ScrollWindow.offsetFor(state.offset, selected, view.size, bodyHeight)
+    val selected = state.selected
     val padding  = " ".repeat(symbolWidth)
-    // a column index past the last column would highlight nothing and hide the fact that it was set wrong
-    val cursor   = Selection.clamped(state.selectedColumn, segments.size)
-    state.selectedColumn = cursor
+    val cursor   = state.selectedColumn
     view.slice(state.offset, state.offset + bodyHeight).zipWithIndex.foreach { (keyed, row) =>
       val cells      = keyed.cells
       val index      = state.offset + row

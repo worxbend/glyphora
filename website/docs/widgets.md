@@ -945,6 +945,16 @@ glyph reserves two.
 | `autocomplete` | `AutocompleteState` | input plus selectable suggestions and accept callback; `.maxSuggestions(n)` caps the list |
 | `filePicker` | `FilePickerState` | navigable file selection |
 
+`numberInput` accepts shifted digits and bracketed paste at the cursor. It checks the
+resulting text: the minus must remain first, and decimal mode permits at most one dot.
+Empty text, `-`, `.`, and `-.` are editable partial values (the dot forms require
+`.decimal`); the form parser still rejects incomplete numbers on submit. A paste that
+would violate these rules is rejected whole, never partly inserted or treated as commands.
+
+`autocomplete` folds pasted newlines to spaces, like `input`, and resets its suggestion
+highlight. `templateInput` applies its typing rules to pasted code points, filling slots
+and inserting literals; shifted letters and digits are accepted too.
+
 All editing and cursor movement is grapheme-cluster-aware. A Backspace removes one
 visible cluster instead of one UTF-16 code unit. Internally both fields measure, scroll,
 and draw a row through one shared rule (`ClusterRow`, package-private to `tui-widgets`):

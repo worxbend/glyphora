@@ -73,6 +73,54 @@ final class DataTableSpec extends AnyFunSuite:
     val lines = trimmedLines(rendered(table, state, 15, 4))
     assert(lines == Seq("name     size", "", "", ""))
 
+  for (width, height) <- Seq((12, 4), (12, 1), (12, 2), (0, 4), (12, 0))
+  do
+    test(s"an empty refresh clears the row selection, key and offset in a $width x $height area"):
+      val populated = DataTable(
+        Seq("name"),
+        Seq(KeyedRow("first", Seq("alpha")), KeyedRow("last", Seq("omega"))),
+        Seq(Constraint.Fill(1)),
+        DataTableOptions(footer = Some(Seq("total"))),
+      )
+      val state     = new DataTableState[String]
+      assert(populated.selectKey(state, "last"))
+      val _         = rendered(populated, state, 12, 3)
+      assert(state.selected.contains(1))
+      assert(populated.selectedKey(state).contains("last"))
+      assert(state.offset == 1)
+
+      val empty = populated.copy(rows = Seq.empty[KeyedRow[String]])
+      val _     = rendered(empty, state, width, height)
+      assert(state.selected.isEmpty)
+      assert(empty.selectedKey(state).isEmpty)
+      assert(state.offset == 0)
+
+  for (width, height) <- Seq((12, 1), (12, 2), (0, 4), (12, 0))
+  do
+    test(s"a $width x $height area reconciles keys on refresh without painting body rows"):
+      val original = DataTable(
+        Seq("name"),
+        Seq(KeyedRow("first", Seq("alpha")), KeyedRow("last", Seq("omega"))),
+        Seq(Constraint.Fill(1)),
+        DataTableOptions(footer = Some(Seq("total"))),
+      )
+      val state    = new DataTableState[String]
+      assert(original.selectKey(state, "last"))
+      val _        = rendered(original, state, 12, 3)
+
+      state.invalidate()
+      val reordered = original.copy(rows = original.rows.reverse)
+      val _         = rendered(reordered, state, width, height)
+      assert(state.selected.contains(0))
+      assert(reordered.selectedKey(state).contains("last"))
+      assert(state.offset == 0)
+
+      val removed = original.copy(rows = Seq(original.rows.head))
+      val _       = rendered(removed, state, width, height)
+      assert(state.selected.contains(0))
+      assert(removed.selectedKey(state).contains("first"))
+      assert(state.offset == 0)
+
   test("a page size windows the visible rows and paging clamps at the ends"):
     val state = DataTableState()
     state.paging = Some(Paging(size = 2, page = 0))

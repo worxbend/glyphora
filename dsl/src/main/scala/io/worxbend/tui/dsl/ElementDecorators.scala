@@ -57,10 +57,9 @@ private[dsl] final case class TrackedElement(inner: Element, index: Int, tracker
   * neutral props of its own so it never doubles up the wrapped element's handlers or focus state.
   *
   * Owned by the [[FocusPass]] that built it and touched only on the render thread. Portal enqueueing translates through
-  * the same context without clipping to the viewport it escapes. A focusable only partly inside the viewport records
-  * the clipped rect; width is never clipped (the offscreen buffer is exactly the viewport width less the scrollbar
-  * column), so `x`/`width`-based built-ins such as the slider stay exact, while a `y`/`height`-based one — the
-  * splitPane divider — reads the clipped height when half scrolled out.
+  * the same context without clipping to the viewport it escapes. A partly visible control records both its translated
+  * layout rect and its clipped hit rect. Handlers keep the original origin and dimensions for menu rows, sliders and
+  * splitPane dividers; hit-testing admits only positions inside every enclosing viewport.
   */
 private[dsl] final class ScrollViewportElement(
     val inner: Element,

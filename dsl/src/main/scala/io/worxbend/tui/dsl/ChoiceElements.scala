@@ -210,9 +210,8 @@ final case class SliderElement(
       event.kind match
         case MouseEventKind.Down | MouseEventKind.Drag =>
           if area.width > SliderChromeWidth then
-            val fraction =
-              (event.position.x - area.x - SliderTrackInset).toDouble / (area.width - SliderChromeWidth)
-            onChange(range.min + math.round(math.max(0.0, math.min(1.0, fraction)) * (range.max - range.min)).toInt)
+            val position = event.position.x.toLong - area.x.toLong - SliderTrackInset
+            onChange(range.valueAt(position, area.width - SliderChromeWidth))
           true
         case _                                         => false
     }
@@ -222,8 +221,8 @@ final case class SliderElement(
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
     Some(
       keys {
-        case KeyEvent(KeyCode.Left, _)  => onChange(math.max(range.min, value - range.step))
-        case KeyEvent(KeyCode.Right, _) => onChange(math.min(range.max, value + range.step))
+        case KeyEvent(KeyCode.Left, _)  => onChange(range.clamp(value.toLong - range.step.toLong))
+        case KeyEvent(KeyCode.Right, _) => onChange(range.clamp(value.toLong + range.step.toLong))
         case KeyEvent(KeyCode.Home, _)  => onChange(range.min)
         case KeyEvent(KeyCode.End, _)   => onChange(range.max)
       }

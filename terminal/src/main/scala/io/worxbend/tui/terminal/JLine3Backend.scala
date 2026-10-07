@@ -154,14 +154,16 @@ final class JLine3Backend private (private[terminal] val terminal: Terminal, col
     // claimed before the frame is composed, so a request raised while this frame is in flight survives for the next one
     val forced  = fullRedrawRequested.claim()
     // a terminal that narrowed has already reflowed what was on screen, and the wrapped remnants sit outside the new,
-    // smaller area where no amount of repainting reaches them — see ScreenReset for why only a shrink pays for this
+    // smaller area where no amount of repainting reaches them — erase only the screen/strip this backend owns
     val erasing = ScreenReset.clearsOnShrink(baseline.area, buffer.area)
     val result  = Backend.attempt {
-      val frame = composeFrame(buffer, blank = forced || erasing, erasing)
-      // an unchanged frame writes nothing at all, so a redraw-on-tick app with a static screen stays silent — unless
-      // the erase itself has to go out, which is the one case where "nothing changed" still needs a write
-      if frame.nonEmpty then writeFrameAtomically(frame)
-      baseline.commit(buffer)
+      screenOwnership.synchronized {
+        val frame = composeFrame(buffer, blank = forced || erasing, erasing)
+        // an unchanged frame writes nothing at all, so a redraw-on-tick app with a static screen stays silent — unless
+        // the erase itself has to go out, which is the one case where "nothing changed" still needs a write
+        if frame.nonEmpty then writeFrameAtomically(frame)
+        baseline.commit(buffer)
+      }
     }
     // the forced frame never reached the terminal and the baseline was not updated: the request has not been served
     if forced && result.isLeft then requestFullRedraw()
@@ -176,12 +178,21 @@ final class JLine3Backend private (private[terminal] val terminal: Terminal, col
     * every column this one leaves empty.
     */
   private def composeFrame(buffer: Buffer, blank: Boolean, erasing: Boolean): String =
-    val body = baseline.prepareFor(buffer.area, blank) match
+    // A primary-screen run owns at most its reserved bottom strip, never the shell output above it. Use the current
+    // height rather than the previous frame's origin, which can be outside the strip after a simultaneous resize.
+    val erase =
+      if !erasing then ""
+      else if alternateScreenActive then AnsiSequences.ClearScreen
+      else if inlineRows > 0 then
+        AnsiSequences.moveTo(0, math.max(0, currentSize.height - inlineRows)) +
+          AnsiSequences.clear(ClearType.AfterCursor)
+      else ""
+    val body  = baseline.prepareFor(buffer.area, blank) match
       case FrameSource.DiffAgainst(previous) => frameEncoder.encode(previous, buffer)
       case FrameSource.RepaintAll            => frameEncoder.encodeAll(buffer)
     if body.nonEmpty || erasing then
       AnsiSequences.frame(
-        (if erasing then AnsiSequences.ClearScreen else "") + body,
+        erase + body,
         probed.synchronizedOutput.usable,
       )
     else ""

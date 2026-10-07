@@ -89,7 +89,9 @@ trait TuiApp:
     * discarded forever. Started here, it lands on this run's loop.
     *
     * Calling [[quit]] from here exits before anything is drawn, which is how a start-up check ("no config file", "not a
-    * TTY") declines to run at all. Whatever this starts should be stopped in [[onStop]].
+    * TTY") declines to run at all. Whatever this starts should be stopped in [[onStop]]. Retained screens are inactive
+    * here: after this hook returns successfully they re-enter outermost first, before rendering. Screens newly pushed
+    * from this hook enter immediately; removing inactive entries calls no screen hook.
     *
     * {{{
     * override def onStart(): Unit = poller = Some(Async.every(5.seconds)(refresh()))
@@ -218,12 +220,13 @@ trait TuiApp:
 
   /** Pushes a screen; modal screens layer over the current view, full screens replace it.
     *
-    * The screen's `Screen.onEnter` runs immediately afterwards, on the render thread, before the frame that first shows
-    * it — after the stack has been written, so a callback that reads [[screenDepthNow]] sees itself on it.
+    * During a run, the screen's `Screen.onEnter` runs immediately afterwards, on the render thread, before the frame
+    * that first shows it — after the stack has been written, so a callback that reads [[screenDepthNow]] sees itself on
+    * it. Outside a run or during cleanup, only navigation changes; the entry waits for a later successful startup.
     */
   protected final def pushScreen(screen: Screen): Unit = screenStack.push(screen)
 
-  /** Pops the top screen and runs its `Screen.onLeave`. No-op on an empty stack. */
+  /** Pops the top screen and, if active, runs its `Screen.onLeave`. No-op on an empty stack. */
   protected final def popScreen(): Unit = screenStack.pop()
 
   /** Swaps the screen on top for `screen` in a single update.
@@ -239,7 +242,8 @@ trait TuiApp:
     * The one-call way out of a deep drill-down ("home" from four levels in). Already-empty is a silent no-op: a
     * `Signal` set to a value equal to the one it holds notifies nobody, so no redundant frame is scheduled.
     *
-    * Every unwound screen's `Screen.onLeave` runs, innermost first — the same order as popping them one at a time.
+    * Every active unwound entry's `Screen.onLeave` runs, innermost first — the same order as popping them one at a
+    * time.
     */
   protected final def resetScreens(): Unit = screenStack.reset()
 
@@ -497,8 +501,9 @@ trait TuiApp:
     * `testsupport.ManualClock.reading` and step every timed feature without waiting out wall-clock durations. It
     * defaults to the system clock.
     *
-    * The lifetime of one run, in order: [[onStart]] on the render thread, then frames and events until something ends
-    * the loop, then [[onStop]] — in a `finally`, so a backend failure or a handler that threw does not skip it.
+    * After preparation and terminal setup: [[onStart]] on the render thread, re-entry of retained inactive screens,
+    * then frames and events until something ends the loop. Teardown deactivates screens before [[onStop]], even on
+    * failure, but retains navigation for the next run. See [[onStop]] for preparation-failure cleanup.
     */
   final def runWith(backend: Backend, nanoTime: () => Long = () => System.nanoTime()): Either[RunnerError, Unit] =
     val (runConfig, run, scope) =
@@ -537,7 +542,9 @@ trait TuiApp:
         // on the render thread, and while this run is still registered on it: the clock this app's animations read
         // is the one belonging to this loop, and the exit path below can no longer resolve it for itself
         run.renderLoop = Some(AnimationClock.attachToCurrentLoop())
+        screenStack.beginRun()
         onStart()
+        screenStack.enterRemaining()
       ,
       handleEvent(_, run, _),
       frame => renderFrame(frame, run, scope),
@@ -557,8 +564,8 @@ trait TuiApp:
       () => run.renderLoop.foreach(AnimationClock.releaseLoop),
     )
 
-  /** Runs `Screen.onLeave` for everything still on the stack when a run ends, innermost first, so every `onEnter` is
-    * matched exactly once however the run finished.
+  /** Runs `Screen.onLeave` for active entries still on the stack when a run ends, innermost first, so every attempted
+    * `onEnter` is matched exactly once however the run finished. Inactive retained entries owe no cleanup.
     *
     * It deliberately does not clear the stack: per-instance state survives repeated runs. Each callback is attempted on
     * the registered owner; the first failure carries the later failures as suppressed exceptions.
@@ -799,6 +806,7 @@ trait TuiApp:
   // Everything below is per-instance state written only from the render thread (event handlers, the render lambda, and
   // the app's own callbacks all run there). None of it is reset by `runWith`, so running the same instance a second
   // time keeps whatever the first run left behind — a screen still on the stack, an effect still running.
+  // Screen activation is separate: retained entries re-enter only after the next onStart completes.
   private val runClock: RunClock       = RunClock()
   private val screenStack: ScreenStack = ScreenStack()
   private val toasts: ToastStack       = ToastStack(runClock.now)

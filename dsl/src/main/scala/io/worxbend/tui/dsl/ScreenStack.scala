@@ -17,60 +17,80 @@ import io.worxbend.tui.runtime.{ReactiveScope, Signal}
   */
 private[dsl] final class ScreenStack:
 
-  private val stack: Signal[List[Screen]] = Signal(Nil)
+  /** Identity belongs to a push, not a Screen: the same screen value may occupy several stack entries. */
+  private final class Entry(val screen: Screen):
+    var active: Boolean = false
 
-  /** Applies `f` to the stack and answers the screen that *was* on top, so the caller can run its `onLeave` after the
-    * write. One helper rather than a `case _ :: tail => … case Nil => …` per operation: the list surgery is total by
-    * construction, and the enter/leave ordering — write the stack first, so a callback that reads [[depthNow]] sees the
-    * new state — is stated once.
-    */
-  private def swap(f: List[Screen] => List[Screen]): Option[Screen] =
+  private val stack: Signal[List[Entry]] = Signal(Nil)
+  private var running: Boolean           = false
+
+  /** Enables immediate entry for navigation from `onStart`; retained entries wait until it completes. */
+  def beginRun(): Unit = running = true
+
+  /** Reactivates retained entries, outermost first, after app initialization and before rendering. */
+  def enterRemaining(): Unit = stack.peek.reverse.foreach(enter)
+
+  private def enter(entry: Entry): Unit =
+    if running && !entry.active && stack.peek.contains(entry) then
+      // An attempted acquisition owns cleanup even when onEnter throws part-way through.
+      entry.active = true
+      entry.screen.onEnter()
+
+  private def leave(entry: Entry): Unit =
+    if entry.active then
+      // Retire before calling user code: reentrant navigation or a throwing cleanup must never release it twice.
+      entry.active = false
+      entry.screen.onLeave()
+
+  /** Writes navigation before callbacks, so hooks observe the new depth. */
+  private def swap(f: List[Entry] => List[Entry]): Option[Entry] =
     val outgoing = stack.peek.headOption
     stack.update(f)
     outgoing
 
-  /** Pushes `screen` and runs its `onEnter`, after the stack has been written. */
+  /** Pushes `screen` and, during a run, enters it after the stack has been written. */
   def push(screen: Screen): Unit =
-    stack.update(screen :: _)
-    screen.onEnter()
+    val entry = Entry(screen)
+    stack.update(entry :: _)
+    enter(entry)
 
-  /** Pops the top screen and runs its `onLeave`. No-op on an empty stack. */
-  def pop(): Unit = swap(_.drop(1)).foreach(_.onLeave())
+  /** Pops the top screen and leaves it if active. No-op on an empty stack. */
+  def pop(): Unit = swap(_.drop(1)).foreach(leave)
 
   /** Swaps the top screen for `screen` in a single write, so the layer underneath never shows for a frame. On an empty
     * stack this does the same thing as [[push]].
     */
   def replace(screen: Screen): Unit =
-    swap(screen :: _.drop(1)).foreach(_.onLeave())
-    screen.onEnter()
+    val entry = Entry(screen)
+    swap(entry :: _.drop(1)).foreach(leave)
+    enter(entry)
 
-  /** Unwinds everything at once, running each `onLeave` innermost first. An already-empty stack writes an equal value,
+  /** Unwinds everything at once, leaving active entries innermost first. An already-empty stack writes an equal value,
     * which a `Signal` reports to nobody, so no redundant frame is scheduled.
     */
   def reset(): Unit =
     val unwound = stack.peek
     stack.set(Nil)
-    leave(unwound)
+    leaveEntries(unwound)
 
-  /** Runs `onLeave` for everything still on the stack, innermost first, *without* writing the signal — so every
-    * `onEnter` is matched exactly once however a run finished.
-    *
-    * Unlike [[reset]], this preserves per-instance state across runs. Every callback is attempted even if an earlier
-    * one throws; later failures are suppressed on the first.
+  /** Deactivates retained entries innermost first without clearing navigation. Navigation from cleanup creates inactive
+    * entries for a later run. Every active entry's cleanup is attempted even if an earlier one throws.
     */
-  def leaveAll(): Unit = leave(stack.peek)
+  def leaveAll(): Unit =
+    running = false
+    leaveEntries(stack.peek)
 
-  private def leave(screens: List[Screen]): Unit =
-    io.worxbend.tui.runtime.Cleanup.all(screens.map(screen => () => screen.onLeave())*)
+  private def leaveEntries(entries: List[Entry]): Unit =
+    io.worxbend.tui.runtime.Cleanup.all(entries.map(entry => () => leave(entry))*)
 
   /** The screen on top as a reactive read — `None` means the app's own view is showing. */
-  def top(using scope: ReactiveScope): Option[Screen] = stack.get(using scope).headOption
+  def top(using scope: ReactiveScope): Option[Screen] = stack.get(using scope).headOption.map(_.screen)
 
   /** [[top]] without subscribing: the spelling for an event handler or for frame bookkeeping. */
-  def topNow: Option[Screen] = stack.peek.headOption
+  def topNow: Option[Screen] = stack.peek.headOption.map(_.screen)
 
   /** Every screen, innermost first, without subscribing — for the layer bookkeeping that counts them. */
-  def allNow: List[Screen] = stack.peek
+  def allNow: List[Screen] = stack.peek.map(_.screen)
 
   def depth(using scope: ReactiveScope): Int = stack.get(using scope).size
 
@@ -79,10 +99,10 @@ private[dsl] final class ScreenStack:
   /** The names of the screens on the stack, outermost first — the sequence a breadcrumb wants. A screen with no
     * `Screen.label` contributes nothing rather than a blank.
     */
-  def labels(using scope: ReactiveScope): Seq[String] = stack.get(using scope).reverse.flatMap(_.label)
+  def labels(using scope: ReactiveScope): Seq[String] = stack.get(using scope).reverse.flatMap(_.screen.label)
 
   /** Every screen as a reactive read, outermost first — the order the composed view folds them in. */
-  def outermostFirst(using scope: ReactiveScope): List[Screen] = stack.get(using scope).reverse
+  def outermostFirst(using scope: ReactiveScope): List[Screen] = stack.get(using scope).reverse.map(_.screen)
 
   /** Whether the screen on top is a modal that asked to be closed by `Esc`. Reads through `peek`, because the only
     * caller is the event loop.

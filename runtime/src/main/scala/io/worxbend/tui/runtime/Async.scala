@@ -1,6 +1,7 @@
 package io.worxbend.tui.runtime
 
 import java.util.concurrent.{Executors, ScheduledExecutorService, ThreadFactory, TimeUnit}
+import java.util.concurrent.atomic.AtomicBoolean
 import scala.concurrent.duration.FiniteDuration
 import scala.util.control.NonFatal
 
@@ -84,15 +85,11 @@ object Async:
       deliver(outcome)
     }
 
-  /** Runs `body` on the render thread once, after `delay`. Returns a handle to cancel it before it fires. */
+  /** Runs `body` on the render thread once, after `delay`. Cancellation also discards queued callbacks that have not
+    * started, without interrupting a body already running.
+    */
   def after(delay: FiniteDuration)(body: => Unit): Cancelable =
-    cancelling(
-      scheduler.schedule(
-        resumeOnRenderThread(body),
-        delay.toMillis,
-        TimeUnit.MILLISECONDS,
-      )
-    )
+    scheduleCancelable(body)(task => scheduler.schedule(task, delay.toMillis, TimeUnit.MILLISECONDS))
 
   /** The floor for a repeating interval: `scheduleAtFixedRate` rejects a non-positive period. */
   private val MinIntervalMillis: Long = 1L
@@ -102,14 +99,7 @@ object Async:
     */
   def every(interval: FiniteDuration)(body: => Unit): Cancelable =
     val millis = math.max(MinIntervalMillis, interval.toMillis)
-    cancelling(
-      scheduler.scheduleAtFixedRate(
-        resumeOnRenderThread(body),
-        millis,
-        millis,
-        TimeUnit.MILLISECONDS,
-      )
-    )
+    scheduleCancelable(body)(task => scheduler.scheduleAtFixedRate(task, millis, millis, TimeUnit.MILLISECONDS))
 
   /** Hands `body` to a background thread. The returned `Future` is discarded on purpose: cancellation of one-shot work
     * is not offered (only the scheduled entry points return a [[Cancelable]]), and every failure is already dealt with
@@ -138,21 +128,19 @@ object Async:
     val target = captureTarget()
     value => target.enqueue(() => onValue(value))
 
-  /** The scheduler-side counterpart of [[deliverToRenderThread]]: a `Runnable` the timer thread can run that does
-    * nothing but hand `body` back to the render thread.
-    *
-    * Subject to the same rule — **call it on the caller's thread**, not from inside the scheduled task, so the runner
-    * is captured before the work goes async.
+  /** Captures the owner before scheduling. The shared flag guards delivery on that owner's thread, not just the
+    * scheduler: a timer may already have enqueued its callback when its owner cancels it. Cancellation is thread-safe
+    * and does not interrupt a body that has passed the delivery guard.
     */
-  private def resumeOnRenderThread(body: => Unit): Runnable =
-    val deliver = deliverToRenderThread[Unit](_ => body)
-    () => deliver(())
-
-  /** Adapts a scheduled `future` to the [[Cancelable]] the timer entry points return. Never interrupts a body that has
-    * already started running on the render thread; it only prevents runs that have not begun.
-    */
-  private def cancelling(future: java.util.concurrent.Future[?]): Cancelable =
-    () => future.cancel(false)
+  private def scheduleCancelable(body: => Unit)(
+      schedule: Runnable => java.util.concurrent.Future[?]
+  ): Cancelable =
+    val cancelled = AtomicBoolean(false)
+    val deliver   = deliverToRenderThread[Unit](_ => if !cancelled.get() then body)
+    val future    = schedule(() => deliver(()))
+    () =>
+      cancelled.set(true)
+      val _ = future.cancel(false)
 
   /** The pool one-shot work ([[run]], [[runCatching]]) runs on: bounded to `max(2, availableProcessors)` threads, so
     * the documented "poll with [[every]], load via [[run]]" pattern under a slow endpoint queues work instead of

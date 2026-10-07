@@ -14,12 +14,13 @@ import java.nio.charset.StandardCharsets.UTF_8
 final class JLineOutputFailureSpec extends AnyFunSuite:
 
   private final class Device extends OutputStream:
-    private val sink = ByteArrayOutputStream()
-    var failing      = false
-    var failures     = 0
+    private val sink  = ByteArrayOutputStream()
+    var failing       = false
+    var failures      = 0
+    var failOnNewline = false
 
     override def write(value: Int): Unit =
-      if failing then
+      if failing || (failOnNewline && value == '\n') then
         failures += 1
         throw new IOException("device disconnected")
       else sink.write(value)
@@ -142,4 +143,30 @@ final class JLineOutputFailureSpec extends AnyFunSuite:
       assert(backend.reserveInlineRows(1).isRight)
       device.failing = true
       assert(backend.close().isLeft)
+    finally terminal.close()
+
+  test("inline parking failure after mode restoration still closes the handle and retains the parking obligation"):
+    val device   = Device()
+    val terminal = LineDisciplineTerminal(
+      "glyphora-inline-final-parking-failure",
+      "xterm-256color",
+      device,
+      UTF_8,
+      Terminal.SignalHandler.SIG_IGN,
+    )
+    val backend  = JLine3Backend.wrapping(terminal, ColorDepth.TrueColor)
+    try
+      assert(backend.enableRawMode().isRight)
+      assert(backend.reserveInlineRows(2).isRight)
+      assert(backend.hideCursor().isRight)
+      device.forget()
+      device.failOnNewline = true
+      assert(backend.close() match
+        case Left(BackendError.Io(_: IOException)) => true
+        case _                                     => false)
+      assert(device.written.contains(AnsiSequences.RestoreCursor))
+      assert(!backend.isRawMode, "parking failure must occur after cooked-mode restoration")
+      assert(!backend.cursorHidden)
+      assert(backend.inlineRows == 2, "failed parking must not be accounted as successful")
+      intercept[IllegalStateException](terminal.writer())
     finally terminal.close()
