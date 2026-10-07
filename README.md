@@ -91,20 +91,20 @@
 
 > [!NOTE]
 > **Not on Maven Central yet.** A source release tag does not make artifacts available on Maven
-> Central. Until `0.16.0` is published there, the coordinates below will not resolve from a public
+> Central. Until `0.16.1` is published there, the coordinates below will not resolve from a public
 > repository. Clone the repo and run `./mill __.publishLocal`
 > — that puts `tui-core`, `tui-terminal`, `tui-widgets`, `tui-runtime`, `tui-macros`, `tui-dsl`
-> and `tui-test` at `0.16.0` into `~/.ivy2/local`. Mill reads that cache by default; sbt needs
+> and `tui-test` at `0.16.1` into `~/.ivy2/local`. Mill reads that cache by default; sbt needs
 > `resolvers += Resolver.defaultLocal`. See [Build from source](#-build-from-source).
 
 ```scala
 // build.mill
-def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.16.0")
+def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.16.1")
 ```
 
 ```scala
 // build.sbt
-libraryDependencies += "io.worxbend" %% "tui-dsl" % "0.16.0"
+libraryDependencies += "io.worxbend" %% "tui-dsl" % "0.16.1"
 ```
 
 Then return an ordinary Scala `Element` tree:
@@ -256,7 +256,7 @@ text. Buffer helpers skip wide-character continuation cells, so assertions match
 
 > [!TIP]
 > `Pilot`, `BufferAssertions` and `GoldenFrames` ship as `io.worxbend::tui-test`, so add it as a
-> test-only dependency (`mvn"io.worxbend::tui-test:0.16.0"`) rather than copying the harness.
+> test-only dependency (`mvn"io.worxbend::tui-test:0.16.1"`) rather than copying the harness.
 
 🧪 **[Testing guide →](website/docs/testing.md)**
 
@@ -286,7 +286,7 @@ cd glyphora
 
 ./mill __.compile        # build everything
 ./mill __.test           # run every suite
-./mill __.publishLocal   # install 0.16.0 into your local Ivy cache
+./mill __.publishLocal   # install 0.16.1 into your local Ivy cache
 ```
 
 Day-to-day development:
