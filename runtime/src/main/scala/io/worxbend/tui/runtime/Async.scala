@@ -23,8 +23,7 @@ trait Cancelable:
   * **Lifetime.** Every entry point here captures its target runner at the moment it is called, and that runner's queue
   * stops accepting work once the runner exits. Concretely:
   *
-  *   - Work already queued when the runner exits still runs: the runner drains its queue one last time on the way out,
-  *     so a continuation that arrived during the final iteration is not lost.
+  *   - A bounded final batch of queued work runs before the runner retires; any remaining callbacks are discarded.
   *   - Work queued *after* that is silently dropped — there is no longer a render thread to run it on, and keeping it
   *     would only grow memory.
   *   - A [[Cancelable]] from [[after]] or [[every]] is **not** cancelled by the app quitting. The scheduler is a
@@ -36,12 +35,23 @@ trait Cancelable:
   * The mirror-image rule applies to *starting* repeating work. Every entry point here captures the render loop of the
   * thread that calls it, and a thread that belongs to no runner — a constructor running before any runner is registered
   * — captures the shared unattributed queue instead. Those bodies are **not** discarded: they wait, and the next runner
-  * to start drains the whole backlog in one go, so a poller armed from a field initialiser fires its accumulated ticks
-  * all at once at startup. Only the oldest are dropped, and only once the backlog passes `RenderThread`'s cap on that
+  * to start drains the backlog in finite batches, so a poller armed from a field initialiser delivers accumulated ticks
+  * in a burst at startup. Only the oldest are dropped, and only once the backlog passes `RenderThread`'s cap on that
   * queue. Start repeating work from `TuiApp.onStart` (or a bare runner's `onStart`), which is the first moment the app
   * is certainly on the render thread.
   */
 object Async:
+
+  /** Creates a closeable task group bound to this thread's current runner. Create in `onStart` / `onEnter`, not a
+    * constructor. Close in `onStop` / `onLeave` for early cancellation; owner retirement also closes it.
+    */
+  def scope(): TaskScope =
+    val owner = RenderThread.currentOwner.getOrElse(
+      throw IllegalStateException("Async.scope requires a registered render owner")
+    )
+    val scope = new TaskScope(owner)
+    owner.attach(scope)
+    scope
 
   /** Runs `work` on a background thread; when it finishes, `onResult` runs on the render thread with the value. Use for
     * one-shot IO (HTTP, disk) whose result feeds a signal: `Async.run(api.fetch())(rows.set)`. See [[runCatching]] for
@@ -101,14 +111,11 @@ object Async:
     val millis = math.max(MinIntervalMillis, interval.toMillis)
     scheduleCancelable(body)(task => scheduler.scheduleAtFixedRate(task, millis, millis, TimeUnit.MILLISECONDS))
 
-  /** Hands `body` to a background thread. The returned `Future` is discarded on purpose: cancellation of one-shot work
-    * is not offered (only the scheduled entry points return a [[Cancelable]]), and every failure is already dealt with
-    * inside `body` by the entry point that built it.
+  /** Execute rather than submit: escaping failures (including a throwing error policy) must reach the worker's
+    * uncaught-exception handler, not disappear inside an unobserved Future.
     */
-  private def onWorker(body: => Unit): Unit =
-    // named rather than passed inline because `submit` is overloaded for `Runnable` and `Callable`
-    val task: Runnable = () => body
-    val _              = worker.submit(task)
+  private[runtime] def onWorker(body: => Unit): Unit =
+    worker.execute(() => body)
 
   /** The render loop of the calling thread, resolved *now* — the one capture every entry point here must do on the
     * caller's thread, before any work is handed to an executor. [[deliverToRenderThread]] explains why resolving it
@@ -154,7 +161,7 @@ object Async:
       daemonFactory("glyphora-async"),
     )
 
-  private val scheduler: ScheduledExecutorService =
+  private[runtime] val scheduler: ScheduledExecutorService =
     Executors.newSingleThreadScheduledExecutor(daemonFactory("glyphora-timer"))
 
   private def daemonFactory(prefix: String): ThreadFactory =

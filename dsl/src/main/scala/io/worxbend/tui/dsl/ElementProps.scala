@@ -44,6 +44,7 @@ final case class ElementProps(
     onKey: Option[KeyEvent => Boolean] = None,
     onMouse: Option[MouseEvent => Boolean] = None,
     onKeyUp: Option[KeyEvent => Boolean] = None,
+    onPaste: Option[String => Boolean] = None,
     focusable: Boolean = false,
     autofocus: Boolean = false,
     focusKey: Option[String] = None,

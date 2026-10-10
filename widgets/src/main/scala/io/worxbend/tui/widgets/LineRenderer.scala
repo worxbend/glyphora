@@ -16,10 +16,9 @@ private[widgets] object LineRenderer:
     * through wherever it says nothing.
     *
     * `skipWidth` throws the first `skipWidth` columns of the line away before drawing, which is how a caller shows the
-    * *end* of a line too wide for the space it has instead of its beginning. A span that falls entirely inside the
-    * skipped columns is not drawn at all, the span straddling the edge is cut from its left through
-    * [[io.worxbend.tui.core.CharWidth.dropByWidth]], and because that never splits a grapheme cluster the drawing can
-    * start one column later than asked for rather than half-way through a wide character.
+    * *end* of a line too wide for the space it has instead of its beginning. Skipping walks the line-wide
+    * [[io.worxbend.tui.core.Line.styledGraphemes]] stream. A cluster straddling the edge is dropped whole, even when
+    * its code points belong to differently styled spans.
     *
     * `alignment` places the line inside the `maxWidth` columns it was given. `Left` — the default, and what every
     * caller got before this parameter existed — starts drawing at `x`; `Center` and `Right` start further right by the
@@ -62,30 +61,20 @@ private[widgets] object LineRenderer:
     val drawnWidth = math.max(0, lineWidth - math.max(0, skipWidth))
     val start      = alignment.originAt(x, maxWidth, drawnWidth)
     val cursor     = RowCursor(buffer, y, start, x + maxWidth)
-    val lineStyle  = baseStyle.patch(line.style)
     var remaining  = math.max(0, skipWidth)
     var truncated  = false
-    val spans      = line.spans.iterator
-    while spans.hasNext && cursor.remaining > 0 && !truncated do
-      val span                  = spans.next()
-      val text                  =
-        if remaining <= 0 then span.content
-        else
-          val spanWidth = CharWidth.of(span.content)
-          if spanWidth <= remaining then
-            remaining -= spanWidth
-            ""
-          else
-            val tail = CharWidth.dropByWidth(span.content, remaining)
-            remaining = 0
-            tail
-      // Retain the first half-fitting cluster as evidence of truncation, but never scan the invisible tail.
-      val budget                = math.min(cursor.remaining, math.max(0, buffer.area.right - cursor.at))
-      val (prefix, prefixWidth) = boundedPrefix(CharWidth.graphemeClusters(text), budget)
-      val before                = cursor.at
-      cursor.write(prefix, lineStyle.patch(span.style))
-      // A half-fitting wide cluster leaves one column unused; it still ends the entire line, not just this span.
-      truncated = budget <= 0 || cursor.at - before < prefixWidth
+    // Stream even unscrolled lines: Buffer.setLine's ASCII fast-path check scans an entire single span.
+    // Grapheme lookahead stays bounded by the visible prefix and still joins clusters across styled spans.
+    val clusters   = line.styledGraphemes(baseStyle)
+    while cursor.remaining > 0 && !truncated && clusters.hasNext do
+      val grapheme = clusters.next()
+      val width    = grapheme.width
+      if remaining > 0 then remaining -= width
+      else
+        val before = cursor.at
+        cursor.write(grapheme.cluster, grapheme.style)
+        // A half-fitting cluster ends the whole line, even if a later narrow character could fit.
+        truncated = cursor.at - before < width
     cursor.at - x
 
   /** Takes only the clusters needed for a write, including the first cluster that would half-fit. Its measured width

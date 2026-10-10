@@ -15,12 +15,13 @@ import scala.util.control.NonFatal
   * from its signal-invalidation flag. It is read alongside, not instead of, [[RunnerHandle.requestRedraw]]: the handle
   * serves code that has no reactive state to invalidate.
   *
-  * `onStop` is the registered-loop teardown seam: it runs once on the owner thread after the final queued-work drain,
-  * before the queue is closed, the owner is unregistered and the backend is closed. It also runs after partial setup
-  * failure. Use it to dispose thread-confined subscriptions and services. Every release is attempted even if an earlier
-  * one throws; a prior run failure stays primary, with secondary failures exposed by [[RunnerError.cleanupFailures]]
-  * (and suppressed on its throwable when it has one). A first non-fatal teardown throwable is returned as
-  * [[RunnerError.Handler]]; fatal throwables escape only after cleanup completes.
+  * `onStop` is the registered-loop teardown seam: it runs once on the owner thread after a bounded final queued-work
+  * drain (at most 256 callbacks per queue), before the queue is closed, the owner is unregistered and the backend is
+  * closed. Remaining owned callbacks are discarded; running callbacks are never interrupted. It also runs after partial
+  * setup failure. Use it to dispose thread-confined subscriptions and services. Every release is attempted even if an
+  * earlier one throws; a prior run failure stays primary, with secondary failures exposed by
+  * [[RunnerError.cleanupFailures]] (and suppressed on its throwable when it has one). A first non-fatal teardown
+  * throwable is returned as [[RunnerError.Handler]]; fatal throwables escape only after cleanup completes.
   */
 final class TerminalRunner(
     backend: Backend,
@@ -93,7 +94,9 @@ final class TerminalRunner(
           setupIncomplete = false
           val outcome = runLoop(onStart, handleEvent, render, loop)
           result = report(outcome, recorder.collected)
-          RenderThread.drainPending(loop)
+          // One final bounded batch per queue, not a drain-until-empty: self-requeueing producers cannot postpone
+          // onStop and backend restoration forever. Remaining owned work is discarded by close after onStop.
+          RenderThread.drainPending(loop, RenderThread.FinalDrainBudget)
           result = report(outcome, recorder.collected)
     catch
       case error: Throwable =>
@@ -313,7 +316,10 @@ private final class LoopBody(
       // queued work (runLater/runOnRenderThread) may have invalidated state between events
       if frameOwed() && isLive then redraw()
       if isLive then
-        backend.readEvent(ticks.pollTimeout) match
+        // Backends require a positive timeout. Keep input polling fair without sleeping a full tick/default interval
+        // while callbacks remain runnable; queued wake notifications may already have been consumed or coalesced.
+        val timeout = if RenderThread.hasPending(loop) then 1.millis else ticks.pollTimeout
+        backend.readEvent(timeout) match
           case Left(error)                  => state.fail(error)
           case Right(Some(event)) if isLive =>
             // deliberately one event per redraw: the element tree that routes focus and hit-testing is published *by*

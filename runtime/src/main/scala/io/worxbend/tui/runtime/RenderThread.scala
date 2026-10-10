@@ -15,6 +15,12 @@ import scala.util.control.NonFatal
   */
 object RenderThread:
 
+  /** Maximum callbacks per queue per turn; owned and detached queues each get a share so neither starves. */
+  private[runtime] val TurnBudget: Int = 256
+
+  /** Teardown's independent callback allowance per queue, before confined cleanup and owned-queue retirement. */
+  private[runtime] val FinalDrainBudget: Int = 256
+
   /** One runner's queue of work waiting to run on its render thread.
     *
     * `onError` is supplied by the runner that owns this loop and receives throwables escaping queued bodies.
@@ -30,7 +36,17 @@ object RenderThread:
       limit: Option[Int] = None,
   ):
 
-    private val pending = ConcurrentLinkedQueue[() => Unit]()
+    private val pending    = ConcurrentLinkedQueue[() => Unit]()
+    private val taskScopes = ConcurrentHashMap.newKeySet[TaskScope]()
+
+    private[runtime] def isClosed: Boolean = closed
+
+    private[runtime] def attach(scope: TaskScope): Unit =
+      val _ = taskScopes.add(scope)
+      if closed then scope.close()
+
+    private[runtime] def detach(scope: TaskScope): Unit =
+      val _ = taskScopes.remove(scope)
 
     // `ConcurrentLinkedQueue.size` walks the whole queue, so the depth is counted alongside it instead: `enqueue` is on
     // the hot path of every Async continuation and timer tick
@@ -48,8 +64,11 @@ object RenderThread:
 
     private[runtime] def stopRequested: Boolean = stopping
 
-    /** Owner-specific execution for runtime integrations. Unlike global routing, a retired owner rejects work. */
-    private[tui] def execute(body: => Unit): Boolean =
+    /** Dispatches to this captured owner: inline on its current render thread, queued otherwise. Returns false when
+      * already retired. Acceptance is not a completion guarantee: retirement can discard queued work. Capture on the
+      * owning thread before registering an external callback, rather than resolving an ambiguous runner on delivery.
+      */
+    def execute(body: => Unit): Boolean =
       if closed then false
       else
         val own = loops.get(Thread.currentThread())
@@ -95,31 +114,40 @@ object RenderThread:
 
     /** Retires this loop: whatever is still pending is discarded and nothing new is accepted.
       *
-      * Called by the runner that owns this loop, once, as it exits — after a final [[drain]], so work queued during the
-      * loop's last iteration still runs. It matters because [[Async]]'s scheduler is a process-lifetime daemon
+      * Called by the runner that owns this loop, once, as it exits — after a bounded final [[drain]] and confined
+      * cleanup. Work exceeding that final allowance is deliberately discarded. [[Async]]'s scheduler is a daemon
       * singleton: an `Async.every(16.millis)` that was never cancelled holds a reference to this loop and, without
       * this, would keep appending sixty closures a second to a queue nothing drains, for the life of the JVM.
       */
     private[runtime] def close(): Unit =
       closed = true
+      taskScopes.forEach(scope => scope.close())
+      taskScopes.clear()
       pending.clear()
       queued.set(0)
 
     /** How many bodies this loop dropped because its `limit` was reached. Always `0` for an unlimited loop. */
     private[runtime] def dropCount: Long = dropped.get()
 
-    /** Runs everything queued, in FIFO order, isolating each body: a `NonFatal` throwable from one task goes to
-      * `handler` and the drain continues with the next task, so one failing continuation can neither stop the runner
-      * loop nor discard the bodies queued behind it. Fatal errors propagate, as does anything `handler` itself throws.
+    /** Runs at most `budget` queued bodies in FIFO order, including successors queued during this turn. Remaining work
+      * stays queued. A `NonFatal` throwable goes to `handler` and consumes one slot just like successful work; fatal
+      * errors and handler failures propagate. This bounds callback count, not the duration of a running body.
       *
       * Runs on the render thread that owns this loop.
       */
-    private[runtime] def drain(handler: RenderTaskErrorHandler = onError): Unit =
-      var task = take()
-      while task != null do // scalafix:ok DisableSyntax; java.util.concurrent interop
-        try task()
-        catch case NonFatal(error) => handler.handle(error)
-        task = take()
+    private[runtime] def drain(handler: RenderTaskErrorHandler = onError, budget: Int = TurnBudget): Unit =
+      var remaining = budget
+      var draining  = true
+      while remaining > 0 && draining do
+        val task = take()
+        if task == null then draining = false // scalafix:ok DisableSyntax; java.util.concurrent interop
+        else
+          remaining -= 1
+          try task()
+          catch case NonFatal(error) => handler.handle(error)
+
+    /** A queue observation, not the approximate depth counter: concurrent enqueue also wakes the backend. */
+    private[runtime] def hasPending: Boolean = !pending.isEmpty
 
     /** Takes the next waiting body, or `null` when there is none, keeping the depth count in step. */
     private def take(): () => Unit =
@@ -202,6 +230,10 @@ object RenderThread:
   def runLater(body: => Unit): Unit =
     capture().enqueue(() => body)
 
+  /** The calling thread's innermost owner only; never guesses another runner's destination. */
+  private[runtime] def currentOwner: Option[RenderLoop] =
+    Option(loops.get(Thread.currentThread())).map(_.head)
+
   /** The loop that should receive work queued from *this* thread, resolved in three steps.
     *
     *   1. The calling thread's own innermost registration, when it has one — a runner's own continuations always come
@@ -249,8 +281,9 @@ object RenderThread:
     Option(registrationObserver.get()).foreach(observe => observe(loop))
     loop
 
-  /** Pops the calling thread's innermost registration, restoring an enclosing runner's if there is one. */
+  /** Retires the calling thread's innermost registration, restoring an enclosing runner's if there is one. */
   private[tui] def unregister(): Unit =
+    currentOwner.foreach(_.close())
     val _        = loops.compute(
       Thread.currentThread(),
       (_, registered) =>
@@ -264,13 +297,16 @@ object RenderThread:
     if restored != null then // scalafix:ok DisableSyntax; java.util.concurrent interop
       Option(registrationObserver.get()).foreach(observe => observe(restored.head))
 
-  /** Runs everything queued for `loop`, plus anything that could not be attributed to a specific runner. Unattributed
-    * failures are reported through `loop`'s handler: the detached queue has no owner of its own, and `loop` is the one
-    * whose runner would otherwise be taken down by them.
+  /** Whether a bounded turn left runnable work. Each queue still gets its own finite share on the next turn. */
+  private[runtime] def hasPending(loop: RenderLoop): Boolean = loop.hasPending || detached.hasPending
+
+  /** Runs one bounded FIFO batch per queue, including work unattributed to a specific runner. Unattributed failures are
+    * reported through `loop`'s handler: the detached queue has no owner of its own, and `loop` is the one whose runner
+    * would otherwise be taken down by them.
     */
-  private[tui] def drainPending(loop: RenderLoop): Unit =
-    loop.drain()
-    detached.drain(loop.onError)
+  private[tui] def drainPending(loop: RenderLoop, budgetPerQueue: Int = TurnBudget): Unit =
+    loop.drain(budget = budgetPerQueue)
+    detached.drain(loop.onError, budgetPerQueue)
 
   /** Drains whatever is queued for the calling thread, plus unattributed work. With no runner registered the detached
     * queue keeps its own rethrowing handler, so a failing body still surfaces on the caller's thread.

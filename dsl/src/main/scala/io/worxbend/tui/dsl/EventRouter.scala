@@ -86,6 +86,8 @@ private[dsl] object EventRouter:
         hit
           .collect { case MouseHit(InputTarget.Focus(index), area) if index == tracked.index => area }
           .orElse(if reachesOuterBuiltin(event.kind) then coveredArea(tracked, event) else scala.None)
+      case pointer: PointerElement =>
+        hit.collect { case MouseHit(InputTarget.Pointer(id), area) if id == pointer.pointerId => area }
       case _                       => scala.None
 
   /** Whether a built-in that declined this event may hand it to an enclosing control's built-in.
@@ -140,7 +142,9 @@ private[dsl] object EventRouter:
   /** Delivers a bracketed paste to the focused element's paste behavior. */
   def dispatchPaste(root: Element, text: String): Boolean =
     pathToFocused(root) match
-      case Some(leafToRoot) => leafToRoot.head.builtinPasteHandler.exists(_(text))
+      case Some(leafToRoot) =>
+        val leaf = leafToRoot.head
+        leaf.props.onPaste.exists(_(text)) || leaf.builtinPasteHandler.exists(_(text))
       case None             => false
 
   /** The user's `onKeyEvent` first, then the framework's own behavior for this element.

@@ -660,19 +660,70 @@ def chatPane(using ReactiveScope, Theme): Element =
 ```
 
 Use `tree(nodes, TreeState)` for in-memory hierarchy and
-`directoryTree(DirectoryTreeState(root))` for the filesystem. The directory tree
-loads branches lazily, caches listings, and exposes `invalidate()` when outside code
-changes a directory.
+`directoryTree(state)` for filesystem snapshots. `DirectoryTreeState(root)` starts
+**unloaded**. Construction, navigation and painting never touch the filesystem;
+`childrenOf` and `visiblePaths` read only installed snapshots. Create and retain the
+state outside `view`.
+
+For a small local tree, load explicitly in `onStart` and in an Enter handler after
+expanding. This convenience blocks the owner thread, but never hides IO in painting:
 
 ```scala
-import io.worxbend.tui.widgets.DirectoryTreeState
+import io.worxbend.tui.dsl.*
 import java.nio.file.Paths
 
-private val files = DirectoryTreeState(Paths.get("."))
+object LocalBrowser extends TuiApp:
+  private val files = DirectoryTreeState(Paths.get("."))
 
-def browser: Element =
-  panel("Files")(directoryTree(files)).rounded
+  override def onStart(): Unit = files.loadVisible()
+
+  def view(using ReactiveScope, Theme): Element =
+    panel("Files")(
+      directoryTree(files).onKeyEvent {
+        case KeyEvent(KeyCode.Enter, _) =>
+          files.toggle()
+          files.loadVisible()
+          true // handled here; do not toggle again in the built-in handler
+        case _ => false
+      }
+    ).rounded
 ```
+
+For slow disks, network mounts or large directories, acquire immutable
+`DirectoryListing` values on workers instead. The state and its requests stay owned
+by the render thread. This helper is called on that owner, with a `TaskScope` made
+by `Async.scope()` in `onStart` and a redraw callback such as `() => requestRedraw()`:
+
+```scala
+def loadBranches(state: DirectoryTreeState, tasks: TaskScope, redraw: () => Unit): Unit =
+  state.directoriesToLoad.foreach { directory =>
+    val request: DirectoryLoadRequest = state.beginLoad(directory) // owner
+    tasks.runCatching(DirectoryListing.load(request.directory)) { acquired => // worker -> owner
+      if state.install(request, acquired.flatMap(identity)) then
+        redraw()
+        loadBranches(state, tasks, redraw) // expanded descendants may now be visible
+    }
+  }
+```
+
+Call it initially and after toggling a branch in an event handler; do not schedule
+work from `view` or render. Close the scope when the screen leaves (or in `onStop`),
+and invalidate outstanding tree requests when abandoning that load session. A new
+run needs a new scope. Cancellation suppresses callbacks but does not interrupt
+blocking filesystem IO.
+
+`DirectoryEntry` contains a path, directory flag and resolved identity.
+`loadState(path)` reports `DirectoryLoadState.Unloaded`, `Loading`, `Loaded` or
+`Failed(error)`. Failed branches are not automatically retried: invalidate that
+branch and call the loader, or explicitly `beginLoad(path)` again. `invalidate()`
+drops all snapshots and retires outstanding requests; `invalidate(Some(path))`
+only drops that branch. Neither starts IO. An `install` with a stale, foreign,
+already-consumed or mismatched request returns `false`, so an old completion cannot
+replace a newer snapshot. Always request a redraw after successful installation.
+
+Directory links are followed, even outside the root; this is a browser, not a
+sandbox. Acquired identities prevent ancestor cycles while leaving sibling aliases
+browsable. All snapshot types and `TaskScope` are available from the DSL import.
 
 ### Tab bars
 
@@ -943,7 +994,39 @@ glyph reserves two.
 | `numberInput` | `TextInputState` | whole numbers only; add `.decimal` to accept one decimal point |
 | `templateInput` | `TextInputState` | template field: `#` digit, `A` letter, other characters are literals |
 | `autocomplete` | `AutocompleteState` | input plus selectable suggestions and accept callback; `.maxSuggestions(n)` caps the list |
-| `filePicker` | `FilePickerState` | navigable file selection |
+| `filePicker` | `FilePickerState` | navigable file selection; explicitly load its root before showing |
+
+### Local file picker
+
+`FilePickerState(root)` starts unloaded, just like `DirectoryTreeState`. Load its
+root once outside `view`, normally in `onStart`:
+
+```scala
+import io.worxbend.tui.dsl.*
+import java.nio.file.Paths
+
+object ChooseFile extends TuiApp:
+  private val picker = FilePickerState(Paths.get("."))
+
+  override def onStart(): Unit = picker.tree.loadVisible()
+
+  def view(using ReactiveScope, Theme): Element = filePicker(picker)
+```
+
+Up/Down and the wheel move the selection without accepting it. Enter toggles a
+known directory and synchronously loads newly visible branches in the **event
+handler**, or writes an accepted file to `picker.chosen`. The footer tracks that
+signal. Rendering never loads directories or probes paths, and classification uses
+the installed snapshot rather than a fresh filesystem check. Failed loads remain
+observable through `picker.tree.loadState(path)`; invalidate the failed branch,
+load it explicitly and request a redraw to retry.
+
+This convenience picker is for small local directories: loading a new branch can
+block its event loop. For asynchronous acquisition, compose `directoryTree` with
+the worker/owner snapshot protocol above and your own acceptance handler. Do not
+call `loadVisible()` on a worker or from `view`.
+
+### Editing behavior
 
 `numberInput` accepts shifted digits and bracketed paste at the cursor. It checks the
 resulting text: the minus must remain first, and decimal mode permits at most one dot.

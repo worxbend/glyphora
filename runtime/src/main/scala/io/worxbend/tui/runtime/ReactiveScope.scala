@@ -9,12 +9,21 @@ trait ReactiveScope:
 
 /** A tracking scope for a repeatedly re-evaluated computation (an app's `view`): reads subscribe `onInvalidate`, and
   * [[beginGeneration]] — called before each re-evaluation — unsubscribes from values that stopped being read, so
-  * signals owned by closed screens or discarded branches do not accumulate stale subscriptions.
+  * signals owned by closed screens or discarded branches do not accumulate stale subscriptions. Tracking, generation
+  * changes, invalidation and disposal enforce the connected graph's specific render owner (see [[Signal]]).
   */
 final class GenerationalScope private[runtime] (onInvalidate: () => Unit) extends ReactiveScope:
 
+  private val ownership              = new ReactiveOwner
   private var disposed               = false
-  private val subscriber: Subscriber = () => if !disposed then onInvalidate()
+  private val subscriber: Subscriber = new Subscriber:
+    override private[runtime] def reactiveOwner: Option[ReactiveOwner]     = Some(ownership)
+    override private[runtime] def detached(dependency: Subscribable): Unit =
+      val _ = previous.remove(dependency)
+      val _ = current.remove(dependency)
+    def markStale(): Unit                                                  =
+      ownership.check()
+      if !disposed then onInvalidate()
 
   // Two buffers swapped per generation, never reallocated: `track` adds every value the in-progress generation reads;
   // `beginGeneration` unsubscribes whatever the previous generation read but the new one did not, then hands the
@@ -24,16 +33,15 @@ final class GenerationalScope private[runtime] (onInvalidate: () => Unit) extend
   private var current: scala.collection.mutable.Set[Subscribable]  = scala.collection.mutable.Set.empty
 
   private[runtime] def track(dependency: Subscribable): Unit =
-    RenderThread.checkRenderThread()
     if disposed then throw IllegalStateException("a disposed reactive scope cannot track reads")
     dependency.subscribe(subscriber)
     val _ = current.add(dependency)
 
   /** Marks the start of a new evaluation: values read two generations ago but not renewed since are dropped. */
   def beginGeneration(): Unit =
-    RenderThread.checkRenderThread()
+    ownership.check()
     if disposed then throw IllegalStateException("a disposed reactive scope cannot begin a generation")
-    previous.foreach { dependency =>
+    previous.toSeq.foreach { dependency =>
       if !current.contains(dependency) then dependency.unsubscribe(subscriber)
     }
     val swap = previous
@@ -45,7 +53,7 @@ final class GenerationalScope private[runtime] (onInvalidate: () => Unit) extend
     * unregisters. The scope cannot be reused after disposal.
     */
   def dispose(): Unit =
-    RenderThread.checkRenderThread()
+    ownership.check()
     if !disposed then
       disposed = true
       (previous ++ current).foreach(_.unsubscribe(subscriber))
@@ -59,7 +67,12 @@ object ReactiveScope:
     * schedules a redraw.
     */
   def onInvalidation(onInvalidate: () => Unit): ReactiveScope =
-    val subscriber: Subscriber = () => onInvalidate()
+    val ownership              = new ReactiveOwner
+    val subscriber: Subscriber = new Subscriber:
+      override private[runtime] def reactiveOwner: Option[ReactiveOwner] = Some(ownership)
+      def markStale(): Unit                                              =
+        ownership.check()
+        onInvalidate()
     dependency => dependency.subscribe(subscriber)
 
   /** Reads through this scope subscribe nothing — equivalent to `peek`, for tests and non-reactive contexts. */

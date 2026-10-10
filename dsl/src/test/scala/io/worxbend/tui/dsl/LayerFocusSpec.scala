@@ -35,6 +35,28 @@ final class LayerFocusSpec extends AnyFunSuite with PilotFixture:
     private def dialog: View      = panel("Dialog")(input(dialogFirst), input(dialogSecond))
     private def otherDialog: View = panel("Other")(input(otherFirst))
 
+  test("replacing the same screen value resets focus and its keyed hooks"):
+    final class App extends TuiApp:
+      var local: TextInputState                     = TextInputState()
+      val second                                    = TextInputState()
+      val screen                                    = Screen({
+        local = keyed("editor")(useState(TextInputState()))
+        column(input(local), input(second))
+      })
+      override def bindings: KeyBindings            = KeyBindings(
+        binding("ctrl+o", "open")(pushScreen(screen)),
+        binding("ctrl+r", "replace")(replaceScreen(screen)),
+      )
+      def view(using ReactiveScope, Theme): Element = text("base")
+    val app = App()
+    val backend = HeadlessBackend(Size(30, 12))
+    val pilot   = startPilot(backend) { app.runWith(backend) }.waitForIdle()
+    pilot.pressKey(KeyCode.Char('o'), KeyModifiers.Ctrl).typeText("old").waitForIdle()
+    pilot.pressKey(KeyCode.Tab).waitForIdle()
+    pilot.pressKey(KeyCode.Char('r'), KeyModifiers.Ctrl).typeText("new").waitForIdle()
+    assert(app.local.value == "new")
+    assert(app.second.value == "")
+
   private def start(app: DialogApp): Pilot =
     val backend = HeadlessBackend(Size(30, 12))
     startPilot(backend) { app.runWith(backend) }.waitForIdle()

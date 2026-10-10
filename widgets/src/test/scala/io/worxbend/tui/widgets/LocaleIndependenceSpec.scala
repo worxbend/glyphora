@@ -80,7 +80,9 @@ final class LocaleIndependenceSpec extends AnyFunSuite:
     // sorts after "zebra.txt" — so a default-locale sort key reverses which name the reader sees first.
     assertLocaleIndependent(Vector("Index.txt", "jazz.txt", "zebra.txt")) {
       // fresh state per run for the same reason: DirectoryTreeState caches each directory listing after one read
-      DirectoryTreeState(root).visiblePaths().map(_.getFileName.toString)
+      val state = DirectoryTreeState(root)
+      state.loadVisible()
+      state.visiblePaths().map(_.getFileName.toString)
     }
 
   // ---- case folding: name resolution ----

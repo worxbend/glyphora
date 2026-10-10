@@ -204,16 +204,19 @@ final case class FilePickerElement(
         .orElse(selectionKeys(() => state.tree.selectNext(), () => state.tree.selectPrevious()))
     )
 
-  /** Enter on a directory expands or collapses it; on a file it accepts it. */
+  /** Uses snapshot metadata to toggle directories; acquisition happens in this event handler, never in painting. */
   private def openOrAccept(selected: Option[Path]): Unit =
-    selected match
-      case Some(path) if java.nio.file.Files.isDirectory(path) => state.tree.toggle()
-      case Some(path)                                          => state.chosen.set(Some(path))
-      case None                                                => ()
+    selected.filter(state.tree.visiblePaths().contains).foreach { path =>
+      val wasExpanded = state.tree.expanded.contains(path)
+      state.tree.toggle()
+      // toggle changes membership only for a known directory, without probing the filesystem again.
+      if wasExpanded != state.tree.expanded.contains(path) then state.tree.loadVisible()
+      else state.chosen.set(Some(path))
+    }
 
-/** A filesystem browser. Up/Down move the selection, Enter expands or collapses the selected directory, while focused;
-  * the wheel moves the selection on hover. Listings are read lazily and cached in `state` — it touches the disk on
-  * expansion, never per frame.
+/** A filesystem snapshot browser. Up/Down move the selection, Enter expands or collapses the selected directory, while
+  * focused; the wheel moves the selection on hover. Neither painting nor navigation acquires listings. The caller loads
+  * visible branches explicitly and requests a redraw after installing a snapshot.
   */
 final case class DirectoryTreeElement(
     state: w.DirectoryTreeState,

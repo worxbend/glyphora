@@ -17,10 +17,13 @@ package io.worxbend.tui.core
 final case class Line(spans: Seq[Span], alignment: Option[Alignment] = None, style: Style = Style.Default):
   def width: Int = widthIn(WidthMode.Narrow)
 
-  /** This row's width under a given East Asian Ambiguous policy — the sum of its spans' [[Span.widthIn]]. See
-    * [[WidthMode]]; `widthIn(WidthMode.Narrow)` is exactly [[width]].
+  /** This row's width under a given East Asian Ambiguous policy. Span boundaries never split a grapheme; see
+    * [[WidthMode]] and [[styledGraphemes]]. `widthIn(WidthMode.Narrow)` is exactly [[width]].
     */
-  def widthIn(mode: WidthMode): Int = spans.map(_.widthIn(mode)).sum
+  def widthIn(mode: WidthMode): Int =
+    if spans.lengthIs == 1 then spans.head.widthIn(mode)
+    else if spans.forall(span => CharWidth.isPrintableAscii(span.content)) then spans.iterator.map(_.widthIn(mode)).sum
+    else CharWidth.graphemeClusters(spans.iterator.map(_.content)).map(CharWidth.clusterWidth(_, mode)).sum
 
   /** This line with `style` as its base layer, replacing whatever base it had. The spans are untouched, so each one
     * keeps its own style and still wins over this one wherever the two disagree.
@@ -97,12 +100,32 @@ final case class Line(spans: Seq[Span], alignment: Option[Alignment] = None, sty
     * cluster is and for the iterator's ownership rules, which this inherits unchanged.
     *
     * Each cluster arrives carrying the style it will really be drawn in: `base`, then this line's own [[style]] on top,
-    * then the span's style on top of that — the same three-layer cascade a renderer applies. The spans are visited
-    * lazily, so taking a screenful off the front never walks the tail.
+    * then the span's style on top of that — the same three-layer cascade a renderer applies. A cluster crossing spans
+    * belongs to the span containing its first code unit (its base character), including when a surrogate pair is split.
+    * Continuation spans cannot restyle it. Fragments are read lazily, with only the lookahead needed to finish a
+    * cluster.
     */
-  def styledGraphemes(base: Style): Iterator[StyledGrapheme] =
-    val lineBase = base.patch(style)
-    spans.iterator.flatMap(_.styledGraphemes(lineBase))
+  def styledGraphemes(base: Style): Iterator[StyledGrapheme] = graphemes(base.patch(style))
+
+  /** Raw span styles for reflow: the new rows retain this line's base style and must resolve it only at painting. */
+  private[tui] def spanGraphemes: Iterator[StyledGrapheme] = graphemes(Style.Default)
+
+  private def graphemes(lineBase: Style): Iterator[StyledGrapheme] =
+    if spans.lengthIs == 1 then spans.head.styledGraphemes(lineBase)
+    else
+      val owners   = spans.iterator
+      var resolved = lineBase
+      var end      = 0
+      var offset   = 0
+      CharWidth.graphemeClusters(spans.iterator.map(_.content)).map { cluster =>
+        // UTF-16 offsets identify the source style only; CharWidth owns segmentation and all column arithmetic.
+        while end <= offset && owners.hasNext do
+          val owner = owners.next()
+          end += owner.content.length
+          resolved = lineBase.patch(owner.style)
+        offset += cluster.length
+        StyledGrapheme(cluster, resolved)
+      }
 
 object Line:
   /** A line with no spans: zero columns wide, and the identity for [[Line.appendedAll]], so a fold that accumulates

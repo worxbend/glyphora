@@ -16,7 +16,10 @@ final class AutocompleteState:
     input.insert(choice)
     highlighted = 0
 
-/** App-owned state for a `filePicker`: the directory tree plus the accepted file. */
+/** App-owned state for a local `filePicker`: an initially unloaded tree plus the accepted file. Call
+  * `tree.loadVisible()` explicitly before showing it, outside `view`/painting. The picker loads new branches
+  * synchronously from its Enter handler; use `directoryTree` with asynchronous snapshots for slow filesystems.
+  */
 final class FilePickerState(root: Path):
   val tree: DirectoryTreeState     = DirectoryTreeState(root)
   val chosen: Signal[Option[Path]] = Signal(None)

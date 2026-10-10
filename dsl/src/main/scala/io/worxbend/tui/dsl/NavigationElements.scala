@@ -48,6 +48,14 @@ final case class ResponsiveElement(
   private[dsl] override def intrinsicHeight(width: Int): Option[Int] =
     constrainedHeight(resolved.flatMap(_.intrinsicHeight(width)))
 
+object ResponsiveElement:
+  /** Capture the declaration's hook scope once. Case-class copies retain the already captured builder. */
+  def apply(
+      build: Size => Element,
+      resolved: Option[Element] = None,
+      props: ElementProps = ElementProps(),
+  ): ResponsiveElement = new ResponsiveElement(ViewState.deferred(build), resolved, props)
+
 /** A scrollable viewport over taller-than-the-screen content. Up/Down/PageUp/PageDown scroll while focused.
   *
   * `contentHeight` is the caller's own measurement; `None` means "measure the content each frame", which is what the

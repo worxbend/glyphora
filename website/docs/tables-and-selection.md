@@ -118,31 +118,28 @@ private def buildTable(rows: Seq[ProcessInfo])(using theme: Theme): DataTable[In
   DataTable(..., options = DataTableOptions(highlightStyle = theme.focus))
 ```
 
-## Invalidate on every refresh
+## Refresh immutable row snapshots
 
-`DataTable` memoises its filtered, sorted view on the state, keyed on
-`(sort, filter, rowCount)` — re-sorting ten thousand rows on
-every frame is what pushes a redraw past the tick budget. Drop the cache
-yourself whenever the data changes:
+`DataTable` memoises its filtered, sorted view on the state using the immutable
+row collection's identity together with sort and filter settings. Replacing the
+collection refreshes the view even when its row count is unchanged:
 
 ```scala
 private def refresh(): Unit =
   Async.runCatching(source.sample()) {
     case Right(sampled) =>
       processes.set(sampled.toVector)
-      tableState.invalidate()
     case Left(error) =>
       notify(s"sample failed: ${error.getMessage}", NoticeLevel.Warning)
   }
 ```
 
-The key cannot see through a `Seq` to its contents, so a refresh that returns the
-same *number* of rows with different numbers in them keeps the previous ordering
-indefinitely. Call `invalidate()` on every refresh that might not change the row
-count, which in practice means every refresh. The bug survives a casual test
-because a list whose length happens to change on each sample hides it completely.
-The selection needs no saving across this: the render re-anchors it to the
-recorded row key on the very next frame. The refresh itself — timers,
+Retain the same row snapshot while its data is unchanged to reuse the cached view.
+Rebuilding an equal collection is safe but recomputes sorting/filtering. Explicit
+`invalidate()` remains available when an application deliberately needs to drop the
+cache; it is no longer part of the ordinary refresh protocol.
+Selection needs no saving: the render re-anchors it to the recorded row key on
+the next frame. The refresh itself — timers,
 cancellation, stale responses — belongs to [Live
 data & background work](./live-data).
 

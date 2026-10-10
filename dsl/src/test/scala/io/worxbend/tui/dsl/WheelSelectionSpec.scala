@@ -71,6 +71,7 @@ final class WheelSelectionSpec extends AnyFunSuite with PilotFixture:
   test("the wheel moves a directory tree's selection"):
     val root  = tempTree("glyphora-wheel-tree")
     val state = w.DirectoryTreeState(root)
+    state.loadVisible()
     state.selected = Some(root.resolve("alpha.txt"))
     val pilot = startApp(directoryTree(state))
     pilot.scrollDown(2, 1).waitForIdle()
@@ -82,6 +83,7 @@ final class WheelSelectionSpec extends AnyFunSuite with PilotFixture:
   test("the wheel moves a file picker's selection without accepting a file"):
     val root  = tempTree("glyphora-wheel-picker")
     val state = FilePickerState(root)
+    state.tree.loadVisible()
     state.tree.selected = Some(root.resolve("alpha.txt"))
     val pilot = startApp(filePicker(state))
     pilot.scrollDown(2, 1).waitForIdle()

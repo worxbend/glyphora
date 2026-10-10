@@ -89,7 +89,7 @@ private[dsl] final class ScrollViewportElement(
   private[dsl] override def withChildren(children: Seq[Element]): Element =
     children.headOption.fold(this)(child => ScrollViewportElement(child, state))
 
-/** Wraps a non-focusable element that carries an `onMouseEvent` during the focus pass, so its rendered area is recorded
+/** Wraps a non-focusable element with user or built-in mouse behavior during the focus pass, so its area is recorded
   * and the mouse router can offer it only the events that landed inside it. Focusable elements need no such wrapper —
   * [[TrackedElement]] already records their area under their focus index.
   */

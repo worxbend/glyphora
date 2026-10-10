@@ -40,9 +40,12 @@ sealed trait Reactive[A]:
   * `set`/`update` mark dependents stale and (via the root scope) schedule a redraw; nothing recomputes eagerly. Setting
   * an equal value notifies nobody — change detection is delegated to the [[SignalEquality]] given in scope at creation
   * (by default `==`, with `Double`/`Float` comparing by IEEE-754 total order). A value mutated *in place* is equal to
-  * itself, so `set(sameInstance)` never notifies: hold immutable values in a signal, or set a new instance. Must only
-  * be called from the render thread once one is registered — enforced by `RenderThread.checkRenderThread()`, which is a
-  * no-op in tests with no running runtime.
+  * itself, so `set(sameInstance)` never notifies: hold immutable values in a signal, or set a new instance.
+  *
+  * Tracked reads and writes belong to one render owner, not just any registered render thread. Construction on an owner
+  * binds immediately; runnerless construction binds its connected graph at first owner access. A live foreign owner
+  * (including a nested runner) is rejected. After retirement, the graph may bind to a subsequent run. With no running
+  * runtime, ordinary sequential unit-test reads and writes remain permitted.
   *
   * Writing is render-thread-only, but [[peek]] may be called from any thread: the value is `@volatile`, so a reader
   * outside the render thread is guaranteed to see the most recently set value rather than an arbitrarily stale one.
@@ -61,16 +64,20 @@ final class Signal[A] private (initial: A, equality: SignalEquality[A]) extends 
   def peek: A = currentValue
 
   def get(using scope: ReactiveScope): A =
+    // Subscribe validates both connected components before either can be claimed by this read.
     scope.track(this)
+    if scope ne ReactiveScope.untracked then ownership.check()
     currentValue
 
   def set(value: A): Unit =
-    RenderThread.checkRenderThread()
+    ownership.check()
     if !equality.unchanged(value, currentValue) then
       currentValue = value
       notifySubscribers()
 
-  def update(f: A => A): Unit = set(f(currentValue))
+  def update(f: A => A): Unit =
+    ownership.check()
+    set(f(currentValue))
 
 object Signal:
 
@@ -95,13 +102,14 @@ object Signal:
   * Render-thread-confined in *both* directions, unlike [[Signal]]. Reading is not the safe half here: `peek` (and
   * therefore `get`) recomputes when the cache is stale, and recomputing rewrites the cached value, the stale flag, the
   * dirty epoch and both the dependency and subscriber sets — none of which is volatile or guarded by a lock.
-  * `markStale` and `dispose` mutate those same sets. So all four must be called on the render thread — enforced by
-  * `RenderThread.checkRenderThread()` on each of them, which is a no-op in tests with no running runtime. In particular
-  * `Signal.peek` is explicitly safe off the render thread and `Computed.peek` is not: reading a computed from an
-  * [[Async]] worker corrupts the dependency graph quietly, with no exception thrown and nothing for a test to catch.
-  * Read the signals a background thread needs directly, or marshal the read back with [[RenderThread.runLater]].
+  * `markStale` and `dispose` mutate those same sets. All four enforce the graph's specific render owner, using the same
+  * initial-binding and post-retirement rebinding rules as [[Signal]]. In particular `Signal.peek` is explicitly safe
+  * off the render thread and `Computed.peek` is not; foreign-owner access throws before touching cached state. Read the
+  * signals a background thread needs directly, or marshal the read back with [[RenderThread.runLater]].
   */
 final class Computed[A] private (thunk: ReactiveScope ?=> A) extends Reactive[A], Subscriber, SubscriberRegistry:
+
+  override private[runtime] def reactiveOwner: Option[ReactiveOwner] = Some(ownership)
 
   private var cachedValue: A = uninitialized
   private var stale          = true
@@ -111,13 +119,18 @@ final class Computed[A] private (thunk: ReactiveScope ?=> A) extends Reactive[A]
   private var recomputing    = false
   private val dependencies   = mutable.LinkedHashSet[Subscribable]()
 
+  override private[runtime] def detached(dependency: Subscribable): Unit =
+    val _ = dependencies.remove(dependency)
+
   def peek: A =
-    RenderThread.checkRenderThread()
+    ownership.check()
     if stale then recompute()
     cachedValue
 
   def get(using scope: ReactiveScope): A =
+    // Subscribe validates both connected components before either can be claimed by this read.
     scope.track(this)
+    if scope ne ReactiveScope.untracked then ownership.check()
     peek
 
   /** Flags this value dirty and cascades to dependents.
@@ -128,7 +141,7 @@ final class Computed[A] private (thunk: ReactiveScope ?=> A) extends Reactive[A]
     * produced right now, and would otherwise never reach anyone.
     */
   def markStale(): Unit =
-    RenderThread.checkRenderThread()
+    ownership.check()
     dirtyEpoch += 1
     val wasFresh = !stale
     stale = true
@@ -146,7 +159,7 @@ final class Computed[A] private (thunk: ReactiveScope ?=> A) extends Reactive[A]
     * detaches, it does not close.
     */
   def dispose(): Unit =
-    RenderThread.checkRenderThread()
+    ownership.check()
     dependencies.toSeq.foreach(_.unsubscribe(this))
     dependencies.clear()
     stale = true

@@ -14,7 +14,10 @@ import io.worxbend.tui.runtime.{Frame, ReactiveScope}
   * What it does own is the part that would otherwise have to be rewritten: resolving the responsive view for the size
   * actually being painted, reconciling focus across frames (so the highlight follows the element and not the screen
   * position), decorating the tree with the focus cue, and routing keys, mouse events and pastes to the element that is
-  * on screen rather than to a freshly evaluated tree.
+  * on screen rather than to a freshly evaluated tree. The same session also owns hook identity and drains portals after
+  * ordinary painting. A portal escapes its containers, but never the host's render area intersected with the
+  * destination buffer. Hooks survive until they are unvisited in a frame, the host is discarded, or [[reset]] is
+  * called. Scheduling, reactive scope disposal and caller-owned resources remain the embedding loop's responsibility.
   *
   * '''Ownership and threads.''' One instance belongs to one loop. Every method must be called on that loop's render
   * thread: the instance holds the focus bookkeeping and the decorated tree of the last frame, and neither is
@@ -28,8 +31,18 @@ import io.worxbend.tui.runtime.{Frame, ReactiveScope}
   */
 final class ElementHost:
 
-  private[dsl] val tracker              = FocusTracker()
+  private[dsl] var tracker              = FocusTracker()
+  private var session                   = ViewSession()
   private var lastTree: Option[Element] = None
+
+  /** Retires this mount's hooks, focus history and dispatch tree. The next render starts a fresh mount. Call only
+    * between frames on the owning thread. Caller-owned state, subscriptions and resources are not closed: the embedding
+    * loop owns its ReactiveScope and must dispose it separately.
+    */
+  def reset(): Unit =
+    tracker = FocusTracker()
+    session = ViewSession()
+    lastTree = None
 
   /** Resolves `view` for an area of this size, reconciles focus, decorates the tree with `theme`'s focus cue and paints
     * it into `buffer`.
@@ -38,17 +51,23 @@ final class ElementHost:
     * this before dispatching anything: with no frame rendered yet there is no tree, and every dispatch answers `false`.
     */
   def render(area: Rect, buffer: Buffer, theme: Theme, view: View)(using scope: ReactiveScope): Unit =
-    val raw = resolveView(view, Size(area.width, area.height), theme)
-    renderTree(raw, theme.focus, tree => tree.widget.render(area, buffer))
+    val raw = session.resolve(view, Size(area.width, area.height), theme)
+    renderTree(raw, theme.focus, tree => session.paint(tree, area, buffer))
 
   /** [[render]] against a runner's `Frame`, for a host inside a `TerminalRunner`. */
   def render(frame: Frame, theme: Theme, view: View)(using scope: ReactiveScope): Unit =
-    val raw = resolveView(view, Size(frame.area.width, frame.area.height), theme)
-    renderTree(raw, theme.focus, tree => frame.renderWidget(tree.widget, frame.area))
+    renderComposed(frame, theme, view, () => ())
 
-  /** The view resolved against the size actually being painted. */
-  private def resolveView(view: View, size: Size, theme: Theme)(using scope: ReactiveScope): Element =
-    ResponsivePass.resolve(view(using scope, theme), size)
+  private[dsl] def renderComposed(frame: Frame, theme: Theme, view: View, beforeFocus: () => Unit)(using
+      scope: ReactiveScope
+  ): Unit =
+    val raw = session.resolve(view, Size(frame.area.width, frame.area.height), theme)
+    beforeFocus()
+    renderTree(
+      raw,
+      theme.focus,
+      tree => frame.renderWidget((area, buffer) => session.paint(tree, area, buffer), frame.area),
+    )
 
   /** The half of [[render]] after the view has been resolved: reconcile, decorate, remember, paint.
     *

@@ -34,6 +34,7 @@ export Element.{
   indeterminateBar,
   indeterminateBarAt,
   input,
+  interactiveWidget,
   layers,
   line,
   linearSpinner,
@@ -115,6 +116,7 @@ export io.worxbend.tui.core.{
   KeyEvent,
   Line,
   Masked,
+  Measured,
   MediaKey,
   ModifierKey,
   MouseButton,
@@ -206,6 +208,7 @@ export io.worxbend.tui.runtime.{
   RunnerConfig,
   RunnerError,
   Signal,
+  TaskScope,
   Viewport,
 }
 // The terminal vocabulary [[TuiApp]]'s own lifecycle seams are typed in: `runWith` takes a `Backend`, `createBackend`
@@ -236,6 +239,10 @@ export io.worxbend.tui.widgets.{
   DataTableOptions,
   DataTableState,
   Dataset,
+  DirectoryEntry,
+  DirectoryListing,
+  DirectoryLoadRequest,
+  DirectoryLoadState,
   DirectoryTreeState,
   DropdownState,
   GraphType,
@@ -437,6 +444,10 @@ extension [E <: Element](element: E)
     */
   def onKeyEvent(handler: KeyEvent => Boolean): element.Self =
     element.withProps(element.props.copy(onKey = Some(composeHandler(element.props.onKey, handler))))
+
+  /** Handles paste on the focused leaf before its default behavior; paste never invokes app bindings. */
+  def onPaste(handler: String => Boolean): element.Self =
+    element.withProps(element.props.copy(onPaste = Some(composeHandler(element.props.onPaste, handler))))
 
   /** A handler for a key coming back *up*, composing with any already on the element exactly as [[onKeyEvent]] does.
     *

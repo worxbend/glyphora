@@ -9,6 +9,10 @@ import scala.collection.mutable
 private[runtime] trait Subscriber:
   def markStale(): Unit
 
+  /** Forget the reverse edge too, while both endpoints are still confined to the checked owner. */
+  private[runtime] def detached(dependency: Subscribable): Unit = ()
+  private[runtime] def reactiveOwner: Option[ReactiveOwner]     = None
+
 /** A reactive value that subscribers can attach to. The counterpart of [[Subscriber]]: `Computed` implements both (it
   * subscribes to its dependencies and is subscribed to by its dependents).
   */
@@ -27,16 +31,23 @@ private[runtime] trait Subscribable:
   */
 private[runtime] trait SubscriberRegistry extends Subscribable:
 
+  protected val ownership = new ReactiveOwner
   private val subscribers = mutable.LinkedHashSet[Subscriber]()
 
   private[runtime] def subscribe(subscriber: Subscriber): Unit =
-    subscribers += subscriber
+    ownership.checkTogether(subscriber.reactiveOwner)
+    if subscribers.add(subscriber) then subscriber.reactiveOwner.foreach(ownership.connect)
 
   private[runtime] def unsubscribe(subscriber: Subscriber): Unit =
-    subscribers -= subscriber
+    ownership.checkTogether(subscriber.reactiveOwner)
+    if subscribers.remove(subscriber) then
+      subscriber.reactiveOwner.foreach(ownership.disconnect)
+      subscriber.detached(this)
 
   /** Live subscriber count. Package-private: regression tests assert that repeated derivation does not grow it. */
-  private[runtime] def subscriberCount: Int = subscribers.size
+  private[runtime] def subscriberCount: Int =
+    ownership.check()
+    subscribers.size
 
   /** Marks every current subscriber stale.
     *
@@ -48,4 +59,5 @@ private[runtime] trait SubscriberRegistry extends Subscribable:
 
   /** Drops every subscriber. Notify first when the dependents still need to know they were detached. */
   protected def clearSubscribers(): Unit =
-    subscribers.clear()
+    ownership.check()
+    subscribers.toSeq.foreach(unsubscribe)

@@ -196,6 +196,11 @@ private[dsl] trait ElementFactories:
     */
   def widget(wrapped: Widget): WidgetElement = WidgetElement(wrapped)
 
+  /** A focusable custom leaf with caller-owned state and the standard key, paste and mouse routing. */
+  def interactiveWidget[S](state: S, handlers: InteractiveHandlers[S] = InteractiveHandlers[S]())(
+      build: (S, InteractiveContext) => Widget
+  ): InteractiveWidgetElement[S] = InteractiveWidgetElement(state, handlers, build)
+
   /** A single-line text field over caller-owned [[w.TextInputState]], showing `placeholder` while empty.
     *
     * Create the state once, outside `view` — a `TextInputState()` built inside the view is a new empty editor on every
@@ -593,7 +598,9 @@ private[dsl] trait ElementFactories:
     AutocompleteElement(state, suggestions, onAccept)
 
   /** A file chooser over an app-owned [[FilePickerState]]. The accepted path is read tracked, so accepting one — or
-    * setting `state.chosen` from anywhere else — repaints the footer line.
+    * setting `state.chosen` from anywhere else — repaints the footer line. Load `state.tree.loadVisible()` explicitly
+    * before showing the picker (outside `view`). Enter loads newly expanded branches synchronously in its event
+    * handler, never while painting. For slow filesystems use [[directoryTree]] with worker-acquired snapshots.
     */
   def filePicker(state: FilePickerState)(using ReactiveScope): FilePickerElement =
     FilePickerElement(state, state.chosen.get)
@@ -702,9 +709,10 @@ private[dsl] trait ElementFactories:
 
   /** A filesystem browser rooted at the state's path, expanding branches on demand.
     *
-    * Caller-owned state, created once outside `view`, render-thread-only. Note that expanding a branch reads the
-    * directory *on the render thread*: harmless on a local disk, a visible stall on a network mount or a directory with
-    * very many entries — [[w.DirectoryTreeState]] explains how to pre-warm the cache.
+    * Caller-owned state, created once outside `view`, render-thread-only and initially unloaded. Painting and
+    * navigation never access the filesystem. Acquire immutable [[w.DirectoryListing]] values on a worker, then install
+    * them on the owner and request a redraw; [[w.DirectoryTreeState]] describes the generation protocol. For small
+    * local directories call `state.loadVisible()` explicitly outside `view`, initially and after expanding.
     */
   def directoryTree(state: w.DirectoryTreeState): DirectoryTreeElement =
     DirectoryTreeElement(state)

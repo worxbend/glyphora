@@ -133,11 +133,11 @@ final class RenderThreadSpec extends AnyFunSuite:
     assert(ran.head == queued - cap + 1)
     assert(ran.last == queued)
 
-  test("the guard admits any registered render thread, so one runner can still mutate another's signals"):
-    // documents a known limitation: registration is per-process, not per-signal, so ownership is not enforced
+  test("registered runners cannot mutate a signal bound to another runner"):
     val signal = Signal(1)
     RenderThread.register(Thread.currentThread())
     try
+      signal.set(1) // even an unchanged write establishes ownership
       var thrown: Option[Throwable] = None
       val otherRunner               = Thread { () =>
         RenderThread.register(Thread.currentThread())
@@ -148,8 +148,8 @@ final class RenderThreadSpec extends AnyFunSuite:
       }
       otherRunner.start()
       otherRunner.join()
-      assert(thrown.isEmpty)
-      assert(signal.peek == 2)
+      assert(thrown.nonEmpty)
+      assert(signal.peek == 1)
     finally RenderThread.unregister()
 
   test("a throwing queued body neither stops the drain nor drops the bodies queued behind it"):

@@ -12,23 +12,19 @@ private[dsl] final class RunClock:
   def now(): Long                    = reading()
   def use(reading: () => Long): Unit = this.reading = reading
 
-/** How many layers covered the app's own view when the last frame was composed — pushed screens plus the command
-  * palette — and which screen was on top. Compared against the current state on every frame to decide whether focus
-  * should move into an incoming layer or back out of one that has gone; see `TuiApp.syncFocusLayers`.
-  *
-  * One value rather than two fields because the count and the top screen are only ever read and written together: a
-  * count without the screen it was taken with cannot tell a swap at the same depth from no change at all.
-  */
-private[dsl] final case class LayerSnapshot(count: Int, top: Option[Screen]):
+/** Ordered entry identities; a changed ancestor retires every focus frame above it. */
+private[dsl] enum LayerIdentity:
+  case Screen(id: Long)
+  case Palette(id: Long)
 
-  /** Reference identity, not `==`: two screens can be equal values and still be different pushes. */
-  def sameTopAs(other: LayerSnapshot): Boolean = (top, other.top) match
-    case (Some(mine), Some(theirs)) => mine eq theirs
-    case (None, None)               => true
-    case _                          => false
+private[dsl] final case class LayerSnapshot(ids: Vector[LayerIdentity]):
+  def reconcile(previous: LayerSnapshot, tracker: FocusTracker): Unit =
+    val common = ids.zip(previous.ids).takeWhile((a, b) => a == b).size
+    previous.ids.drop(common).reverseIterator.foreach(_ => tracker.popLayer())
+    ids.drop(common).foreach(_ => tracker.pushLayer())
 
 private[dsl] object LayerSnapshot:
-  val Empty: LayerSnapshot = LayerSnapshot(0, None)
+  val Empty: LayerSnapshot = LayerSnapshot(Vector.empty)
 
 /** The mutable state of a single [[TuiApp.runWith]] invocation: whether a redraw is pending, the focus-decorated tree
   * the last frame produced (events are routed against that tree, not against a freshly evaluated one), the focus
@@ -51,12 +47,6 @@ private[dsl] final class RunState(val splash: SplashPlayer, val config: RunnerCo
     * `focusTo`/`clearFocus` helpers both work directly against it.
     */
   def tracker: FocusTracker = host.tracker
-
-  /** The state `useSignal`/`useState` hand out, keyed by where in the view the call was made. Owned by this run and
-    * touched only while its render thread is evaluating the view, like everything else here — running the same app a
-    * second time therefore starts every component-local value fresh.
-    */
-  val viewState: ViewState = ViewState()
 
   /** This run's render loop, captured in `onStart` while it is still registered, so the exit path can hand the
     * [[AnimationClock]] entry back. `None` until then, and for a run whose `onStart` never happened.

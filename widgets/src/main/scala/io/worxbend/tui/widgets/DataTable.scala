@@ -129,8 +129,8 @@ final class DataTableState[K]:
 
   /** Drops the memoized filtered/sorted view.
     *
-    * Only needed when the row data changes without changing its length — the cache key cannot see through a `Seq` to
-    * its contents, so rebuilding the table with the same row count would otherwise keep showing the previous ordering.
+    * Replacing the immutable row sequence automatically refreshes the view, even at the same length. This is an
+    * explicit escape hatch for caller-defined sequences with externally changing contents; it preserves selection.
     */
   def invalidate(): Unit = view = None
 
@@ -139,8 +139,8 @@ final class DataTableState[K]:
   /** Returns the cached view when `key` still matches, otherwise recomputes and stores it. */
   private[widgets] def cachedView(key: DataTableState.ViewKey)(compute: => Seq[KeyedRow[K]]): Seq[KeyedRow[K]] =
     view match
-      case Some((cached, rows)) if cached == key => rows
-      case _                                     =>
+      case Some((cached, rows)) if cached.matches(key) => rows
+      case _                                           =>
         val fresh = compute
         view = Some((key, fresh))
         fresh
@@ -214,8 +214,10 @@ object DataTableState:
   private[widgets] final case class ViewKey(
       sort: Option[ColumnSort],
       filter: String,
-      rowCount: Int,
-  )
+      source: AnyRef,
+  ):
+    def matches(other: ViewKey): Boolean =
+      (source eq other.source) && sort == other.sort && filter == other.filter
 
 /** One [[DataTable]] row: a stable identity plus the text cells the table sorts, filters and draws.
   *
@@ -346,11 +348,11 @@ final case class DataTable[K](
   /** Every row surviving the filter, in sort order — the domain paging windows over.
     *
     * Memoized on `state`: scrolling changes only the offset, and re-sorting ten thousand rows on every frame is what
-    * pushes a redraw past the tick budget. The cache key covers everything that can change the result, with the row
-    * count standing in for the data itself — see [[DataTableState.invalidate]] for when that is not enough.
+    * pushes a redraw past the tick budget. Row-source identity, sort and filter form the key: retain the immutable
+    * sequence to reuse work across widget rebuilds; replace it to refresh. No content hashing or traversal is needed.
     */
   def filteredRows(state: DataTableState[K]): Seq[KeyedRow[K]] =
-    val key = DataTableState.ViewKey(state.sort, state.filter, rows.size)
+    val key = DataTableState.ViewKey(state.sort, state.filter, rows)
     state.cachedView(key) {
       val filtered =
         if state.filter.isEmpty then rows

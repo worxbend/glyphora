@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Alignment, Buffer, CharWidth, Line, LineBreaks, Measured, Rect, Span, Style, Text, Widget}
+import io.worxbend.tui.core.{Alignment, Buffer, Line, LineBreaks, Measured, Rect, Span, Style, Text, Widget}
 
 /** Multi-line styled text with alignment and optional wrapping.
   *
@@ -214,36 +214,34 @@ object Paragraph:
 
     /** The whole walk: read every cluster of `line`, then flush the pending word and the row it lands on. */
     def walk(line: Line): Unit =
-      line.spans.foreach { span =>
-        val clusters = CharWidth.graphemeClusters(span.content)
-        while clusters.hasNext do
-          val cluster = clusters.next()
-          if LineBreaks.isBreakingSpace(cluster) then
+      line.spanGraphemes.foreach { grapheme =>
+        val cluster = grapheme.cluster
+        if LineBreaks.isBreakingSpace(cluster) then
+          commitWord()
+          sink.addGap(cluster, grapheme.style)
+          gapWidth += grapheme.width
+        else if LineBreaks.isZeroWidthBreak(cluster) then
+          // A break opportunity with no glyph, standing on its own at the very start of the text: end the word here
+          // and drop the character, which draws nothing whether the break is taken or not.
+          commitWord()
+        else
+          val clusterWidth = grapheme.width
+          // The blanks that will be written in front of this word are part of the row it lands on, so they are counted
+          // against the width here too. Left out, a line whose first row is indented was broken one column too late
+          // and the renderer clipped that column away: " abcde" at width 5 came out as the single row " abcde".
+          val firstWidth   = if wordHasContent then wordFirstWidth else clusterWidth
+          if gapOnFreshRow(firstWidth, wordWidth + clusterWidth) + wordWidth + clusterWidth > width then
+            // The word alone is wider than any row can be, so it has to be broken. Put what has been read onto a row
+            // of its own and carry on reading the rest of the word into the next one.
             commitWord()
-            sink.addGap(cluster, span.style)
-            gapWidth += CharWidth.of(cluster)
-          else if LineBreaks.isZeroWidthBreak(cluster) then
-            // A break opportunity with no glyph, standing on its own at the very start of the text: end the word here
-            // and drop the character, which draws nothing whether the break is taken or not.
-            commitWord()
-          else
-            val clusterWidth = CharWidth.of(cluster)
-            // The blanks that will be written in front of this word are part of the row it lands on, so they are counted
-            // against the width here too. Left out, a line whose first row is indented was broken one column too late
-            // and the renderer clipped that column away: " abcde" at width 5 came out as the single row " abcde".
-            val firstWidth   = if wordHasContent then wordFirstWidth else clusterWidth
-            if gapOnFreshRow(firstWidth, wordWidth + clusterWidth) + wordWidth + clusterWidth > width then
-              // The word alone is wider than any row can be, so it has to be broken. Put what has been read onto a row
-              // of its own and carry on reading the rest of the word into the next one.
-              commitWord()
-              if rowHasContent then endRow()
-            if !wordHasContent then wordFirstWidth = clusterWidth
-            sink.addWord(cluster, span.style)
-            wordWidth += clusterWidth
-            wordHasContent = true
-            // A zero width space rides along inside the cluster before it, and says a break is allowed after that
-            // cluster: end the word here so the next one may start on a new row.
-            if LineBreaks.endsWithZeroWidthBreak(cluster) then commitWord()
+            if rowHasContent then endRow()
+          if !wordHasContent then wordFirstWidth = clusterWidth
+          sink.addWord(cluster, grapheme.style)
+          wordWidth += clusterWidth
+          wordHasContent = true
+          // A zero width space rides along inside the cluster before it, and says a break is allowed after that
+          // cluster: end the word here so the next one may start on a new row.
+          if LineBreaks.endsWithZeroWidthBreak(cluster) then commitWord()
       }
       commitWord()
       if rowHasContent || rows == 0 then endRow()

@@ -266,6 +266,86 @@ final class TwoRunnerRoutingSpec extends AnyFunSuite:
       )
     }
 
+  test("a reactive graph cannot be mutated or subscribed by another live TerminalRunner"):
+    val signal                      = Signal(1)
+    val computed                    = Computed(signal.get * 2)
+    val scope                       = ReactiveScope.generational(() => ())
+    val rejected                    = AtomicInteger(0)
+    def reject(body: => Unit): Unit =
+      try body
+      catch case _: IllegalStateException => { val _ = rejected.incrementAndGet() }
+    withTwoRunners { (a, b) =>
+      a.armAndPark { val _ = computed.get(using scope) }
+      b.armAndPark {
+        reject(signal.set(9))
+        reject { val _ = signal.get(using ReactiveScope.onInvalidation(() => ())) }
+        reject { val _ = computed.peek }
+        reject(computed.dispose())
+        reject(scope.dispose())
+        reject(scope.beginGeneration())
+      }
+      assert(rejected.get() == 6)
+      assert(signal.peek == 1)
+      val cleaned = CountDownLatch(1)
+      a.loop.enqueue(() => {
+        computed.dispose()
+        scope.dispose()
+        cleaned.countDown()
+      })
+      a.resume()
+      assert(cleaned.await(AwaitMillis, TimeUnit.MILLISECONDS))
+    }
+
+  test("concurrent first claims give an unbound signal exactly one runner owner"):
+    val signal        = Signal(0)
+    val race          = CyclicBarrier(2)
+    val finished      = CountDownLatch(2)
+    val accepted      = AtomicInteger(0)
+    val rejected      = AtomicInteger(0)
+    def claim(): Unit =
+      try
+        val _ = race.await(AwaitMillis, TimeUnit.MILLISECONDS)
+        signal.set(1)
+        val _ = accepted.incrementAndGet()
+      catch case _: IllegalStateException => { val _ = rejected.incrementAndGet() }
+      finally finished.countDown()
+    withTwoRunners { (a, b) =>
+      a.loop.enqueue(() => claim())
+      b.loop.enqueue(() => claim())
+      assert(finished.await(AwaitMillis, TimeUnit.MILLISECONDS))
+      assert(accepted.get() == 1)
+      assert(rejected.get() == 1)
+    }
+
+  test("scoped outcomes return to their own runners and closing one scope leaves the other usable"):
+    val aScope     = AtomicReference[Option[TaskScope]](None)
+    val aTask      = AtomicReference[Option[Cancelable]](None)
+    val aDelivered = AtomicInteger(0)
+    val landing    = Landing(1)
+    val produced   = CountDownLatch(1)
+    withTwoRunners { (a, b) =>
+      a.armAndPark {
+        val scope = Async.scope()
+        aScope.set(Some(scope))
+        aTask.set(Some(scope.runCatching {
+          produced.countDown()
+          1
+        }(_ => { val _ = aDelivered.incrementAndGet() })))
+      }
+      assert(produced.await(AwaitMillis, TimeUnit.MILLISECONDS))
+      aTask.get().foreach(_.cancel())
+      aScope.get().foreach(_.close())
+      b.armAndPark {
+        val scope = Async.scope()
+        val _     = scope.runCatching(2)(_ => landing.record())
+      }
+      a.resume()
+      b.resume()
+      assert(landing.awaitWithin(AwaitMillis))
+      assert(landing.threads == List(b.threadName))
+      assert(aDelivered.get() == 0)
+    }
+
   test("a long-lived async reporting policy binds its destination per invocation"):
     val landing             = Landing(2)
     given AsyncErrorHandler = AsyncErrorHandler.onRenderThread(_ => landing.record())

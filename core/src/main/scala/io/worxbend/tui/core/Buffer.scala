@@ -209,18 +209,21 @@ final class Buffer(val area: Rect):
     * `io.worxbend.tui.core.Alignment` for the arithmetic the widgets share.
     */
   def setLine(x: Int, y: Int, line: Line, maxWidth: Int, baseStyle: Style = Style.Default): Int =
-    val budget    = math.max(0, maxWidth)
-    val lineStyle = baseStyle.patch(line.style)
-    var written   = 0
-    // set once a span draws fewer columns than it is wide: the budget cut it short, so nothing after it may be drawn
-    var truncated = false
-    val spans     = line.spans.iterator
-    while spans.hasNext && written < budget && !truncated do
-      val span  = spans.next()
-      val drawn = setSpan(x + written, y, span, budget - written, lineStyle)
-      written += drawn
-      truncated = drawn < span.width
-    written
+    if line.spans.lengthIs == 1 then setSpan(x, y, line.spans.head, maxWidth, baseStyle.patch(line.style))
+    else
+      val limit     = math.min(area.right.toLong, x.toLong + math.max(0, maxWidth)).toInt
+      var column    = x
+      var truncated = false
+      val clusters  = line.styledGraphemes(baseStyle)
+      while y >= area.y && y < area.bottom && column < limit && clusters.hasNext && !truncated do
+        val grapheme = clusters.next()
+        val width    = CharWidth.ofCluster(grapheme.cluster)
+        if width > 0 then
+          if column.toLong + width <= limit then
+            setMeasured(column, y, Cell(grapheme.cluster, grapheme.style), width)
+            column += width
+          else truncated = true
+      column - x
 
   /** The shared body of both [[setString]] overloads: writes clusters left to right while the write head stays below
     * `limit` (an exclusive column bound already clipped to the area), and answers the columns written.

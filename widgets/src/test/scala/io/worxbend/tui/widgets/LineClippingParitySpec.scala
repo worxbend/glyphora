@@ -64,8 +64,13 @@ final class LineClippingParitySpec extends AnyFunSuite:
       var at       = start
       var skipped  = skip
       var stopped  = false
-      // Deliberately measure whole spans here: an independent, unbounded oracle for the optimized render path.
-      val spans    = line.spans.iterator
+      // Independent, unbounded oracle over manually normalized whole-cluster spans. The leading accent of the
+      // italic source span belongs to the preceding blue emoji, not to a separate zero-width fragment.
+      val spans    = Vector(
+        Span("\u0000\u0301a", Style.Default.withFg(Color.Red)),
+        Span("漢👩‍💻\u0301", Style.Default.withFg(Color.Blue)),
+        Span("b\u0000c", Style.Default.italic),
+      ).iterator
       while spans.hasNext && at < x + budget && !stopped do
         val span  = spans.next()
         val text  =

@@ -133,7 +133,11 @@ final class TuiAppLifecycleSpec extends AnyFunSuite:
         val backend = HeadlessBackend(Size(12, 3))
         backend.postEvent(Event.Key(KeyEvent.parse("q").toOption.get))
         assert(app.runWith(backend) == Right(()))
-        assert(retained.subscriberCount == 0)
+        // Subscriber bookkeeping is confined even for diagnostics. The completed app's owner has retired,
+        // so a fresh inspection owner may claim its now-unsubscribed signal while the other runner stays live.
+        val _       = RenderThread.register(Thread.currentThread())
+        try assert(retained.subscriberCount == 0)
+        finally RenderThread.unregister()
       }
     finally
       release.countDown()

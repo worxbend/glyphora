@@ -103,14 +103,12 @@ final class ViewportCostSpec extends AnyFunSuite:
     assert(filtered.forall(_.cells.exists(_.contains("item 1"))))
     assert(filtered.size < data.size)
 
-  test("invalidate is what a caller uses after swapping same-length data"):
+  test("DataTable refreshes automatically after swapping same-length data"):
     val first  = Vector(Seq("1", "b"), Seq("2", "a"))
     val second = Vector(Seq("1", "z"), Seq("2", "y"))
     val state  = DataTableState()
     state.sort = Some(ColumnSort(1, SortDirection.Ascending))
     assert(DataTable.fromStrings(Seq("id", "name"), first, widths).filteredRows(state).map(_.cells(1)) == Seq("a", "b"))
-    // the cache key cannot see through a Seq to its contents, so the caller must say the data moved
-    state.invalidate()
     assert(
       DataTable.fromStrings(Seq("id", "name"), second, widths).filteredRows(state).map(_.cells(1)) == Seq("y", "z")
     )

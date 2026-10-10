@@ -12,7 +12,7 @@ import scala.concurrent.duration.DurationInt
   *   - a `DataTable` driven entirely from the app's own key bindings — the widget ships no sort or filter keys;
   *   - a refresh on a timer that does its blocking work off the render thread and lands the result back on it;
   *   - derived statistics as `Computed` fields on the app rather than arithmetic inside `view`;
-  *   - `DataTableState.invalidate()`, without which a refresh that keeps the row count keeps the old ordering for ever;
+  *   - source-aware table caching, so immutable row refreshes automatically update filtering and ordering;
   *   - a selection anchored to a *process* by row key, so a row that moves under a re-sort takes the highlight with it
   *     — the pid is the `KeyedRow` key, never parsed back out of a formatted cell.
   *
@@ -96,10 +96,7 @@ class ProcmonApp(val source: ProcessSource = ProcessSource.detect()) extends Tui
       case Right(sampled) =>
         processes.set(sampled.toVector)
         sampleCount.update(_ + 1)
-        // Mandatory, and the single easiest bug to write here: the filtered/sorted view is memoized on a key that
-        // stands in for the data with its *row count*. A refresh that returns the same number of processes with
-        // different numbers in them would otherwise keep the previous ordering indefinitely.
-        tableState.invalidate()
+      // The new immutable row source automatically refreshes the table cache, even at the same row count.
       case Left(error)    =>
         notify(s"sample failed: ${error.getMessage}", NoticeLevel.Warning)
     }

@@ -36,6 +36,13 @@ private[dsl] object PortalQueue:
     */
   def end(): Unit = current.remove()
 
+  /** Isolates nested hosts and restores the outer queue even when painting fails. */
+  def during[A](body: => A): A =
+    val previous = current.get()
+    begin()
+    try body
+    finally current.set(previous)
+
   /** Whether a frame root is collecting on this thread — that is, whether [[offer]] will actually be drawn later. */
   def isCollecting: Boolean = current.get().isDefined
 

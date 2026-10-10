@@ -31,6 +31,92 @@ final class ElementHostSpec extends AnyFunSuite:
   private def press(host: ElementHost, code: KeyCode): Boolean =
     host.dispatchKey(KeyEvent(code, KeyModifiers.None))
 
+  test("Host and App share hooks, responsive portals and paste at offset scroll origins"):
+    def component: Element =
+      val scrolling = useState(ScrollViewState())
+      positioned(3, 2, 10, 3)(
+        scrollView(
+          responsive(_ => layers(text("body"), portal(1, 0, 7, 1)(input(useState(TextInputState("hook"))).autofocus))),
+          6,
+          scrolling,
+        )
+      )
+    val host               = ElementHost()
+    val paint              = buffer(20, 7)
+    host.render(paint.area, paint, Theme.Dark, component)
+    val app                = new TuiApp:
+      def view(using ReactiveScope, Theme): Element = component
+    io.worxbend.tui.testsupport.Pilot.using(Size(20, 7))(backend => app.runWith(backend)) { pilot =>
+      pilot.waitForIdle()
+      assert(pilot.screenLines == trimmedLines(paint))
+      assert(host.dispatchPaste("!"))
+      pilot.paste("!").waitForIdle()
+      val next = buffer(20, 7)
+      host.render(next.area, next, Theme.Dark, component)
+      assert(pilot.screenLines == trimmedLines(next))
+    }
+
+  test("reset retires hook identity and the last dispatch tree"):
+    val host       = ElementHost()
+    var states     = Vector.empty[Object]
+    val view: View =
+      states :+= useState(new Object)
+      button("active")(()).key("active")
+    host.render(Rect(0, 0, 8, 1), buffer(8, 1), Theme.Dark, view)
+    host.reset()
+    assert(!host.dispatchKey(Key.Enter))
+    assert(host.focusedKey.isEmpty)
+    host.render(Rect(0, 0, 8, 1), buffer(8, 1), Theme.Dark, view)
+    assert(!(states(0) eq states(1)))
+
+  test("a nested host restores outer painting coordinates and portal collection after failure"):
+    val inner     = ElementHost()
+    val transform = ViewportTransform(5, 7, Rect(5, 7, 8, 3))
+    FrameCoordinates.during(transform) {
+      PortalQueue.during {
+        PortalQueue.offer(Rect(0, 0, 2, 1), text("outer"))
+        intercept[IllegalArgumentException] {
+          inner.render(
+            Rect(0, 0, 2, 1),
+            buffer(2, 1),
+            Theme.Dark,
+            widget((_, _) => throw new IllegalArgumentException("paint")),
+          )
+        }
+        assert(FrameCoordinates.translate(Rect(0, 0, 2, 1)) == Rect(5, 7, 2, 1))
+        assert(PortalQueue.drain().map(_._1) == Seq(Rect(5, 7, 2, 1)))
+      }
+    }
+    assert(!PortalQueue.isCollecting)
+    assert(FrameCoordinates.translate(Rect(0, 0, 2, 1)) == Rect(0, 0, 2, 1))
+
+  test("host hooks persist once per frame and nested evaluations restore their owner"):
+    val outer       = ElementHost()
+    val inner       = ElementHost()
+    var evaluations = 0
+    var owned       = Vector.empty[Object]
+    val view: View  =
+      evaluations += 1
+      val before = useState(new Object)
+      inner.render(Rect(0, 0, 2, 1), buffer(2, 1), Theme.Dark, text(useState("inner")))
+      val after  = useState(new Object)
+      owned = owned ++ Vector(before, after)
+      text("outer")
+    outer.render(Rect(0, 0, 10, 1), buffer(10, 1), Theme.Dark, view)
+    outer.render(Rect(0, 0, 10, 1), buffer(10, 1), Theme.Dark, view)
+    assert(evaluations == 2)
+    assert(owned(0) eq owned(2))
+    assert(owned(1) eq owned(3))
+    assert(!(owned(0) eq owned(1)))
+
+  test("host portals paint last but cannot escape the host boundary"):
+    val host       = ElementHost()
+    val paint      = buffer(12, 4)
+    paint.setString(0, 1, "............", Style.Default)
+    val view: View = layers(portal(-2, 0, 10, 1)(text("0123456789")), text("xxxxx"))
+    host.render(Rect(3, 1, 5, 1), paint, Theme.Dark, view)
+    assert((0 until 12).map(x => paint.get(x, 1).symbol).mkString == "...23456....")
+
   test("a view renders into a plain buffer with no runner at all"):
     val host  = ElementHost()
     val paint = buffer(10, 3)

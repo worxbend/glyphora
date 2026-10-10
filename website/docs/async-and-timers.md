@@ -82,7 +82,10 @@ binding: `toRenderThread()` uses the loop captured when the policy was construct
 while `onRenderThread` uses ordinary `RenderThread.runLater` routing at the call.
 Custom worker-side handlers, `ignore`, and `rethrow` keep their own behavior.
 
-`AsyncErrorHandler.rethrow` throws on the worker thread instead. Avoid it in a
+`AsyncErrorHandler.rethrow` throws on the worker thread instead. Escaping failures,
+including exceptions thrown by a custom worker-side error handler, reach that
+thread's uncaught-exception handler; they are not hidden in discarded futures.
+Avoid it in a
 terminal app: the JVM prints the stack trace to standard error, which is the tty the
 UI is drawn on, so the trace lands on top of the alternate screen and the frame diff
 never repaints over it.
@@ -109,6 +112,59 @@ lifecycle ownership explicit and prevent a screen that no longer exists from
 continuing to update app state. `cancel()` also discards callbacks already queued
 for delivery but not yet started. It is thread-safe and idempotent; a callback
 that has already started is allowed to finish without interruption.
+
+## Optional owner-scoped tasks
+
+`Async.scope()` creates a `io.worxbend.tui.runtime.TaskScope` on the current
+registered runner. Create it from `onStart` or a screen's `onEnter`, not from a
+field initializer. It shares the existing daemon worker pool and scheduler.
+
+```scala
+// Called on the owner, e.g. from onEnter:
+val tasks = Async.scope()
+val load: Cancelable = tasks.runCatching(api.fetchUsers()) {
+  case Right(value) => users.set(LoadState.Ready(value))
+  case Left(error)  => users.set(LoadState.Failed(error.getMessage))
+}
+val dismiss: Cancelable = tasks.after(2.seconds) { notice.set(None) }
+val poller: Cancelable = tasks.every(10.seconds) { reload() }
+
+load.cancel() // Cancel one task without cancelling siblings.
+tasks.close() // Keep the scope and call this from onLeave / onStop.
+```
+
+Each scoped operation returns a `Cancelable`. Submission, cancellation and
+`close()` are thread-safe. Both success and failure callbacks return to the scope's
+captured owner, even if submission happens on another thread. Closing is
+idempotent, rejects new submissions, cancels its timers and suppresses callbacks
+already queued but not yet admitted by their delivery guard. Runner retirement
+also closes its scopes, but screen departure needs an explicit `close()`.
+Create a fresh scope for every entry/run; a closed scope cannot be reopened.
+
+Cancellation is **best effort, not interruption or joining**: work that has not
+started is skipped, but an admitted callback or blocking worker is allowed to
+finish. Closing never waits for it, cannot undo its side effects and cannot abort
+an HTTP request; configure IO timeouts or cooperative cancellation separately.
+Use `tasks.runCatching` inside scoped pollers too: an ordinary `Async.run` started
+by a scoped timer is still unscoped. There is no automatic single-flight or
+coalescing policy; the application decides whether overlapping loads are useful.
+
+## Reactive graph ownership
+
+**Behavior change:** being on *some* render thread no longer permits access to
+another runner's reactive graph. Signals, computeds and tracking scopes created
+on a runner bind to that owner; values constructed before startup bind their
+connected subscription graph on first owner access. Foreign tracked reads,
+mutations, subscription changes and disposal throw `IllegalStateException`.
+Nested runners are separate owners too, even on the same Java thread; the outer
+graph becomes usable again when control returns to the outer runner.
+
+After the old owner retires, retained state may bind to the next run, so sequential
+app reruns remain supported. Runnerless sequential unit tests still need no
+runtime. `Signal.peek` remains a volatile, untracked cross-thread read;
+`Computed.peek` can rebuild dependencies and therefore remains owner-confined.
+Do not share one live graph between two runners. Pass immutable snapshots and
+start async work on the graph's owner instead.
 
 ## Use the app tick for frame-oriented work
 
@@ -157,15 +213,26 @@ not repeat on every later tick.
 If a library owns its worker thread, marshal the callback manually:
 
 ```scala
+// Capture during onStart, before the external callback runs.
+val owner = RenderThread.capture()
 client.onMessage { message =>
-  RenderThread.runOnRenderThread {
+  val _ = owner.execute {
     messages.update(_ :+ message)
   }
 }
 ```
 
 `runOnRenderThread` runs immediately when already on the UI thread and queues
-otherwise. `runLater` always queues for the next loop iteration.
+otherwise. `runLater` always queues rather than calling inline; work queued during
+a drain may run in that same batch if budget remains.
+
+Each loop turn drains a bounded FIFO batch before returning to input, repaint and
+stop checks. Pending work stays queued and shortens the next input wait; a callback
+that queues its successor cannot monopolize the loop indefinitely. This bounds the
+number of callbacks, not the execution time of one callback: never block in one.
+Shutdown has a separate bounded final batch, then discards remaining callbacks
+when retiring the owner. Do not rely on an arbitrarily large backlog finishing
+before exit; perform required cleanup in the lifecycle callback instead.
 
 ## When a continuation throws
 

@@ -2,130 +2,124 @@ package io.worxbend.tui.widgets
 
 import io.worxbend.tui.core.{Buffer, Rect, StatefulWidget, Style}
 
-import java.nio.file.{Files, Path}
-import java.util.Locale
+import java.nio.file.Path
 import scala.collection.mutable
-import scala.jdk.CollectionConverters.*
-import scala.util.control.NonFatal
 
-/** Caller-owned [[DirectoryTree]] state rooted at a directory.
+/** Caller-owned, render-thread-confined directory snapshots and interaction state.
   *
-  * Directory listings are loaded lazily on first visibility and cached together with each entry's directory flag, so a
-  * directory is read from disk once and then served from memory until [[invalidate]] drops it.
+  * Construction, navigation and painting perform no filesystem IO. Call [[beginLoad]] on the owner thread, acquire
+  * `DirectoryListing.load(request.directory)` on a worker, then [[install]] on the owner thread and request a redraw.
+  * Never mutate this state from the worker. [[directoriesToLoad]] reports visible unloaded branches; loading and failed
+  * branches are excluded until explicitly retried. [[loadVisible]] is a blocking convenience for small local trees, to
+  * call explicitly outside painting, not a background pre-warm of mutable state.
   *
-  * WHERE THAT READ HAPPENS IS WORTH KNOWING. "On first visibility" means the first frame that makes a branch visible
-  * does the listing, and that frame runs on the render thread: [[DirectoryTree.render]] calls [[visibleEntries]], and
-  * [[selectNext]] / [[selectPrevious]] call [[visiblePaths]], both of which walk into a blocking `Files.list` for any
-  * branch not cached yet. On a local disk that is not measurable; on a network mount, a fuse filesystem, or a directory
-  * with very many entries, it stalls the render loop for as long as the listing takes. A caller that expects such a
-  * filesystem should pre-warm the cache by calling [[childrenOf]] from a background thread before expanding the branch,
-  * so the render-thread call finds the entries already there.
-  *
-  * Unreadable directories degrade to empty rather than raising, so a permission-denied folder shows as a leaf.
-  *
-  * Symbolic links are followed, including ones that resolve outside [[root]] — `Files.list`/`Files.isDirectory`
-  * traverse them like any other directory entry, and nothing here checks a resolved target against `root`. That is the
-  * same containment gap `java.nio.file.Files.walk`/`list` themselves have (they are not sandboxes either), so a caller
-  * browsing a directory it does not fully trust — an upload folder, an extracted archive, anything not laid out by this
-  * application — is responsible for containment itself, for instance by resolving `path.toRealPath()` before rendering
-  * it and refusing to expand one that escapes `root`. A future `followSymlinks` toggle could make refusal the default
-  * instead of every caller's job; until then this is deliberately spelled out rather than left for a caller to discover
-  * from behaviour.
-  *
-  * The one thing following links cannot be allowed to do is recurse forever: [[visibleEntries]] resolves each expanded
-  * directory's real path and skips one that is already an ancestor of the walk, so a symlink loop — a link back to the
-  * root, a parent, or itself — renders as an expanded entry with no children instead of overflowing the render thread's
-  * stack. Two sibling links to the same target both still expand: only the current walk's chain is compared, not every
-  * directory visited so far.
-  *
-  * Render-thread-only, and mutating it does not by itself schedule a frame. This is a plain mutable object, invisible
-  * to the reactive layer: a background result written straight into it stays off screen until something unrelated
-  * happens to repaint. Pair the mutation with a `Signal` write, or call `TuiApp.requestRedraw()` from the same
-  * render-thread callback that made it.
+  * Links outside root are followed; this is not a sandbox. Cycle checks use only snapshot identities along the current
+  * ancestor chain, so sibling aliases remain independently browsable. Selection, expansion and scroll are caller-owned.
   */
 final class DirectoryTreeState(val root: Path):
   var selected: Option[Path]      = None
   var offset: Int                 = 0
   val expanded: mutable.Set[Path] = mutable.Set.empty
-  private val childrenCache       = mutable.Map[Path, Vector[(Path, Boolean)]]()
+  private val listings            = mutable.Map.empty[Path, DirectoryListing]
+  private val requests            = mutable.Map.empty[Path, DirectoryLoadRequest]
+  private val failures            = mutable.Map.empty[Path, Throwable]
 
-  /** Sorted entries of `directory` (directories first, then files, alphabetical), cached after the first read. */
+  /** Pure lookup; an unloaded, loading or failed branch has no children. */
   def childrenOf(directory: Path): Vector[Path] =
-    cachedEntries(directory).map(_._1)
+    listings.get(directory).fold(Vector.empty[Path])(_.entries.map(_.path))
 
-  /** Cached `(entry, isDirectory)` pairs for `directory`, listing it on first use. Internal callers use this rather
-    * than [[childrenOf]] so the per-frame walk allocates no projected vector.
+  def loadState(directory: Path): DirectoryLoadState =
+    if requests.contains(directory) then DirectoryLoadState.Loading
+    else
+      failures.get(directory) match
+        case Some(error) => DirectoryLoadState.Failed(error)
+        case None => if listings.contains(directory) then DirectoryLoadState.Loaded else DirectoryLoadState.Unloaded
+
+  /** Starts or supersedes a generation; call on the owning render thread, not the worker. */
+  def beginLoad(directory: Path): DirectoryLoadRequest =
+    invalidate(Some(directory))
+    val request = new DirectoryLoadRequest(directory)
+    requests(directory) = request
+    request
+
+  /** Installs only the latest outstanding generation from this state. False means stale, foreign or mismatched data. A
+    * completion is single-use. Errors remain observable through [[loadState]] and render as an empty branch.
     */
-  private def cachedEntries(directory: Path): Vector[(Path, Boolean)] =
-    childrenCache.getOrElseUpdate(directory, listDirectory(directory))
+  def install(request: DirectoryLoadRequest, result: Either[Throwable, DirectoryListing]): Boolean =
+    val matchesDirectory = result.forall(_.directory == request.directory)
+    if !requests.get(request.directory).contains(request) || !matchesDirectory then false
+    else
+      requests.remove(request.directory)
+      result match
+        case Right(listing) => listings(request.directory) = listing
+        case Left(error)    => failures(request.directory) = error
+      true
 
-  /** Cached directory flag for `path`, read from its parent's listing (which is listed if not cached yet). */
-  private def isDirectory(path: Path): Boolean =
-    if path == root then true // the tree's root is a directory by construction
-    else Option(path.getParent).exists(parent => cachedEntries(parent).exists((child, flag) => child == path && flag))
-
-  /** Drops the cached listing for `directory` (or everything, when `None`) so the next render re-reads it. */
+  /** Drops snapshots and retires in-flight generations. Loading resumes only on an explicit request. */
   def invalidate(directory: Option[Path] = None): Unit =
     directory match
-      case Some(path) => childrenCache.remove(path)
-      case None       => childrenCache.clear()
+      case Some(path) =>
+        listings.remove(path)
+        requests.remove(path)
+        failures.remove(path)
+      case None       =>
+        listings.clear()
+        requests.clear()
+        failures.clear()
 
-  def selectNext(): Unit = moveSelection(+1)
+  /** Visible unloaded directories, with cycles suppressed using acquired identities. Does not start work. */
+  def directoriesToLoad: Vector[Path] =
+    val (_, missing) = snapshotWalk()
+    missing.filter(path => loadState(path) == DirectoryLoadState.Unloaded)
 
+  /** Explicit blocking migration helper. Call only on the owner thread, before painting; never on a worker. For slow
+    * filesystems prefer beginLoad / DirectoryListing.load / install. Failed branches are not retried here.
+    */
+  def loadVisible(): Unit =
+    var pending = directoriesToLoad
+    while pending.nonEmpty do
+      pending.foreach { directory =>
+        val request = beginLoad(directory)
+        val _       = install(request, DirectoryListing.load(directory))
+      }
+      pending = directoriesToLoad
+
+  def selectNext(): Unit     = moveSelection(+1)
   def selectPrevious(): Unit = moveSelection(-1)
 
-  /** Expands/collapses the selected directory; selecting a file is a no-op. */
+  /** Expands/collapses a known directory. Schedule acquisition of newly visible branches separately. */
   def toggle(): Unit =
-    selected.filter(isDirectory).foreach { path =>
-      if expanded.contains(path) then expanded -= path else expanded += path
-    }
+    selected
+      .filter(path =>
+        path == root || listings.valuesIterator.exists(_.entries.exists(e => e.path == path && e.isDirectory))
+      )
+      .foreach { path =>
+        if expanded.contains(path) then expanded -= path else expanded += path
+      }
 
-  /** All paths currently visible, depth-first: children of expanded directories only. */
   def visiblePaths(): Vector[Path] = visibleEntries().map(_._1)
 
-  /** [[visiblePaths]] paired with each entry's cached directory flag, so rendering needs no second lookup. */
-  private[widgets] def visibleEntries(): Vector[(Path, Boolean)] =
-    // `ancestors` holds the real paths of the directories the walk is currently inside, so a link — to the root, to a
-    // parent, or to itself — that would recurse back onto that chain is drawn as an expanded entry with no children
-    // rather than followed again: the listing below it would be the one already on the stack, and following it means
-    // a symlink loop recurses until the render thread overflows its stack.
-    def walk(directory: Path, ancestors: Set[Path]): Vector[(Path, Boolean)] =
-      cachedEntries(directory).flatMap { entry =>
-        val (child, isDir) = entry
-        if expanded.contains(child) && isDir then
-          val target = realPathOf(child)
-          if ancestors.contains(target) then Vector(entry)
-          else entry +: walk(child, ancestors + target)
-        else Vector(entry)
-      }
-    walk(root, Set(realPathOf(root)))
+  private[widgets] def visibleEntries(): Vector[(Path, Boolean)] = snapshotWalk()._1
 
-  /** `path` with every link resolved — the identity two routes to the same directory share. A dangling link resolves to
-    * nothing, and rather than drop it (its listing fails to empty anyway) it falls back to the unresolved path, which
-    * no real directory on the chain can equal.
-    */
-  private def realPathOf(path: Path): Path =
-    try path.toRealPath()
-    catch case NonFatal(_) => path
+  private def snapshotWalk(): (Vector[(Path, Boolean)], Vector[Path]) =
+    val visible                                           = Vector.newBuilder[(Path, Boolean)]
+    val missing                                           = Vector.newBuilder[Path]
+    def walk(directory: Path, ancestors: Set[Path]): Unit =
+      listings.get(directory) match
+        case None          => missing += directory
+        case Some(listing) =>
+          val chain = ancestors + listing.identity
+          listing.entries.foreach { entry =>
+            visible += ((entry.path, entry.isDirectory))
+            if entry.isDirectory && expanded.contains(entry.path) && !chain.contains(entry.identity) then
+              walk(entry.path, chain)
+          }
+    walk(root, Set.empty)
+    (visible.result(), missing.result())
 
   private def moveSelection(delta: Int): Unit =
     val visible = visiblePaths()
     if visible.nonEmpty then selected = Selection.moveWithin(visible, selected, delta)
-
-  private def listDirectory(directory: Path): Vector[(Path, Boolean)] =
-    try
-      val entries = Files.list(directory)
-      try
-        entries
-          .iterator()
-          .asScala
-          .map(path => (path, Files.isDirectory(path)))
-          .toVector
-          // ROOT, not the default locale: see core.KeyEvent.keyCodeFor for why matching/sorting a lowercased
-          // user-visible string must not depend on the platform's default locale.
-          .sortBy((path, isDir) => (!isDir, path.getFileName.toString.toLowerCase(Locale.ROOT)))
-      finally entries.close()
-    catch case NonFatal(_) => Vector.empty // unreadable directory: show as empty rather than crash the UI
 
 /** A filesystem browser — [[Tree]] with the filesystem as its node source: lazy-loaded directory listings with
   * expand/collapse markers, `/`-suffixed directory names, selection highlight, and scroll-to-selection.

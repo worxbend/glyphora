@@ -20,20 +20,23 @@ import scala.collection.mutable
   * scope. That is what makes the one rule worth memorising: **a view must reach the same hook calls in the same order
   * every frame**. A hook behind an `if` that flips changes the positions of everything after it, and the state shifts
   * between call sites. Building elements in a loop needs [[keyed]] around the loop body, keyed by the item's own
-  * identity (its id, not its index), so that adding or removing an item does not renumber its neighbours.
+  * identity (its id, not its index), so that adding or removing an item does not renumber its neighbours. Declaring a
+  * responsive builder reserves one position; its delayed hooks run in a child scope captured at that declaration.
+  * Reusing the same responsive value in multiple places gives each occurrence its own positional child scope.
   *
   * Lifetime: a slot is created on the first frame that reaches it and dropped at the end of the first frame that does
   * not. Hiding a subtree and showing it again therefore starts it fresh, which is the behaviour a collapsed panel
   * wants; state that must outlive its own disappearance belongs in a `Signal` field on the app.
   *
-  * Ownership and threads: one store belongs to one `TuiApp` run and is touched only while that run's render thread is
-  * evaluating the view. Nothing here is synchronised, and nothing needs to be.
+  * Ownership and threads: one store belongs to one `ElementHost` mount (one `TuiApp` run) and is touched only while
+  * that run's render thread is evaluating the view. Nothing here is synchronised, and nothing needs to be.
   */
 final class ViewState private[dsl] ():
 
   private val slots: mutable.LinkedHashMap[String, ViewState.Slot] = mutable.LinkedHashMap.empty
+  private val occurrences: mutable.Map[List[String], Int]          = mutable.Map.empty
 
-  /** The chain of enclosing [[keyed]] scopes, innermost first. */
+  /** The chain of user-key and deferred-position segments, innermost first. Segment kinds have distinct prefixes. */
   private var path: List[String] = Nil
 
   /** How many hook calls have already been made inside the innermost scope. */
@@ -47,6 +50,7 @@ final class ViewState private[dsl] ():
   /** Starts a new frame: nothing has been reached yet, and the scope path is back at the root. */
   private[dsl] def beginGeneration(): Unit =
     generation += 1
+    occurrences.clear()
     path = Nil
     ordinal = 0
 
@@ -61,7 +65,11 @@ final class ViewState private[dsl] ():
   /** Runs `body` with `key` pushed onto the scope path, so hooks inside it belong to this key rather than to the
     * position the body happens to occupy among its siblings.
     */
-  private[dsl] def scoped[A](key: String)(body: => A): A =
+  private[dsl] def scoped[A](key: String)(body: => A): A = nested(s"key:$key")(body)
+
+  private[dsl] def screen[A](id: Long)(body: => A): A = nested(s"screen:$id")(body)
+
+  private def nested[A](key: String)(body: => A): A =
     val savedPath    = path
     val savedOrdinal = ordinal
     path = key :: savedPath
@@ -71,6 +79,27 @@ final class ViewState private[dsl] ():
       path = savedPath
       // a whole keyed scope counts as one step of its parent's numbering, so siblings after it stay put
       ordinal = savedOrdinal + 1
+
+  /** Reserve one positional child at declaration time; its builder may run after keyed scopes have unwound. */
+  private def capture(): List[String] =
+    val captured = s"deferred:$ordinal" :: path
+    ordinal += 1
+    captured
+
+  /** Resume a delayed child without advancing or otherwise changing the caller's hook numbering. Repeated uses of one
+    * immutable element are numbered in resolution order, independently of distinct declarations.
+    */
+  private def resume[A](captured: List[String])(body: => A): A =
+    val savedPath    = path
+    val savedOrdinal = ordinal
+    val occurrence   = occurrences.getOrElse(captured, 0)
+    occurrences.update(captured, occurrence + 1)
+    path = s"occurrence:$occurrence" :: captured
+    ordinal = 0
+    try body
+    finally
+      path = savedPath
+      ordinal = savedOrdinal
 
   /** The value this call site owns, creating it the first time the site is reached.
     *
@@ -131,11 +160,23 @@ object ViewState:
     */
   private val active: ThreadLocal[Option[ViewState]] = ThreadLocal.withInitial(() => Option.empty[ViewState])
 
+  /** Capture lexical hook identity without retaining a run's store. Plain construction stays usable without a view. */
+  private[dsl] def deferred[A, B](build: A => B): A => B =
+    active.get() match
+      case None        => build
+      case Some(store) =>
+        val captured = store.capture()
+        input =>
+          active.get() match
+            case Some(currentStore) => currentStore.resume(captured)(build(input))
+            case None               => build(input)
+
   /** Evaluates `body` with `store` installed as the one hooks attach to. */
   private[dsl] def during[A](store: ViewState)(body: => A): A =
+    val previous = active.get()
     active.set(Some(store))
     try body
-    finally active.remove()
+    finally active.set(previous)
 
   /** The installed store, or a failure explaining what to do instead.
     *
@@ -148,7 +189,7 @@ object ViewState:
       case Some(store) => store
       case None        =>
         throw new IllegalStateException(
-          "useSignal, useState and keyed may only be called while a TuiApp view is being evaluated on the render " +
+          "useSignal, useState and keyed may only be called while an ElementHost or TuiApp view is being evaluated on the render " +
             "thread. An event handler, a timer body or a test helper has no place in the view tree to attach state " +
             "to; declare a Signal field on the app and read that instead."
         )

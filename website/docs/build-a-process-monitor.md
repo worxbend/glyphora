@@ -396,10 +396,10 @@ the refresh testable without waiting on wall-clock time.
 [Live data & background work](./live-data) covers the poller alternative and when you
 need it. Run the app: the table populates within two seconds and the numbers move.
 
-## 6. The refresh that changes nothing
+## 6. Refresh the row snapshot
 
-Leave it running for ten seconds and watch the CPU column. The numbers change; the
-**ordering does not**. A process that climbs to 60% stays wherever it was.
+Each sample replaces the immutable row snapshot. The table recomputes sorting and
+filtering for the new source even when the process count stays the same.
 
 ```scala title="Main.scala"
   private def refresh(): Unit =
@@ -407,22 +407,18 @@ Leave it running for ten seconds and watch the CPU column. The numbers change; t
       case Right(sampled) =>
         processes.set(sampled.toVector)
         sampleCount.update(_ + 1)
-        tableState.invalidate()
       case Left(error)    =>
         notify(s"sample failed: ${error.getMessage}", NoticeLevel.Warning, duration = 3.seconds)
     }
 ```
 
-`DataTable` memoises its filtered, sorted view on a key made of the sort column, the
-sort direction, the filter text and the **row count**. A refresh returning the same
-number of processes with different numbers in them hits that cache and keeps
-yesterday's ordering indefinitely. Call `invalidate()` on every refresh,
-unconditionally: the bug is quiet, it appears only when the row count repeats, and it
-survives a casual test, which is why it is the first thing that goes wrong in every
-table over live data. See
-[Tables & selection](./tables-and-selection#invalidate-on-every-refresh).
+`DataTable` caches by row-source identity, sort and filter, not merely row count.
+A new snapshot cannot keep the previous sample's ordering. Keep an unchanged
+snapshot stable between samples to retain cache hits; manual invalidation is an
+optional escape hatch, not a refresh requirement. See
+[Tables & selection](./tables-and-selection#refresh-immutable-row-snapshots).
 
-Run it again: the busiest process now rises to the top as it gets busy.
+Once sorting is bound below, the busiest process rises as it gets busy.
 
 ## 7. Sort from the keys you declare
 
@@ -771,7 +767,7 @@ both a new sample and a repaint (`pilot.backend.drawCount > drawsBefore`).
 |---|---|
 | 3 — an injectable source with a deterministic fake | [Live data & background work](./live-data#put-the-source-behind-an-interface) |
 | 5 — blocking work off the render thread, on a timer | [Live data & background work](./live-data#fetch-once-then-every-interval) |
-| 6 — `invalidate()` on every refresh | [Tables & selection](./tables-and-selection#invalidate-on-every-refresh) |
+| 6 — immutable row snapshots | [Tables & selection](./tables-and-selection#refresh-immutable-row-snapshots) |
 | 7 — sorting rendered strings, and key case | [Tables & selection](./tables-and-selection#sort-numbers-that-carry-units) |
 | 8 — a selection pinned to a domain identity | [Tables & selection](./tables-and-selection#pin-the-selection-to-an-identity) |
 | 10 — long-lived derived values | [State & signals](./state-and-signals) |

@@ -17,6 +17,9 @@ private[dsl] final class CommandPalette(declared: () => KeyBindings):
   private val opened: Signal[Boolean] = Signal(false)
   private val query: TextInputState   = TextInputState()
   private var selected: Int           = 0
+  private var activation: Long        = 0L
+
+  def activationNow: Option[Long] = Option.when(isOpenNow)(activation)
 
   /** Whether the palette is showing, as a tracked read — the view that asks re-evaluates when it opens or closes. */
   def isOpen(using ReactiveScope): Boolean = opened.get
@@ -26,6 +29,7 @@ private[dsl] final class CommandPalette(declared: () => KeyBindings):
 
   /** Opens the palette on an empty filter with the first match selected. */
   def open(): Unit =
+    activation += 1
     query.clear()
     selected = 0
     opened.set(true)

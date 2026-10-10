@@ -18,11 +18,21 @@ import io.worxbend.tui.runtime.{ReactiveScope, Signal}
 private[dsl] final class ScreenStack:
 
   /** Identity belongs to a push, not a Screen: the same screen value may occupy several stack entries. */
-  private final class Entry(val screen: Screen):
+  private final class Entry(val id: Long, val screen: Screen):
     var active: Boolean = false
 
   private val stack: Signal[List[Entry]] = Signal(Nil)
   private var running: Boolean           = false
+  private var nextId: Long               = 0L
+
+  private def newEntry(screen: Screen): Entry =
+    nextId += 1
+    Entry(nextId, screen)
+
+  def entriesNow: Vector[(Long, Screen)] = stack.peek.reverseIterator.map(e => (e.id, e.screen)).toVector
+
+  def entries(using scope: ReactiveScope): Vector[(Long, Screen)] =
+    stack.get(using scope).reverseIterator.map(e => (e.id, e.screen)).toVector
 
   /** Enables immediate entry for navigation from `onStart`; retained entries wait until it completes. */
   def beginRun(): Unit = running = true
@@ -50,7 +60,7 @@ private[dsl] final class ScreenStack:
 
   /** Pushes `screen` and, during a run, enters it after the stack has been written. */
   def push(screen: Screen): Unit =
-    val entry = Entry(screen)
+    val entry = newEntry(screen)
     stack.update(entry :: _)
     enter(entry)
 
@@ -61,7 +71,7 @@ private[dsl] final class ScreenStack:
     * stack this does the same thing as [[push]].
     */
   def replace(screen: Screen): Unit =
-    val entry = Entry(screen)
+    val entry = newEntry(screen)
     swap(entry :: _.drop(1)).foreach(leave)
     enter(entry)
 

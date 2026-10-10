@@ -38,6 +38,12 @@ Built-in widgets already route their width calculations through generated Unicod
 Character Database tables. `TextInput` and `TextArea` edit by grapheme cluster, so
 Backspace does not split combining sequences or emoji families.
 
+Styled fragments do not introduce character boundaries. A `Line` containing separate
+spans for `"e"` and `"\u0301"` still draws one accented grapheme; splitting a ZWJ emoji
+across spans does not change its width. Measurement, clipping and paragraph wrapping
+share the same line-wide traversal. When a grapheme crosses a span boundary, it keeps
+the style of its base character rather than trying to style part of one terminal cell.
+
 ## Characters Unicode gives no single width
 
 A few hundred characters — the box-drawing set, Greek and Cyrillic letters, the arrow

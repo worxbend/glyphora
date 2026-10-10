@@ -198,15 +198,24 @@ Already safe:
 - `onStart()`, `onTick()`, `onResize(size)`, `onStop()`;
 - completion handlers passed to `Async.run` and `Async.runCatching`.
 
-Callbacks owned by another thread must hop back:
+Callbacks owned by another thread must hop back. Capture the owner during `onStart`
+before registering the callback, so multiple runners never make delivery ambiguous:
 
 ```scala
+val owner = RenderThread.capture()
 socket.onMessage { payload =>
-  RenderThread.runOnRenderThread {
+  val _ = owner.execute {
     messages.update(_ :+ payload)
   }
 }
 ```
+
+Tracked reactive graphs belong to one live runner, not any registered render thread.
+Foreign tracked reads, writes and disposal are rejected, including from a nested
+runner. Unbound graphs bind on owner access and may rebind after retirement; `peek`
+remains available for cross-thread observation without subscribing. `execute` returns
+false for a retired owner; an accepted queued callback may still be discarded at
+shutdown. Release external subscriptions when their owning feature ends.
 
 The guard is a no-op when no runner is registered. Plain unit tests can construct,
 read, and update signals without bootstrapping a runtime.

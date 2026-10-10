@@ -22,9 +22,6 @@ import scala.concurrent.duration.{DurationInt, FiniteDuration}
 /** How long a toast lives when the caller does not say. */
 private val DefaultToastDuration: FiniteDuration = 3.seconds
 
-/** How many rounds of portal draining one frame allows — see `TuiApp.drainPortals`. */
-private val MaxPortalRounds: Int = 8
-
 /** The application entry point for the declarative DSL.
   *
   * `view` is re-evaluated under a tracking [[ReactiveScope]]: any `Signal` read during the last evaluation schedules a
@@ -588,52 +585,12 @@ trait TuiApp:
       // the demand is rebuilt from what *this* frame renders, so an animation that has just gone off screen stops
       // costing ticks as soon as the frame without it is composed
       AnimationClock.beginFrame()
-      // the view is evaluated exactly once per frame, which is what lets `useSignal`/`useState` identify a piece of
-      // state by the order its call is reached in. `sweep` runs after the responsive pass, so a hook reached only while
-      // resolving a `responsive(...)` branch still counts as visited and keeps its slot.
-      run.viewState.beginGeneration()
-      val rawTree =
-        ViewState.during(run.viewState)(ResponsivePass.resolve(effectiveView(using scope), frameSize))
-      run.viewState.sweep()
-      syncFocusLayers(run)
-      // portals are collected while the tree paints and drawn afterwards, so a popup anchored deep inside a bordered
-      // pane escapes it. Post-render effects still come last: they process the finished frame, and a portal is frame
-      // content like anything else.
-      PortalQueue.begin()
-      try
-        run.host.renderTree(rawTree, theme.focus, tree => frame.renderWidget(tree.widget, frame.area))
-        drainPortals(frame)
-      finally PortalQueue.end()
+      run.host.renderComposed(frame, theme, effectiveView(using scope), () => syncFocusLayers(run))(using scope)
       effects.applyTo(frame)
     // asked after either branch: an intro is an animation like any other, and it is what a run with no configured
     // `tickRate` borrows ticks for. Borrowing through this negotiation rather than through the runner's tick rate is
     // what lets the loan end when the intro does.
     ambientTicker.retarget(run)
-
-  /** Draws the portals the tree queued, then the portals *those* queued, and so on until nothing new arrives.
-    *
-    * Each portal is drawn at its own absolute rectangle, intersected with the frame — the terminal is the only thing
-    * that clips a portal. Rendering portal content can queue further portals (a submenu opened from a menu that is
-    * itself in a portal), which is why this loops instead of draining once.
-    *
-    * The round cap stops content that re-queues a portal on every pass from spinning the render thread forever. It is
-    * deliberately generous: real nesting is a menu inside a dialog inside a screen, never eight deep.
-    */
-  private def drainPortals(frame: Frame): Unit =
-    var round  = 0
-    var queued = PortalQueue.drain()
-    while queued.nonEmpty && round < MaxPortalRounds do
-      queued.foreach { (target, content) =>
-        // Rendered at its own rectangle, not at the intersection with the screen. `Buffer.set` already drops a cell
-        // outside the frame, so handing the content its full rectangle clips it and nothing more. Handing it the
-        // intersection instead *moved* it: a portal starting five columns left of the screen has an intersection whose
-        // origin is column 0, so its content was laid out from there and the user saw the portal's first five columns
-        // where its sixth through tenth belonged. Off the right or the bottom the two agree, which is why only the
-        // left and top edges ever showed it.
-        if !target.intersection(frame.area).isEmpty then frame.renderWidget(content.widget, target)
-      }
-      queued = PortalQueue.drain()
-      round += 1
 
   /** Moves focus into a layer that has just appeared, or back out of one that has gone, before the frame is reconciled.
     *
@@ -643,30 +600,17 @@ trait TuiApp:
     * land the cursor on the dialog's *last* field rather than its first, and closing it again would leave focus
     * wherever the clamp had dropped it rather than where the user left it.
     *
-    * The count is compared rather than each navigation call announcing itself, because the layers do not all go through
-    * this trait: the command palette closes itself from inside its own key handler. A comparison cannot get out of step
-    * with the truth the way a queue of announcements can. The screen on top is compared as well, so [[replaceScreen]] —
-    * which swaps a layer without changing the count — also starts the incoming screen at its first control.
+    * Ordered entry IDs preserve unchanged ancestry and retire a changed suffix. An open palette remains visible when
+    * navigation underneath changes, but its focus frame starts fresh over the new screen. Its query is retained.
     *
     * Reads through `peek` rather than `get`: this is bookkeeping about the frame, and subscribing it would make every
     * frame depend on the navigation signal whether or not the view looked at it.
     */
   private def syncFocusLayers(run: RunState): Unit =
-    val screens = screenStack.allNow
-    val now     = LayerSnapshot(screens.size + (if palette.isOpenNow then 1 else 0), screens.headOption)
-    val was     = run.layers
-    // a swap at the same depth: the layer that was covering the view has gone and a different one has taken over
-    if now.count == was.count && now.count > 0 && !now.sameTopAs(was) then
-      run.tracker.popLayer()
-      run.tracker.pushLayer()
-    else
-      var count = was.count
-      while count < now.count do
-        run.tracker.pushLayer()
-        count += 1
-      while count > now.count do
-        run.tracker.popLayer()
-        count -= 1
+    val ids = screenStack.entriesNow.map((id, _) => LayerIdentity.Screen(id)) ++
+      palette.activationNow.map(LayerIdentity.Palette(_))
+    val now = LayerSnapshot(ids)
+    now.reconcile(run.layers, run.tracker)
     run.layers = now
 
   /** The runner's single event entry point: dispatches one event and answers whether the frame must be redrawn.
@@ -778,16 +722,17 @@ trait TuiApp:
     */
   private def effectiveView(using scope: ReactiveScope): Element =
     given Theme     = theme
-    val withScreens = screenStack.outermostFirst.foldLeft(view) { (below, screen) =>
+    val withScreens = screenStack.entries.foldLeft(ViewState.current.screen(0L)(view)) { case (below, (id, screen)) =>
+      val content = ViewState.current.screen(id)(screen.view)
       screen.presentation match
         case Presentation.Modal =>
           // a modal that closes on a click outside is wrapped in the backdrop that notices such a click; the layer
           // underneath stays inert either way, so nothing down there sees the press
           val top =
-            if screen.dismissal.byClickOutside then dismissibleOverlay(screen.view)(() => popScreen())
-            else screen.view
+            if screen.dismissal.byClickOutside then dismissibleOverlay(content)(() => popScreen())
+            else content
           Element.layers(FocusPass.suppressFocus(below), top)
-        case Presentation.Full  => screen.view
+        case Presentation.Full  => content
     }
     val withPalette =
       if palette.isOpen then Element.layers(FocusPass.suppressFocus(withScreens), palette.element)

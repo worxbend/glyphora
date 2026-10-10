@@ -20,9 +20,11 @@ final class DirectoryTreeSymlinkSpec extends AnyFunSuite:
     Files.createSymbolicLink(root.resolve("escape"), outside)
 
     val state = DirectoryTreeState(root)
+    state.loadVisible()
     val link  = state.visiblePaths().find(_.getFileName.toString == "escape").get
     state.selected = Some(link)
     state.toggle()
+    state.loadVisible()
 
     val leaked = state.visiblePaths().filter(_.toRealPath().startsWith(outside.toRealPath()))
     assert(
@@ -38,6 +40,7 @@ final class DirectoryTreeSymlinkSpec extends AnyFunSuite:
     Files.createSymbolicLink(root.resolve("up"), root)                             // up -> the root itself
 
     val state  = DirectoryTreeState(root)
+    state.loadVisible()
     // expand every directory that becomes visible, until the visible set stops growing. Without loop protection the
     // walk inside visiblePaths recurses (a/loop/a/loop/… or up/up/…) until the stack overflows; the loop terminating
     // is itself the behaviour under test, so it carries no separate timeout.
@@ -45,6 +48,7 @@ final class DirectoryTreeSymlinkSpec extends AnyFunSuite:
     var after  = state.visiblePaths().size
     while after != before do
       state.visiblePaths().filter(Files.isDirectory(_)).foreach(path => state.expanded += path)
+      state.loadVisible()
       before = after
       after = state.visiblePaths().size
 

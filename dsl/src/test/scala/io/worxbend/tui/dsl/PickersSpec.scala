@@ -52,6 +52,7 @@ final class PickersSpec extends AnyFunSuite with PilotFixture:
     Files.writeString(root.resolve("build.txt"), "")
     root.toFile.deleteOnExit()
     val state = FilePickerState(root)
+    state.tree.loadVisible() // explicit initial acquisition, outside view/painting
     val pilot = startApp(filePicker(state))
     assert(pilot.screenText.contains("docs/"))
     assert(pilot.screenText.contains("(nothing selected)"))

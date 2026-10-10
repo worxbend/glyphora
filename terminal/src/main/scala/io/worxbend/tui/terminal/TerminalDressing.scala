@@ -45,6 +45,7 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
         backend.cursorShape,
         backend.mouseCaptureActive,
         backend.cursorBlinkSuppressed,
+        backend.keyEventTypesActive,
       )
     val failures = Seq.newBuilder[BackendError]
 
@@ -86,7 +87,9 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
     * answer established — which is also what keeps a `suspend` from paying a 100 ms round trip per call.
     */
   def reacquireTerminal(state: TerminalState): Unit = backend.screenOwnership.synchronized:
-    if state.raw then bestEffort(backend.dressRawMode(probe = false))
+    if state.raw then
+      bestEffort(backend.dressRawMode(probe = false))
+      if state.keyEventTypes then bestEffort(backend.enableKeyEventTypes())
     if state.alternateScreen then bestEffort(backend.enterAlternateScreen())
     if state.cursorHidden then bestEffort(backend.hideCursor())
     if state.cursorShape != CursorShape.Default then bestEffort(backend.setCursorShape(state.cursorShape))
@@ -115,13 +118,14 @@ private[terminal] object TerminalDressing:
       cursorShape: CursorShape,
       mouse: Option[MouseCaptureMode],
       cursorBlinkSuppressed: Boolean,
+      keyEventTypes: Boolean,
   )
 
   object TerminalState:
     /** Nothing was dressed up: cooked mode, primary screen, visible, blinking cursor of the user's own shape, no mouse
       * capture.
       */
-    val Undressed: TerminalState = TerminalState(false, false, false, CursorShape.Default, None, false)
+    val Undressed: TerminalState = TerminalState(false, false, false, CursorShape.Default, None, false, false)
 
   /** The outcome of handing the terminal back: the modes that were undressed (so they can be re-dressed) and the first
     * step that failed while doing it, if any.

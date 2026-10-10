@@ -38,10 +38,13 @@ final class JLine3Backend private (private[terminal] val terminal: Terminal, col
   // downgrading a hover-driven app to buttons-only
   @volatile private[terminal] var mouseCaptureActive: Option[MouseCaptureMode] = None
   @volatile private[terminal] var cursorHidden                                 = false
+
+  /** Successfully requested enhanced keyboard mode, included in terminal handover snapshots. */
+  @volatile private[terminal] var keyEventTypesActive   = false
   // whether *this* backend turned the caret's blink off. Only what an app suppressed is restored on the way out: a
   // user whose emulator is configured for a steady caret would otherwise have that preference overwritten by every
   // glyphora app that exits, including the ones that never touched blink at all.
-  @volatile private[terminal] var cursorBlinkSuppressed                        = false
+  @volatile private[terminal] var cursorBlinkSuppressed = false
 
   /** Last successfully requested shape. Non-default shapes owe a reset and are restored exactly after a handover. */
   @volatile private[terminal] var cursorShape = CursorShape.Default
@@ -259,6 +262,7 @@ final class JLine3Backend private (private[terminal] val terminal: Terminal, col
     Backend.attempt {
       write(AnsiSequences.PopKittyKeyboard)
       write(AnsiSequences.PushKittyKeyboardEvents)
+      keyEventTypesActive = true
     }
 
   def disableRawMode(): Either[BackendError, Unit] =
@@ -276,7 +280,9 @@ final class JLine3Backend private (private[terminal] val terminal: Terminal, col
         release(terminal.setAttributes(attributes))
         // Last, paired with the save in enableRawMode, so the shell resumes where its prompt started.
         release(write(AnsiSequences.RestoreCursor))
-        if failure.isEmpty then cookedAttributes = None
+        if failure.isEmpty then
+          cookedAttributes = None
+          keyEventTypesActive = false
         failure.fold[Either[BackendError, Unit]](Right(()))(Left(_))
 
   /** Enters the alternate screen, or reports that the terminal has none.

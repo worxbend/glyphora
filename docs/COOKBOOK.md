@@ -29,6 +29,12 @@ def view(using ReactiveScope, Theme) = text(s"count: ${count.get}")
 
 ## The app shell
 
+A filesystem `treeState` starts unloaded. Acquire its snapshots outside `view`
+(`treeState.loadVisible()` in `onStart` for a small local directory, then explicitly
+after expansion), or use worker-acquired `DirectoryListing` values and owner-thread
+installation. See [directory snapshots](../website/docs/widgets.md#lists-and-navigation)
+for ownership and redraw rules. Rendering the sidebar does not perform IO.
+
 ```scala
 scaffold(
   topBar = Some(topBar("myapp", tabs = Seq("Files", "Logs"), selectedTab = tab.get)),

@@ -1036,5 +1036,65 @@ because events are routed against the tree the last `render` painted — which i
 the person at the terminal is looking at. Any loop that redraws after handling an event
 never notices.
 
-`TuiApp` itself is built on this class, so an app and an embedded panel can never disagree
-about where focus is.
+`TuiApp` itself uses the same view session: hooks, responsive resolution, focus decoration
+and deferred portal painting run exactly once per frame in both hosts. `useState` and
+`useSignal` survive successive `host.render` calls; unvisited slots are swept after
+responsive resolution. A host owns one mount until it is discarded or `host.reset()` is
+called between frames. Reset drops hooks, focus history and the last dispatch tree; it
+neither closes caller-owned resources nor disposes the caller's reactive scope. The
+embedding loop still owns subscription cleanup, invalidation and scheduling.
+
+A portal escapes enclosing panels and scroll windows, not its host. With the plain-buffer
+render overload, all painting and pointer eligibility are clipped to `area` intersected
+with `buffer.area`; layout origins are preserved even at the top/left boundary. The
+frame overload uses `frame.area`. Nested hosts restore the surrounding hook, portal and
+coordinate contexts, including when evaluation or painting throws.
+
+Screen hooks are namespaced by navigation entry, not by the Screen object's identity or
+its label. Pushing the same Screen twice creates independent local state; replacing it
+with itself starts fresh. Eagerly evaluated hooks in covered screens retain their state;
+responsive hooks whose subtree is discarded by a full-screen entry remain unvisited and
+are swept, as before. State that must outlive disappearance belongs in caller-owned
+signals. Focus uses the same ordered entry identities and a fresh identity for each
+palette activation. Changing navigation beneath an open palette keeps the palette/query
+visible but resets focus for the changed suffix; closing it cannot restore an outgoing
+screen's anchor.
+
+### Custom interactive leaves
+
+`widget(...)` remains the render-only adapter. Use `interactiveWidget(...)` for a
+focusable custom control without extending Element. Its state belongs to the caller;
+its builder receives the current style, focused flag and theme focus cue and returns an
+ordinary `Widget` (optionally also `Measured`). Builders must be side-effect-free because
+layout may request a widget before painting. Explicit sizing still overrides measurement.
+All signature types are available from `import io.worxbend.tui.dsl.*`.
+
+```scala
+val state = TextInputState()
+val editor = interactiveWidget(state, InteractiveHandlers[TextInputState](
+  onKey = (s, event) => event.code match
+    case KeyCode.Char(codePoint) =>
+      s.insert(Character.toString(codePoint))
+      true
+    case _ => false,
+  onPaste = (s, value) => { s.insert(value); true },
+  onMouse = (_, event, layout) =>
+    val localRow = event.position.y - layout.y
+    localRow == 0,
+)) { (s, context) =>
+  (area, buffer) => buffer.setString(area.x, area.y, s.value,
+    if context.focused then context.focusStyle else context.style)
+}
+```
+
+Mouse bounds are the original **translated, unclipped layout rectangle**, in the same
+coordinate space as the event. Routing checks the clipped visible intersection first,
+including every nested scroll viewport and the host boundary. Do not capture a render
+rectangle for mouse arithmetic: a scroll view can paint into an offscreen coordinate
+space. No pointer capture is provided.
+
+The usual `.onKeyEvent` and `.onMouseEvent` run before the adapter's defaults. `.onPaste`
+is public on every element and runs on the focused leaf before its paste default;
+handlers compose newest-first and return false to decline. Paste does not bubble into
+application key bindings. `.onKeyRelease` uses the existing release route. The adapter
+is a leaf, not a custom-container protocol: compose children with normal DSL containers.

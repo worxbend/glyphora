@@ -203,40 +203,43 @@ object CharWidth:
     * between threads; two threads pulling from the same instance interleave their cursor updates and each receives a
     * mixture of the other's clusters, with no error to say so. Unlike this iterator, the object around it is pure.
     */
-  def graphemeClusters(text: String): Iterator[String] =
-    new Iterator[String]:
-      private var index = 0
+  def graphemeClusters(text: String): Iterator[String] = graphemeClusters(Iterator.single(text))
 
-      def hasNext: Boolean = index < text.length
+  /** The same segmentation over fragments, with bounded lookahead across even split UTF-16 pairs. A viewport need not
+    * concatenate or visit an invisible tail just to finish the cluster at a span boundary.
+    */
+  private[core] def graphemeClusters(parts: Iterator[String]): Iterator[String] =
+    val chars   = parts.flatMap(_.iterator).buffered
+    val points  = new Iterator[Int]:
+      def hasNext: Boolean = chars.hasNext
+      def next(): Int      =
+        val first = chars.next()
+        if Character.isHighSurrogate(first) && chars.hasNext && Character.isLowSurrogate(chars.head) then
+          Character.toCodePoint(first, chars.next())
+        else first.toInt
+    val pending = points.buffered
+    new Iterator[String]:
+      def hasNext: Boolean = pending.hasNext
 
       def next(): String =
-        val start = index
-        val first = text.codePointAt(index)
-        index += Character.charCount(first)
-        if isRegionalIndicator(first) && index < text.length && isRegionalIndicator(text.codePointAt(index)) then
-          index += Character.charCount(text.codePointAt(index))
-        else absorbContinuations(first)
-        text.substring(start, index)
-
-      private def absorbContinuations(base: Int): Unit =
-        var done = false
-        while !done && index < text.length do
-          val cp = text.codePointAt(index)
-          // the ZWJ check must precede the generic continuation check: ZWJ is category Cf, and absorbing it
-          // without also absorbing the codepoint it joins would split an emoji ZWJ sequence in two
-          if cp == ZeroWidthJoiner && joinsEmoji(base, index + Character.charCount(cp)) then
-            index += Character.charCount(cp)
-            index += Character.charCount(text.codePointAt(index))
-          else if isClusterContinuation(cp) then index += Character.charCount(cp)
-          else done = true
-
-      /** Whether the ZWJ preceding `after` really joins an emoji sequence: `base` opened the cluster and `after`
-        * indexes the codepoint on the far side of the joiner. Only emoji join. A stray ZWJ — pasted web text, Indic and
-        * Persian input carry them — must leave the characters on either side in their own cells, or the cluster
-        * under-reports its width and the text after it overflows the rect it was measured against.
-        */
-      private def joinsEmoji(base: Int, after: Int): Boolean =
-        after < text.length && isEmojiCapable(base) && isEmojiCapable(text.codePointAt(after))
+        val first   = pending.next()
+        val cluster = java.lang.StringBuilder()
+        cluster.appendCodePoint(first)
+        if isRegionalIndicator(first) && pending.hasNext && isRegionalIndicator(pending.head) then
+          cluster.appendCodePoint(pending.next())
+        else
+          var done = false
+          while !done && pending.hasNext do
+            val cp = pending.head
+            // Consume the joiner before peeking across the next fragment. Only emoji join; a stray ZWJ still
+            // attaches as a format continuation, but cannot pull an ordinary following character into this cell.
+            if cp == ZeroWidthJoiner then
+              cluster.appendCodePoint(pending.next())
+              if isEmojiCapable(first) && pending.hasNext && isEmojiCapable(pending.head) then
+                cluster.appendCodePoint(pending.next())
+            else if isClusterContinuation(cp) then cluster.appendCodePoint(pending.next())
+            else done = true
+        cluster.toString
 
   /** [[of]] specialised for a string that is already exactly one grapheme cluster.
     *
@@ -253,7 +256,7 @@ object CharWidth:
   private def isControlCluster(cluster: String): Boolean =
     cluster.nonEmpty && Character.isISOControl(cluster.codePointAt(0))
 
-  private def clusterWidth(cluster: String, mode: WidthMode): Int =
+  private[core] def clusterWidth(cluster: String, mode: WidthMode): Int =
     if cluster.isEmpty then 0
     else
       val base = cluster.codePointAt(0)

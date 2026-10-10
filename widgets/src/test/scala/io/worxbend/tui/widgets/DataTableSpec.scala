@@ -108,7 +108,6 @@ final class DataTableSpec extends AnyFunSuite:
       assert(original.selectKey(state, "last"))
       val _        = rendered(original, state, 12, 3)
 
-      state.invalidate()
       val reordered = original.copy(rows = original.rows.reverse)
       val _         = rendered(reordered, state, width, height)
       assert(state.selected.contains(0))

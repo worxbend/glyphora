@@ -25,6 +25,34 @@ final class LineRendererCostSpec extends AnyFunSuite:
       assert(measured == width * limit)
   }
 
+  test("a premeasured single-span viewport does not scan its invisible ASCII tail") {
+    val bean                               = ManagementFactory.getThreadMXBean
+    assume(bean.isCurrentThreadCpuTimeSupported)
+    if !bean.isThreadCpuTimeEnabled then bean.setThreadCpuTimeEnabled(true)
+    val buffer                             = Buffer(Rect(0, 0, 1, 1))
+    val short                              = Line.raw("a" * 32)
+    val long                               = Line.raw("a" * 10000000)
+    def draw(line: Line, width: Int): Int  =
+      LineRenderer.render(buffer, 0, 0, line, 1, Style.Default, Alignment.Left, 0, width)
+    // Premeasured widths exclude input construction and layout. CPU time excludes scheduler pauses;
+    // the best of three warmed batches and a generous ratio tolerate JIT and instrumentation noise.
+    (0 until 10000).foreach(_ => draw(short, 32))
+    def cost(line: Line, width: Int): Long =
+      (0 until 3).map { _ =>
+        val before  = bean.getCurrentThreadCpuTime
+        var drawn   = 0
+        (0 until 100).foreach(_ => drawn += draw(line, width))
+        val elapsed = bean.getCurrentThreadCpuTime - before
+        assert(drawn == 100)
+        elapsed
+      }.min
+    val shortCost                          = cost(short, 32)
+    val longCost                           = cost(long, 10000000)
+    info(s"one-column CPU nanoseconds: short=$shortCost, long=$longCost")
+    assert(buffer.get(0, 0).symbol == "a")
+    assert(longCost <= shortCost * 100 + 10000000L, s"invisible ASCII tail scanned: $shortCost vs $longCost ns")
+  }
+
   test("a premeasured narrow viewport does not allocate for an unrendered Unicode tail") {
     ManagementFactory.getThreadMXBean match
       case bean: com.sun.management.ThreadMXBean =>

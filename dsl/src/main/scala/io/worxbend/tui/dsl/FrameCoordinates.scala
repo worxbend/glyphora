@@ -16,6 +16,12 @@ private[dsl] final case class ViewportTransform(dx: Int, dy: Int, viewport: Rect
 private[dsl] object FrameCoordinates:
   private val current: ThreadLocal[List[ViewportTransform]] = ThreadLocal.withInitial(() => Nil)
 
+  def root[A](boundary: Rect)(body: => A): A =
+    val previous = current.get()
+    current.set(List(ViewportTransform(0, 0, boundary)))
+    try body
+    finally current.set(previous)
+
   def push(transform: ViewportTransform): Unit = current.set(transform :: current.get())
 
   def pop(): Unit =
