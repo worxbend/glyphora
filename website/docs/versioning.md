@@ -18,12 +18,12 @@ All published modules share one synchronized version under `io.worxbend`:
 
 ```scala
 // Mill
-def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.16.1")
+def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.17.0")
 ```
 
 ```scala
 // sbt
-libraryDependencies += "io.worxbend" %% "tui-dsl" % "0.16.1"
+libraryDependencies += "io.worxbend" %% "tui-dsl" % "0.17.0"
 ```
 
 Applications normally need only `tui-dsl`. Lower-tier artifacts are `tui-core`,
@@ -31,12 +31,28 @@ Applications normally need only `tui-dsl`. Lower-tier artifacts are `tui-core`,
 headless test harness and belongs in the test configuration only.
 
 **Nothing is on Maven Central yet.** A source release tag does not make artifacts
-available on Maven Central. Until `0.16.1` is published there, the coordinates above
+available on Maven Central. Until `0.17.0` is published there, the coordinates above
 resolve only after `./mill __.publishLocal` has put them in your local Ivy cache — see
-[Getting started](./getting-started#1-add-glyphora). `0.16.1` is the synchronized release
+[Getting started](./getting-started#1-add-glyphora). `0.17.0` is the synchronized release
 version. Check [Maven Central](https://search.maven.org/search?q=g:io.worxbend)
 and the [release tags](https://github.com/oleksandr-balyshyn/glyphora/tags) separately
 before choosing a version.
+
+## Migrating to 0.17.0
+
+- Directory trees and file pickers no longer acquire filesystem data while painting.
+  Load the initial listing explicitly; acquire background snapshots with `DirectoryListing.load`
+  and install them on the owning render thread. See [Widgets](./widgets).
+- Reactive graphs belong to one live render loop. Capture `RenderThread.capture()` before
+  registering an external callback, then dispatch mutations through `owner.execute`.
+  See [State and signals](./state-and-signals).
+- Render queues and shutdown drains have finite callback budgets. Do not depend on an
+  arbitrarily large backlog completing during shutdown. Optional `Async.scope()` groups
+  task cancellation, but does not interrupt blocking I/O. See [Async and timers](./async-and-timers).
+
+This release also fixes deferred keyed state, navigation focus identity, cross-span
+Unicode rendering, enhanced keyboard restoration, and async error visibility. It adds
+source-aware table caching and a custom interactive-widget adapter.
 
 ## Compatibility policy
 

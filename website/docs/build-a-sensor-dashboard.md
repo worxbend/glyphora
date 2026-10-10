@@ -47,7 +47,7 @@ object `package` extends build.TuiExampleModule {
 Why `build.dsl` is the only entry the module needs, and what `TuiExampleModule` supplies
 on top of it, is argued in
 [Build a process monitor](./build-a-process-monitor#1-create-the-module). Outside
-this repository the same app is one `mvn"io.worxbend::tui-dsl:0.16.1"` dependency;
+this repository the same app is one `mvn"io.worxbend::tui-dsl:0.17.0"` dependency;
 see [Getting started](./getting-started#1-add-glyphora).
 
 Every Scala source below lives in

@@ -52,7 +52,7 @@ import mill.*, scalalib.*, javalib.NativeImageModule
 
 object app extends ScalaModule with NativeImageModule:
   def scalaVersion = "3.9.0"
-  def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.16.1")
+  def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.17.0")
   def mainClass = Some("example.Main")
   def jvmVersion = "graalvm-community:25.0.2"
   def nativeImageOptions = Seq(
