@@ -9,7 +9,9 @@ import java.util.regex.Pattern
   *
   * `buffer` is a snapshot, not the composer's live buffer. The composer reuses one buffer for as long as the terminal
   * keeps its size, so handing out the live one would give an observer a value that quietly changes underneath it on the
-  * next frame. Retaining this snapshot is safe, and is the point.
+  * next frame. Retaining this snapshot is safe, and is the point. The snapshot isolates later rendering, not caller
+  * mutation: `Buffer` is publicly mutable. Treat it as read-only when sharing a frame with another thread. `lines` and
+  * `text` intentionally recompute rather than caching a result that mutation could make stale.
   *
   * `count` is the same number the [[Frame]] carried: the first frame of a run is `0`. It counts *composed* frames, so a
   * frame the backend's diff turned into no output at all is still counted here.

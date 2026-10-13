@@ -38,8 +38,8 @@ def usersView(using ReactiveScope, Theme): Element = users.get match
 
 ## Run blocking work safely
 
-`Async.runCatching` executes work on a daemon worker and always delivers its result
-back on the render thread:
+`Async.runCatching` executes admitted work on a daemon worker and delivers its result
+back on the captured render thread while that owner remains live:
 
 ```scala
 private def reload(): Unit =
@@ -85,10 +85,35 @@ Custom worker-side handlers, `ignore`, and `rethrow` keep their own behavior.
 `AsyncErrorHandler.rethrow` throws on the worker thread instead. Escaping failures,
 including exceptions thrown by a custom worker-side error handler, reach that
 thread's uncaught-exception handler; they are not hidden in discarded futures.
+Only exceptions from the worker's `work` body go to `onError`. Dispatch failures—for
+example, a custom backend throwing from its wakeup—escape to the worker's uncaught
+handler instead. A result already queued before wakeup failed remains accepted.
 Avoid it in a
 terminal app: the JVM prints the stack trace to standard error, which is the tty the
 UI is drawn on, so the trace lands on top of the alternate screen and the frame diff
 never repaints over it.
+
+## Bounded admission and overload
+
+The shared worker pool uses `max(2, availableProcessors)` threads and admits 256
+waiting submissions. Active render owners admit 1024 outstanding callbacks or reserved
+async/timer deliveries; the detached queue admits 256. Submission never waits for room
+or executes worker code on the caller. At capacity, `Async.run`, `runCatching`, timers,
+scoped task submission and off-thread render dispatch throw
+`java.util.concurrent.RejectedExecutionException` synchronously. This is admission
+failure, not a work failure passed to `onError` or an `onDone(Left(...))` result.
+
+Accepted async work reserves delivery capacity before starting, including its built-in
+render-thread error report. Overload does not evict previously accepted continuations.
+Retired owners still discard late delivery rather than rerouting it. Catch admission
+failure where starting work is optional, keep request loads single-flight where suitable,
+and retry only when capacity is available—not in an immediate retry loop.
+
+Each repeating timer holds one reservation until cancelled. Ticks while its callback is
+pending or running coalesce into that delivery rather than accumulating for replay.
+This bounds timer backlog, not callback duration, and does not make overlapping HTTP
+loads single-flight. The bounds are per owner, not a global cap on runner instances;
+unscoped timers still need explicit lifecycle cancellation.
 
 ## Schedule one-shot and repeating work
 
@@ -111,7 +136,8 @@ Both callbacks run on the render thread. Returned `Cancelable` handles make
 lifecycle ownership explicit and prevent a screen that no longer exists from
 continuing to update app state. `cancel()` also discards callbacks already queued
 for delivery but not yet started. It is thread-safe and idempotent; a callback
-that has already started is allowed to finish without interruption.
+that has already started is allowed to finish without interruption. Cancelled scheduled
+entries are removed immediately rather than retained until their original deadlines.
 
 ## Optional owner-scoped tasks
 
@@ -146,8 +172,8 @@ started is skipped, but an admitted callback or blocking worker is allowed to
 finish. Closing never waits for it, cannot undo its side effects and cannot abort
 an HTTP request; configure IO timeouts or cooperative cancellation separately.
 Use `tasks.runCatching` inside scoped pollers too: an ordinary `Async.run` started
-by a scoped timer is still unscoped. There is no automatic single-flight or
-coalescing policy; the application decides whether overlapping loads are useful.
+by a scoped timer is still unscoped. Timer deliveries coalesce, but overlapping worker
+loads are not automatically single-flight; the application decides whether they are useful.
 
 ## Reactive graph ownership
 
@@ -273,5 +299,5 @@ propagate and end the loop.
 - Keep daemon work idempotent when retry is possible.
 
 The complete HTTP example is
-[`examples/weather`](https://github.com/oleksandr-balyshyn/glyphora/tree/main/examples/weather).
+[`examples/weather`](https://github.com/worxbend/glyphora/tree/main/examples/weather).
 Run it with `./mill examples.weather.run`.

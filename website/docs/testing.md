@@ -578,6 +578,36 @@ that throws is not absorbed — the run ends as `RunnerError.Handler`, exactly a
 throwing `view` does. Leaving `onFrame` unset (the default) costs nothing at all: no
 snapshot is taken.
 
+### Bounded off-thread sampling
+
+For slow exports or logging, use a caller-owned `LatestFrameObserver` instead of doing
+that work in `onFrame`. Both it and `FrameTiming` are available from
+`import io.worxbend.tui.dsl.*`:
+
+```scala
+// `saveFrame` and `reportFrameError` run on the observer worker, not the UI thread.
+val observer = LatestFrameObserver(saveFrame, reportFrameError)
+try
+  runApplication(RunnerConfig(onFrame = Some(observer)))
+finally observer.close()
+```
+
+Keep the observer's lifetime around the run, or create it in `onStart` and close it
+in `onStop`. It has one serial worker, one admitted frame and one replaceable pending
+frame. Newer pending frames replace older ones: this is latest-frame sampling, not
+lossless recording. The runner still creates the snapshot synchronously. Treat its
+publicly mutable buffer as read-only after handing it to another thread.
+
+`close()` rejects new offers and drops pending delivery without waiting or interrupting
+an admitted callback. Use `awaitTermination(timeout)` off the UI thread if you need a
+bounded wait after closing. Configure timeouts in any IO the callback performs; a
+blocked callback cannot be forcibly ended by close. Nonfatal callback failures go to
+the required error handler on the same worker. A handler that throws retires the
+observer through the worker's uncaught-exception boundary, not `RunnerError`.
+
+For elapsed composition/draw/observer phase measurements without frame snapshots,
+see [Performance](./performance#measure-the-running-application-first).
+
 ## Assert an animated frame
 
 Every animated widget is a pure function of elapsed time, so pin the clock and the
@@ -713,4 +743,4 @@ reuses its output, so the library is built once per run.
 - clean quit after success and failure.
 
 Browse real end-to-end suites under
-[`examples/*/src/test`](https://github.com/oleksandr-balyshyn/glyphora/tree/main/examples).
+[`examples/*/src/test`](https://github.com/worxbend/glyphora/tree/main/examples).

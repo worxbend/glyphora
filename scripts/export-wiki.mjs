@@ -13,8 +13,8 @@ const outputDir = resolve(
   root,
   outputArg >= 0 ? process.argv[outputArg + 1] : 'build/wiki',
 );
-const repoUrl = 'https://github.com/oleksandr-balyshyn/glyphora';
-const pagesUrl = 'https://oleksandr-balyshyn.github.io/glyphora';
+const repoUrl = 'https://github.com/worxbend/glyphora';
+const pagesUrl = 'https://worxbend.github.io/glyphora';
 
 function flattenNavigation(items, category = null) {
   return items.flatMap((item) =>
@@ -44,7 +44,7 @@ function wikiFileName(id, title) {
 function rewriteForWiki(markdown, pages) {
   let result = markdown.replace(
     /src="\/glyphora\/banner\.svg"/g,
-    `src="https://raw.githubusercontent.com/oleksandr-balyshyn/glyphora/main/docs/assets/banner.svg"`,
+    `src="https://raw.githubusercontent.com/worxbend/glyphora/main/docs/assets/banner.svg"`,
   );
 
   result = result.replace(

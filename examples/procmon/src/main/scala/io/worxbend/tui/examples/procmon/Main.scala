@@ -39,14 +39,18 @@ class ProcmonApp(val source: ProcessSource = ProcessSource.detect()) extends Tui
 
   val refreshSeconds: Signal[Int] = Signal(2)
 
-  /** Sort column and direction, filter text, selection and scroll offset. The widget half is rebuilt every frame; this
-    * half is created once and never replaced, or every refresh would reset the user's view.
+  /** Sort column and direction, filter text, selection and scroll offset. The immutable widget is replaced with each
+    * sample; this half is created once and never replaced, or every refresh would reset the user's view.
     *
     * The state is typed on the row key — the pid — because the widget records the selected row's key on every frame and
     * re-anchors the highlight to it after a re-sort or a data refresh; that anchor is what lets everything below speak
     * in pids rather than row numbers.
     */
   val tableState: DataTableState[Int] = DataTableState()
+
+  // One immutable sample and its projection, shared by view, selection reads and reselection. Identity is enough:
+  // replacing the sample refreshes cells even at the same row count, without walking it on an unchanged redraw.
+  private var tableCache: Option[(Vector[ProcessInfo], DataTable[Int])] = None
 
   val filterInput: TextInputState = TextInputState()
 
@@ -252,23 +256,29 @@ class ProcmonApp(val source: ProcessSource = ProcessSource.detect()) extends Tui
 
   // ---- rows ----
 
-  /** A fresh `DataTable` per call: it is an immutable case class over the rows, and cheap. Only `tableState` persists.
+  /** Reuses the immutable table while the sample is unchanged. Caching here, rather than only in `view`, keeps
+    * selection reads and filter/sort reselection from projecting fresh rows and evicting the widget's cached view.
     *
     * Each row is keyed by its pid — the identity the selection follows across re-sorts and refreshes. `cells` stays the
     * projection the widget sorts, filters and draws; the record is never parsed back out of its own formatting.
     */
-  private def buildTable(rows: Seq[ProcessInfo]): DataTable[Int] =
-    DataTable(
-      columns = Seq("   PID", "USER", " CPU%", " MEM%", "COMMAND"),
-      rows = rows.map(process => KeyedRow(process.pid, cellsOf(process))),
-      widths = Seq(
-        Constraint.Length(PidWidth + 2),
-        Constraint.Length(UserWidth),
-        Constraint.Length(NumberWidth + 2),
-        Constraint.Length(NumberWidth + 2),
-        Constraint.Fill(1),
-      ),
-    )
+  private def buildTable(rows: Vector[ProcessInfo]): DataTable[Int] =
+    tableCache match
+      case Some((sample, table)) if sample eq rows => table
+      case _                                       =>
+        val table = DataTable(
+          columns = Seq("   PID", "USER", " CPU%", " MEM%", "COMMAND"),
+          rows = rows.map(process => KeyedRow(process.pid, cellsOf(process))),
+          widths = Seq(
+            Constraint.Length(PidWidth + 2),
+            Constraint.Length(UserWidth),
+            Constraint.Length(NumberWidth + 2),
+            Constraint.Length(NumberWidth + 2),
+            Constraint.Fill(1),
+          ),
+        )
+        tableCache = Some((rows, table))
+        table
 
   /** Numbers are right-aligned to a fixed width rather than through `DataTableOptions.alignments`, because alignment
     * would buy only the look. The padding also makes the column sort correctly whichever branch the widget takes: it

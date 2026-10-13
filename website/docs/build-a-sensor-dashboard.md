@@ -11,7 +11,7 @@ on screen when the sensor stops answering. Three files, twelve steps, and every 
 runs.
 
 The finished application ships in this repository as
-[`examples/airsensor`](https://github.com/oleksandr-balyshyn/glyphora/tree/main/examples/airsensor).
+[`examples/airsensor`](https://github.com/worxbend/glyphora/tree/main/examples/airsensor).
 Every snippet below is that source, cut back to the state the tutorial has reached;
 the file there carries fuller comments than the fences here.
 
@@ -47,7 +47,7 @@ object `package` extends build.TuiExampleModule {
 Why `build.dsl` is the only entry the module needs, and what `TuiExampleModule` supplies
 on top of it, is argued in
 [Build a process monitor](./build-a-process-monitor#1-create-the-module). Outside
-this repository the same app is one `mvn"io.worxbend::tui-dsl:0.17.0"` dependency;
+this repository the same app is one `mvn"io.worxbend::tui-dsl:0.18.0"` dependency;
 see [Getting started](./getting-started#1-add-glyphora).
 
 Every Scala source below lives in

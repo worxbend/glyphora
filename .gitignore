@@ -10,3 +10,7 @@ out/
 build/wiki/
 .wiki-export/
 .claude/worktrees/
+.venv/
+.cache/
+__pycache__/
+*.py[cod]

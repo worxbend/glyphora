@@ -15,16 +15,17 @@ on:
       - "runtime/**"
       - "dsl/**"
       - "macros/**"
+      - "test-support/**"
+      - ".github/actions/**"
+      - ".mill-version"
+      - ".mill-jvm-version"
       - "build.mill"
       - "**/package.mill"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
 permissions:
-  actions: read
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -32,15 +33,24 @@ concurrency:
 
 jobs:
   build:
+    permissions:
+      contents: read
+      pages: read # configure-pages only reads the existing Pages configuration
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
 
       - uses: ./.github/actions/mill
+        timeout-minutes: 10
         with:
           dependency-cache: read-write
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        timeout-minutes: 5
         with:
           node-version: "24"
           cache: npm
@@ -49,39 +59,54 @@ jobs:
       # Validates that Pages is enabled and exposes the repository's Pages URL.
       # Repository Settings → Pages → Source must be set to "GitHub Actions".
       - name: Configure GitHub Pages
-        uses: actions/configure-pages@v6
+        timeout-minutes: 5
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
       - name: Validate GitHub Wiki export
+        timeout-minutes: 5
         run: node scripts/export-wiki.mjs --output build/wiki
 
       - name: Build Docusaurus site
+        timeout-minutes: 30
         working-directory: website
         run: |
           npm ci
+          npm test
+          # Remaining upstream advisories are tracked in website/DEPENDENCY_SECURITY.md.
+          npm audit --audit-level=critical
           npm run build
 
       - name: Generate Scaladoc for every published module
+        timeout-minutes: 30
         run: |
           set -euo pipefail
           for m in core terminal widgets runtime dsl macros test-support; do
-            jar=$(./mill show "${m}.docJar" | tail -1 | sed -E 's/^"ref:v0:[^:]+:(.*)"$/\1/')
+            jar=$(./mill show "${m}.docJar" | python3 -c 'import json,sys; ref=json.load(sys.stdin); print(ref.split(":", 3)[3] if ref.startswith(("ref:", "qref:")) else ref)')
             mkdir -p "website/build/api/${m}"
             unzip -oq "$jar" -d "website/build/api/${m}"
           done
 
       - name: Apply glyphora style to Scaladoc
+        timeout-minutes: 5
         run: node scripts/style-scaladoc.mjs website/build/api
 
-      - uses: actions/upload-pages-artifact@v5
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        timeout-minutes: 5
         with:
           path: website/build
 
   deploy:
+    permissions:
+      actions: read
+      pages: write
+      id-token: write
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v5
+        timeout-minutes: 5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5

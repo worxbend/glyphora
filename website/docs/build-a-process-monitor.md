@@ -264,18 +264,25 @@ Add `java.util.Locale` and `io.worxbend.tui.widgets.{ColumnSort, DataTable, Data
 
   tableState.sort = Some(ColumnSort(CpuColumn, SortDirection.Descending))
 
-  private def buildTable(rows: Seq[ProcessInfo]): DataTable[Int] =
-    DataTable(
-      columns = Seq("   PID", "USER", " CPU%", " MEM%", "COMMAND"),
-      rows = rows.map(process => KeyedRow(process.pid, cellsOf(process))),
-      widths = Seq(
-        Constraint.Length(PidWidth + 2),
-        Constraint.Length(10),
-        Constraint.Length(NumberWidth + 2),
-        Constraint.Length(NumberWidth + 2),
-        Constraint.Fill(1),
-      ),
-    )
+  private var tableCache: Option[(Vector[ProcessInfo], DataTable[Int])] = None
+
+  private def buildTable(rows: Vector[ProcessInfo]): DataTable[Int] =
+    tableCache match
+      case Some((sample, table)) if sample eq rows => table
+      case _ =>
+        val table = DataTable(
+          columns = Seq("   PID", "USER", " CPU%", " MEM%", "COMMAND"),
+          rows = rows.map(process => KeyedRow(process.pid, cellsOf(process))),
+          widths = Seq(
+            Constraint.Length(PidWidth + 2),
+            Constraint.Length(10),
+            Constraint.Length(NumberWidth + 2),
+            Constraint.Length(NumberWidth + 2),
+            Constraint.Fill(1),
+          ),
+        )
+        tableCache = Some((rows, table))
+        table
 
   private def cellsOf(process: ProcessInfo): Seq[String] =
     Seq(
@@ -309,9 +316,11 @@ object ProcmonApp:
   private def integer(value: Int, width: Int): String = String.format(Locale.ROOT, s"%${width}d", value)
 ```
 
-A fresh `DataTable` per frame is correct and cheap — it is an immutable case class
-over the rows. Only `tableState` persists, which is why it is a field and not a
-local; see [the state ownership rule](./widgets#the-state-ownership-rule). Each
+Retain the table for the current immutable sample. Rebuilding the description is safe,
+but mapping every process to fresh rows on each selection redraw needlessly reformats
+all cells and defeats `DataTableState`'s row-source-identity filter/sort cache. The
+single-entry cache above refreshes when the sample vector is replaced and retains no
+history. `tableState` also persists; see [the state ownership rule](./widgets#the-state-ownership-rule). Each
 row is a `KeyedRow`: the cells are what the table sorts, filters and draws, and
 the key — the pid — is the row's stable identity, which step 8's selection leans
 on. Padding to a fixed width is what makes a numeric column sort the same whether
@@ -759,7 +768,7 @@ reflection configuration because nothing in the app reflects; see
 The full suite adds four tests worth copying: the header and hints render, a second
 sort press reverses, the filter narrows and `Esc` clears it, and ticks alone produce
 both a new sample and a repaint (`pilot.backend.drawCount > drawsBefore`).
-[Read the procmon test source](https://github.com/oleksandr-balyshyn/glyphora/blob/main/examples/procmon/src/test/scala/io/worxbend/tui/examples/procmon/ProcmonAppSpec.scala).
+[Read the procmon test source](https://github.com/worxbend/glyphora/blob/main/examples/procmon/src/test/scala/io/worxbend/tui/examples/procmon/ProcmonAppSpec.scala).
 
 ## What you learned
 
@@ -788,5 +797,5 @@ sparkline, which needs a rolling `Vector` rather than a single snapshot.
   remote source, with threshold bands instead of a table.
 - [Build a load generator](./build-a-load-generator) — concurrent work you own,
   streamed back to the screen.
-- [Read the procmon source](https://github.com/oleksandr-balyshyn/glyphora/blob/main/examples/procmon/src/main/scala/io/worxbend/tui/examples/procmon/Main.scala)
+- [Read the procmon source](https://github.com/worxbend/glyphora/blob/main/examples/procmon/src/main/scala/io/worxbend/tui/examples/procmon/Main.scala)
   — the finished file, with its reasoning in the comments.

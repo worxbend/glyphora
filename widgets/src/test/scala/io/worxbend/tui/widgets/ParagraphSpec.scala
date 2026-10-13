@@ -52,6 +52,22 @@ final class ParagraphSpec extends AnyFunSuite:
     val buffer = rendered(Paragraph(Text.raw("ab 你好"), overflow = Overflow.Wrap), 4, 2)
     assert(trimmedLines(buffer) == Seq("ab", "你好"))
 
+  test("long discarded whitespace gaps preserve subsequent text and style"):
+    val line = Line(Seq(Span.raw("aaaa"), Span.raw(" " * 10000), Span("你b", Style.fg(Color.Red))))
+    for overflow <- Seq(Overflow.Wrap, Overflow.WrapTrimmed, Overflow.WrapPreserved) do
+      val paragraph = Paragraph(Text(Seq(line)), overflow = overflow)
+      val buffer    = rendered(paragraph, 4, 3)
+      assert(trimmedLines(buffer) == Seq("aaaa", "你b", ""))
+      assert(buffer.get(0, 1).style.fg.contains(Color.Red))
+      assert(paragraph.heightAt(4).contains(2))
+
+  test("early row emission preserves fitting gap styles in every wrapping mode"):
+    val line = Line(Seq(Span.raw("a"), Span(" ", Style.bg(Color.Blue)), Span.raw("b c")))
+    for overflow <- Seq(Overflow.Wrap, Overflow.WrapTrimmed, Overflow.WrapPreserved) do
+      val buffer = rendered(Paragraph(Text(Seq(line)), overflow = overflow), 4, 2)
+      assert(trimmedLines(buffer) == Seq("a b", if overflow == Overflow.WrapPreserved then " c" else "c"))
+      assert(buffer.get(1, 0).style.bg.contains(Color.Blue))
+
   test("span styles survive a wrap onto the next row"):
     val line   = Line(Seq(Span.raw("aaa "), Span("bbb", Style.Default.withFg(Color.Red))))
     val buffer = rendered(Paragraph(Text(Seq(line)), overflow = Overflow.Wrap), 4, 2)

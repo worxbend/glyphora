@@ -26,7 +26,9 @@ import scala.collection.mutable
   *
   * Lifetime: a slot is created on the first frame that reaches it and dropped at the end of the first frame that does
   * not. Hiding a subtree and showing it again therefore starts it fresh, which is the behaviour a collapsed panel
-  * wants; state that must outlive its own disappearance belongs in a `Signal` field on the app.
+  * wants; state that must outlive its own disappearance belongs in a `Signal` field on the app. Full-screen navigation
+  * retains eager slots in covered entries without evaluating their builders; discarded responsive slots are still
+  * swept.
   *
   * Ownership and threads: one store belongs to one `ElementHost` mount (one `TuiApp` run) and is touched only while
   * that run's render thread is evaluating the view. Nothing here is synchronised, and nothing needs to be.
@@ -58,6 +60,15 @@ final class ViewState private[dsl] ():
   private[dsl] def sweep(): Unit =
     val stale = slots.collect { case (id, slot) if slot.generation != generation => id }.toList
     stale.foreach(id => slots.subtractOne(id))
+
+  /** Keeps eager hooks in navigation entries covered by a full-screen page without evaluating their builders. Deferred
+    * responsive hooks remain unvisited and are swept, matching the existing disappearance contract.
+    */
+  private[dsl] def retainCoveredScreens(ids: Set[Long]): Unit =
+    val keys = ids.map(id => s"screen:$id")
+    slots.valuesIterator.foreach { slot =>
+      if !slot.deferred && slot.screen.exists(keys.contains) then slot.generation = generation
+    }
 
   /** How many slots are alive — for tests that want to prove a hidden subtree's state was actually released. */
   private[dsl] def slotCount: Int = slots.size
@@ -116,7 +127,15 @@ final class ViewState private[dsl] ():
         existing.value.asInstanceOf[A] // scalafix:ok DisableSyntax.asInstanceOf; erased, see the Scaladoc above
       case None =>
         val created = create()
-        val _       = slots.put(id, ViewState.Slot(created, generation))
+        val _       = slots.put(
+          id,
+          ViewState.Slot(
+            created,
+            generation,
+            path.find(_.startsWith("screen:")),
+            path.exists(_.startsWith("deferred:")),
+          ),
+        )
         created
 
 object ViewState:
@@ -148,10 +167,16 @@ object ViewState:
     id.result()
 
   /** One call site's value, plus the last frame that reached it. */
-  private final class Slot(val value: Any, var generation: Long)
+  private final class Slot(
+      val value: Any,
+      var generation: Long,
+      val screen: Option[String],
+      val deferred: Boolean,
+  )
 
   private object Slot:
-    def apply(value: Any, generation: Long): Slot = new Slot(value, generation)
+    def apply(value: Any, generation: Long, screen: Option[String], deferred: Boolean): Slot =
+      new Slot(value, generation, screen, deferred)
 
   /** The store the view currently being evaluated belongs to.
     *

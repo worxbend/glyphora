@@ -228,19 +228,19 @@ private def driveRun(plan: Plan, mine: Int): RunOutcome =
   else RunOutcome.Completed
 ```
 
-`Async`'s own pool is unbounded and shared process-wide with every other `Async.run`
-in the JVM, so a concurrency of 50 submitted as fifty `Async.run`s is fifty threads
-there and a limit that means nothing. One task owning a fixed pool costs one
-`Async` thread and keeps the limit real. `Async.run` returns `Unit`, so there is no
-handle to cancel: cancellation is an `AtomicBoolean` the worker loop reads between
-requests, plus the timeout the request already carries.
+`Async`'s fixed worker pool and bounded waiting queue are shared process-wide with
+other background work. Submitting fifty separate tasks does not establish a private
+concurrency limit and may exhaust shared admission. One task owning a fixed pool costs
+one `Async` thread and keeps this run's limit explicit. `Async.run` returns `Unit`, so
+there is no handle to cancel: cancellation is an `AtomicBoolean` the worker loop reads
+between requests, plus the timeout the request already carries.
 
-Do not do the marshalling by hand. `RenderLoop.enqueue` and `drain` are
-`private[runtime]`, so a loop captured by application code cannot be fed; and
-`RenderThread.runOnRenderThread` called *from* a worker re-resolves the target at
-call time, landing on the detached loop as soon as two runners are live. Calling
-`Async.run` from the render thread is the only form of the
-capture-before-you-go-async discipline available to you.
+For integrations that need manual dispatch, capture `RenderThread.capture()` on the
+owner before leaving it, then use that handle's public `execute` method. Off-thread
+admission can throw `RejectedExecutionException`; a retired owner returns false.
+`RenderThread.runOnRenderThread` called *from* a worker instead re-resolves the target
+at call time and can land on the detached loop when multiple runners are live.
+Calling `Async.run` from the owner performs capture and reserved result delivery for you.
 
 ## Stream partial progress back
 
@@ -322,7 +322,7 @@ def readingFrom(body: String): Either[String, Reading] =
 Parsing is a separate function from fetching, so it is testable against a captured
 payload with no device on the network. When the response is nested rather than
 flat, copy `examples/weather`'s
-[`Json.scala`](https://github.com/oleksandr-balyshyn/glyphora/blob/main/examples/weather/src/main/scala/io/worxbend/tui/examples/weather/Json.scala)
+[`Json.scala`](https://github.com/worxbend/glyphora/blob/main/examples/weather/src/main/scala/io/worxbend/tui/examples/weather/Json.scala)
 — 155 lines of recursive descent — rather than taking the dependency. See
 [Native binaries](./native-image) for what that constraint buys.
 

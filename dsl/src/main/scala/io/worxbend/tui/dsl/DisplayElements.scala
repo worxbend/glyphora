@@ -30,7 +30,8 @@ final case class TextElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = TextElement
-  def widget: Widget = w.Paragraph(Text.styled(content, props.style), alignment, overflow)
+  // Layout and painting share this immutable description and its bounded measurement cache. Node copies start fresh.
+  lazy val widget: Widget = w.Paragraph(Text.styled(content, props.style), alignment, overflow)
 
   /** Breaks lines that do not fit onto further rows instead of cutting them off at the right edge.
     *
@@ -81,7 +82,7 @@ final case class TextElement(
 final case class LineElement(spans: Seq[Span], align: Option[Alignment] = None, props: ElementProps = ElementProps())
     extends Element:
   type Self = LineElement
-  def widget: Widget                                           =
+  lazy val widget: Widget                                      =
     w.Paragraph(Text(Seq(Line(spans, align, props.style))))
   private[dsl] def withProps(props: ElementProps): LineElement = copy(props = props)
 

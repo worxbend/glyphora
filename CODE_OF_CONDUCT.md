@@ -55,7 +55,7 @@ representing the community in public spaces.
 
 Instances of abusive, harassing, or otherwise unacceptable behaviour may be reported to
 the maintainers by opening a [private security
-advisory](https://github.com/oleksandr-balyshyn/glyphora/security/advisories/new), which
+advisory](https://github.com/worxbend/glyphora/security/advisories/new), which
 is visible only to maintainers, or by contacting the repository owner directly through
 their GitHub profile.
 

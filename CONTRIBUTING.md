@@ -4,7 +4,7 @@ Thanks for looking. Contributions are welcome across runtime behaviour, widgets,
 examples, tests, documentation, and design.
 
 **The full guide lives at [website/docs/contributing.md](website/docs/contributing.md)**
-(published at <https://oleksandr-balyshyn.github.io/glyphora/contributing>). It covers
+(published at <https://worxbend.github.io/glyphora/contributing>). It covers
 setting the repository up, the architecture rules a change has to respect, how to add a
 widget end to end, and how to write a pull request.
 
@@ -26,7 +26,13 @@ CI run.
 ./mill macros.test
 ./mill dsl.test
 ./mill test-support.test
-(cd website && npm run build)
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r scripts/requirements-ci.txt
+PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s scripts/tests -v
+bash scripts/check-workflows.sh
+python scripts/verify-packaged-consumer.py
+(cd website && npm ci && npm run build)
 node scripts/export-wiki.mjs --output build/wiki
 ```
 

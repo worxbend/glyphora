@@ -91,7 +91,7 @@ object `package` extends Module {
       * Also the JDK every example compiles under (`JavaTests.jvmVersion` follows the outer module's), which is why this
       * is JDK 25 — the floor `TuiModule.scalacOptions`' `-release:25` declares. macOS x64 has no GraalVM CE build past
       * 25.0.1 (25.0.2 dropped it); ubuntu-latest, the only platform CI builds on, is unaffected, but a contributor on
-      * an Intel Mac needs 25.0.1 to build an example locally, and CONTRIBUTING.md says nothing about it today.
+      * an Intel Mac needs 25.0.1 to build an example locally; the override is documented in README.md.
       */
     def jvmVersion = "graalvm-community:25.0.2"
 
@@ -112,12 +112,12 @@ object `package` extends Module {
     def pomSettings = PomSettings(
       description = moduleDescription,
       organization = "io.worxbend",
-      url = "https://github.com/oleksandr-balyshyn/glyphora",
+      url = "https://github.com/worxbend/glyphora",
       licenses = Seq(License.MIT),
-      versionControl = VersionControl.github("oleksandr-balyshyn", "glyphora"),
+      versionControl = VersionControl.github("worxbend", "glyphora"),
       developers = Seq(Developer("limpid-kzonix", "limpid-kzonix", "https://github.com/limpid-kzonix")),
     )
 
-    def publishVersion = "0.17.0"
+    def publishVersion = "0.18.0"
   }
 }

@@ -29,7 +29,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-java@v6
+    - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
       with:
         distribution: temurin
         java-version: ${{ inputs.java-version }}
@@ -39,16 +39,20 @@ runs:
       shell: bash
       # Dependencies change only when the build definition does. The build output changes
       # with every commit, so it is keyed by SHA and shared only within one run.
+      env:
+        RUNNER_OS: ${{ runner.os }}
+        DEPENDENCY_HASH: ${{ hashFiles('.mill-version', '.mill-jvm-version', 'build.mill', '**/package.mill') }}
+        BUILD_SHA: ${{ github.sha }}
       run: |
         {
-          echo "deps=mill-deps-${{ runner.os }}-${{ hashFiles('.mill-version', '.mill-jvm-version', 'build.mill', '**/package.mill') }}"
-          echo "deps-prefix=mill-deps-${{ runner.os }}-"
-          echo "build=mill-build-${{ runner.os }}-${{ github.sha }}"
+          echo "deps=mill-deps-$RUNNER_OS-$DEPENDENCY_HASH"
+          echo "deps-prefix=mill-deps-$RUNNER_OS-"
+          echo "build=mill-build-$RUNNER_OS-$BUILD_SHA"
         } >> "$GITHUB_OUTPUT"
 
     - name: Cache resolved dependencies (read-write)
       if: inputs.dependency-cache == 'read-write'
-      uses: actions/cache@v6
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
         path: |
           ~/.cache/mill
@@ -58,7 +62,7 @@ runs:
 
     - name: Restore resolved dependencies (read-only)
       if: inputs.dependency-cache == 'read'
-      uses: actions/cache/restore@v6
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
         path: |
           ~/.cache/mill
@@ -68,7 +72,7 @@ runs:
 
     - name: Restore compiled build output
       if: inputs.build-output == 'restore'
-      uses: actions/cache/restore@v6
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
         path: out
         key: ${{ steps.keys.outputs.build }}

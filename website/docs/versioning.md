@@ -18,12 +18,12 @@ All published modules share one synchronized version under `io.worxbend`:
 
 ```scala
 // Mill
-def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.17.0")
+def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.18.0")
 ```
 
 ```scala
 // sbt
-libraryDependencies += "io.worxbend" %% "tui-dsl" % "0.17.0"
+libraryDependencies += "io.worxbend" %% "tui-dsl" % "0.18.0"
 ```
 
 Applications normally need only `tui-dsl`. Lower-tier artifacts are `tui-core`,
@@ -31,12 +31,33 @@ Applications normally need only `tui-dsl`. Lower-tier artifacts are `tui-core`,
 headless test harness and belongs in the test configuration only.
 
 **Nothing is on Maven Central yet.** A source release tag does not make artifacts
-available on Maven Central. Until `0.17.0` is published there, the coordinates above
+available on Maven Central. Until `0.18.0` is published there, the coordinates above
 resolve only after `./mill __.publishLocal` has put them in your local Ivy cache — see
-[Getting started](./getting-started#1-add-glyphora). `0.17.0` is the synchronized release
+[Getting started](./getting-started#1-add-glyphora). `0.18.0` is the synchronized release
 version. Check [Maven Central](https://search.maven.org/search?q=g:io.worxbend)
-and the [release tags](https://github.com/oleksandr-balyshyn/glyphora/tags) separately
+and the [release tags](https://github.com/worxbend/glyphora/tags) separately
 before choosing a version.
+
+## Migrating to 0.18.0
+
+- Async submissions reserve continuation capacity before accepting work. Saturated worker,
+  owner, or runnerless queues throw `RejectedExecutionException` synchronously instead of
+  accumulating an unbounded backlog. Catch overload at the submission boundary and reduce
+  demand; do not retry in a tight loop. Cancellation suppresses unadmitted callbacks, not
+  blocking I/O. Repeating timers coalesce ticks while a callback is pending or running.
+  See [Async and timers](./async-and-timers).
+- Builders beneath the last full-screen presentation are no longer evaluated. Keep resource
+  acquisition in lifecycle hooks, not view builders. Eager covered-screen hook state is retained;
+  responsive subtrees that disappear keep their existing reset semantics. See [App shell](./app-shell).
+- `RunnerConfig` adds opt-in `onFrameTiming`. Recompile consumers against the updated case-class
+  shape. `LatestFrameObserver` offers bounded, serial, latest-frame sampling for slow observers:
+  it drops superseded pending frames and is not a lossless recorder. See [Performance](./performance)
+  and [Testing](./testing).
+
+Paragraphs now produce wrapped rows incrementally and reuse stable measurements. Tree
+flattening caches are caller-owned, invalidate on source/expansion changes, and do not force
+collapsed offscreen children. Procmon reuses its table projection until the immutable sample
+changes. These remove repeated work; they are not claims of an application-wide speedup.
 
 ## Migrating to 0.17.0
 
@@ -131,5 +152,5 @@ Before a tag, maintainers should verify:
 
 ## License
 
-[MIT](https://github.com/oleksandr-balyshyn/glyphora/blob/main/LICENSE) — use glyphora
+[MIT](https://github.com/worxbend/glyphora/blob/main/LICENSE) — use glyphora
 in open-source or commercial software, keeping the copyright and license notice.

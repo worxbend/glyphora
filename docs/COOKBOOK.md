@@ -2,8 +2,8 @@
 
 > The canonical cookbook is [`website/docs/cookbook.md`](../website/docs/cookbook.md).
 > It is published from the same Markdown source to the
-> [styled documentation](https://oleksandr-balyshyn.github.io/glyphora/cookbook)
-> and the [GitHub Wiki](https://github.com/oleksandr-balyshyn/glyphora/wiki/Cookbook).
+> [styled documentation](https://worxbend.github.io/glyphora/cookbook)
+> and the [GitHub Wiki](https://github.com/worxbend/glyphora/wiki/Cookbook).
 
 Short recipes for the common shapes. Every snippet assumes `import io.worxbend.tui.dsl.*`;
 the [examples](../examples/README.md) are complete runnable versions of these patterns.

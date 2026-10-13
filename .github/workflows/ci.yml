@@ -24,10 +24,14 @@ jobs:
   discipline:
     name: Discipline checks
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     # No JDK, no Mill, no cache. Seconds, and it fails before a runner has been spent
     # compiling something that was never going to be merged.
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
 
       # Both greps below scan the examples as well as the library. `*/src/main/scala` expands
       # only to the seven top-level module directories — it never reaches
@@ -35,6 +39,7 @@ jobs:
       # examples were exempt from the two rules the whole project is built around. They are
       # the code newcomers copy from, so they are the last place an exemption belongs.
       - name: No runtime reflection in main sources
+        timeout-minutes: 5
         # native-image is reflect-config-free by construction; tui-macros derives at
         # compile time through Mirror instead.
         run: |
@@ -44,6 +49,7 @@ jobs:
           fi
 
       - name: All width arithmetic goes through CharWidth
+        timeout-minutes: 5
         # Two exemptions, both for code that is not doing display-width arithmetic at all:
         # CharWidth itself (it is the one place allowed to cut a string), and the weather
         # example's hand-written JSON parser, which indexes ASCII bytes of a wire format.
@@ -58,74 +64,102 @@ jobs:
           fi
 
       - name: Every example is covered by CI
-        # The example list used to be hardcoded here, and an example added afterwards was
-        # silently never built. The matrices below now derive it, and this asserts the
-        # derivation still finds everything on disk: one depth-2 package.mill per
-        # examples/<name>/ dir, and none buried deeper. (A depth-1 package.mill is the
-        # examples aggregator module, not an example.)
-        run: |
-          modules=$(find examples -mindepth 2 -maxdepth 2 -name package.mill -printf '%h\n' | wc -l)
-          dirs=$(find examples -mindepth 1 -maxdepth 1 -type d | wc -l)
-          deep=$(find examples -mindepth 3 -name package.mill | wc -l)
-          if [ "$modules" -lt 1 ] || [ "$modules" -ne "$dirs" ] || [ "$deep" -ne 0 ]; then
-            echo "::error::example discovery mismatch: $modules depth-2 package.mill vs $dirs example dirs vs $deep deeper ones" >&2
-            exit 1
-          fi
-          echo "discovered $modules example modules"
+        timeout-minutes: 5
+        run: python3 scripts/ci-examples.py discover
+
+  workflow-checks:
+    name: Workflow and release-tooling checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
+      - name: Install workflow test dependencies
+        timeout-minutes: 5
+        run: python3 -m pip install --disable-pip-version-check -r scripts/requirements-ci.txt
+      - name: Validate workflows
+        timeout-minutes: 5
+        run: bash scripts/check-workflows.sh
+      - name: Release tooling regression tests
+        timeout-minutes: 5
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 -m unittest discover -s scripts/tests -v
 
   discover:
     name: Discover examples
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       examples: ${{ steps.list.outputs.examples }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
       - id: list
+        timeout-minutes: 5
         # Derived, never hardcoded: adding examples/<name>/package.mill is the only step
         # needed to get that example compiled, tested, and built as a native binary.
         run: |
-          names=$(find examples -mindepth 2 -maxdepth 2 -name package.mill -printf '%h\n' \
-            | xargs -n1 basename | sort | jq -R . | jq -sc .)
-          echo "examples=$names" >> "$GITHUB_OUTPUT"
+          names=$(python3 scripts/ci-examples.py discover)
+          printf 'examples=%s\n' "$names" >> "$GITHUB_OUTPUT"
           echo "matrix: $names"
 
   lint:
     name: Formatting and lints
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # Independent of compilation: scalafmt reads sources and the enabled scalafix rules
     # are syntactic, so neither waits for a build it does not need.
     #
     # The separate Autofix workflow can fix same-repository PRs. This read-only gate
     # always validates the checkout it received, including when Publish calls it.
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/mill
+        timeout-minutes: 10
       - name: Formatting
+        timeout-minutes: 20
         run: ./mill mill.scalalib.scalafmt.ScalafmtModule/checkFormatAll __.sources
       - name: Meta-build formatting
+        timeout-minutes: 20
         # The scalafmt gate above walks __.sources, which never includes build.mill or the
         # package.mill files — the sources that define the build itself went unchecked.
         # The binary version is read from .scalafmt.conf so the two cannot drift apart.
         run: |
           v=$(sed -n 's/^version = "\(.*\)"/\1/p' .scalafmt.conf)
-          curl -sL -o /tmp/scalafmt-native "https://github.com/scalameta/scalafmt/releases/download/v${v}/scalafmt-linux-glibc"
-          chmod +x /tmp/scalafmt-native
-          /tmp/scalafmt-native --check build.mill $(git ls-files '*package.mill')
+          curl --fail --silent --show-error --location --retry 3 --max-time 120 -o "$RUNNER_TEMP/scalafmt-native" "https://github.com/scalameta/scalafmt/releases/download/v${v}/scalafmt-linux-glibc"
+          chmod +x "$RUNNER_TEMP/scalafmt-native"
+          mapfile -d '' -t packages < <(git ls-files -z '*package.mill')
+          "$RUNNER_TEMP/scalafmt-native" --check build.mill "${packages[@]}"
       - name: Lints
+        timeout-minutes: 20
         run: ./mill __.fix --check
 
   # ── build the library once, then reuse it ─────────────────────────────────────────
   build:
     name: Compile library
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/mill
+        timeout-minutes: 10
         with:
           # The one job that writes the dependency cache, so the others never race to save it.
           dependency-cache: read-write
 
       - name: Compile every published module
+        timeout-minutes: 30
         run: >-
           ./mill core.compile
           + terminal.compile
@@ -137,10 +171,11 @@ jobs:
           + __.test.compile
 
       - name: Share the build output with the jobs below
+        timeout-minutes: 5
         # Keyed by SHA, so it is scoped to this run. Mill's metadata embeds absolute
         # workspace paths, which is safe only because every runner in this workflow is
         # ubuntu and checks out to the same path.
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: out
           key: mill-build-${{ runner.os }}-${{ github.sha }}
@@ -152,6 +187,7 @@ jobs:
     name: Test library (JDK ${{ matrix.jdk }})
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     strategy:
       # One JDK failing says nothing about the other, and the 26 leg is a "does next-JDK still work" signal
       # that should not block a PR on the LTS leg's account (or the reverse).
@@ -159,7 +195,10 @@ jobs:
       matrix:
         jdk: [25, 26] # 25: the -release floor and the one `build` compiled under. 26: latest, advisory.
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
       # `build` compiled under 25 (action.yml's default java-version, which is also what `.mill-jvm-version`
       # pins Mill's own process to). The 26 leg overrides that pin before the composite action below computes
       # its cache keys, so both the dependency cache and the choice to skip restoring `build`'s `out/` follow
@@ -171,9 +210,11 @@ jobs:
       # No temurin version matching '26' found` — verified locally). Zulu 26 is in the index and this repo's
       # library sources compile and test clean under it; revisit once Mill's pinned index catches up.
       - name: Compile under JDK 26 instead of the pinned .mill-jvm-version
+        timeout-minutes: 5
         if: matrix.jdk == 26
         run: echo "zulu:26" > .mill-jvm-version
       - uses: ./.github/actions/mill
+        timeout-minutes: 10
         with:
           build-output: ${{ matrix.jdk == 25 && 'restore' || 'skip' }}
       # One step per module: a single combined step reports only "still running", so a module that hangs cannot be
@@ -206,6 +247,7 @@ jobs:
     name: Example ${{ matrix.example }}
     needs: [build, discover]
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     strategy:
       # One example failing says nothing about the other nine, and finding out about all
       # of them in one run beats nine more pushes.
@@ -213,81 +255,64 @@ jobs:
       matrix:
         example: ${{ fromJSON(needs.discover.outputs.examples) }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/mill
+        timeout-minutes: 10
         with:
           build-output: restore
       - name: Compile and test
-        run: ./mill examples.${{ matrix.example }}.test
+        timeout-minutes: 20
+        env:
+          EXAMPLE: ${{ matrix.example }}
+        run: python3 scripts/ci-examples.py test --example "$EXAMPLE"
 
   native-image:
     name: Native images
     needs: [build, discover]
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     # Deliberately one job rather than a matrix. Each image needs the GraalVM toolchain,
     # which Mill fetches through coursier; a matrix would download it on every shard the
     # first time, and the builds themselves are ~30s each. One job keeps that download
-    # to once and still reports every failure, because the loop below does not stop early.
+    # to once; all discovered task selectors are separated by Mill's `+`.
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/mill
+        timeout-minutes: 10
         with:
           build-output: restore
 
       - name: Build a native image for every example
-        run: |
-          # `+` separates Mill task selectors. Without it Mill runs only the first and
-          # swallows the rest as arguments to it, silently building one image.
-          selectors=$(find examples -mindepth 2 -maxdepth 2 -name package.mill -printf '%h\n' \
-            | xargs -n1 basename | sort \
-            | sed 's/^/examples./; s/$/.nativeImage/' | paste -sd, - | sed 's/,/ + /g')
-          echo "building: $selectors"
-          ./mill $selectors
+        timeout-minutes: 45
+        run: python3 scripts/ci-examples.py build-native
 
       - name: Every binary detects the missing TTY and exits cleanly
-        # "Cleanly" means both halves: exit status 1 (TuiApp.main's failure path) *and* the
-        # sentence BackendError.UnsupportedTerminal renders. Asserting only on the message
-        # would pass a binary that printed it and then hung or dumped a stack trace; asserting
-        # only on the status would pass a fallback image that failed for some unrelated reason.
-        # The message text is pinned by terminal/.../BackendErrorMessageSpec.scala, so renaming
-        # it breaks a one-second test rather than this ten-image job.
-        run: |
-          failed=""
-          for ex in $(find examples -mindepth 2 -maxdepth 2 -name package.mill -printf '%h\n' | xargs -n1 basename | sort); do
-            binary="./out/examples/$ex/nativeImage.dest/native-executable"
-            if [ ! -x "$binary" ]; then
-              failed="$failed $ex(missing)"
-              continue
-            fi
-            # `&& ... || ...` rather than a bare assignment: the step's shell is `bash -e`, under
-            # which `output=$(failing-command)` aborts the whole step. A failing exit is exactly
-            # what this loop is here to inspect, so the capture has to survive it.
-            output=$("$binary" </dev/null 2>&1) && status=0 || status=$?
-            echo "$ex: status=$status output=$output"
-            if [ "$status" -ne 1 ]; then
-              failed="$failed $ex(status=$status)"
-              continue
-            fi
-            case "$output" in
-              *"terminal not supported"*) ;;
-              *) failed="$failed $ex(no-clean-exit)" ;;
-            esac
-          done
-          if [ -n "$failed" ]; then
-            echo "::error::native binaries failed:$failed" >&2
-            exit 1
-          fi
+        # Each child has its own ten-second bound and no controlling TTY; timeouts
+        # kill the process group, then the remaining examples are still checked.
+        timeout-minutes: 3
+        run: python3 scripts/ci-examples.py smoke-native
 
   # ── the guide itself ──────────────────────────────────────────────────────────────
   website-build:
     name: Build website
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # docusaurus.config.js sets onBrokenLinks/onBrokenAnchors to 'throw', so a dead
     # cross-reference fails the build — but only if something builds the site before
     # merge. The docs workflow builds it on main; this gate builds it on the PR.
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        timeout-minutes: 5
         with:
           node-version: "24"
           cache: npm
@@ -295,40 +320,49 @@ jobs:
           # default cache lookup would find nothing to key on.
           cache-dependency-path: website/package-lock.json
       - name: Build Docusaurus site
+        timeout-minutes: 15
         working-directory: website
         run: |
           npm ci
+          npm test
+          # Remaining upstream advisories are tracked in website/DEPENDENCY_SECURITY.md.
+          npm audit --audit-level=critical
           npm run build
 
   packaged-consumer:
     name: Verify published POMs and isolated consumer
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/mill
+        timeout-minutes: 10
         with:
           build-output: restore
-      - name: Release gate regression tests
-        run: python3 -m unittest discover -s scripts/tests -v
       - name: Resolve and exercise the actual packaged artifacts
+        timeout-minutes: 30
         run: python3 scripts/verify-packaged-consumer.py
 
   # An output exists only when every gate above succeeded for this exact checkout.
   # Publish consumes this SHA, not a branch name or an unrelated successful CI run.
   validated:
     name: Record validated commit
-    needs: [discipline, lint, build, test, example, native-image, website-build, packaged-consumer]
+    needs: [discipline, workflow-checks, discover, lint, build, test, example, native-image, website-build, packaged-consumer]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       sha: ${{ steps.commit.outputs.sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        timeout-minutes: 5
         with:
           persist-credentials: false
       - id: commit
+        timeout-minutes: 5
         run: |
           actual=$(git rev-parse HEAD)
           test "$actual" = "$GITHUB_SHA"

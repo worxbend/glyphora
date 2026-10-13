@@ -268,7 +268,7 @@ inserts a drawn block instead of stripped text.
 
 ## Still stuck?
 
-Search [existing issues](https://github.com/oleksandr-balyshyn/glyphora/issues), then
+Search [existing issues](https://github.com/worxbend/glyphora/issues), then
 open a minimal reproduction with:
 
 - glyphora, Scala, JVM, and OS versions;

@@ -13,8 +13,8 @@ flowchart LR
 
 | Destination | URL | Publisher |
 |---|---|---|
-| Styled guide and Scaladoc | <https://oleksandr-balyshyn.github.io/glyphora/> | `.github/workflows/docs.yml` |
-| GitHub Wiki | <https://github.com/oleksandr-balyshyn/glyphora/wiki> | `.github/workflows/wiki.yml` |
+| Styled guide and Scaladoc | <https://worxbend.github.io/glyphora/> | `.github/workflows/docs.yml` |
+| GitHub Wiki | <https://github.com/worxbend/glyphora/wiki> | `.github/workflows/wiki.yml` |
 
 Do not edit generated pages in the GitHub Wiki. Edit `website/docs`, update
 `website/docs-navigation.mjs` when adding or removing a page, and push to `main`.

@@ -291,5 +291,5 @@ Run the repository example:
 ```
 
 Its source and headless test live under
-[`examples/form-demo`](https://github.com/oleksandr-balyshyn/glyphora/tree/main/examples/form-demo).
+[`examples/form-demo`](https://github.com/worxbend/glyphora/tree/main/examples/form-demo).
 For modals and multi-step flows, continue with [The app shell](./app-shell).

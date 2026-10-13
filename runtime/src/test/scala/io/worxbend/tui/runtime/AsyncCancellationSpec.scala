@@ -21,8 +21,8 @@ final class AsyncCancellationSpec extends AnyFunSuite:
       loop.close()
       RenderThread.unregister()
 
-  test("every cancellation discards all queued ticks"):
-    val enqueued = CountDownLatch(3)
+  test("every cancellation discards its coalesced queued tick"):
+    val enqueued = CountDownLatch(1)
     val loop     = RenderThread.register(Thread.currentThread(), () => enqueued.countDown())
     var calls    = 0
     val timer    = Async.every(1.millis) { calls += 1 }

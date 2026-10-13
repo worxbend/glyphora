@@ -721,8 +721,18 @@ trait TuiApp:
     * not be in scope inside an app's own `view` body.
     */
   private def effectiveView(using scope: ReactiveScope): Element =
-    given Theme     = theme
-    val withScreens = screenStack.entries.foldLeft(ViewState.current.screen(0L)(view)) { case (below, (id, screen)) =>
+    given Theme      = theme
+    val entries      = screenStack.entries
+    val firstVisible = entries.lastIndexWhere(_._2.presentation == Presentation.Full)
+    if firstVisible >= 0 then
+      // Only the last full page and the modals above it can paint. Preserve eager hook slots below it without
+      // evaluating their builders; responsive hooks in discarded trees still follow the ordinary sweep contract.
+      ViewState.current.retainCoveredScreens(entries.take(firstVisible).iterator.map(_._1).toSet + 0L)
+    val base         =
+      if firstVisible < 0 then ViewState.current.screen(0L)(view)
+      else Element.text("")
+    val visible      = if firstVisible < 0 then entries else entries.drop(firstVisible)
+    val withScreens  = visible.foldLeft(base) { case (below, (id, screen)) =>
       val content = ViewState.current.screen(id)(screen.view)
       screen.presentation match
         case Presentation.Modal =>
@@ -734,7 +744,7 @@ trait TuiApp:
           Element.layers(FocusPass.suppressFocus(below), top)
         case Presentation.Full  => content
     }
-    val withPalette =
+    val withPalette  =
       if palette.isOpen then Element.layers(FocusPass.suppressFocus(withScreens), palette.element)
       else withScreens
     toasts.overlay(terminalSizeSignal.peek.width) match

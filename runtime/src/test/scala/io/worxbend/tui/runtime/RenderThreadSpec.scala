@@ -115,23 +115,16 @@ final class RenderThreadSpec extends AnyFunSuite:
       assert(ran)
     finally RenderThread.unregister()
 
-  test("the unattributed queue is bounded, keeping the newest work and counting what it dropped"):
-    // the one queue nobody owns: an `Async.every` armed before any runner starts fills it, and nothing is guaranteed
-    // ever to drain it. Unbounded, that is a leak for the life of the JVM and then a flood the moment a runner arrives
-    RenderThread.drainPending() // start from an empty queue whatever ran before this test
-    val cap         = RenderThread.DetachedQueueLimit
-    val queued      = cap * 2
-    val dropsBefore = RenderThread.detachedDrops
-    val ran         = scala.collection.mutable.ArrayBuffer.empty[Int]
-    (1 to queued).foreach(i => RenderThread.runLater { val _ = ran.append(i) })
-
-    assert(RenderThread.detachedDrops - dropsBefore == queued - cap, "the queue grew past its cap")
+  test("the unattributed queue rejects overload without evicting accepted work"):
     RenderThread.drainPending()
-    assert(ran.size == cap, s"${ran.size} bodies survived a cap of $cap")
-    // the oldest went, not the newest: these are continuations of work that has already happened, so the ones
-    // describing the most recent state are the ones worth keeping
-    assert(ran.head == queued - cap + 1)
-    assert(ran.last == queued)
+    val cap = RenderThread.DetachedQueueLimit
+    val ran = scala.collection.mutable.ArrayBuffer.empty[Int]
+    (1 to cap).foreach(i => RenderThread.runLater { val _ = ran.append(i) })
+    try
+      assertThrows[java.util.concurrent.RejectedExecutionException](RenderThread.runLater(fail("rejected work ran")))
+    finally RenderThread.drainPending()
+    assert(ran.toList == (1 to cap).toList)
+    assert(RenderThread.detachedDrops == 0)
 
   test("registered runners cannot mutate a signal bound to another runner"):
     val signal = Signal(1)

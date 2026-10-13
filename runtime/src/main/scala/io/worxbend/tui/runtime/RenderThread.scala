@@ -1,7 +1,7 @@
 package io.worxbend.tui.runtime
 
-import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentLinkedQueue}
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentLinkedQueue, RejectedExecutionException}
 import scala.util.control.NonFatal
 
 /** The single-render-thread model.
@@ -21,14 +21,17 @@ object RenderThread:
   /** Teardown's independent callback allowance per queue, before confined cleanup and owned-queue retirement. */
   private[runtime] val FinalDrainBudget: Int = 256
 
+  /** Active-owner capacity, including queued callbacks and reserved async/timer deliveries. */
+  private[runtime] val OwnedQueueLimit: Int = 1024
+
   /** One runner's queue of work waiting to run on its render thread.
     *
     * `onError` is supplied by the runner that owns this loop and receives throwables escaping queued bodies.
     *
-    * `limit`, when set, caps how many bodies may wait here: past the cap the *oldest* is dropped, and [[dropCount]]
-    * counts how many were. A runner's own loop is unlimited — its bodies are owed to a thread that is draining them
-    * every iteration, and dropping one would lose a continuation the app is waiting for. The shared `detached` queue
-    * sets a limit because it has no such thread: see [[RenderThread.detached]].
+    * Admission is nonblocking: active owners allow 1024 outstanding callbacks, including reservations made before async
+    * work or timers start. The detached queue allows 256. At capacity submission throws `RejectedExecutionException`;
+    * it never evicts an accepted continuation or runs queued work on the producer. Repeating timers retain one
+    * reservation until cancelled and coalesce ticks while delivery is pending/running.
     */
   final class RenderLoop private[runtime] (
       wake: () => Unit,
@@ -50,8 +53,65 @@ object RenderThread:
 
     // `ConcurrentLinkedQueue.size` walks the whole queue, so the depth is counted alongside it instead: `enqueue` is on
     // the hot path of every Async continuation and timer tick
-    private val queued  = AtomicInteger(0)
-    private val dropped = AtomicLong(0)
+    private val queued   = AtomicInteger(0)
+    private var admitted = 0
+
+    /** Reserves one continuation slot before background work starts. Reservations count against active-owner capacity
+      * even before delivery; cancellation frees the slot and removes an already queued callback.
+      */
+    private[runtime] def reserve(): Delivery = synchronized {
+      if !closed then acquire()
+      new Delivery(!closed)
+    }
+
+    private def acquire(): Unit =
+      val capacity = limit.getOrElse(OwnedQueueLimit)
+      if admitted >= capacity then throw RejectedExecutionException(s"render callback capacity ($capacity) exhausted")
+      admitted += 1
+
+    private[runtime] final class Delivery private[RenderLoop] (initiallyActive: Boolean) extends Cancelable:
+      private var active   = initiallyActive
+      private var callback = Option.empty[() => Unit]
+
+      def enqueue(body: () => Unit): Unit = enqueue(body, repeat = false)
+
+      def enqueueRepeating(body: () => Unit): Unit = enqueue(body, repeat = true)
+
+      private def enqueue(body: () => Unit, repeat: Boolean): Unit =
+        val enqueued = RenderLoop.this.synchronized {
+          if active && !closed && callback.isEmpty then
+            val task = () => {
+              val accepted = RenderLoop.this.synchronized {
+                val wasActive = active && !closed
+                if !repeat then
+                  callback = None
+                  cancel()
+                wasActive
+              }
+              try if accepted then body()
+              finally if repeat then RenderLoop.this.synchronized { callback = None }
+            }
+            callback = Some(task)
+            val _    = pending.add(task)
+            val _    = queued.incrementAndGet()
+            true
+          else false
+        }
+        if enqueued then wake()
+
+      def releaseIfUnused(): Unit = RenderLoop.this.synchronized {
+        if callback.isEmpty then cancel()
+      }
+
+      def cancel(): Unit = RenderLoop.this.synchronized {
+        if active then
+          active = false
+          admitted -= 1
+          callback.foreach { task =>
+            if pending.remove(task) then { val _ = queued.decrementAndGet() }
+          }
+          callback = None
+      }
 
     // read by every thread that queues work, written by the runner thread that owned this loop
     @volatile private var closed   = false
@@ -65,52 +125,40 @@ object RenderThread:
     private[runtime] def stopRequested: Boolean = stopping
 
     /** Dispatches to this captured owner: inline on its current render thread, queued otherwise. Returns false when
-      * already retired. Acceptance is not a completion guarantee: retirement can discard queued work. Capture on the
-      * owning thread before registering an external callback, rather than resolving an ambiguous runner on delivery.
+      * retired; off-thread overload throws `RejectedExecutionException` without running or evicting any callback.
+      * Acceptance is not a completion guarantee: retirement can discard queued work. Capture on the owning thread
+      * before registering an external callback, rather than resolving an ambiguous runner on delivery.
       */
     def execute(body: => Unit): Boolean =
       if closed then false
       else
         val own = loops.get(Thread.currentThread())
-        if own != null && (own.head eq this) then body // scalafix:ok DisableSyntax; java.util.concurrent interop
-        else enqueue(() => body)
-        true
+        if own != null && (own.head eq this) then // scalafix:ok DisableSyntax; java.util.concurrent interop
+          body
+          true
+        else offer(() => body)
 
-    /** Queues `body` and nudges the runner, so it is picked up on the next iteration rather than at the next poll.
-      *
-      * A body queued after [[close]] is **dropped**: its runner has exited and nothing will ever drain this queue
-      * again, so keeping it would only grow memory. So is the oldest body still waiting, once a `limit` is set and
-      * reached. See [[Async]] for what that means for scheduled work.
+    /** Queues a callback without blocking. Throws `RejectedExecutionException` at capacity; accepted callbacks are
+      * never evicted to make room. A retired owner still discards late work, as it has no thread left to drain it.
       */
     private[runtime] def enqueue(body: () => Unit): Unit =
-      if !closed then
-        val _ = pending.add(body)
-        val _ = queued.incrementAndGet()
-        // re-check after the add: close() retires this queue concurrently, and a body that lands after its clear would
-        // sit in `pending` for the life of the JVM with `queued` one higher than anything will ever drain back down
-        if closed && pending.remove(body) then
-          val _ = queued.decrementAndGet()
-        else
-          limit.foreach(trimTo)
-          wake()
+      val _ = offer(body)
 
-    /** Drops the oldest waiting bodies until at most `cap` are left.
-      *
-      * The oldest rather than the newest, because this queue's bodies are continuations of work that has already
-      * happened: if only some of them can be kept, the ones describing the most recent state are the ones worth
-      * keeping. Stops early when the queue turns out to be empty — `queued` is incremented just after the body lands
-      * and decremented just after one is taken, so it can momentarily exceed what is actually in the queue, and this
-      * loop must not spin waiting for a body that a concurrent drain already took.
-      */
-    private def trimTo(cap: Int): Unit =
-      var trimming = queued.get() > cap
-      while trimming do
-        val evicted = pending.poll()
-        if evicted == null then trimming = false // scalafix:ok DisableSyntax; java.util.concurrent interop
+    private def offer(body: () => Unit): Boolean =
+      val accepted = synchronized {
+        if closed then false
         else
-          val _ = queued.decrementAndGet()
-          val _ = dropped.incrementAndGet()
-          trimming = queued.get() > cap
+          acquire()
+          val task = () => {
+            synchronized { admitted -= 1 }
+            body()
+          }
+          val _    = pending.add(task)
+          val _    = queued.incrementAndGet()
+          true
+      }
+      if accepted then wake()
+      accepted
 
     /** Retires this loop: whatever is still pending is discarded and nothing new is accepted.
       *
@@ -120,14 +168,16 @@ object RenderThread:
       * this, would keep appending sixty closures a second to a queue nothing drains, for the life of the JVM.
       */
     private[runtime] def close(): Unit =
-      closed = true
+      synchronized {
+        closed = true
+        pending.clear()
+        queued.set(0)
+      }
       taskScopes.forEach(scope => scope.close())
       taskScopes.clear()
-      pending.clear()
-      queued.set(0)
 
-    /** How many bodies this loop dropped because its `limit` was reached. Always `0` for an unlimited loop. */
-    private[runtime] def dropCount: Long = dropped.get()
+    /** Compatibility observation: overload now rejects instead of evicting, so this is always zero. */
+    private[runtime] def dropCount: Long = 0L
 
     /** Runs at most `budget` queued bodies in FIFO order, including successors queued during this turn. Remaining work
       * stays queued. A `NonFatal` throwable goes to `handler` and consumes one slot just like successful work; fatal
@@ -150,10 +200,11 @@ object RenderThread:
     private[runtime] def hasPending: Boolean = !pending.isEmpty
 
     /** Takes the next waiting body, or `null` when there is none, keeping the depth count in step. */
-    private def take(): () => Unit =
+    private def take(): () => Unit = synchronized {
       val task = pending.poll()
       val _    = if task != null then queued.decrementAndGet() else 0 // scalafix:ok DisableSyntax; queue interop
       task
+    }
 
   // Several runners may live in one JVM and must not race on a single registration slot. Each thread maps to a stack
   // (innermost registration first) so a runner started from inside another runner's loop restores its host on exit
@@ -171,31 +222,18 @@ object RenderThread:
       if enclosing == null then registrationObserver.remove() // scalafix:ok DisableSyntax; java interop
       else registrationObserver.set(enclosing)
 
-  /** How many bodies may wait on the unattributed queue before the oldest start being dropped.
-    *
-    * A frame is 16 ms, so this is roughly four seconds of a 60 Hz timer firing into a queue nobody drains: past that,
-    * work armed for a runner that never started is not a backlog anyone is owed. Declared before `detached` because it
-    * is read while that field is initialised.
-    */
+  /** Detached callback/reservation capacity; unlike a runner queue, it has no guaranteed consumer. */
   private[runtime] val DetachedQueueLimit: Int = 256
 
   /** Work queued when the caller belongs to no runner and more than one is running — genuinely ambiguous, so it is
     * drained by whichever render thread gets there first. With zero or one runner the routing is exact.
     *
-    * This is the one loop nobody owns: it is never closed, and nothing is guaranteed ever to drain it. An
-    * `Async.every(16.millis)` armed before any runner starts lands here and, unbounded, would append sixty closures a
-    * second for the life of the JVM — the same leak [[RenderLoop.close]] exists to prevent for an owned loop — and then
-    * run every one of them at once the moment some runner drained it. Hence [[DetachedQueueLimit]]: enough depth that a
-    * burst of continuations arriving just before a runner starts is delivered intact, and a ceiling past which the
-    * oldest are dropped rather than accumulated. [[detachedDrops]] makes that observable.
+    * This loop is never closed and has no guaranteed consumer. Admission throws at [[DetachedQueueLimit]], rather than
+    * silently replacing required continuations. Start repeating work on the owning runner, not in constructors.
     */
   private val detached = RenderLoop(() => (), RenderTaskErrorHandler.rethrow, Some(DetachedQueueLimit))
 
-  /** How many unattributed bodies have been dropped for exceeding [[DetachedQueueLimit]] since the process started.
-    *
-    * Package-private, for the test that pins the bound: a queue that silently drops work needs one number that says it
-    * did.
-    */
+  /** Compatibility observation: detached overload rejects; accepted bodies are not evicted. */
   private[runtime] def detachedDrops: Long = detached.dropCount
 
   /** Whether the calling thread may mutate UI state.
@@ -226,7 +264,9 @@ object RenderThread:
   def runOnRenderThread(body: => Unit): Unit =
     if isRenderThread then body else runLater(body)
 
-  /** Always queues `body`; the runner executes queued work at the start of each loop iteration. */
+  /** Always queues `body`; throws `RejectedExecutionException` on overload, never blocking for capacity. The runner
+    * executes accepted work in finite batches. Late work on a retired owner is discarded.
+    */
   def runLater(body: => Unit): Unit =
     capture().enqueue(() => body)
 

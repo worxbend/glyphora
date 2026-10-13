@@ -10,10 +10,10 @@
 </p>
 
 <p>
-  <a href="https://github.com/oleksandr-balyshyn/glyphora/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/oleksandr-balyshyn/glyphora/actions/workflows/ci.yml/badge.svg"/></a>
-  <a href="https://oleksandr-balyshyn.github.io/glyphora/"><img alt="Docs" src="https://github.com/oleksandr-balyshyn/glyphora/actions/workflows/docs.yml/badge.svg"/></a>
-  <a href="https://github.com/oleksandr-balyshyn/glyphora/tags"><img alt="Release" src="https://img.shields.io/github/v/tag/oleksandr-balyshyn/glyphora?label=release&color=EF3340"/></a>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/oleksandr-balyshyn/glyphora?color=FBBF24"/></a>
+  <a href="https://github.com/worxbend/glyphora/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/worxbend/glyphora/actions/workflows/ci.yml/badge.svg"/></a>
+  <a href="https://worxbend.github.io/glyphora/"><img alt="Docs" src="https://github.com/worxbend/glyphora/actions/workflows/docs.yml/badge.svg"/></a>
+  <a href="https://github.com/worxbend/glyphora/tags"><img alt="Release" src="https://img.shields.io/github/v/tag/worxbend/glyphora?label=release&color=EF3340"/></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/worxbend/glyphora?color=FBBF24"/></a>
 </p>
 
 <p>
@@ -25,10 +25,10 @@
 </p>
 
 <p>
-  <a href="https://oleksandr-balyshyn.github.io/glyphora/"><b>📖 Read the guide</b></a> ·
-  <a href="https://github.com/oleksandr-balyshyn/glyphora/wiki"><b>📚 Browse the wiki</b></a> ·
+  <a href="https://worxbend.github.io/glyphora/"><b>📖 Read the guide</b></a> ·
+  <a href="https://github.com/worxbend/glyphora/wiki"><b>📚 Browse the wiki</b></a> ·
   <a href="website/docs/cookbook.md"><b>🍳 Cookbook</b></a> ·
-  <a href="https://oleksandr-balyshyn.github.io/glyphora/api/"><b>🔎 Scaladoc</b></a> ·
+  <a href="https://worxbend.github.io/glyphora/api/"><b>🔎 Scaladoc</b></a> ·
   <a href="examples/README.md"><b>🎮 Examples</b></a>
 </p>
 
@@ -91,20 +91,20 @@
 
 > [!NOTE]
 > **Not on Maven Central yet.** A source release tag does not make artifacts available on Maven
-> Central. Until `0.17.0` is published there, the coordinates below will not resolve from a public
+> Central. Until `0.18.0` is published there, the coordinates below will not resolve from a public
 > repository. Clone the repo and run `./mill __.publishLocal`
 > — that puts `tui-core`, `tui-terminal`, `tui-widgets`, `tui-runtime`, `tui-macros`, `tui-dsl`
-> and `tui-test` at `0.17.0` into `~/.ivy2/local`. Mill reads that cache by default; sbt needs
+> and `tui-test` at `0.18.0` into `~/.ivy2/local`. Mill reads that cache by default; sbt needs
 > `resolvers += Resolver.defaultLocal`. See [Build from source](#-build-from-source).
 
 ```scala
 // build.mill
-def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.17.0")
+def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.18.0")
 ```
 
 ```scala
 // build.sbt
-libraryDependencies += "io.worxbend" %% "tui-dsl" % "0.17.0"
+libraryDependencies += "io.worxbend" %% "tui-dsl" % "0.18.0"
 ```
 
 Then return an ordinary Scala `Element` tree:
@@ -220,7 +220,18 @@ width calculation goes through grapheme-aware `CharWidth`.
 
 🧩 **[Browse the complete catalog →](website/docs/widgets.md)**
 
-### New in 0.13.0
+### New in 0.18.0
+
+- Bounded async admission and coalesced repeating timers prevent unbounded callback backlogs.
+- `LatestFrameObserver` samples frames off-thread with one replaceable pending frame;
+  opt-in `FrameTiming` separates composition, backend draw, and observer admission time.
+- Paragraph wrapping, tree flattening, and the process-monitor example reuse stable work.
+- Full-screen navigation skips covered builders while retaining eager hook state.
+
+Async overload now throws `RejectedExecutionException` at submission. Read the
+[migration notes](website/docs/versioning.md#migrating-to-0180) before upgrading.
+
+### Earlier: 0.13.0
 
 | | |
 |---|---|
@@ -256,7 +267,7 @@ text. Buffer helpers skip wide-character continuation cells, so assertions match
 
 > [!TIP]
 > `Pilot`, `BufferAssertions` and `GoldenFrames` ship as `io.worxbend::tui-test`, so add it as a
-> test-only dependency (`mvn"io.worxbend::tui-test:0.17.0"`) rather than copying the harness.
+> test-only dependency (`mvn"io.worxbend::tui-test:0.18.0"`) rather than copying the harness.
 
 🧪 **[Testing guide →](website/docs/testing.md)**
 
@@ -281,12 +292,12 @@ itself and, for the native-image examples, `graalvm-community:25.0.2` (`macOS x6
 GraalVM CE — override `TuiExampleModule.jvmVersion` in `build.mill` locally on that platform).
 
 ```bash
-git clone https://github.com/oleksandr-balyshyn/glyphora.git
+git clone https://github.com/worxbend/glyphora.git
 cd glyphora
 
 ./mill __.compile        # build everything
-./mill __.test           # run every suite
-./mill __.publishLocal   # install 0.17.0 into your local Ivy cache
+./mill core.test         # test each module separately (see CONTRIBUTING.md)
+./mill __.publishLocal   # install 0.18.0 into your local Ivy cache
 ```
 
 Day-to-day development:
@@ -315,8 +326,8 @@ gates, docs workflow, and pull-request expectations. Shared visual and editorial
 
 ## 📚 Documentation map
 
-The same Markdown publishes to the [📖 GitHub Pages site](https://oleksandr-balyshyn.github.io/glyphora/)
-and the [📚 GitHub Wiki](https://github.com/oleksandr-balyshyn/glyphora/wiki) — `website/docs/`
+The same Markdown publishes to the [📖 GitHub Pages site](https://worxbend.github.io/glyphora/)
+and the [📚 GitHub Wiki](https://github.com/worxbend/glyphora/wiki) — `website/docs/`
 is canonical.
 
 | | Guides |
@@ -341,9 +352,9 @@ architecture rules.
 
 **[🤝 Contributing](CONTRIBUTING.md)** ·
 **[📖 Full guide](website/docs/contributing.md)** ·
-**[🐛 Report an issue](https://github.com/oleksandr-balyshyn/glyphora/issues/new/choose)** ·
+**[🐛 Report an issue](https://github.com/worxbend/glyphora/issues/new/choose)** ·
 **[📜 Code of conduct](CODE_OF_CONDUCT.md)** ·
-**[📚 Wiki](https://github.com/oleksandr-balyshyn/glyphora/wiki)**
+**[📚 Wiki](https://github.com/worxbend/glyphora/wiki)**
 
 </div>
 

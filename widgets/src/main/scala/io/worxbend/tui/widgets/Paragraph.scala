@@ -1,6 +1,20 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Alignment, Buffer, Line, LineBreaks, Measured, Rect, Span, Style, Text, Widget}
+import io.worxbend.tui.core.{
+  Alignment,
+  Buffer,
+  Line,
+  LineBreaks,
+  Measured,
+  Rect,
+  Span,
+  Style,
+  StyledGrapheme,
+  Text,
+  Widget,
+}
+
+import scala.collection.mutable
 
 /** Multi-line styled text with alignment and optional wrapping.
   *
@@ -38,7 +52,10 @@ import io.worxbend.tui.core.{Alignment, Buffer, Line, LineBreaks, Measured, Rect
   * a caller sets a background for; each span's style is then layered on top of it for the text itself.
   *
   * [[heightAt]] reports the rows the paragraph needs from the same `overflow` field `render` draws with, so the two
-  * cannot disagree about whether the text wraps.
+  * cannot disagree about whether the text wraps. Measurement memoization belongs to this immutable value: it keeps one
+  * height answer (the latest width) and one natural width, not rows or a global content index. Copies/rebuilt
+  * paragraphs start fresh, and the text must obey its immutable collection contract. Rendering never forces either
+  * measurement. Concurrent measurements are safe; rendering still inherits Buffer's caller-owned confinement.
   */
 final case class Paragraph(
     text: Text,
@@ -49,6 +66,13 @@ final case class Paragraph(
     style: Style = Style.Default,
 ) extends Widget
     with Measured:
+
+  // Value-local memoization: the immutable text/overflow fields cannot change, so a width is the entire key. Keep
+  // only the latest answer, never source rows or another Paragraph. Copies get a fresh cache; synchronization keeps
+  // sharing an immutable widget safe without exposing caller-owned mutable state or changing case-class equality.
+  private var measuredHeight = Option.empty[(Int, Int)]
+
+  private lazy val measuredWidth: Int = text.width
 
   def render(area: Rect, buffer: Buffer): Unit =
     if !area.isEmpty then
@@ -61,7 +85,7 @@ final case class Paragraph(
       if style != Style.Default then buffer.mapStyle(area)(_.patch(style))
       // lazily: wrapping the whole document to draw one screenful makes render cost scale with the text, not the area
       val lines     = overflow.wrapBlanks match
-        case Some(blanks) => text.lines.iterator.flatMap(Paragraph.wrapLine(_, area.width, blanks))
+        case Some(blanks) => text.lines.iterator.flatMap(Paragraph.wrappedRows(_, area.width, blanks))
         case None         => text.lines.iterator
       // resolved once for the whole paragraph rather than per row: the widget's style is the floor, the text's own
       // style is laid over it, and each line then lays its own over that inside `LineRenderer`
@@ -121,13 +145,18 @@ final case class Paragraph(
     * its `position` is the same `scrollY` the paragraph was given. A scrolled paragraph still occupies whatever rows
     * its area gives it.
     */
-  override def heightAt(width: Int): Option[Int] =
-    val rows = overflow.wrapBlanks match
-      case None                  => text.lines.size
-      case Some(_) if width <= 0 => 0
-      case Some(blanks)          =>
-        text.lines.map(line => math.max(1, Paragraph.wrappedRowCount(line, width, blanks))).sum
-    Some(rows)
+  override def heightAt(width: Int): Option[Int] = synchronized {
+    measuredHeight match
+      case Some((measuredWidth, rows)) if measuredWidth == width => Some(rows)
+      case _                                                     =>
+        val rows = overflow.wrapBlanks match
+          case None                  => text.lines.size
+          case Some(_) if width <= 0 => 0
+          case Some(blanks)          =>
+            text.lines.iterator.map(line => math.max(1, Paragraph.wrappedRowCount(line, width, blanks))).sum
+        measuredHeight = Some((width, rows))
+        Some(rows)
+  }
 
   /** The columns this text needs so that no line is clipped and no line has to wrap — the width counterpart of
     * [[heightAt]], and always an answer, because the longest line is a property of the text itself and needs no layout
@@ -140,7 +169,7 @@ final case class Paragraph(
     * thing this number exists to avoid.
     */
   override def widthAt(height: Int): Option[Int] =
-    Some(text.width)
+    Some(measuredWidth)
 
 object Paragraph:
 
@@ -167,12 +196,46 @@ object Paragraph:
     * [[Markdown]] keep their styling across a break.
     */
   private[widgets] def wrapLine(line: Line, width: Int, blanks: WrapBlanks = WrapBlanks.KeepIndent): Seq[Line] =
-    if width <= 0 then Seq.empty
-    else if line.width <= width && blanks != WrapBlanks.DropAll then Seq(line)
+    wrappedRows(line, width, blanks).toVector
+
+  /** Fresh, render-local row stream. Only the prefix needed to decide the next break is read; no document cache or
+    * source-line width scan is involved. A short line is returned unchanged, preserving its trailing blanks and spans.
+    */
+  private[widgets] def wrappedRows(line: Line, width: Int, blanks: WrapBlanks): Iterator[Line] =
+    if width <= 0 then Iterator.empty
     else
-      val sink = LineSink(line.alignment, line.style)
-      WrapWalker(width, blanks, sink).walk(line)
-      sink.rows
+      new Iterator[Line]:
+        private lazy val rows: Iterator[Line] =
+          val source  = line.spanGraphemes
+          val prefix  = mutable.ArrayBuffer.empty[StyledGrapheme]
+          var columns = 0
+          if blanks != WrapBlanks.DropAll then
+            while columns <= width && source.hasNext do
+              val grapheme = source.next()
+              prefix += grapheme
+              columns += grapheme.width
+          if blanks != WrapBlanks.DropAll && columns <= width then Iterator.single(line)
+          else
+            val input  = prefix.iterator ++ source
+            val sink   = LineSink(line.alignment, line.style)
+            val walker = WrapWalker(width, blanks, sink)
+            new Iterator[Line]:
+              private var finished = false
+
+              def hasNext: Boolean =
+                while !sink.hasRows && !finished do
+                  if input.hasNext then walker.step(input.next())
+                  else
+                    walker.finish()
+                    finished = true
+                sink.hasRows
+
+              def next(): Line =
+                if !hasNext then throw new NoSuchElementException("wrapped rows exhausted")
+                sink.nextRow()
+
+        def hasNext: Boolean = rows.hasNext
+        def next(): Line     = rows.next()
 
   /** How many rows [[wrapLine]] would return for `line` at `width`, without building any of them.
     *
@@ -200,8 +263,8 @@ object Paragraph:
     private var rows           = 0
     // Widths of the row being filled, the run of blanks seen since the last word, and the word being read. A word is
     // only moved onto the row once the whole of it is known to fit, which is what makes the break land between words.
-    private var rowWidth       = 0
-    private var gapWidth       = 0
+    private var rowWidth       = 0L
+    private var gapWidth       = 0L
     private var wordWidth      = 0
     // Columns of the word's first cluster: the narrowest a row holding any of this word can be, and so what decides
     // whether an indent still leaves the word somewhere to go.
@@ -212,37 +275,47 @@ object Paragraph:
     // a break point, and are kept.
     private var atLineStart    = true
 
-    /** The whole walk: read every cluster of `line`, then flush the pending word and the row it lands on. */
+    /** Drain the same incremental walk without retaining rows. */
     def walk(line: Line): Unit =
-      line.spanGraphemes.foreach { grapheme =>
-        val cluster = grapheme.cluster
-        if LineBreaks.isBreakingSpace(cluster) then
-          commitWord()
+      line.spanGraphemes.foreach(step)
+      finish()
+
+    /** One cluster may finish at most two rows: the old row, then an overlong word's fragment. */
+    def step(grapheme: StyledGrapheme): Unit =
+      val cluster = grapheme.cluster
+      if LineBreaks.isBreakingSpace(cluster) then
+        commitWord()
+        // Once a gap cannot fit, its exact length/content no longer matters. Do not retain discarded whitespace,
+        // or repeatedly copy an arbitrarily long gap before producing the already-complete visible row.
+        gapWidth = math.min(width.toLong + 1L, gapWidth + grapheme.width)
+        if gapWidth > width then sink.clearGap()
+        else if rowHasContent || blanks == WrapBlanks.KeepAll || blanks == WrapBlanks.KeepIndent && atLineStart then
           sink.addGap(cluster, grapheme.style)
-          gapWidth += grapheme.width
-        else if LineBreaks.isZeroWidthBreak(cluster) then
-          // A break opportunity with no glyph, standing on its own at the very start of the text: end the word here
-          // and drop the character, which draws nothing whether the break is taken or not.
+        if rowHasContent && rowWidth + gapWidth > width then endRow()
+      else if LineBreaks.isZeroWidthBreak(cluster) then
+        // A break opportunity with no glyph, standing on its own at the very start of the text: end the word here
+        // and drop the character, which draws nothing whether the break is taken or not.
+        commitWord()
+      else
+        val clusterWidth = grapheme.width
+        // The blanks that will be written in front of this word are part of the row it lands on, so they are counted
+        // against the width here too. Left out, a line whose first row is indented was broken one column too late
+        // and the renderer clipped that column away: " abcde" at width 5 came out as the single row " abcde".
+        val firstWidth   = if wordHasContent then wordFirstWidth else clusterWidth
+        if gapOnFreshRow(firstWidth, wordWidth + clusterWidth) + wordWidth + clusterWidth > width then
+          // The word alone is wider than any row can be, so it has to be broken. Put what has been read onto a row
+          // of its own and carry on reading the rest of the word into the next one.
           commitWord()
-        else
-          val clusterWidth = grapheme.width
-          // The blanks that will be written in front of this word are part of the row it lands on, so they are counted
-          // against the width here too. Left out, a line whose first row is indented was broken one column too late
-          // and the renderer clipped that column away: " abcde" at width 5 came out as the single row " abcde".
-          val firstWidth   = if wordHasContent then wordFirstWidth else clusterWidth
-          if gapOnFreshRow(firstWidth, wordWidth + clusterWidth) + wordWidth + clusterWidth > width then
-            // The word alone is wider than any row can be, so it has to be broken. Put what has been read onto a row
-            // of its own and carry on reading the rest of the word into the next one.
-            commitWord()
-            if rowHasContent then endRow()
-          if !wordHasContent then wordFirstWidth = clusterWidth
-          sink.addWord(cluster, grapheme.style)
-          wordWidth += clusterWidth
-          wordHasContent = true
-          // A zero width space rides along inside the cluster before it, and says a break is allowed after that
-          // cluster: end the word here so the next one may start on a new row.
-          if LineBreaks.endsWithZeroWidthBreak(cluster) then commitWord()
-      }
+          if rowHasContent then endRow()
+        if !wordHasContent then wordFirstWidth = clusterWidth
+        sink.addWord(cluster, grapheme.style)
+        wordWidth += clusterWidth
+        wordHasContent = true
+        // A zero width space rides along inside the cluster before it, and says a break is allowed after that
+        // cluster: end the word here so the next one may start on a new row.
+        if LineBreaks.endsWithZeroWidthBreak(cluster) then commitWord()
+
+    def finish(): Unit =
       commitWord()
       if rowHasContent || rows == 0 then endRow()
 
@@ -277,7 +350,8 @@ object Paragraph:
         case WrapBlanks.KeepAll    => gapWidth + word <= width
 
     /** The columns the pending blanks would take on a fresh row — zero when they would be dropped there. */
-    private def gapOnFreshRow(firstCluster: Int, word: Int): Int = if keepsGap(firstCluster, word) then gapWidth else 0
+    private def gapOnFreshRow(firstCluster: Int, word: Int): Long =
+      if keepsGap(firstCluster, word) then gapWidth else 0L
 
     private def commitWord(): Unit =
       if wordHasContent then
@@ -327,7 +401,7 @@ object Paragraph:
     * into one span, so a row read one cluster at a time comes out as the few spans it was written as.
     */
   private final class LineSink(alignment: Option[Alignment], style: Style) extends RowSink:
-    private val wrapped = List.newBuilder[Line]
+    private val wrapped = mutable.Queue.empty[Line]
     private var row     = Vector.empty[Span]
     private var gap     = Vector.empty[Span]
     private var word    = Vector.empty[Span]
@@ -345,8 +419,9 @@ object Paragraph:
       wrapped += Line(row, alignment, style)
       row = Vector.empty
 
-    /** The rows read so far, in order. */
-    def rows: Seq[Line] = wrapped.result()
+    /** Completed rows are drained before another cluster is read, so at most two are retained. */
+    def hasRows: Boolean = wrapped.nonEmpty
+    def nextRow(): Line  = wrapped.dequeue()
 
   /** The sink [[wrappedRowCount]] uses: keeps nothing at all, so measuring costs a walk and an integer. */
   private final class CountingSink extends RowSink:

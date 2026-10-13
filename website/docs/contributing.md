@@ -11,7 +11,7 @@ and tests that exercise the same buffers users see.
 
 :::tip In a hurry?
 
-[`CONTRIBUTING.md`](https://github.com/oleksandr-balyshyn/glyphora/blob/main/CONTRIBUTING.md)
+[`CONTRIBUTING.md`](https://github.com/worxbend/glyphora/blob/main/CONTRIBUTING.md)
 at the repository root is the short version: the exact command block to run before
 pushing, and the six checks that gate a merge. This page is the long version — the
 architecture rules a change has to respect, how to add a widget end to end, and how to
@@ -30,7 +30,7 @@ Building an example's native image additionally needs GraalVM `graalvm-community
 `TuiExampleModule.jvmVersion` in `build.mill` locally on an Intel Mac.
 
 ```bash
-git clone git@github.com:oleksandr-balyshyn/glyphora.git
+git clone git@github.com:worxbend/glyphora.git
 cd glyphora
 
 ./mill __.compile
@@ -81,6 +81,27 @@ Useful development commands:
 ./mill widgets.test.runMain io.worxbend.tui.widgets.RenderLoopBench
 ```
 
+## Workflow and release checks
+
+Workflow tooling needs Python 3 and the pinned YAML parser. Keep these dependencies
+in a local environment rather than changing the system Python:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r scripts/requirements-ci.txt
+PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s scripts/tests -v
+bash scripts/check-workflows.sh
+python scripts/verify-packaged-consumer.py
+```
+
+The workflow check downloads a checksum-verified actionlint binary for Linux x64 and
+checks action pins, timeouts, permissions, and the complete exact-tag publication gate.
+The packaged-consumer check resolves all seven staged artifacts outside the source
+module graph. Neither command publishes remotely. `python scripts/ci-examples.py discover`
+lists the validated examples; `smoke-native` checks their built binaries with a bounded
+non-TTY run.
+
 ## Know the quality rules
 
 CI enforces constraints that protect the design:
@@ -98,7 +119,7 @@ CI enforces constraints that protect the design:
   from `examples/*/package.mill`, so adding a module is enough.
 
 For general Scala conventions, read
-[`SCALA_CODE_STYLE.md`](https://github.com/oleksandr-balyshyn/glyphora/blob/main/SCALA_CODE_STYLE.md).
+[`SCALA_CODE_STYLE.md`](https://github.com/worxbend/glyphora/blob/main/SCALA_CODE_STYLE.md).
 
 ## Add a widget
 
@@ -153,7 +174,7 @@ cd ..
 node scripts/export-wiki.mjs --output build/wiki
 ```
 
-Follow [`docs/STYLE_GUIDE.md`](https://github.com/oleksandr-balyshyn/glyphora/blob/main/docs/STYLE_GUIDE.md):
+Follow [`docs/STYLE_GUIDE.md`](https://github.com/worxbend/glyphora/blob/main/docs/STYLE_GUIDE.md):
 lead with the reader's outcome, explain why, include a verified snippet, name the
 terminal-specific pitfalls, and point to the next useful guide. Assets shared by the
 README, Pages, and Wiki belong in `docs/assets/`.

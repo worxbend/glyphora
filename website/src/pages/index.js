@@ -335,7 +335,7 @@ function FinalCallout() {
         </div>
         <div className={styles.finalActions}>
           <Link className={styles.primaryButton} to="/getting-started">Read the guide →</Link>
-          <a className={styles.ghostButton} href="https://github.com/oleksandr-balyshyn/glyphora">Star on GitHub ↗</a>
+          <a className={styles.ghostButton} href="https://github.com/worxbend/glyphora">Star on GitHub ↗</a>
         </div>
       </div>
     </section>

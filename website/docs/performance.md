@@ -71,6 +71,47 @@ are expected to hold, but the absolute numbers have not been re-captured against
 | encode 200x50, idle, truecolor | ~52 000 |
 | encode 200x50, full, truecolor | ~179 000 |
 
+## Measure the running application first
+
+The microbenchmarks above isolate widget composition and diff/encoding. They do not
+measure DSL view construction, backend baseline copies, terminal writes, frame observers,
+or queued callback latency. The encode rows already include the diff walk: adding a
+diff row to an encode row double-counts that work.
+
+Before changing the pipeline, time a representative interaction session on the terminal
+where the application runs. Split render-thread wall time into view/layout/paint,
+`backend.draw`, queued callbacks, and `onFrame`; report p50/p95 frame duration and the
+age of callbacks when they start. Exclude intentional `readEvent` waiting. If draw
+is slow, distinguish encoding CPU from output write/flush time. A CPU-only profile
+cannot establish that a blocked terminal is cheap.
+
+`RunnerConfig.onFrameTiming` provides elapsed phase measurements without enabling
+frame snapshots:
+
+```scala
+val config = RunnerConfig(onFrameTiming = Some { (timing: FrameTiming) =>
+  recordSample(timing.compositionNanos, timing.drawNanos, timing.observerNanos)
+})
+```
+
+The callback runs on the render thread after a successful frame. Keep its work short
+and bound any samples you retain. Composition includes the size query, buffer reset and
+render callback; draw includes the backend's diff, encoding and synchronous writes;
+observer time includes snapshot creation and synchronous observation/admission. It does
+not measure a `LatestFrameObserver`'s off-thread callback. Cursor placement, queued work,
+input and the timing callback itself are excluded; the phase sum is not a loop total.
+Disabled timing adds no profiling clock reads. Waiting, scheduling and GC may contribute
+to these elapsed measurements.
+
+Keep terminal writes ordered: a frame, its diff baseline, terminal handover and error
+reporting must agree about what reached the terminal. Background export or logging is
+separate from terminal output and should have bounded admission rather than enqueueing
+one retained frame forever for every redraw.
+
+A fix's elapsed-time ceiling is the share of the workload it removes. A path responsible
+for 5% of runtime cannot buy more than a 5% runtime reduction even if eliminated
+completely. A shorter isolated benchmark is not an end-to-end speedup claim.
+
 ## Why none of this is a CI gate
 
 A wall-clock threshold asserted in CI fails for reasons that have nothing to do with the

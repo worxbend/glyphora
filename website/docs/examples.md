@@ -13,7 +13,7 @@ The last three are larger, and each has a step-by-step guide that builds it from
 nothing — see [Build a real app](./build-a-process-monitor).
 
 ```bash
-git clone git@github.com:oleksandr-balyshyn/glyphora.git
+git clone git@github.com:worxbend/glyphora.git
 cd glyphora
 ./mill examples.showcase.run
 ```
@@ -69,7 +69,7 @@ object HelloWorld extends TuiApp:
 This is the render model in miniature: describe an element tree, decorate it, and
 handle an event near the UI it controls.
 
-[Read hello-world source](https://github.com/oleksandr-balyshyn/glyphora/blob/main/examples/hello-world/src/main/scala/io/worxbend/tui/examples/helloworld/Main.scala)
+[Read hello-world source](https://github.com/worxbend/glyphora/blob/main/examples/hello-world/src/main/scala/io/worxbend/tui/examples/helloworld/Main.scala)
 
 ## counter: declared bindings and tracked redraws
 
@@ -108,7 +108,7 @@ It is a `class` with a one-line `object Main extends CounterApp` on the end, bec
 `TuiApp` keeps its state on the instance and never resets it between runs; the test
 builds a fresh `CounterApp()` per scenario. See [Testing](./testing).
 
-[Read counter source](https://github.com/oleksandr-balyshyn/glyphora/blob/main/examples/counter/src/main/scala/io/worxbend/tui/examples/counter/Main.scala)
+[Read counter source](https://github.com/worxbend/glyphora/blob/main/examples/counter/src/main/scala/io/worxbend/tui/examples/counter/Main.scala)
 
 ## todo-list: state belongs to the app
 
@@ -134,7 +134,7 @@ def view(using ReactiveScope, Theme): Element =
 `TextInputState` and `ListState` are created once outside `view`. The input and list
 keep their own editing/selection mechanics while the app owns the todo collection.
 
-[Read todo-list source](https://github.com/oleksandr-balyshyn/glyphora/blob/main/examples/todo-list/src/main/scala/io/worxbend/tui/examples/todolist/Main.scala)
+[Read todo-list source](https://github.com/worxbend/glyphora/blob/main/examples/todo-list/src/main/scala/io/worxbend/tui/examples/todolist/Main.scala)
 
 ## dashboard: time becomes state
 
@@ -158,7 +158,7 @@ def view(using ReactiveScope, Theme): Element =
 
 Ticks update a signal on the render thread; charts remain ordinary pure renderers.
 
-[Read dashboard source](https://github.com/oleksandr-balyshyn/glyphora/blob/main/examples/dashboard/src/main/scala/io/worxbend/tui/examples/dashboard/Main.scala)
+[Read dashboard source](https://github.com/worxbend/glyphora/blob/main/examples/dashboard/src/main/scala/io/worxbend/tui/examples/dashboard/Main.scala)
 
 ## form-demo: reflection-free derivation
 
@@ -182,7 +182,7 @@ succeeds, then runs typed checks. Checks reject without replacing values: the us
 check above tests trimmed text but does not trim the submitted username. The UI shows
 errors inline and publishes `Some(Signup(...))` only after every check accepts it.
 
-[Read form-demo source](https://github.com/oleksandr-balyshyn/glyphora/blob/main/examples/form-demo/src/main/scala/io/worxbend/tui/examples/formdemo/Main.scala)
+[Read form-demo source](https://github.com/worxbend/glyphora/blob/main/examples/form-demo/src/main/scala/io/worxbend/tui/examples/formdemo/Main.scala)
 
 ## weather: real asynchronous I/O
 
@@ -207,7 +207,7 @@ threw. Handling that last one is what keeps a hard failure from leaving the UI o
 `Status.Loading` for ever. The client is injected, so the headless test uses a
 deterministic fake.
 
-[Read weather source](https://github.com/oleksandr-balyshyn/glyphora/blob/main/examples/weather/src/main/scala/io/worxbend/tui/examples/weather/Main.scala)
+[Read weather source](https://github.com/worxbend/glyphora/blob/main/examples/weather/src/main/scala/io/worxbend/tui/examples/weather/Main.scala)
 
 ## showcase: the integrated product surface
 
@@ -224,7 +224,7 @@ The showcase combines:
 
 Use it as the manual PTY test bed and the fastest tour of app-level features.
 
-[Read showcase source](https://github.com/oleksandr-balyshyn/glyphora/blob/main/examples/showcase/src/main/scala/io/worxbend/tui/examples/showcase/Main.scala)
+[Read showcase source](https://github.com/worxbend/glyphora/blob/main/examples/showcase/src/main/scala/io/worxbend/tui/examples/showcase/Main.scala)
 
 ## Run tests and native builds
 

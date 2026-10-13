@@ -22,28 +22,37 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        timeout-minutes: 5
         with:
           node-version: "24"
 
       - name: Export Wiki Markdown
+        timeout-minutes: 5
         run: node scripts/export-wiki.mjs --output .wiki-export
 
       - name: Publish to GitHub Wiki
+        timeout-minutes: 5
         env:
-          WIKI_TOKEN: ${{ secrets.WIKI_TOKEN }}
+          GLYPHORA_GIT_TOKEN: ${{ secrets.WIKI_TOKEN }}
+          GIT_ASKPASS: ${{ github.workspace }}/scripts/git-askpass.sh
+          GIT_TERMINAL_PROMPT: "0"
         run: |
           set -euo pipefail
-          if [ -z "${WIKI_TOKEN}" ]; then
+          if [ -z "${GLYPHORA_GIT_TOKEN}" ]; then
             echo "WIKI_TOKEN is not configured. See docs/DOCUMENTATION.md." >&2
             exit 1
           fi
 
           wiki_dir="${RUNNER_TEMP}/glyphora-wiki"
-          git clone "https://x-access-token:${WIKI_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" "${wiki_dir}"
+          git clone "https://github.com/${GITHUB_REPOSITORY}.wiki.git" "${wiki_dir}"
           rsync -a --delete --exclude=.git/ .wiki-export/ "${wiki_dir}/"
 
           git -C "${wiki_dir}" add -A
@@ -55,4 +64,7 @@ jobs:
           git -C "${wiki_dir}" config user.name "github-actions[bot]"
           git -C "${wiki_dir}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C "${wiki_dir}" commit -m "Sync documentation from ${GITHUB_SHA}"
-          git -C "${wiki_dir}" push origin master
+          if ! git -C "${wiki_dir}" push origin master; then
+            echo "::error::Wiki push denied or failed. WIKI_TOKEN must have write access to the current repository after any transfer; no credentials were changed." >&2
+            exit 1
+          fi

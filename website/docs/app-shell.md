@@ -985,7 +985,7 @@ Async.run(fetchRows()) { rows =>
 ```
 
 The full shell in action is
-[`examples/showcase`](https://github.com/oleksandr-balyshyn/glyphora/tree/main/examples/showcase).
+[`examples/showcase`](https://github.com/worxbend/glyphora/tree/main/examples/showcase).
 
 ## Embed the engine without TuiApp
 
@@ -1052,9 +1052,13 @@ coordinate contexts, including when evaluation or painting throws.
 
 Screen hooks are namespaced by navigation entry, not by the Screen object's identity or
 its label. Pushing the same Screen twice creates independent local state; replacing it
-with itself starts fresh. Eagerly evaluated hooks in covered screens retain their state;
-responsive hooks whose subtree is discarded by a full-screen entry remain unvisited and
-are swept, as before. State that must outlive disappearance belongs in caller-owned
+with itself starts fresh. Only the last full-screen entry and the modals above it build
+their views: earlier screens and the base cannot contribute pixels, so their builders
+are skipped. Eager hook state in covered entries is retained without evaluating those
+builders; responsive hooks whose subtree is discarded by a full-screen entry remain
+unvisited and are swept, as before. Covered builders see current data when uncovered;
+put resource acquisition and side effects in lifecycle/event handlers, not in `view`.
+State that must outlive disappearance belongs in caller-owned
 signals. Focus uses the same ordered entry identities and a fresh identity for each
 palette activation. Changing navigation beneath an open palette keeps the palette/query
 visible but resets focus for the changed suffix; closing it cannot restore an outgoing

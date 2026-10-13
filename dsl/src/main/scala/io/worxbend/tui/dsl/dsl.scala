@@ -200,6 +200,8 @@ export io.worxbend.tui.runtime.{
   CompletedFrame,
   Computed,
   Derived,
+  FrameTiming,
+  LatestFrameObserver,
   QueuedTaskFailures,
   Reactive,
   ReactiveScope,

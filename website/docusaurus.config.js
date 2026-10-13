@@ -7,10 +7,10 @@ const config = {
   tagline: 'Terminal UI, written like Scala',
   favicon: 'img/favicon.svg',
 
-  url: 'https://oleksandr-balyshyn.github.io',
+  url: 'https://worxbend.github.io',
   baseUrl: '/glyphora/',
 
-  organizationName: 'oleksandr-balyshyn',
+  organizationName: 'worxbend',
   projectName: 'glyphora',
 
   // Serve the same brand assets used by README and the generated GitHub Wiki.
@@ -40,7 +40,7 @@ const config = {
         docs: {
           routeBasePath: '/',
           sidebarPath: './sidebars.js',
-          editUrl: 'https://github.com/oleksandr-balyshyn/glyphora/tree/main/website/',
+          editUrl: 'https://github.com/worxbend/glyphora/tree/main/website/',
         },
         blog: false,
         theme: {
@@ -84,12 +84,12 @@ const config = {
             position: 'left',
           },
           {
-            href: 'https://github.com/oleksandr-balyshyn/glyphora/wiki',
+            href: 'https://github.com/worxbend/glyphora/wiki',
             label: 'Wiki ↗',
             position: 'left',
           },
           {
-            href: 'https://github.com/oleksandr-balyshyn/glyphora',
+            href: 'https://github.com/worxbend/glyphora',
             label: 'GitHub ↗',
             position: 'right',
           },
@@ -119,9 +119,9 @@ const config = {
           {
             title: 'More',
             items: [
-              {label: 'GitHub', href: 'https://github.com/oleksandr-balyshyn/glyphora'},
-              {label: 'Wiki', href: 'https://github.com/oleksandr-balyshyn/glyphora/wiki'},
-              {label: 'Releases', href: 'https://github.com/oleksandr-balyshyn/glyphora/tags'},
+              {label: 'GitHub', href: 'https://github.com/worxbend/glyphora'},
+              {label: 'Wiki', href: 'https://github.com/worxbend/glyphora/wiki'},
+              {label: 'Releases', href: 'https://github.com/worxbend/glyphora/tags'},
               {label: 'Maven Central', href: 'https://search.maven.org/search?q=g:io.worxbend'},
             ],
           },

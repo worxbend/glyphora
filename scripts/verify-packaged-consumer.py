@@ -52,6 +52,8 @@ def validate_poms(repository: Path, version: str) -> None:
                     raise ValueError(f"{artifact}: production dependency {name} has a classifier")
                 if dependency.findall("m:exclusions/m:exclusion", NS):
                     raise ValueError(f"{artifact}: production dependency {name} has exclusions")
+                if name in actual:
+                    raise ValueError(f"{artifact}: duplicate production dependency {name}")
                 actual.add(name)
         if actual != expected:
             raise ValueError(f"{artifact}: dependencies {sorted(actual)} != {sorted(expected)}")

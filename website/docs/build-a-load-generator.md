@@ -31,7 +31,7 @@ clear the finished copy out of the way so the files you write are the ones Mill
 builds:
 
 ```bash
-git clone git@github.com:oleksandr-balyshyn/glyphora.git
+git clone git@github.com:worxbend/glyphora.git
 cd glyphora
 rm -rf examples/loadtest
 mkdir -p examples/loadtest/src/main/scala/io/worxbend/tui/examples/loadtest
@@ -366,12 +366,14 @@ object LoadRunner:
 ```
 
 The whole concurrent phase sits inside a **single** `Async` task that owns a private
-fixed pool. `Async`'s own pool is an unbounded, process-wide cached pool with no way
-to bound it, so `-c 50` submitted as fifty `Async.run`s would be fifty threads on a
-pool shared with everything else in the JVM. One task keeps the concurrency limit
-meaningful and consumes one `Async` thread. `Async.run` also hands back no
-cancellation handle — only `Async.after` and `Async.every` do — which is why `stop()`
-is a flag the worker loop reads between requests rather than an interrupt.
+fixed pool. `Async`'s fixed pool and bounded waiting queue are shared process-wide;
+fifty separate `Async.run` calls neither establish this run's own concurrency limit
+nor reserve fifty dedicated workers. One coordinator task keeps the limit explicit
+and consumes one shared worker. Admission can throw `RejectedExecutionException`
+synchronously if the shared backlog or owner callback capacity is full.
+`Async.run` also hands back no cancellation handle — only `Async.after` and
+`Async.every` do — which is why `stop()` is a flag the worker loop reads between
+requests rather than an interrupt.
 
 Workers pull tickets from `remaining` rather than being handed a slice of the run up
 front: with a slice, one slow worker holds the run open at the end while the others
@@ -1093,5 +1095,5 @@ pool before you quit, because the runtime will not do it for you.
   stale responses, argued in isolation.
 - [Async work & timers](./async-and-timers) — the smaller `Async` patterns this app
   did not need.
-- [Read the loadtest source](https://github.com/oleksandr-balyshyn/glyphora/tree/main/examples/loadtest)
+- [Read the loadtest source](https://github.com/worxbend/glyphora/tree/main/examples/loadtest)
   — the finished module, with the reasoning kept beside the line that implements it.

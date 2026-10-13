@@ -9,7 +9,8 @@ import scala.util.control.NonFatal
 /** The production [[Runner]]: raw mode + alternate screen setup, diff-driven redraws, tick emission, resize handling,
   * and render-thread registration around a [[Backend]].
   *
-  * `nanoTime` is injectable so tick scheduling is testable; production code uses the system clock.
+  * `nanoTime` is injectable so tick scheduling and opt-in frame phase timing are testable; production code uses the
+  * system's monotonic elapsed-time clock, not a CPU-time clock.
   *
   * `redrawRequested` is the host's own "is a frame owed?" question, asked once per iteration — a `TuiApp` answers it
   * from its signal-invalidation flag. It is read alongside, not instead of, [[RunnerHandle.requestRedraw]]: the handle
@@ -241,7 +242,7 @@ private final class LoopBody(
   private val state    = LoopState()
   private val ticks    = TickSchedule(config.tickRate, nanoTime)
   private val handle   = BackendHandle(backend, state)
-  private val composer = FrameComposer(backend, render, config.onFrame, config.viewport)
+  private val composer = FrameComposer(backend, render, config.onFrame, config.viewport, config.onFrameTiming, nanoTime)
 
   private def isLive: Boolean = state.isLive && !loop.stopRequested
 
@@ -405,6 +406,8 @@ private final class FrameComposer(
     render: Frame => Unit,
     onFrame: Option[CompletedFrame => Unit],
     viewport: Viewport,
+    onFrameTiming: Option[FrameTiming => Unit],
+    nanoTime: () => Long,
 ):
 
   private var frameBuffer: Option[Buffer] = None
@@ -417,23 +420,41 @@ private final class FrameComposer(
     * it. A failure at either backend call is returned rather than thrown, for the loop to record.
     */
   def compose(): Either[BackendError, Unit] =
+    val compositionStarted = stamp()
     backend.size.flatMap { size =>
-      val area   = viewport.areaIn(size)
-      val buffer = frameBuffer.filter(_.area == area).getOrElse(Buffer(area))
+      val area        = viewport.areaIn(size)
+      val buffer      = frameBuffer.filter(_.area == area).getOrElse(Buffer(area))
       buffer.reset()
       frameBuffer = Some(buffer)
-      val frame  = Frame(area, buffer, composed)
+      val frame       = Frame(area, buffer, composed)
       render(frame)
       // The number is spent here, before the flush: the first frame an app sees is 0, and a frame whose `draw` fails
       // still used its number. Rolling it back on a failed draw would hand two different frames the same number, which
       // is worse for a debug label than a gap in the sequence.
       composed = if composed == Long.MaxValue then 0L else composed + 1L
+      val drawStarted = stamp()
       backend.draw(buffer).flatMap { _ =>
+        val observerStarted = stamp()
         // Only a flushed frame is a completed one, so the observer runs after a successful draw and never before it.
         onFrame.foreach(observe => observe(CompletedFrame(buffer.snapshot, area, frame.count)))
-        placeCursor(frame.declaredCursor)
+        val observerEnded   = if onFrame.isDefined then stamp() else observerStarted
+        placeCursor(frame.declaredCursor).map { _ =>
+          onFrameTiming.foreach(observe =>
+            observe(
+              FrameTiming(
+                frame.count,
+                drawStarted - compositionStarted,
+                observerStarted - drawStarted,
+                observerEnded - observerStarted,
+              )
+            )
+          )
+        }
       }
     }
+
+  /** No profiling clock reads on the default path; tick scheduling owns its separate reads. */
+  private def stamp(): Long = if onFrameTiming.isDefined then nanoTime() else 0L
 
   /** Puts the physical cursor where the frame asked for it, or hides it when the frame asked for nothing.
     *

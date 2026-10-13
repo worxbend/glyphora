@@ -27,7 +27,13 @@ import scala.concurrent.duration.FiniteDuration
   * only tests could get through `HeadlessBackend.lastDrawn`: an "export the screen" command, a frame attached to a bug
   * report, a periodic sample. `None`, the default, costs nothing at all — no snapshot is taken. A body that throws is
   * not absorbed: like the render function it ends the loop as [[RunnerError.Handler]], because a second isolation
-  * policy for frame observers would be one policy too many to reason about.
+  * policy for frame observers would be one policy too many to reason about. For bounded off-thread sampling, pass a
+  * caller-owned [[LatestFrameObserver]]; snapshot creation and admission still happen synchronously.
+  *
+  * `onFrameTiming` opts into elapsed phase measurements — see [[FrameTiming]]. It runs synchronously after successful
+  * composition, draw, observation and cursor placement, on the render thread. Keep it short: it is not itself timed,
+  * and a throwable ends the loop as [[RunnerError.Handler]]. `None` adds no profiling clock reads or timing records.
+  * Timing alone takes no snapshots; only `onFrame` enables those.
   *
   * `keyEventTypes` asks the terminal to report key *releases* as well as presses, which reaches the app as
   * [[Event.KeyRelease]]. It is off by default because it doubles the input volume for every keystroke and an app that
@@ -45,6 +51,7 @@ final case class RunnerConfig(
     onFrame: Option[CompletedFrame => Unit] = None,
     viewport: Viewport = Viewport.Fullscreen,
     keyEventTypes: Boolean = false,
+    onFrameTiming: Option[FrameTiming => Unit] = None,
 )
 
 /** An event handler's answer to one question: does this event change what is on screen?

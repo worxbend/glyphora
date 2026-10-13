@@ -28,11 +28,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        timeout-minutes: 5
         with:
           ref: ${{ needs.validate.outputs.validated-sha }}
           persist-credentials: false
       - name: Checkout is the validated tag commit
+        timeout-minutes: 1
         env:
           VALIDATED_SHA: ${{ needs.validate.outputs.validated-sha }}
         run: |
@@ -42,6 +44,11 @@ jobs:
             exit 1
           fi
       - uses: ./.github/actions/mill
+        timeout-minutes: 10
+
+      - name: Tag matches all seven publish versions
+        timeout-minutes: 10
+        run: python3 scripts/validate-release-version.py
 
       # Publishing needs four repository secrets. Without them `SonatypeCentralPublishModule`
       # still compiles every module and generates every Scaladoc first — about a minute — and
@@ -51,6 +58,7 @@ jobs:
       # `MILL_PGP_PASSPHRASE` is deliberately not required: a signing key with no passphrase is
       # a legitimate setup, and Mill treats the empty value as "no passphrase".
       - name: Publishing credentials are present
+        timeout-minutes: 1
         env:
           MILL_SONATYPE_USERNAME: ${{ secrets.MILL_SONATYPE_USERNAME }}
           MILL_SONATYPE_PASSWORD: ${{ secrets.MILL_SONATYPE_PASSWORD }}
@@ -65,22 +73,8 @@ jobs:
             exit 1
           fi
 
-      # The tag decides nothing about what gets published — `SonatypeCentralPublishModule`
-      # uploads whatever `TuiPublishModule.publishVersion` in build.mill says. So a `v0.13.0`
-      # tag pushed while build.mill still reads "0.12.0" would quietly publish 0.12.0 a second
-      # time, and Maven Central coordinates are immutable: there is no way to take that back.
-      # Comparing the two here turns a permanent mistake into a red job you fix with one commit.
-      - name: Tag matches the version in build.mill
-        run: |
-          expected="${GITHUB_REF_NAME#v}"
-          actual=$(./mill show core.publishVersion | tr -d '"')
-          if [ "$expected" != "$actual" ]; then
-            echo "::error::tag $GITHUB_REF_NAME wants version '$expected' but TuiPublishModule.publishVersion in build.mill is '$actual' — bump build.mill and re-tag" >&2
-            exit 1
-          fi
-          echo "publishing version $actual"
-
       - name: Publish to Maven Central
+        timeout-minutes: 25
         env:
           MILL_SONATYPE_USERNAME: ${{ secrets.MILL_SONATYPE_USERNAME }}
           MILL_SONATYPE_PASSWORD: ${{ secrets.MILL_SONATYPE_PASSWORD }}

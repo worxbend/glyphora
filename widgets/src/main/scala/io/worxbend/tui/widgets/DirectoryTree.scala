@@ -17,12 +17,19 @@ import scala.collection.mutable
   * ancestor chain, so sibling aliases remain independently browsable. Selection, expansion and scroll are caller-owned.
   */
 final class DirectoryTreeState(val root: Path):
-  var selected: Option[Path]      = None
-  var offset: Int                 = 0
-  val expanded: mutable.Set[Path] = mutable.Set.empty
-  private val listings            = mutable.Map.empty[Path, DirectoryListing]
-  private val requests            = mutable.Map.empty[Path, DirectoryLoadRequest]
-  private val failures            = mutable.Map.empty[Path, Throwable]
+  private final case class View(
+      entries: Vector[(Path, Boolean)],
+      paths: Vector[Path],
+      indices: Map[Path, Int],
+      missing: Vector[Path],
+  )
+  private var cached: Option[View] = None
+  var selected: Option[Path]       = None
+  var offset: Int                  = 0
+  val expanded: mutable.Set[Path]  = new TreeExpansion(() => cached = None)
+  private val listings             = mutable.Map.empty[Path, DirectoryListing]
+  private val requests             = mutable.Map.empty[Path, DirectoryLoadRequest]
+  private val failures             = mutable.Map.empty[Path, Throwable]
 
   /** Pure lookup; an unloaded, loading or failed branch has no children. */
   def childrenOf(directory: Path): Vector[Path] =
@@ -49,6 +56,7 @@ final class DirectoryTreeState(val root: Path):
     val matchesDirectory = result.forall(_.directory == request.directory)
     if !requests.get(request.directory).contains(request) || !matchesDirectory then false
     else
+      cached = None
       requests.remove(request.directory)
       result match
         case Right(listing) => listings(request.directory) = listing
@@ -57,6 +65,7 @@ final class DirectoryTreeState(val root: Path):
 
   /** Drops snapshots and retires in-flight generations. Loading resumes only on an explicit request. */
   def invalidate(directory: Option[Path] = None): Unit =
+    cached = None
     directory match
       case Some(path) =>
         listings.remove(path)
@@ -69,8 +78,7 @@ final class DirectoryTreeState(val root: Path):
 
   /** Visible unloaded directories, with cycles suppressed using acquired identities. Does not start work. */
   def directoriesToLoad: Vector[Path] =
-    val (_, missing) = snapshotWalk()
-    missing.filter(path => loadState(path) == DirectoryLoadState.Unloaded)
+    view.missing
 
   /** Explicit blocking migration helper. Call only on the owner thread, before painting; never on a worker. For slow
     * filesystems prefer beginLoad / DirectoryListing.load / install. Failed branches are not retried here.
@@ -89,6 +97,7 @@ final class DirectoryTreeState(val root: Path):
 
   /** Expands/collapses a known directory. Schedule acquisition of newly visible branches separately. */
   def toggle(): Unit =
+    val _ = view
     selected
       .filter(path =>
         path == root || listings.valuesIterator.exists(_.entries.exists(e => e.path == path && e.isDirectory))
@@ -97,16 +106,33 @@ final class DirectoryTreeState(val root: Path):
         if expanded.contains(path) then expanded -= path else expanded += path
       }
 
-  def visiblePaths(): Vector[Path] = visibleEntries().map(_._1)
+  def visiblePaths(): Vector[Path] = view.paths
 
-  private[widgets] def visibleEntries(): Vector[(Path, Boolean)] = snapshotWalk()._1
+  private[widgets] def visibleEntries(): Vector[(Path, Boolean)] = view.entries
 
-  private def snapshotWalk(): (Vector[(Path, Boolean)], Vector[Path]) =
+  private[widgets] def selectedIndex: Option[Int] = selected.flatMap(view.indices.get)
+
+  /** Retains only the current snapshot/expansion generation; acquisition changes and direct set mutations retire it. */
+  private def view: View =
+    val visible = cachedView
+    if visible.paths.isEmpty then
+      selected = None
+      offset = 0
+    visible
+
+  private def cachedView: View = cached match
+    case Some(visible) => visible
+    case None          =>
+      val visible = snapshotWalk()
+      cached = Some(visible)
+      visible
+
+  private def snapshotWalk(): View =
     val visible                                           = Vector.newBuilder[(Path, Boolean)]
     val missing                                           = Vector.newBuilder[Path]
     def walk(directory: Path, ancestors: Set[Path]): Unit =
       listings.get(directory) match
-        case None          => missing += directory
+        case None          => if loadState(directory) == DirectoryLoadState.Unloaded then missing += directory
         case Some(listing) =>
           val chain = ancestors + listing.identity
           listing.entries.foreach { entry =>
@@ -115,11 +141,14 @@ final class DirectoryTreeState(val root: Path):
               walk(entry.path, chain)
           }
     walk(root, Set.empty)
-    (visible.result(), missing.result())
+    val entries                                           = visible.result()
+    val paths                                             = entries.map(_._1)
+    View(entries, paths, paths.iterator.zipWithIndex.toMap, missing.result())
 
   private def moveSelection(delta: Int): Unit =
-    val visible = visiblePaths()
-    if visible.nonEmpty then selected = Selection.moveWithin(visible, selected, delta)
+    val visible = view
+    if visible.paths.nonEmpty then
+      selected = Selection.by(selectedIndex, visible.paths.size, delta).map(visible.paths(_))
 
 /** A filesystem browser — [[Tree]] with the filesystem as its node source: lazy-loaded directory listings with
   * expand/collapse markers, `/`-suffixed directory names, selection highlight, and scroll-to-selection.
@@ -132,7 +161,7 @@ final case class DirectoryTree(
   def render(area: Rect, buffer: Buffer, state: DirectoryTreeState): Unit =
     if !area.isEmpty then
       val visible       = state.visibleEntries()
-      val selectedIndex = state.selected.map(path => visible.indexWhere(_._1 == path)).filter(_ >= 0)
+      val selectedIndex = state.selectedIndex
       state.offset = TreeRows.render(
         area,
         buffer,

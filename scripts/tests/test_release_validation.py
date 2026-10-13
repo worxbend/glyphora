@@ -20,7 +20,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         ci = (ROOT / ".github/workflows/ci.yml").read_text()
         self.assertIn("workflow_call:", ci)
         self.assertIn("value: ${{ jobs.validated.outputs.sha }}", ci)
-        self.assertIn("needs: [discipline, lint, build, test, example, native-image, website-build, packaged-consumer]", ci)
+        self.assertIn("needs: [discipline, workflow-checks, discover, lint, build, test, example, native-image, website-build, packaged-consumer]", ci)
         self.assertIn("python3 scripts/verify-packaged-consumer.py", ci)
 
 
@@ -90,6 +90,22 @@ class PublishedPomTests(unittest.TestCase):
         element.text = value
         tree.write(pom, encoding="utf-8", xml_declaration=True)
         return pom
+
+    def test_optional_production_dependency_fails(self):
+        self.add_dependency_element("optional", "true")
+        with self.assertRaisesRegex(ValueError, "optional"):
+            self.module.validate_poms(self.repository, "0.16.0")
+
+    def test_duplicate_production_dependency_fails(self):
+        self.write_pom("tui-runtime_3", {"tui-core_3", "tui-terminal_3"},
+                       [("io.worxbend", "tui-core_3", "0.16.0", "compile")])
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            self.module.validate_poms(self.repository, "0.16.0")
+
+    def test_wrong_production_dependency_version_fails(self):
+        self.write_pom("tui-widgets_3", set(), [("io.worxbend", "tui-core_3", "0.15.0", "compile")])
+        with self.assertRaisesRegex(ValueError, "version/scope"):
+            self.module.validate_poms(self.repository, "0.16.0")
 
     def test_non_jar_dependency_fails(self):
         self.add_dependency_element("type", "pom")

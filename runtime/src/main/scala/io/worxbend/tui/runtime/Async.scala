@@ -1,7 +1,14 @@
 package io.worxbend.tui.runtime
 
-import java.util.concurrent.{Executors, ScheduledExecutorService, ThreadFactory, TimeUnit}
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.{
+  ArrayBlockingQueue,
+  ScheduledExecutorService,
+  ScheduledThreadPoolExecutor,
+  ThreadFactory,
+  ThreadPoolExecutor,
+  TimeUnit,
+}
+
 import scala.concurrent.duration.FiniteDuration
 import scala.util.control.NonFatal
 
@@ -34,11 +41,17 @@ trait Cancelable:
   *
   * The mirror-image rule applies to *starting* repeating work. Every entry point here captures the render loop of the
   * thread that calls it, and a thread that belongs to no runner — a constructor running before any runner is registered
-  * — captures the shared unattributed queue instead. Those bodies are **not** discarded: they wait, and the next runner
-  * to start drains the backlog in finite batches, so a poller armed from a field initialiser delivers accumulated ticks
-  * in a burst at startup. Only the oldest are dropped, and only once the backlog passes `RenderThread`'s cap on that
-  * queue. Start repeating work from `TuiApp.onStart` (or a bare runner's `onStart`), which is the first moment the app
-  * is certainly on the render thread.
+  * — captures the shared unattributed queue instead. Those bodies wait for a runner, but repeating ticks coalesce to
+  * one pending delivery per timer. Detached admission throws at 256 outstanding callbacks/reservations; an active owner
+  * allows 1024. Start repeating work from `TuiApp.onStart` (or a bare runner's `onStart`).
+  *
+  * **Admission.** Submission never waits for capacity and never runs background work on the submitting thread.
+  * `RejectedExecutionException` escapes synchronously if either the worker backlog or captured owner is full; it is not
+  * a work failure delivered to an error handler or `Left`. Accepted work reserves its continuation slot before
+  * starting, including the default error report, so completion cannot recursively overload the owner's queue. Timers
+  * reserve one slot until one-shot delivery or cancellation (repeating timers retain it until cancellation). These are
+  * per-owner bounds, not a global limit on owners or scheduler registrations. Unscoped timers still require explicit
+  * cancellation on owner exit; cancelled scheduler entries are removed immediately.
   */
 object Async:
 
@@ -65,51 +78,75 @@ object Async:
     *
     * The default is evaluated at the call site, on the calling thread, which is what lets it capture the right loop.
     *
-    * The work runs on a bounded pool (see the `worker` field): a slow endpoint cannot inflate the process past
-    * `max(2, availableProcessors)` worker threads, excess calls queue. Submission throws `RejectedExecutionException`
-    * only if the pool has been shut down, which a process-lifetime daemon never is — so the failure mode under load is
-    * queueing, not rejection.
+    * The worker pool has `max(2, availableProcessors)` threads and 256 waiting submissions. Admission throws
+    * `RejectedExecutionException` synchronously if that backlog or the captured owner's callback capacity is full.
+    * Rejected work never starts; accepted work reserves space for its result or built-in render-thread error report.
+    * Only failures from `work` go to `onError`. Dispatch failures (for example, a throwing owner wakeup) escape to the
+    * worker's uncaught-exception handler instead; a callback already queued before a wakeup fails remains accepted.
     */
   def run[A](work: => A)(onResult: A => Unit)(using
       onError: AsyncErrorHandler = AsyncErrorHandler.toRenderThread()
   ): Unit =
-    val deliver = deliverToRenderThread(onResult)
-    val errors  = onError.forInvocation(captureTarget())
-    onWorker {
-      try deliver(work)
-      catch case NonFatal(error) => errors.handle(error)
-    }
+    val target   = captureTarget()
+    val delivery = target.reserve()
+    val errors   = onError.forInvocation(target, delivery.enqueue)
+    try
+      onWorker {
+        try
+          val outcome: Either[Throwable, A] =
+            try Right(work)
+            catch case NonFatal(error) => Left(error)
+          outcome match
+            case Right(value) => delivery.enqueue(() => onResult(value))
+            case Left(error)  => errors.handle(error)
+        finally delivery.releaseIfUnused()
+      }
+    catch
+      case NonFatal(error) =>
+        delivery.cancel()
+        throw error
 
   /** Like [[run]] but delivers `Right(value)` or `Left(throwable)` to `onDone` on the render thread — no ambient error
     * handler needed. The idiomatic way to drive a load into `Signal[Either[Throwable, A]]` (or a loading/error state).
     *
-    * Same submission contract as [[run]]: bounded worker pool, unbounded queue behind it, and
-    * `RejectedExecutionException` only if the pool is shut down — which the process-lifetime daemon pool never is.
+    * Same admission contract as [[run]]: overload throws synchronously, rather than becoming a `Left` callback.
+    * Dispatch failures escape to the worker's uncaught-exception handler, not to `onDone` as a work failure.
     */
   def runCatching[A](work: => A)(onDone: Either[Throwable, A] => Unit): Unit =
-    val deliver = deliverToRenderThread(onDone)
-    onWorker {
-      val outcome: Either[Throwable, A] =
-        try Right(work)
-        catch case NonFatal(error) => Left(error)
-      deliver(outcome)
-    }
+    val delivery = captureTarget().reserve()
+    try
+      onWorker {
+        try
+          val outcome: Either[Throwable, A] =
+            try Right(work)
+            catch case NonFatal(error) => Left(error)
+          delivery.enqueue(() => onDone(outcome))
+        finally delivery.releaseIfUnused()
+      }
+    catch
+      case NonFatal(error) =>
+        delivery.cancel()
+        throw error
 
   /** Runs `body` on the render thread once, after `delay`. Cancellation also discards queued callbacks that have not
-    * started, without interrupting a body already running.
+    * started, without interrupting a body already running. Reserves a callback slot now; throws
+    * `RejectedExecutionException` synchronously on owner overload.
     */
   def after(delay: FiniteDuration)(body: => Unit): Cancelable =
-    scheduleCancelable(body)(task => scheduler.schedule(task, delay.toMillis, TimeUnit.MILLISECONDS))
+    scheduleCancelable(body, repeat = false)(task => scheduler.schedule(task, delay.toMillis, TimeUnit.MILLISECONDS))
 
   /** The floor for a repeating interval: `scheduleAtFixedRate` rejects a non-positive period. */
   private val MinIntervalMillis: Long = 1L
 
   /** Runs `body` on the render thread every `interval` (first tick after one `interval`). Returns a handle to stop it.
-    * The place to drive animation or polling without a global `config.tickRate`.
+    * The place to drive animation or polling without a global `config.tickRate`. Ticks while a callback is queued or
+    * running are coalesced, not replayed. One callback slot is reserved until cancellation; overload throws at arming.
     */
   def every(interval: FiniteDuration)(body: => Unit): Cancelable =
     val millis = math.max(MinIntervalMillis, interval.toMillis)
-    scheduleCancelable(body)(task => scheduler.scheduleAtFixedRate(task, millis, millis, TimeUnit.MILLISECONDS))
+    scheduleCancelable(body, repeat = true)(task =>
+      scheduler.scheduleAtFixedRate(task, millis, millis, TimeUnit.MILLISECONDS)
+    )
 
   /** Execute rather than submit: escaping failures (including a throwing error policy) must reach the worker's
     * uncaught-exception handler, not disappear inside an unobserved Future.
@@ -118,51 +155,48 @@ object Async:
     worker.execute(() => body)
 
   /** The render loop of the calling thread, resolved *now* — the one capture every entry point here must do on the
-    * caller's thread, before any work is handed to an executor. [[deliverToRenderThread]] explains why resolving it
-    * later, from the worker, delivers the continuation to the wrong runner.
+    * caller's thread, before any work is handed to an executor. Resolving it later, from the worker, can deliver the
+    * continuation to the wrong runner.
     */
   private[runtime] def captureTarget(): RenderThread.RenderLoop = RenderThread.capture()
 
-  /** Wraps `onValue` so that it is invoked on the render thread rather than on whichever thread produced the value.
-    *
-    * **Must be called on the caller's thread, before any work is handed to an executor.** That is the load-bearing part
-    * and the reason this helper exists: [[RenderThread.capture]] resolves *the runner registered right here, right
-    * now*, and it is the returned function — not this one — that runs on the worker. Calling `capture()` from inside
-    * the worker instead still compiles and still passes a single-runner test, but resolves whatever loop that thread
-    * happens to see, so the continuation is delivered to the wrong runner as soon as two runners coexist in one JVM.
+  /** Reserve on the caller's owner before scheduling, and gate cancellation at delivery, not just in the scheduler. A
+    * repeating timer holds exactly one slot even while the owner is stalled.
     */
-  private def deliverToRenderThread[A](onValue: A => Unit): A => Unit =
-    val target = captureTarget()
-    value => target.enqueue(() => onValue(value))
-
-  /** Captures the owner before scheduling. The shared flag guards delivery on that owner's thread, not just the
-    * scheduler: a timer may already have enqueued its callback when its owner cancels it. Cancellation is thread-safe
-    * and does not interrupt a body that has passed the delivery guard.
-    */
-  private def scheduleCancelable(body: => Unit)(
+  private def scheduleCancelable(body: => Unit, repeat: Boolean)(
       schedule: Runnable => java.util.concurrent.Future[?]
   ): Cancelable =
-    val cancelled = AtomicBoolean(false)
-    val deliver   = deliverToRenderThread[Unit](_ => if !cancelled.get() then body)
-    val future    = schedule(() => deliver(()))
-    () =>
-      cancelled.set(true)
-      val _ = future.cancel(false)
+    val delivery = captureTarget().reserve()
+    try
+      val future = schedule(() =>
+        if repeat then delivery.enqueueRepeating(() => body)
+        else delivery.enqueue(() => body)
+      )
+      () =>
+        delivery.cancel()
+        val _ = future.cancel(false)
+    catch
+      case NonFatal(error) =>
+        delivery.cancel()
+        throw error
 
-  /** The pool one-shot work ([[run]], [[runCatching]]) runs on: bounded to `max(2, availableProcessors)` threads, so
-    * the documented "poll with [[every]], load via [[run]]" pattern under a slow endpoint queues work instead of
-    * minting one thread per outstanding request. The queue behind the fixed threads is unbounded and the pool is a
-    * process-lifetime daemon that is never shut down, so submission does not throw `RejectedExecutionException` in
-    * practice — rejection is reachable only through pool shutdown, which never happens here.
+  /** Process-lifetime daemon workers with 256 waiting submissions and nonblocking rejection, never CallerRuns on UI.
     */
-  private val worker =
-    Executors.newFixedThreadPool(
-      math.max(2, Runtime.getRuntime.availableProcessors()),
-      daemonFactory("glyphora-async"),
-    )
+  private val WorkerThreads = math.max(2, Runtime.getRuntime.availableProcessors())
+  private val worker        = new ThreadPoolExecutor(
+    WorkerThreads,
+    WorkerThreads,
+    0L,
+    TimeUnit.MILLISECONDS,
+    new ArrayBlockingQueue[Runnable](256),
+    daemonFactory("glyphora-async"),
+    new ThreadPoolExecutor.AbortPolicy(),
+  )
 
   private[runtime] val scheduler: ScheduledExecutorService =
-    Executors.newSingleThreadScheduledExecutor(daemonFactory("glyphora-timer"))
+    val executor = new ScheduledThreadPoolExecutor(1, daemonFactory("glyphora-timer"))
+    executor.setRemoveOnCancelPolicy(true)
+    executor
 
   private def daemonFactory(prefix: String): ThreadFactory =
     new ThreadFactory:
@@ -182,6 +216,13 @@ trait AsyncErrorHandler:
   private[runtime] def forInvocation(target: RenderThread.RenderLoop): AsyncErrorHandler =
     val _ = target
     this
+
+  private[runtime] def forInvocation(
+      target: RenderThread.RenderLoop,
+      enqueue: (() => Unit) => Unit,
+  ): AsyncErrorHandler =
+    val _ = enqueue
+    forInvocation(target)
 
 object AsyncErrorHandler:
   /** Rethrows on the worker thread, where the JVM's default uncaught-exception handler prints the stack trace to
@@ -216,9 +257,21 @@ object AsyncErrorHandler:
       def handle(error: Throwable): Unit = RenderThread.runLater(report(error))
       override private[runtime] def forInvocation(target: RenderThread.RenderLoop): AsyncErrorHandler =
         bound(target, report)
+      override private[runtime] def forInvocation(
+          target: RenderThread.RenderLoop,
+          enqueue: (() => Unit) => Unit,
+      ): AsyncErrorHandler                                                                            =
+        val _ = target
+        error => enqueue(() => report(error))
 
   private def bound(target: RenderThread.RenderLoop, report: Throwable => Unit): AsyncErrorHandler =
     new AsyncErrorHandler:
       def handle(error: Throwable): Unit = target.enqueue(() => report(error))
       override private[runtime] def forInvocation(owner: RenderThread.RenderLoop): AsyncErrorHandler =
         bound(owner, report)
+      override private[runtime] def forInvocation(
+          owner: RenderThread.RenderLoop,
+          enqueue: (() => Unit) => Unit,
+      ): AsyncErrorHandler                                                                           =
+        val _ = owner
+        error => enqueue(() => report(error))

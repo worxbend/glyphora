@@ -232,9 +232,7 @@ final class TwoRunnerRoutingSpec extends AnyFunSuite:
     }
 
   test("runLater from an unregistered thread lands on the bounded detached queue, not on either runner's"):
-    // "lands on the detached queue" is asserted by its *bound*, not by which thread eventually drains it: a runner's
-    // own loop is unlimited, so a body that had been routed to one could never have been dropped. Both runners are
-    // parked while the queueing happens, so nothing drains the queue underneath the count.
+    // Both runners are parked. Detached admission rejects at 256, rather than the active-owner capacity of 1024.
     withTwoRunners { (a, b) =>
       val cap     = RenderThread.DetachedQueueLimit
       val queued  = cap * 2
@@ -242,9 +240,13 @@ final class TwoRunnerRoutingSpec extends AnyFunSuite:
       a.park()
       b.park()
 
-      val dropsBefore = RenderThread.detachedDrops
-      val outsider    = new Thread(
-        () => (1 to queued).foreach(_ => RenderThread.runLater(landing.record())),
+      val rejected = AtomicInteger(0)
+      val outsider = new Thread(
+        () =>
+          (1 to queued).foreach { _ =>
+            try RenderThread.runLater(landing.record())
+            catch case _: java.util.concurrent.RejectedExecutionException => { val _ = rejected.incrementAndGet() }
+          },
         "routing-outsider-queue",
       )
       outsider.start()
@@ -252,8 +254,8 @@ final class TwoRunnerRoutingSpec extends AnyFunSuite:
       assert(!outsider.isAlive, "the outsider thread never finished queueing")
 
       assert(
-        RenderThread.detachedDrops - dropsBefore == (queued - cap).toLong,
-        "the queued bodies were not subject to the unattributed queue's cap, so they did not land on it",
+        rejected.get() == queued - cap,
+        "the callbacks were not subject to detached admission, so they did not land on that queue",
       )
       assert(landing.count == 0, "a parked runner drained the queue")
 

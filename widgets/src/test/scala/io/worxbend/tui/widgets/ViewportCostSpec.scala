@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, Constraint, Line, Rect, Span, Style, Text}
+import io.worxbend.tui.core.{Buffer, Color, Constraint, Line, Rect, Span, Style, Text}
 import io.worxbend.tui.testsupport.BufferAssertions.trimmedLines
 
 import org.scalatest.funsuite.AnyFunSuite
@@ -75,6 +75,109 @@ final class ViewportCostSpec extends AnyFunSuite:
     Paragraph(Text(text), overflow = Overflow.Wrap).render(Rect(0, 0, 30, 10), buffer)
     assert(text.touched <= 20, s"wrapped ${text.touched} source lines to fill 10 rows")
     assert(buffer.get(0, 0).symbol == "l")
+
+  test("a tiny wrapped viewport does not traverse an invisible long source line"):
+    for overflow <- Seq(Overflow.Wrap, Overflow.WrapTrimmed, Overflow.WrapPreserved) do
+      val spans  = CountingSeq(Vector.fill(10000)(Span.raw("a")))
+      val area   = Rect(0, 0, 4, 2)
+      val buffer = Buffer(area)
+      Paragraph(Text(Seq(Line(spans))), overflow = overflow).render(area, buffer)
+      assert(trimmedLines(buffer) == Seq("aaaa", "aaaa"))
+      assert(spans.touched <= 40, s"$overflow read ${spans.touched} spans for eight visible columns")
+
+  test("a completed wrapped row is yielded before an invisible long whitespace gap"):
+    for overflow <- Seq(Overflow.Wrap, Overflow.WrapTrimmed, Overflow.WrapPreserved) do
+      val spans  = CountingSeq(Vector(Span.raw("aaaa")) ++ Vector.fill(10000)(Span.raw(" ")) :+ Span.raw("b"))
+      val area   = Rect(0, 0, 4, 1)
+      val buffer = Buffer(area)
+      Paragraph(Text(Seq(Line(spans))), overflow = overflow).render(area, buffer)
+      assert(trimmedLines(buffer) == Seq("aaaa"))
+      assert(spans.touched <= 40, s"$overflow read ${spans.touched} spans before yielding a full row")
+
+  test("bounded wrapped prefixes preserve split graphemes and their leading span style"):
+    val red  = Style.Default.withFg(Color.Red)
+    val blue = Style.Default.withFg(Color.Blue)
+    for overflow <- Seq(Overflow.Wrap, Overflow.WrapTrimmed, Overflow.WrapPreserved) do
+      val spans    = CountingSeq(
+        Vector(
+          Span("e", red),
+          Span("\u0301", blue),
+          Span.raw("你"),
+          Span("👩", blue),
+          Span("\u200d", red),
+          Span("💻", red),
+        ) ++ Vector.fill(10000)(Span.raw("a"))
+      )
+      val area     = Rect(0, 0, 4, 2)
+      val buffer   = Buffer(area)
+      val expected = Buffer(area)
+      expected.setString(0, 0, "e\u0301", red)
+      expected.setString(1, 0, "你", Style.Default)
+      expected.setString(0, 1, "👩‍💻", blue)
+      expected.setString(2, 1, "aa", Style.Default)
+      Paragraph(Text(Seq(Line(spans))), overflow = overflow).render(area, buffer)
+      for y <- 0 until 2; x <- 0 until 4 do assert(buffer.get(x, y) == expected.get(x, y), s"$overflow at ($x,$y)")
+      assert(spans.touched <= 40, s"$overflow read ${spans.touched} spans for two Unicode rows")
+
+  test("a fitting styled gap survives incremental wrapping before a discarded long gap"):
+    val red  = Style.Default.withFg(Color.Red)
+    val blue = Style.Default.withFg(Color.Blue)
+    for overflow <- Seq(Overflow.Wrap, Overflow.WrapTrimmed, Overflow.WrapPreserved) do
+      val spans  = CountingSeq(
+        Vector(Span.raw("aa"), Span(" ", red), Span(" ", blue), Span.raw("b")) ++
+          Vector.fill(10000)(Span.raw(" ")) :+ Span.raw("c")
+      )
+      val area   = Rect(0, 0, 5, 1)
+      val buffer = Buffer(area)
+      Paragraph(Text(Seq(Line(spans))), overflow = overflow).render(area, buffer)
+      assert(trimmedLines(buffer) == Seq("aa  b"))
+      assert(buffer.get(2, 0).style == red)
+      assert(buffer.get(3, 0).style == blue)
+      assert(spans.touched <= 40, s"$overflow read ${spans.touched} spans before yielding a styled row")
+
+  test("stable Paragraph height measurement does not walk its content again"):
+    val spans         = CountingSeq(Vector.fill(1000)(Span.raw("a ")))
+    val paragraph     = Paragraph(Text(Seq(Line(spans))), overflow = Overflow.Wrap)
+    val first         = paragraph.heightAt(4)
+    val measuredReads = spans.touched
+    assert(first.contains(500))
+    assert(measuredReads > 1000)
+    (1 to 10).foreach { _ => assert(paragraph.heightAt(4) == first) }
+    assert(spans.touched == measuredReads, s"stable measurement added ${spans.touched - measuredReads} span reads")
+
+  test("stable Paragraph natural width measurement does not walk its content again"):
+    val spans         = CountingSeq(Vector.fill(1000)(Span.raw("你")))
+    val paragraph     = Paragraph(Text(Seq(Line(spans))))
+    assert(paragraph.widthAt(1).contains(2000))
+    val measuredReads = spans.touched
+    (1 to 10).foreach { height => assert(paragraph.widthAt(height).contains(2000)) }
+    assert(spans.touched == measuredReads, s"stable width added ${spans.touched - measuredReads} span reads")
+
+  test("Paragraph keeps only its latest measured width and copies measure fresh content"):
+    val spans       = CountingSeq(Vector.fill(1000)(Span.raw("a ")))
+    val paragraph   = Paragraph(Text(Seq(Line(spans))), overflow = Overflow.Wrap)
+    assert(paragraph.heightAt(4).contains(500))
+    val firstReads  = spans.touched
+    assert(paragraph.heightAt(8).contains(250))
+    assert(spans.touched > firstReads)
+    val secondReads = spans.touched
+    assert(paragraph.heightAt(8).contains(250))
+    assert(spans.touched == secondReads)
+    assert(paragraph.heightAt(4).contains(500))
+    assert(spans.touched > secondReads, "old widths must not accumulate in an unbounded cache")
+    val copied      = paragraph.copy(text = Text.raw("abcde"))
+    assert(copied.heightAt(4).contains(2))
+    assert(copied.widthAt(1).contains(5))
+    assert(paragraph.copy(overflow = Overflow.Clip).heightAt(4).contains(1))
+    assert(paragraph.heightAt(4).contains(500), "copies must not alter their source value's cache")
+
+  test("wrapped viewport work scales with skipped rows, not the rest of a source line"):
+    val spans  = CountingSeq(Vector.fill(10000)(Span.raw("你")))
+    val area   = Rect(0, 0, 4, 2)
+    val buffer = Buffer(area)
+    Paragraph(Text(Seq(Line(spans))), overflow = Overflow.Wrap, scrollY = 3).render(area, buffer)
+    assert(trimmedLines(buffer) == Seq("你你", "你你"))
+    assert(spans.touched <= 40, s"read ${spans.touched} spans to skip three and draw two rows")
 
   test("DataTable does not re-sort while only the scroll offset moves"):
     val data   = Vector.tabulate(500)(i => Seq(i.toString, s"item ${(i * 37) % 500}"))

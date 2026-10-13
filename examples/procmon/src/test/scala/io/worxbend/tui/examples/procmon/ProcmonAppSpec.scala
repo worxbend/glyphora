@@ -1,9 +1,10 @@
 package io.worxbend.tui.examples.procmon
 
-import io.worxbend.tui.core.Size
+import io.worxbend.tui.core.{Buffer, KeyEvent, Rect, Size}
+import io.worxbend.tui.dsl.{DataTableElement, ReactiveScope, Theme}
 import io.worxbend.tui.terminal.HeadlessBackend
 import io.worxbend.tui.testsupport.Pilot
-import io.worxbend.tui.widgets.{ColumnSort, SortDirection}
+import io.worxbend.tui.widgets.{ColumnSort, KeyedRow, SortDirection}
 
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -21,6 +22,118 @@ final class ProcmonAppSpec extends AnyFunSuite:
       pilot.waitForIdle()
       body(app, pilot)
     }
+
+  /** No runner or timer: every call below sees exactly the same immutable sample. */
+  private def tableElementOf(app: ProcmonApp): DataTableElement[?] =
+    app
+      .view(using ReactiveScope.untracked, Theme.Dark)
+      .children
+      .collectFirst { case node: DataTableElement[?] =>
+        node
+      }
+      .get
+
+  private def filteredRowsOf[K](node: DataTableElement[K]): Seq[KeyedRow[K]] =
+    node.table.filteredRows(node.state)
+
+  test("unchanged selection and redraw reuse projected rows and the sorted view across table call paths"):
+    val app       = ProcmonApp(SyntheticProcessSource())
+    app.processes.set(
+      Vector(
+        ProcessInfo(10, "root", 1.0, 2.0, "nginx"),
+        ProcessInfo(20, "root", 9.0, 3.0, "nginx worker"),
+        ProcessInfo(30, "user", 4.0, 1.0, "java"),
+      )
+    )
+    val initial   = tableElementOf(app)
+    val projected = initial.table.rows
+    val ordered   = filteredRowsOf(initial)
+    assert(ordered.map(_.key) == Seq(20, 30, 10))
+
+    for index <- 0 until 3 do
+      app.tableState.selected = Some(index)
+      assert(app.selectedProcessId.contains(ordered(index).key))
+      assert(app.visibleProcessIds == Seq(20, 30, 10))
+      val redrawn = tableElementOf(app)
+      assert(redrawn.table.rows eq projected, "selection/readback/redraw must not project the sample again")
+      assert(filteredRowsOf(redrawn) eq ordered, "unchanged sort and filter must retain the sorted view")
+      redrawn.widget.render(Rect(0, 0, 96, 20), Buffer(Rect(0, 0, 96, 20)))
+      assert(filteredRowsOf(tableElementOf(app)) eq ordered, "painting must not invalidate the sorted view")
+
+    // syncFilter reads the old selection and reselects it against the new view inside view construction.
+    app.tableState.selected = Some(0)
+    app.filterInput.insert("nginx")
+    val filtered = tableElementOf(app)
+    assert(filtered.table.rows eq projected, "filter reselection must reuse the projection")
+    val narrowed = filteredRowsOf(filtered)
+    assert(narrowed.map(_.key) == Seq(20, 10))
+    assert(app.selectedProcessId.contains(20))
+    assert(filteredRowsOf(tableElementOf(app)) eq narrowed, "readback must not evict the filtered view")
+
+    app.bindings.bindings.find(_.label == "p").get.action()
+    val sorted = tableElementOf(app)
+    assert(sorted.table.rows eq projected, "sort reselection must reuse the projection")
+    val byPid  = filteredRowsOf(sorted)
+    assert(byPid.map(_.key) == Seq(10, 20))
+    assert(app.selectedProcessId.contains(20))
+    assert(filteredRowsOf(tableElementOf(app)) eq byPid, "sort reselection must leave the cache reusable")
+
+    app.bindings.bindings.find(_.label == "/").get.action()
+    val openFilter = app.view(using ReactiveScope.untracked, Theme.Dark)
+    val input      = openFilter.children(1).children(1)
+    assert(input.props.onKey.get(KeyEvent.parse("esc").toOption.get))
+    val cleared    = tableElementOf(app)
+    assert(cleared.table.rows eq projected, "filter cancellation reselection must reuse the projection")
+    val allByPid   = filteredRowsOf(cleared)
+    assert(allByPid.map(_.key) == Seq(10, 20, 30))
+    assert(app.selectedProcessId.contains(20))
+    assert(filteredRowsOf(tableElementOf(app)) eq allByPid)
+
+  test(
+    "a same-count immutable sample replacement refreshes projected cells and the filtered sort with keyed selection"
+  ):
+    val app     = ProcmonApp(SyntheticProcessSource())
+    app.processes.set(
+      Vector(
+        ProcessInfo(10, "root", 1.0, 2.0, "nginx"),
+        ProcessInfo(20, "root", 9.0, 3.0, "nginx worker"),
+        ProcessInfo(30, "user", 4.0, 1.0, "java"),
+      )
+    )
+    app.filterInput.insert("nginx")
+    val initial = tableElementOf(app)
+    val ordered = filteredRowsOf(initial)
+    assert(ordered.map(_.key) == Seq(20, 10))
+    app.tableState.selected = Some(0)
+    initial.widget.render(Rect(0, 0, 96, 20), Buffer(Rect(0, 0, 96, 20)))
+
+    app.processes.set(
+      Vector(
+        ProcessInfo(10, "root", 12.0, 2.0, "nginx promoted"),
+        ProcessInfo(20, "new-user", 2.0, 7.0, "nginx changed"),
+        ProcessInfo(30, "user", 15.0, 1.0, "nginx newly matched"),
+      )
+    )
+    // Exercise the untracked readback path before view sees the replacement.
+    assert(app.visibleProcessIds == Seq(30, 10, 20))
+    val refreshed      = tableElementOf(app)
+    val refreshedOrder = filteredRowsOf(refreshed)
+    assert(!(refreshed.table.rows eq initial.table.rows))
+    assert(!(refreshedOrder eq ordered))
+    assert(
+      refreshed.table.rows.find(_.key == 20).get.cells ==
+        Seq("    20", "new-user", "  2.0", "  7.0", "nginx changed")
+    )
+    refreshed.widget.render(Rect(0, 0, 96, 20), Buffer(Rect(0, 0, 96, 20)))
+    assert(app.selectedProcessId.contains(20))
+    assert(app.tableState.selected.contains(2))
+    assert(filteredRowsOf(tableElementOf(app)) eq refreshedOrder)
+
+    app.processes.set(Vector.empty)
+    val empty = tableElementOf(app)
+    empty.widget.render(Rect(0, 0, 96, 20), Buffer(Rect(0, 0, 96, 20)))
+    assert(app.visibleProcessIds.isEmpty)
+    assert(app.selectedProcessId.isEmpty)
 
   test("the summary header, the process table and the key hints all render"):
     withApp() { (app, pilot) =>
