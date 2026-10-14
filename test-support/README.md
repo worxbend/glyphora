@@ -1,6 +1,6 @@
 # tui-test
 
-The headless test harness, published as `io.worxbend::tui-test` for use as a **test-only**
+The headless test harness, published as `com.worxbend::tui-test` for use as a **test-only**
 dependency. The repository directory is `test-support/`; the Scala package is
 `io.worxbend.tui.testsupport`.
 

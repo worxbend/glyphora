@@ -58,9 +58,9 @@ final class DisciplineSpec extends AnyFunSuite:
 
   private val PublishVersionDeclaration = """def\s+publishVersion\b""".r
 
-  /** A coordinate a reader can paste: `io.worxbend::tui-dsl:0.15.0` or `"io.worxbend" %% "tui-dsl" % "0.15.0"`. */
+  /** A coordinate a reader can paste: `com.worxbend::tui-dsl:0.18.3` or `"com.worxbend" %% "tui-dsl" % "0.18.3"`. */
   private val PublishedCoordinate =
-    """io\.worxbend(?:"\s*%%\s*"|::)(tui-[a-z-]+)(?:"\s*%\s*"|:)([0-9][0-9A-Za-z.+-]*)""".r
+    """com\.worxbend(?:"\s*%%\s*"|::)(tui-[a-z-]+)(?:"\s*%\s*"|:)([0-9][0-9A-Za-z.+-]*)""".r
 
   /** `.toLowerCase` / `.toUpperCase` with no argument — including the explicit `()` overload.
     *
@@ -168,7 +168,7 @@ final class DisciplineSpec extends AnyFunSuite:
     }
     assert(
       coordinates.sizeIs >= 5,
-      s"found ${coordinates.size} `io.worxbend::tui-*` coordinates in the published prose — the install snippets " +
+      s"found ${coordinates.size} `com.worxbend::tui-*` coordinates in the published prose — the install snippets " +
         "moved or were reworded, and this check is no longer reading them",
     )
 

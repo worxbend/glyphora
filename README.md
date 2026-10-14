@@ -94,12 +94,12 @@ Mill and sbt use Central by default, so consuming them needs no token or extra r
 
 ```scala
 // build.mill
-def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.18.2")
+def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.18.3")
 ```
 
 ```scala
 // build.sbt
-libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.18.2"
+libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.18.3"
 ```
 
 [GitHub Packages](https://github.com/worxbend/glyphora/packages) also hosts the libraries.
@@ -267,7 +267,7 @@ text. Buffer helpers skip wide-character continuation cells, so assertions match
 
 > [!TIP]
 > `Pilot`, `BufferAssertions` and `GoldenFrames` ship as `com.worxbend::tui-test`, so add it as a
-> test-only dependency (`mvn"com.worxbend::tui-test:0.18.2"`) rather than copying the harness.
+> test-only dependency (`mvn"com.worxbend::tui-test:0.18.3"`) rather than copying the harness.
 
 🧪 **[Testing guide →](website/docs/testing.md)**
 
@@ -297,7 +297,7 @@ cd glyphora
 
 ./mill __.compile        # build everything
 ./mill core.test         # test each module separately (see CONTRIBUTING.md)
-./mill __.publishLocal   # install 0.18.2 into your local Ivy cache
+./mill __.publishLocal   # install 0.18.3 into your local Ivy cache
 ```
 
 Day-to-day development:
