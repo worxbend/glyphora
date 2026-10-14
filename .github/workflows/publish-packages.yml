@@ -8,14 +8,14 @@ on:
       version:
         description: Version declared by every publishable module at the selected ref
         required: true
-        default: "0.18.0"
+        default: "0.18.1"
         type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: github-packages-${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+  group: github-packages-${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
   cancel-in-progress: false
 
 jobs:

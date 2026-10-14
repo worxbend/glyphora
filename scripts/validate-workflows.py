@@ -12,6 +12,7 @@ REQUIRED_GATES = {
     "native-image", "website-build", "packaged-consumer",
 }
 SHA = "${{ needs.validate.outputs.validated-sha }}"
+RELEASE_TAG = "${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}"
 
 
 def load(path: Path) -> dict:
@@ -110,7 +111,10 @@ def validate(workflows: dict[str, dict], actions: dict[str, dict]) -> None:
     require(bool(credentials) and all(version < i for i in credentials), "publish: all module versions must be checked before credentials")
     guard = next((step for step in steps if step.get("env", {}).get("VALIDATED_SHA") == SHA), {})
     require('"$actual" != "$VALIDATED_SHA"' in guard.get("run", "") and '"$actual" != "$GITHUB_SHA"' in guard.get("run", ""), "publish: exact tag checkout comparison missing")
-    packages = workflows["publish-packages.yml"]["jobs"]
+    package_workflow = workflows["publish-packages.yml"]
+    require(package_workflow.get("concurrency", {}).get("group") == "github-packages-" + RELEASE_TAG,
+            "packages: manual and tag releases must serialize the same version")
+    packages = package_workflow["jobs"]
     require(packages["validate"] == {"uses": "./.github/workflows/ci.yml"}, "packages: full reusable CI must run without secrets/inputs/conditions")
     package_job = packages["publish"]
     require(package_job.get("needs") == "validate" and "if" not in package_job, "packages: validation must gate publication")
@@ -121,7 +125,7 @@ def validate(workflows: dict[str, dict], actions: dict[str, dict]) -> None:
     require('"$actual" != "$VALIDATED_SHA"' in guard.get("run", "") and '"$actual" != "$GITHUB_SHA"' in guard.get("run", ""), "packages: exact release checkout comparison missing")
     version = next((i for i, step in enumerate(package_steps) if step.get("run") == "python3 scripts/validate-release-version.py"), len(package_steps))
     require(version < len(package_steps) and package_steps[version].get("env") == {
-        "GLYPHORA_RELEASE_TAG": "${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}"
+        "GLYPHORA_RELEASE_TAG": RELEASE_TAG
     }, "packages: release version must use a project variable, not GitHub's reserved ref variable")
     credentials = [i for i, step in enumerate(package_steps) if "secrets." in str(step)]
     require(bool(credentials) and all(version < i for i in credentials), "packages: all module versions must be checked before credentials")

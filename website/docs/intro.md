@@ -20,7 +20,7 @@ structured enough for dashboards, forms, file browsers, and full-screen tools.
 
 :::info Install from GitHub Packages
 
-Resolve `io.worxbend::tui-dsl:0.18.0` from
+Resolve `io.worxbend::tui-dsl:0.18.1` from
 `https://maven.pkg.github.com/worxbend/glyphora`. GitHub requires a classic personal
 access token with `read:packages` on every consuming machine, even for public packages.
 Maven Central publication is separate. Local installation with `./mill __.publishLocal`

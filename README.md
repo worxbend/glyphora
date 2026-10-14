@@ -106,7 +106,7 @@ export COURSIER_CREDENTIALS="maven.pkg.github.com $GITHUB_USER:$GITHUB_TOKEN"
 ```scala
 // build.mill
 def repositories = Seq("https://maven.pkg.github.com/worxbend/glyphora")
-def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.18.0")
+def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.18.1")
 ```
 
 ```scala
@@ -116,7 +116,7 @@ credentials += Credentials(
   "GitHub Package Registry", "maven.pkg.github.com",
   sys.env("GITHUB_USER"), sys.env("GITHUB_TOKEN")
 )
-libraryDependencies += "io.worxbend" %% "tui-dsl" % "0.18.0"
+libraryDependencies += "io.worxbend" %% "tui-dsl" % "0.18.1"
 ```
 
 Then return an ordinary Scala `Element` tree:
@@ -279,7 +279,7 @@ text. Buffer helpers skip wide-character continuation cells, so assertions match
 
 > [!TIP]
 > `Pilot`, `BufferAssertions` and `GoldenFrames` ship as `io.worxbend::tui-test`, so add it as a
-> test-only dependency (`mvn"io.worxbend::tui-test:0.18.0"`) rather than copying the harness.
+> test-only dependency (`mvn"io.worxbend::tui-test:0.18.1"`) rather than copying the harness.
 
 🧪 **[Testing guide →](website/docs/testing.md)**
 
@@ -309,7 +309,7 @@ cd glyphora
 
 ./mill __.compile        # build everything
 ./mill core.test         # test each module separately (see CONTRIBUTING.md)
-./mill __.publishLocal   # install 0.18.0 into your local Ivy cache
+./mill __.publishLocal   # install 0.18.1 into your local Ivy cache
 ```
 
 Day-to-day development:

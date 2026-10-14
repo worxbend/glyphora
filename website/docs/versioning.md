@@ -19,12 +19,12 @@ All published modules share one synchronized version under `io.worxbend`:
 ```scala
 // Mill
 def repositories = Seq("https://maven.pkg.github.com/worxbend/glyphora")
-def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.18.0")
+def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.18.1")
 ```
 
 ```scala
 // sbt
-libraryDependencies += "io.worxbend" %% "tui-dsl" % "0.18.0"
+libraryDependencies += "io.worxbend" %% "tui-dsl" % "0.18.1"
 ```
 
 Applications normally need only `tui-dsl`. Lower-tier artifacts are `tui-core`,
@@ -36,7 +36,7 @@ The seven libraries are distributed through
 `https://maven.pkg.github.com/worxbend/glyphora`. Every consuming machine needs a
 classic personal access token with `read:packages`; see
 [Getting started](./getting-started#1-add-glyphora) for Mill and sbt authentication.
-Maven Central publication is separate. `0.18.0` is the synchronized release version.
+Maven Central publication is separate. `0.18.1` is the synchronized release version.
 Local installation with `./mill __.publishLocal` also works.
 
 ## Migrating to 0.18.0
@@ -138,7 +138,7 @@ dependencies fail the release workflow.
 To publish the current main commit manually:
 
 ```sh
-gh workflow run publish-packages.yml --ref main -f version=0.18.0
+gh workflow run publish-packages.yml --ref main -f version=0.18.1
 ```
 
 Treat released versions as immutable. Increment the shared `publishVersion`

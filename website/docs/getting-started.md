@@ -34,7 +34,7 @@ cd glyphora
 ```
 
 That publishes `tui-core`, `tui-terminal`, `tui-widgets`, `tui-runtime`,
-`tui-macros`, `tui-dsl` and `tui-test` at version `0.18.0` into your local Ivy cache
+`tui-macros`, `tui-dsl` and `tui-test` at version `0.18.1` into your local Ivy cache
 (`~/.ivy2/local`). Mill reads that cache by default. **sbt does not**, so an sbt build
 also needs
 
@@ -57,7 +57,7 @@ import mill.*, scalalib.*
 object app extends ScalaModule:
   def scalaVersion = "3.9.0"
   def repositories = Seq("https://maven.pkg.github.com/worxbend/glyphora")
-  def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.18.0")
+  def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.18.1")
 ```
 
 Put application sources under `app/src/`, then run them with `mill app.run` (or
@@ -73,7 +73,7 @@ credentials += Credentials(
   "GitHub Package Registry", "maven.pkg.github.com",
   sys.env("GITHUB_USER"), sys.env("GITHUB_TOKEN")
 )
-libraryDependencies += "io.worxbend" %% "tui-dsl" % "0.18.0"
+libraryDependencies += "io.worxbend" %% "tui-dsl" % "0.18.1"
 ```
 
 Put application sources under `src/main/scala/`, then use `sbt run`.

@@ -303,6 +303,11 @@ class WorkflowPolicyTests(unittest.TestCase):
         step["env"]["GITHUB_REF_NAME"] = step["env"].pop("GLYPHORA_RELEASE_TAG")
         self.fails("project variable")
 
+    def test_packages_manual_and_tag_releases_share_concurrency(self):
+        workflow = self.workflows["publish-packages.yml"]
+        workflow["concurrency"]["group"] = "github-packages-${{ inputs.version || github.ref_name }}"
+        self.fails("serialize the same version")
+
     def test_credentials_cannot_be_in_wiki_remote(self):
         self.workflows["wiki.yml"]["jobs"]["publish"]["steps"][-1]["run"] += '\ngit clone "https://x-access-token:$GLYPHORA_GIT_TOKEN@github.com/test.wiki.git"'
         self.fails("remote URL")
