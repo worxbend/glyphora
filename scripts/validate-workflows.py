@@ -111,6 +111,9 @@ def validate(workflows: dict[str, dict], actions: dict[str, dict]) -> None:
     require(bool(credentials) and all(version < i for i in credentials), "publish: all module versions must be checked before credentials")
     guard = next((step for step in steps if step.get("env", {}).get("VALIDATED_SHA") == SHA), {})
     require('"$actual" != "$VALIDATED_SHA"' in guard.get("run", "") and '"$actual" != "$GITHUB_SHA"' in guard.get("run", ""), "publish: exact tag checkout comparison missing")
+    require(any(step.get("run") == "python3 scripts/verify-packaged-consumer.py --repository https://repo.maven.apache.org/maven2"
+                and "secrets." not in str(step) for step in steps),
+            "publish: anonymous Central consumer verification missing")
     package_workflow = workflows["publish-packages.yml"]
     require(package_workflow.get("concurrency", {}).get("group") == "github-packages-" + RELEASE_TAG,
             "packages: manual and tag releases must serialize the same version")

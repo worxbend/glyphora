@@ -89,39 +89,23 @@
 
 ## 🚀 Your first app
 
-> [!NOTE]
-> **Namespace migration:** this checkout targets `com.worxbend`. The existing
-> `v0.18.1` GitHub Packages release uses `io.worxbend`. Until the new namespace
-> is published, use that group for remote downloads or build this checkout locally.
->
-> **Use GitHub Packages.** The seven libraries are distributed through
-> [GitHub Packages](https://github.com/worxbend/glyphora/packages), with the Maven resolver below.
-> GitHub requires a **classic personal access token with `read:packages`**, even for public packages.
-> Maven Central publication is separate. Building from source with `./mill __.publishLocal`
-> also works; see [Build from source](#-build-from-source).
-
-On each machine, set `GITHUB_USER` to your GitHub username and `GITHUB_TOKEN` to your
-classic PAT, then configure Mill's Coursier authentication outside the repository:
-
-```sh
-export COURSIER_CREDENTIALS="maven.pkg.github.com $GITHUB_USER:$GITHUB_TOKEN"
-```
+The seven libraries are available from Maven Central under `com.worxbend`.
+Mill and sbt use Central by default, so consuming them needs no token or extra resolver.
 
 ```scala
 // build.mill
-def repositories = Seq("https://maven.pkg.github.com/worxbend/glyphora")
-def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.18.1")
+def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.18.2")
 ```
 
 ```scala
 // build.sbt
-resolvers += "Glyphora GitHub Packages" at "https://maven.pkg.github.com/worxbend/glyphora"
-credentials += Credentials(
-  "GitHub Package Registry", "maven.pkg.github.com",
-  sys.env("GITHUB_USER"), sys.env("GITHUB_TOKEN")
-)
-libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.18.1"
+libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.18.2"
 ```
+
+[GitHub Packages](https://github.com/worxbend/glyphora/packages) also hosts the libraries.
+Its Maven resolver requires a classic PAT with `read:packages`, even for public packages;
+see [Getting started](website/docs/getting-started.md). Local installation with
+`./mill __.publishLocal` is covered in [Build from source](#-build-from-source).
 
 Then return an ordinary Scala `Element` tree:
 
@@ -283,7 +267,7 @@ text. Buffer helpers skip wide-character continuation cells, so assertions match
 
 > [!TIP]
 > `Pilot`, `BufferAssertions` and `GoldenFrames` ship as `com.worxbend::tui-test`, so add it as a
-> test-only dependency (`mvn"com.worxbend::tui-test:0.18.1"`) rather than copying the harness.
+> test-only dependency (`mvn"com.worxbend::tui-test:0.18.2"`) rather than copying the harness.
 
 🧪 **[Testing guide →](website/docs/testing.md)**
 
@@ -313,7 +297,7 @@ cd glyphora
 
 ./mill __.compile        # build everything
 ./mill core.test         # test each module separately (see CONTRIBUTING.md)
-./mill __.publishLocal   # install 0.18.1 into your local Ivy cache
+./mill __.publishLocal   # install 0.18.2 into your local Ivy cache
 ```
 
 Day-to-day development:

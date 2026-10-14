@@ -195,9 +195,41 @@ class RemoteArtifactsTests(unittest.TestCase):
 
     def test_credentials_are_not_sent_to_another_host(self):
         with patch.object(self.module.urllib.request, "urlopen") as download:
-            with self.assertRaisesRegex(ValueError, "HTTPS GitHub Packages"):
+            with self.assertRaisesRegex(ValueError, "HTTPS GitHub Packages or Maven Central"):
                 self.check("https://example.com/repository")
         download.assert_not_called()
+
+    def test_central_downloads_every_file_without_authentication(self):
+        def download(request, timeout):
+            self.assertEqual(timeout, 30)
+            self.assertIsNone(request.get_header("Authorization"))
+            relative = request.full_url.removeprefix("https://repo.maven.apache.org/maven2/")
+            return io.BytesIO(self.content[relative])
+
+        with patch.object(self.module.urllib.request, "urlopen", side_effect=download) as fetch:
+            self.check("https://repo.maven.apache.org/maven2")
+        self.assertEqual(fetch.call_count, 28)
+
+    def test_central_does_not_require_github_credentials(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.test_central_downloads_every_file_without_authentication()
+
+    def test_central_waits_for_publication_propagation(self):
+        responses = iter([urllib.error.HTTPError("fixture", 404, "not found", {}, None) for _ in range(7)])
+
+        def download(request, timeout):
+            response = next(responses, None)
+            if response is not None:
+                raise response
+            self.assertIsNone(request.get_header("Authorization"))
+            relative = request.full_url.removeprefix("https://repo.maven.apache.org/maven2/")
+            return io.BytesIO(self.content[relative])
+
+        with patch.object(self.module.urllib.request, "urlopen", side_effect=download) as fetch, \
+                patch.object(self.module.time, "sleep") as sleep:
+            self.check("https://repo.maven.apache.org/maven2")
+        self.assertEqual(fetch.call_count, 35)
+        self.assertEqual(sleep.call_count, 7)
 
     def test_authentication_failure_is_not_retried(self):
         error = urllib.error.HTTPError("fixture", 401, "unauthorized", {}, None)

@@ -13,47 +13,10 @@ and make two changes that exercise state, layout, styling, and keyboard commands
 
 ## 1. Add glyphora
 
-:::info Namespace migration
-
-This checkout targets the Maven group `com.worxbend`. The existing `v0.18.1`
-GitHub Packages release uses `io.worxbend`. Until the new group is published,
-use `io.worxbend` for remote dependencies or install this checkout locally.
-
-:::
-
-:::info GitHub Packages authentication
-
-The libraries are distributed through
-[GitHub Packages](https://github.com/worxbend/glyphora/packages). GitHub requires a
-**classic personal access token with `read:packages`**, even for public packages.
-On each machine, set `GITHUB_USER` to your GitHub username and `GITHUB_TOKEN` to
-your classic PAT. Keep credentials outside source control. For Mill, set:
-
-```sh
-export COURSIER_CREDENTIALS="maven.pkg.github.com $GITHUB_USER:$GITHUB_TOKEN"
-```
-
-Maven Central publication is separate. To build and install locally instead:
-
-```bash
-git clone https://github.com/worxbend/glyphora.git
-cd glyphora
-./mill __.publishLocal
-```
-
-That publishes `tui-core`, `tui-terminal`, `tui-widgets`, `tui-runtime`,
-`tui-macros`, `tui-dsl` and `tui-test` at version `0.18.1` into your local Ivy cache
-(`~/.ivy2/local`). Mill reads that cache by default. **sbt does not**, so an sbt build
-also needs
-
-```scala title="build.sbt"
-resolvers += Resolver.defaultLocal
-```
-
-:::
-
-The normal application dependency is `tui-dsl`. It brings in the core types,
-widgets, terminal backend, and runtime transitively.
+The libraries are available from Maven Central under `com.worxbend`.
+Mill and sbt use Central by default; consumers need no credentials or extra resolver.
+The normal application dependency is `tui-dsl`, which brings in the core types,
+widgets, terminal backend, macros, and runtime transitively.
 
 ### Mill
 
@@ -64,8 +27,7 @@ import mill.*, scalalib.*
 
 object app extends ScalaModule:
   def scalaVersion = "3.9.0"
-  def repositories = Seq("https://maven.pkg.github.com/worxbend/glyphora")
-  def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.18.1")
+  def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.18.2")
 ```
 
 Put application sources under `app/src/`, then run them with `mill app.run` (or
@@ -75,16 +37,46 @@ Put application sources under `app/src/`, then run them with `mill app.run` (or
 
 ```scala title="build.sbt"
 scalaVersion := "3.9.0"
+libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.18.2"
+```
 
+Put application sources under `src/main/scala/`, then use `sbt run`.
+
+### Optional GitHub Packages resolver
+
+[GitHub Packages](https://github.com/worxbend/glyphora/packages) also hosts the libraries.
+GitHub requires a classic personal access token with `read:packages`, even for public
+Maven packages. Set `GITHUB_USER` to your GitHub username and `GITHUB_TOKEN` to your
+classic PAT. Keep credentials outside source control. For Mill:
+
+```sh
+export COURSIER_CREDENTIALS="maven.pkg.github.com $GITHUB_USER:$GITHUB_TOKEN"
+```
+
+```scala title="build.mill"
+def repositories = Seq("https://maven.pkg.github.com/worxbend/glyphora")
+```
+
+For sbt:
+
+```scala title="build.sbt"
 resolvers += "Glyphora GitHub Packages" at "https://maven.pkg.github.com/worxbend/glyphora"
 credentials += Credentials(
   "GitHub Package Registry", "maven.pkg.github.com",
   sys.env("GITHUB_USER"), sys.env("GITHUB_TOKEN")
 )
-libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.18.1"
 ```
 
-Put application sources under `src/main/scala/`, then use `sbt run`.
+### Local installation
+
+```bash
+git clone https://github.com/worxbend/glyphora.git
+cd glyphora
+./mill __.publishLocal
+```
+
+This installs all seven libraries at `0.18.2` into `~/.ivy2/local`. Mill reads that
+cache by default. An sbt build also needs `resolvers += Resolver.defaultLocal`.
 
 <details>
 <summary>Why depend on tui-dsl instead of every module?</summary>

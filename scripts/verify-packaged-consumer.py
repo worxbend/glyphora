@@ -32,21 +32,28 @@ NS = {"m": "http://maven.apache.org/POM/4.0.0"}
 
 def verify_remote_artifacts(repository: Path, url: str, version: str) -> None:
     """Download all 28 release files and compare them with the validated build."""
-    if not url.startswith("https://maven.pkg.github.com/"):
-        raise ValueError("remote verification requires an HTTPS GitHub Packages repository")
-    credentials = f"{os.environ['GITHUB_PACKAGES_USERNAME']}:{os.environ['GITHUB_PACKAGES_PASSWORD']}"
-    authorization = "Basic " + base64.b64encode(credentials.encode()).decode()
+    headers = {}
+    attempts = 6
+    if url.rstrip("/") == "https://repo.maven.apache.org/maven2":
+        # Central's public repository can lag behind a successful Portal upload.
+        # Download anonymously, including when GitHub credentials exist in the environment.
+        attempts = 180
+    elif url.startswith("https://maven.pkg.github.com/"):
+        credentials = f"{os.environ['GITHUB_PACKAGES_USERNAME']}:{os.environ['GITHUB_PACKAGES_PASSWORD']}"
+        headers["Authorization"] = "Basic " + base64.b64encode(credentials.encode()).decode()
+    else:
+        raise ValueError("remote verification requires HTTPS GitHub Packages or Maven Central")
     for artifact in ARTIFACT_EDGES:
         for suffix in (".pom", ".jar", "-sources.jar", "-javadoc.jar"):
             relative = f"com/worxbend/{artifact}/{version}/{artifact}-{version}{suffix}"
-            request = urllib.request.Request(f"{url.rstrip('/')}/{relative}", headers={"Authorization": authorization})
-            for attempt in range(6):
+            request = urllib.request.Request(f"{url.rstrip('/')}/{relative}", headers=headers)
+            for attempt in range(attempts):
                 try:
                     with urllib.request.urlopen(request, timeout=30) as response:
                         downloaded = response.read()
                     break
                 except urllib.error.HTTPError as error:
-                    if error.code != 404 or attempt == 5:
+                    if error.code != 404 or attempt == attempts - 1:
                         raise
                     time.sleep(5)
             staged = repository / relative
@@ -122,7 +129,7 @@ def verify_classpath(entries: list[str], repository: Path, version: str, expecte
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository", help="also verify and consume a GitHub Packages Maven repository")
+    parser.add_argument("--repository", help="also verify and consume GitHub Packages or public Maven Central")
     args = parser.parse_args()
     env = dict(os.environ)
     env.pop("GLYPHORA_GOLDEN_UPDATE", None)

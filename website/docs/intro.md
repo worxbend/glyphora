@@ -18,18 +18,12 @@ structured enough for dashboards, forms, file browsers, and full-screen tools.
 > Follow [Getting started](./getting-started), then return here when you want the
 > mental model behind it.
 
-:::info Install from GitHub Packages
+:::info Install from Maven Central
 
-Resolve `com.worxbend::tui-dsl:0.18.1` from
-`https://maven.pkg.github.com/worxbend/glyphora`. GitHub requires a classic personal
-access token with `read:packages` on every consuming machine, even for public packages.
-Maven Central publication is separate. Local installation with `./mill __.publishLocal`
-also works. Resolver and credential instructions are in
+Add `com.worxbend::tui-dsl:0.18.2` to your Mill dependencies. Central is the default
+resolver and requires no credentials for downloads. The optional GitHub Packages
+resolver and local installation are covered in
 [Getting started](./getting-started#1-add-glyphora).
-
-The current checkout targets `com.worxbend`; the existing `v0.18.1` GitHub
-Packages release uses `io.worxbend`. Until the new group is published, use that
-group for remote downloads or build this checkout locally.
 
 :::
 

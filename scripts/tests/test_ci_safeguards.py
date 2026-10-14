@@ -297,6 +297,10 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.workflows["publish-packages.yml"]["jobs"]["publish"]["steps"].pop()
         self.fails("packages: remote consumer verification missing")
 
+    def test_central_public_download_verification_is_required(self):
+        self.workflows["publish.yml"]["jobs"]["publish"]["steps"].pop()
+        self.fails("anonymous Central consumer verification missing")
+
     def test_packages_version_cannot_override_reserved_github_ref(self):
         step = next(step for step in self.workflows["publish-packages.yml"]["jobs"]["publish"]["steps"]
                     if step.get("run") == "python3 scripts/validate-release-version.py")

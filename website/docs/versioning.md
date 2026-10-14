@@ -18,30 +18,25 @@ All publishable modules in this checkout share one synchronized version under `c
 
 ```scala
 // Mill
-def repositories = Seq("https://maven.pkg.github.com/worxbend/glyphora")
-def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.18.1")
+def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.18.2")
 ```
 
 ```scala
 // sbt
-libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.18.1"
+libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.18.2"
 ```
 
 Applications normally need only `tui-dsl`. Lower-tier artifacts are `tui-core`,
 `tui-terminal`, `tui-widgets`, `tui-runtime`, and `tui-macros`; `tui-test` carries the
 headless test harness and belongs in the test configuration only.
 
-The seven libraries are distributed through
-[GitHub Packages](https://github.com/worxbend/glyphora/packages) at
-`https://maven.pkg.github.com/worxbend/glyphora`. Every consuming machine needs a
-classic personal access token with `read:packages`; see
-[Getting started](./getting-started#1-add-glyphora) for Mill and sbt authentication.
-Maven Central publication is separate. `0.18.1` is the synchronized release version.
-Local installation with `./mill __.publishLocal` also works.
+Version `0.18.2` is available from Maven Central under `com.worxbend`. Downloads
+require no credentials, and Mill and sbt use Central by default. GitHub Packages
+also hosts the libraries; its resolver requires a classic PAT with `read:packages`.
+See [Getting started](./getting-started#1-add-glyphora) for both options.
 
-The existing `v0.18.1` GitHub Packages release uses the previous `io.worxbend`
-group. Until a release under `com.worxbend` is published, use the previous group
-for remote dependencies or install the current checkout locally.
+GitHub Packages releases through `v0.18.1` used `io.worxbend`. Update dependency
+coordinates to `com.worxbend` when moving to `0.18.2`; Scala imports use `io.worxbend.tui`.
 
 ## Migrating to 0.18.0
 
@@ -152,7 +147,7 @@ dependencies fail the release workflow.
 To publish the current main commit manually:
 
 ```sh
-gh workflow run publish-packages.yml --ref main -f version=0.18.1
+gh workflow run publish-packages.yml --ref main -f version=0.18.2
 ```
 
 Treat released versions as immutable. Increment the shared `publishVersion`
@@ -175,8 +170,11 @@ external derivation and DSL imports, and checks the resolved jars against the st
 artifacts. Run it locally with `python3 scripts/verify-packaged-consumer.py`; it does not
 publish remotely or modify the normal local Maven/Ivy repository.
 
-Only after these gates does Publish upload every `TuiPublishModule` to Maven Central
-with the synchronized version and signed POM metadata. The separate Autofix workflow
+Only after these gates does Publish upload all seven libraries to Maven Central
+with the synchronized version and signed POM metadata. It then waits for the public
+repository, downloads all 28 release files without authentication, compares their
+hashes, and runs the isolated consumer with a fresh Coursier cache. An accepted
+Portal upload alone does not make the workflow successful. The separate Autofix workflow
 remains limited to same-repository pull requests; release validation never rewrites the
 commit being validated. After Autofix pushes with `GITHUB_TOKEN`, maintainers must
 approve the token-generated full CI run for the resulting PR commit before merging.
