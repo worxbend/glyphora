@@ -18,14 +18,13 @@ structured enough for dashboards, forms, file browsers, and full-screen tools.
 > Follow [Getting started](./getting-started), then return here when you want the
 > mental model behind it.
 
-:::caution Not on Maven Central yet
+:::info Install from GitHub Packages
 
-A source release tag does not make artifacts available on Maven Central. Until `0.18.0`
-is published there, `io.worxbend::tui-dsl:0.18.0` will not resolve from a public repository.
-Clone the repository and run `./mill __.publishLocal`, which
-installs `tui-core`, `tui-terminal`, `tui-widgets`, `tui-runtime`, `tui-macros`,
-`tui-dsl` and `tui-test` at `0.18.0` into `~/.ivy2/local`; Mill reads that cache by
-default, and sbt needs `resolvers += Resolver.defaultLocal`. Full instructions are in
+Resolve `io.worxbend::tui-dsl:0.18.0` from
+`https://maven.pkg.github.com/worxbend/glyphora`. GitHub requires a classic personal
+access token with `read:packages` on every consuming machine, even for public packages.
+Maven Central publication is separate. Local installation with `./mill __.publishLocal`
+also works. Resolver and credential instructions are in
 [Getting started](./getting-started#1-add-glyphora).
 
 :::

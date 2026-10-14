@@ -63,6 +63,8 @@ def validate(workflows: dict[str, dict], actions: dict[str, dict]) -> None:
                 permitted = {"contents": "read", "pages": "read"}
             elif (name, job_name) == ("docs.yml", "deploy"):
                 permitted = {"actions": "read", "pages": "write", "id-token": "write"}
+            elif (name, job_name) == ("publish-packages.yml", "publish"):
+                permitted = {"contents": "read", "packages": "write"}
             require(permissions == permitted, f"{location}: unexpected permissions")
     for name, action in actions.items():
         check_steps(action.get("runs", {}).get("steps", []), name, None)
@@ -108,6 +110,19 @@ def validate(workflows: dict[str, dict], actions: dict[str, dict]) -> None:
     require(bool(credentials) and all(version < i for i in credentials), "publish: all module versions must be checked before credentials")
     guard = next((step for step in steps if step.get("env", {}).get("VALIDATED_SHA") == SHA), {})
     require('"$actual" != "$VALIDATED_SHA"' in guard.get("run", "") and '"$actual" != "$GITHUB_SHA"' in guard.get("run", ""), "publish: exact tag checkout comparison missing")
+    packages = workflows["publish-packages.yml"]["jobs"]
+    require(packages["validate"] == {"uses": "./.github/workflows/ci.yml"}, "packages: full reusable CI must run without secrets/inputs/conditions")
+    package_job = packages["publish"]
+    require(package_job.get("needs") == "validate" and "if" not in package_job, "packages: validation must gate publication")
+    package_steps = package_job["steps"]
+    checkout = next(step for step in package_steps if step.get("uses", "").startswith("actions/checkout@"))
+    require(checkout.get("with", {}).get("ref") == SHA, "packages: checkout must use validated SHA")
+    guard = next((step for step in package_steps if step.get("env", {}).get("VALIDATED_SHA") == SHA), {})
+    require('"$actual" != "$VALIDATED_SHA"' in guard.get("run", "") and '"$actual" != "$GITHUB_SHA"' in guard.get("run", ""), "packages: exact release checkout comparison missing")
+    version = next((i for i, step in enumerate(package_steps) if step.get("run") == "python3 scripts/validate-release-version.py"), len(package_steps))
+    credentials = [i for i, step in enumerate(package_steps) if "secrets." in str(step)]
+    require(bool(credentials) and all(version < i for i in credentials), "packages: all module versions must be checked before credentials")
+    require(any(step.get("run") == 'python3 scripts/verify-packaged-consumer.py --repository "$GLYPHORA_MAVEN_REPO"' for step in package_steps), "packages: remote consumer verification missing")
     wiki = workflows["wiki.yml"]["jobs"]["publish"]["steps"]
     for step in wiki:
         require("https://x-access-token:" not in step.get("run", ""), "wiki: credentials must not enter remote URL")

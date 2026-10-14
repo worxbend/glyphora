@@ -13,11 +13,19 @@ and make two changes that exercise state, layout, styling, and keyboard commands
 
 ## 1. Add glyphora
 
-:::caution Not on Maven Central yet
+:::info GitHub Packages authentication
 
-A source release tag does not make artifacts available on Maven Central. Until `0.18.0`
-is published there, the coordinates below will not resolve from a public repository.
-Build the artifacts locally:
+The libraries are distributed through
+[GitHub Packages](https://github.com/worxbend/glyphora/packages). GitHub requires a
+**classic personal access token with `read:packages`**, even for public packages.
+On each machine, set `GITHUB_USER` to your GitHub username and `GITHUB_TOKEN` to
+your classic PAT. Keep credentials outside source control. For Mill, set:
+
+```sh
+export COURSIER_CREDENTIALS="maven.pkg.github.com $GITHUB_USER:$GITHUB_TOKEN"
+```
+
+Maven Central publication is separate. To build and install locally instead:
 
 ```bash
 git clone https://github.com/worxbend/glyphora.git
@@ -48,6 +56,7 @@ import mill.*, scalalib.*
 
 object app extends ScalaModule:
   def scalaVersion = "3.9.0"
+  def repositories = Seq("https://maven.pkg.github.com/worxbend/glyphora")
   def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.18.0")
 ```
 
@@ -59,6 +68,11 @@ Put application sources under `app/src/`, then run them with `mill app.run` (or
 ```scala title="build.sbt"
 scalaVersion := "3.9.0"
 
+resolvers += "Glyphora GitHub Packages" at "https://maven.pkg.github.com/worxbend/glyphora"
+credentials += Credentials(
+  "GitHub Package Registry", "maven.pkg.github.com",
+  sys.env("GITHUB_USER"), sys.env("GITHUB_TOKEN")
+)
 libraryDependencies += "io.worxbend" %% "tui-dsl" % "0.18.0"
 ```
 

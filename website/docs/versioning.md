@@ -18,6 +18,7 @@ All published modules share one synchronized version under `io.worxbend`:
 
 ```scala
 // Mill
+def repositories = Seq("https://maven.pkg.github.com/worxbend/glyphora")
 def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.18.0")
 ```
 
@@ -30,13 +31,13 @@ Applications normally need only `tui-dsl`. Lower-tier artifacts are `tui-core`,
 `tui-terminal`, `tui-widgets`, `tui-runtime`, and `tui-macros`; `tui-test` carries the
 headless test harness and belongs in the test configuration only.
 
-**Nothing is on Maven Central yet.** A source release tag does not make artifacts
-available on Maven Central. Until `0.18.0` is published there, the coordinates above
-resolve only after `./mill __.publishLocal` has put them in your local Ivy cache — see
-[Getting started](./getting-started#1-add-glyphora). `0.18.0` is the synchronized release
-version. Check [Maven Central](https://search.maven.org/search?q=g:io.worxbend)
-and the [release tags](https://github.com/worxbend/glyphora/tags) separately
-before choosing a version.
+The seven libraries are distributed through
+[GitHub Packages](https://github.com/worxbend/glyphora/packages) at
+`https://maven.pkg.github.com/worxbend/glyphora`. Every consuming machine needs a
+classic personal access token with `read:packages`; see
+[Getting started](./getting-started#1-add-glyphora) for Mill and sbt authentication.
+Maven Central publication is separate. `0.18.0` is the synchronized release version.
+Local installation with `./mill __.publishLocal` also works.
 
 ## Migrating to 0.18.0
 
@@ -117,6 +118,33 @@ genuinely closed value types (`Position`, `Size`, `Rect`, `Cell`, `KeyEvent`,
 terminal cell and a coordinate are.
 
 ## Release process
+
+The **Publish GitHub Packages** workflow (`.github/workflows/publish-packages.yml`)
+runs on `v*` tag pushes and can also be started manually with a `version` input.
+For a manual run, select the ref to publish and supply the version declared by all
+seven modules at that ref; the workflow publishes that ref's validated commit.
+It calls the complete read-only CI workflow, checks out only its validated SHA,
+and verifies every module version before exposing the built-in `GITHUB_TOKEN`.
+Only the publishing job receives `packages: write`; no additional repository secret
+or GPG signing key is needed for GitHub Packages.
+
+The publisher uploads `tui-core`, `tui-terminal`, `tui-widgets`, `tui-runtime`,
+`tui-macros`, `tui-dsl`, and `tui-test` with their POMs, JARs, sources and Scaladoc.
+After upload, it downloads all 28 files, checks their hashes against the validated
+build, and runs the isolated DSL/macro and test-support consumer using a fresh
+Coursier cache and the remote resolver. Missing artifacts or incorrect transitive
+dependencies fail the release workflow.
+
+To publish the current main commit manually:
+
+```sh
+gh workflow run publish-packages.yml --ref main -f version=0.18.0
+```
+
+Treat released versions as immutable. Increment the shared `publishVersion`
+before another release; a manual run is for a version that has not yet been uploaded.
+If an upload partially succeeds, inspect the package versions and workflow logs
+before retrying.
 
 Releases are Git tags named `vX.Y.Z`. Pushing a tag runs the Publish workflow. Before
 signing credentials are made available, it calls the same read-only CI workflow used

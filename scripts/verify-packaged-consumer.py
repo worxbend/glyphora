@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""Stage seven Maven artifacts and exercise an isolated consumer, without publishing remotely."""
+"""Stage seven Maven artifacts and exercise an isolated local or remote consumer."""
 
+import argparse
+import base64
 import hashlib
 import json
 import os
@@ -9,6 +11,9 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
+import urllib.error
+import urllib.request
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +28,31 @@ ARTIFACT_EDGES = {
     "tui-test_3": {"tui-core_3", "tui-terminal_3", "tui-runtime_3"},
 }
 NS = {"m": "http://maven.apache.org/POM/4.0.0"}
+
+
+def verify_remote_artifacts(repository: Path, url: str, version: str) -> None:
+    """Download all 28 release files and compare them with the validated build."""
+    if not url.startswith("https://maven.pkg.github.com/"):
+        raise ValueError("remote verification requires an HTTPS GitHub Packages repository")
+    credentials = f"{os.environ['GITHUB_PACKAGES_USERNAME']}:{os.environ['GITHUB_PACKAGES_PASSWORD']}"
+    authorization = "Basic " + base64.b64encode(credentials.encode()).decode()
+    for artifact in ARTIFACT_EDGES:
+        for suffix in (".pom", ".jar", "-sources.jar", "-javadoc.jar"):
+            relative = f"io/worxbend/{artifact}/{version}/{artifact}-{version}{suffix}"
+            request = urllib.request.Request(f"{url.rstrip('/')}/{relative}", headers={"Authorization": authorization})
+            for attempt in range(6):
+                try:
+                    with urllib.request.urlopen(request, timeout=30) as response:
+                        downloaded = response.read()
+                    break
+                except urllib.error.HTTPError as error:
+                    if error.code != 404 or attempt == 5:
+                        raise
+                    time.sleep(5)
+            staged = repository / relative
+            if hashlib.sha256(downloaded).digest() != hashlib.sha256(staged.read_bytes()).digest():
+                raise ValueError(f"published artifact differs from the validated build: {relative}")
+            print(f"Verified remote {artifact}-{version}{suffix}", flush=True)
 
 
 def validate_poms(repository: Path, version: str) -> None:
@@ -91,6 +121,9 @@ def verify_classpath(entries: list[str], repository: Path, version: str, expecte
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repository", help="also verify and consume a GitHub Packages Maven repository")
+    args = parser.parse_args()
     env = dict(os.environ)
     env.pop("GLYPHORA_GOLDEN_UPDATE", None)
     version = json.loads(mill(ROOT, ["show", "core.publishVersion"], env))
@@ -107,13 +140,19 @@ def main() -> None:
             mill(ROOT, [f"{module}.publishM2Local", "--m-2-repo-path", str(repository)], env)
         validate_poms(repository, version)
         print("All seven packaged POM dependency graphs verified", flush=True)
+        if args.repository:
+            verify_remote_artifacts(repository, args.repository, version)
+        resolver = args.repository or repository.as_uri()
         consumer_env = {
             **env,
             "GLYPHORA_VERSION": version,
-            "GLYPHORA_MAVEN_REPO": repository.as_uri(),
+            "GLYPHORA_MAVEN_REPO": resolver,
             # No local Ivy/Maven fallback can conceal a missing staged artifact.
-            "COURSIER_REPOSITORIES": f"{repository.as_uri()}|https://repo1.maven.org/maven2",
+            "COURSIER_REPOSITORIES": f"{resolver}|https://repo1.maven.org/maven2",
         }
+        if args.repository:
+            # A fresh cache proves the files can be downloaded on another machine.
+            consumer_env["COURSIER_CACHE"] = str(workspace / "remote-cache")
         mill(consumer, ["consumer.run", "+", "consumer.test"], consumer_env)
         production = json.loads(mill(consumer, ["show", "consumer.runClasspath"], consumer_env))
         tests = json.loads(mill(consumer, ["show", "consumer.test.runClasspath"], consumer_env))

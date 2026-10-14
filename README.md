@@ -90,20 +90,32 @@
 ## 🚀 Your first app
 
 > [!NOTE]
-> **Not on Maven Central yet.** A source release tag does not make artifacts available on Maven
-> Central. Until `0.18.0` is published there, the coordinates below will not resolve from a public
-> repository. Clone the repo and run `./mill __.publishLocal`
-> — that puts `tui-core`, `tui-terminal`, `tui-widgets`, `tui-runtime`, `tui-macros`, `tui-dsl`
-> and `tui-test` at `0.18.0` into `~/.ivy2/local`. Mill reads that cache by default; sbt needs
-> `resolvers += Resolver.defaultLocal`. See [Build from source](#-build-from-source).
+> **Use GitHub Packages.** The seven libraries are distributed through
+> [GitHub Packages](https://github.com/worxbend/glyphora/packages), with the Maven resolver below.
+> GitHub requires a **classic personal access token with `read:packages`**, even for public packages.
+> Maven Central publication is separate. Building from source with `./mill __.publishLocal`
+> also works; see [Build from source](#-build-from-source).
+
+On each machine, set `GITHUB_USER` to your GitHub username and `GITHUB_TOKEN` to your
+classic PAT, then configure Mill's Coursier authentication outside the repository:
+
+```sh
+export COURSIER_CREDENTIALS="maven.pkg.github.com $GITHUB_USER:$GITHUB_TOKEN"
+```
 
 ```scala
 // build.mill
+def repositories = Seq("https://maven.pkg.github.com/worxbend/glyphora")
 def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.18.0")
 ```
 
 ```scala
 // build.sbt
+resolvers += "Glyphora GitHub Packages" at "https://maven.pkg.github.com/worxbend/glyphora"
+credentials += Credentials(
+  "GitHub Package Registry", "maven.pkg.github.com",
+  sys.env("GITHUB_USER"), sys.env("GITHUB_TOKEN")
+)
 libraryDependencies += "io.worxbend" %% "tui-dsl" % "0.18.0"
 ```
 

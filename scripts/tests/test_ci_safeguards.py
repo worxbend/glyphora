@@ -269,6 +269,22 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.workflows["docs.yml"]["jobs"]["build"]["permissions"]["id-token"] = "write"
         self.fails("unexpected permissions")
 
+    def test_packages_validation_cannot_be_skipped(self):
+        self.workflows["publish-packages.yml"]["jobs"]["publish"]["needs"] = []
+        self.fails("packages: validation must gate")
+
+    def test_packages_checkout_requires_validated_commit(self):
+        self.workflows["publish-packages.yml"]["jobs"]["publish"]["steps"][0]["with"]["ref"] = "main"
+        self.fails("packages: checkout must use validated SHA")
+
+    def test_packages_token_is_confined_to_publication(self):
+        self.workflows["publish-packages.yml"]["permissions"]["packages"] = "write"
+        self.fails("default permissions must be read-only")
+
+    def test_packages_remote_verification_is_required(self):
+        self.workflows["publish-packages.yml"]["jobs"]["publish"]["steps"].pop()
+        self.fails("packages: remote consumer verification missing")
+
     def test_credentials_cannot_be_in_wiki_remote(self):
         self.workflows["wiki.yml"]["jobs"]["publish"]["steps"][-1]["run"] += '\ngit clone "https://x-access-token:$GLYPHORA_GIT_TOKEN@github.com/test.wiki.git"'
         self.fails("remote URL")

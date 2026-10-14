@@ -1,9 +1,13 @@
 """Regression tests for the release gate; POM fixtures are explicit test data."""
 
 import importlib.util
+import io
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+import urllib.error
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -134,6 +138,78 @@ class PublishedPomTests(unittest.TestCase):
         pom.unlink()
         with self.assertRaises(FileNotFoundError):
             self.module.validate_poms(self.repository, "0.16.0")
+
+
+class RemoteArtifactsTests(unittest.TestCase):
+    def setUp(self):
+        path = ROOT / "scripts/verify-packaged-consumer.py"
+        spec = importlib.util.spec_from_file_location("remote_consumer", path)
+        assert spec is not None and spec.loader is not None
+        self.module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.module)
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.repository = Path(self.directory.name)
+        self.content = {}
+        for artifact in self.module.ARTIFACT_EDGES:
+            for suffix in (".pom", ".jar", "-sources.jar", "-javadoc.jar"):
+                relative = f"io/worxbend/{artifact}/0.18.0/{artifact}-0.18.0{suffix}"
+                data = f"explicit fixture: {relative}".encode()
+                destination = self.repository / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(data)
+                self.content[relative] = data
+        credentials = patch.dict(os.environ, {"GITHUB_PACKAGES_USERNAME": "fixture-user",
+                                             "GITHUB_PACKAGES_PASSWORD": "fixture-password"})
+        credentials.start()
+        self.addCleanup(credentials.stop)
+
+    def download(self, request, timeout):
+        self.assertEqual(timeout, 30)
+        self.assertTrue(request.get_header("Authorization").startswith("Basic "))
+        relative = request.full_url.removeprefix("https://maven.pkg.github.com/worxbend/glyphora/")
+        return io.BytesIO(self.content[relative])
+
+    def check(self, url="https://maven.pkg.github.com/worxbend/glyphora"):
+        self.module.verify_remote_artifacts(self.repository, url, "0.18.0")
+
+    def test_every_artifact_is_downloaded_and_compared(self):
+        with patch.object(self.module.urllib.request, "urlopen", side_effect=self.download) as download:
+            self.check()
+        self.assertEqual(download.call_count, 28)
+
+    def test_corrupt_remote_file_fails(self):
+        with patch.object(self.module.urllib.request, "urlopen", return_value=io.BytesIO(b"wrong release")):
+            with self.assertRaisesRegex(ValueError, "differs"):
+                self.check()
+
+    def test_credentials_are_not_sent_to_another_host(self):
+        with patch.object(self.module.urllib.request, "urlopen") as download:
+            with self.assertRaisesRegex(ValueError, "HTTPS GitHub Packages"):
+                self.check("https://example.com/repository")
+        download.assert_not_called()
+
+    def test_authentication_failure_is_not_retried(self):
+        error = urllib.error.HTTPError("fixture", 401, "unauthorized", {}, None)
+        with patch.object(self.module.urllib.request, "urlopen", side_effect=error) as download:
+            with self.assertRaises(urllib.error.HTTPError):
+                self.check()
+        self.assertEqual(download.call_count, 1)
+
+    def test_new_package_visibility_is_retried(self):
+        responses = iter([urllib.error.HTTPError("fixture", 404, "not found", {}, None)])
+
+        def download(request, timeout):
+            response = next(responses, None)
+            if response is not None:
+                raise response
+            return self.download(request, timeout)
+
+        with patch.object(self.module.urllib.request, "urlopen", side_effect=download) as fetch, \
+                patch.object(self.module.time, "sleep") as sleep:
+            self.check()
+        self.assertEqual(fetch.call_count, 29)
+        sleep.assert_called_once_with(5)
 
 
 class PackagedClasspathTests(unittest.TestCase):

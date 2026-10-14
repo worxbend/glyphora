@@ -1,0 +1,80 @@
+name: Publish GitHub Packages
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version declared by every publishable module at the selected ref
+        required: true
+        default: "0.18.0"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-packages-${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        timeout-minutes: 5
+        with:
+          ref: ${{ needs.validate.outputs.validated-sha }}
+          persist-credentials: false
+
+      - name: Checkout is the validated release commit
+        timeout-minutes: 1
+        env:
+          VALIDATED_SHA: ${{ needs.validate.outputs.validated-sha }}
+        run: |
+          actual=$(git rev-parse HEAD)
+          if [ -z "$VALIDATED_SHA" ] || [ "$actual" != "$VALIDATED_SHA" ] || [ "$actual" != "$GITHUB_SHA" ]; then
+            echo "::error::refusing to publish a commit other than the validated release SHA" >&2
+            exit 1
+          fi
+
+      - uses: ./.github/actions/mill
+        timeout-minutes: 10
+        with:
+          build-output: restore
+
+      - name: All seven versions match the requested release
+        timeout-minutes: 10
+        env:
+          GITHUB_REF_NAME: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+        run: python3 scripts/validate-release-version.py
+
+      - name: Publish all seven libraries to GitHub Packages
+        timeout-minutes: 25
+        env:
+          MILL_MAVEN_USERNAME: ${{ github.actor }}
+          MILL_MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          GLYPHORA_MAVEN_REPO: https://maven.pkg.github.com/${{ github.repository }}
+        run: |
+          ./mill mill.javalib.MavenPublishModule/ \
+            --publishArtifacts '{core,terminal,widgets,runtime,macros,dsl,test-support}.publishArtifacts' \
+            --releaseUri "$GLYPHORA_MAVEN_REPO" \
+            --snapshotUri "$GLYPHORA_MAVEN_REPO"
+
+      - name: Download every artifact and run an isolated Mill consumer
+        timeout-minutes: 30
+        env:
+          GITHUB_PACKAGES_USERNAME: ${{ github.actor }}
+          GITHUB_PACKAGES_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          COURSIER_CREDENTIALS: maven.pkg.github.com ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
+          GLYPHORA_MAVEN_REPO: https://maven.pkg.github.com/${{ github.repository }}
+        run: python3 scripts/verify-packaged-consumer.py --repository "$GLYPHORA_MAVEN_REPO"
