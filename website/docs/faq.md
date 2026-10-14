@@ -88,7 +88,7 @@ Yes. Widgets render into a `Buffer`; string helpers expose normalized lines and
 text. `Pilot` covers full event/render loops and produces deterministic text screens
 for ordinary ScalaTest assertions.
 
-`Pilot`, `BufferAssertions` and `GoldenFrames` ship as `io.worxbend::tui-test`, so add
+`Pilot`, `BufferAssertions` and `GoldenFrames` ship as `com.worxbend::tui-test`, so add
 it in the test configuration only. `HeadlessBackend` is part of the terminal module and
 can be driven directly downstream.
 

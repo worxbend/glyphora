@@ -90,6 +90,10 @@
 ## 🚀 Your first app
 
 > [!NOTE]
+> **Namespace migration:** this checkout targets `com.worxbend`. The existing
+> `v0.18.1` GitHub Packages release uses `io.worxbend`. Until the new namespace
+> is published, use that group for remote downloads or build this checkout locally.
+>
 > **Use GitHub Packages.** The seven libraries are distributed through
 > [GitHub Packages](https://github.com/worxbend/glyphora/packages), with the Maven resolver below.
 > GitHub requires a **classic personal access token with `read:packages`**, even for public packages.
@@ -106,7 +110,7 @@ export COURSIER_CREDENTIALS="maven.pkg.github.com $GITHUB_USER:$GITHUB_TOKEN"
 ```scala
 // build.mill
 def repositories = Seq("https://maven.pkg.github.com/worxbend/glyphora")
-def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.18.1")
+def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.18.1")
 ```
 
 ```scala
@@ -116,7 +120,7 @@ credentials += Credentials(
   "GitHub Package Registry", "maven.pkg.github.com",
   sys.env("GITHUB_USER"), sys.env("GITHUB_TOKEN")
 )
-libraryDependencies += "io.worxbend" %% "tui-dsl" % "0.18.1"
+libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.18.1"
 ```
 
 Then return an ordinary Scala `Element` tree:
@@ -278,8 +282,8 @@ text. Buffer helpers skip wide-character continuation cells, so assertions match
 `using` closes the runner even when an assertion fails.
 
 > [!TIP]
-> `Pilot`, `BufferAssertions` and `GoldenFrames` ship as `io.worxbend::tui-test`, so add it as a
-> test-only dependency (`mvn"io.worxbend::tui-test:0.18.1"`) rather than copying the harness.
+> `Pilot`, `BufferAssertions` and `GoldenFrames` ship as `com.worxbend::tui-test`, so add it as a
+> test-only dependency (`mvn"com.worxbend::tui-test:0.18.1"`) rather than copying the harness.
 
 🧪 **[Testing guide →](website/docs/testing.md)**
 

@@ -122,7 +122,7 @@ const config = {
               {label: 'GitHub', href: 'https://github.com/worxbend/glyphora'},
               {label: 'Wiki', href: 'https://github.com/worxbend/glyphora/wiki'},
               {label: 'Releases', href: 'https://github.com/worxbend/glyphora/tags'},
-              {label: 'Maven Central', href: 'https://search.maven.org/search?q=g:io.worxbend'},
+              {label: 'Maven Central', href: 'https://search.maven.org/search?q=g:com.worxbend'},
             ],
           },
         ],

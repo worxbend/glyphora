@@ -44,16 +44,16 @@ class PublishedPomTests(unittest.TestCase):
 
     def write_pom(self, name, edges, extra=(), version="0.16.0"):
         project = ET.Element("project", xmlns="http://maven.apache.org/POM/4.0.0")
-        for key, value in (("groupId", "io.worxbend"), ("artifactId", name), ("version", version)):
+        for key, value in (("groupId", "com.worxbend"), ("artifactId", name), ("version", version)):
             ET.SubElement(project, key).text = value
         dependencies = ET.SubElement(project, "dependencies")
         for group, artifact, dependency_version, scope in [
-            ("io.worxbend", edge, "0.16.0", "compile") for edge in edges
+            ("com.worxbend", edge, "0.16.0", "compile") for edge in edges
         ] + list(extra):
             dependency = ET.SubElement(dependencies, "dependency")
             for key, value in (("groupId", group), ("artifactId", artifact), ("version", dependency_version), ("scope", scope)):
                 ET.SubElement(dependency, key).text = value
-        destination = self.repository / "io/worxbend" / name / "0.16.0" / f"{name}-0.16.0.pom"
+        destination = self.repository / "com/worxbend" / name / "0.16.0" / f"{name}-0.16.0.pom"
         destination.parent.mkdir(parents=True, exist_ok=True)
         ET.ElementTree(project).write(destination, encoding="utf-8", xml_declaration=True)
 
@@ -80,13 +80,23 @@ class PublishedPomTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "coordinates"):
             self.module.validate_poms(self.repository, "0.16.0")
 
+    def test_old_group_id_fails(self):
+        pom = self.repository / "com/worxbend/tui-core_3/0.16.0/tui-core_3-0.16.0.pom"
+        tree = ET.parse(pom)
+        group = tree.getroot().find("m:groupId", self.module.NS)
+        assert group is not None
+        group.text = "io.worxbend"
+        tree.write(pom, encoding="utf-8", xml_declaration=True)
+        with self.assertRaisesRegex(ValueError, "coordinates"):
+            self.module.validate_poms(self.repository, "0.16.0")
+
     def test_test_scoped_library_edge_fails(self):
-        self.write_pom("tui-widgets_3", set(), [("io.worxbend", "tui-core_3", "0.16.0", "test")])
+        self.write_pom("tui-widgets_3", set(), [("com.worxbend", "tui-core_3", "0.16.0", "test")])
         with self.assertRaisesRegex(ValueError, "scope"):
             self.module.validate_poms(self.repository, "0.16.0")
 
     def add_dependency_element(self, tag, value):
-        pom = self.repository / "io/worxbend/tui-runtime_3/0.16.0/tui-runtime_3-0.16.0.pom"
+        pom = self.repository / "com/worxbend/tui-runtime_3/0.16.0/tui-runtime_3-0.16.0.pom"
         tree = ET.parse(pom)
         dependency = tree.getroot().find("m:dependencies/m:dependency", self.module.NS)
         assert dependency is not None
@@ -102,12 +112,12 @@ class PublishedPomTests(unittest.TestCase):
 
     def test_duplicate_production_dependency_fails(self):
         self.write_pom("tui-runtime_3", {"tui-core_3", "tui-terminal_3"},
-                       [("io.worxbend", "tui-core_3", "0.16.0", "compile")])
+                       [("com.worxbend", "tui-core_3", "0.16.0", "compile")])
         with self.assertRaisesRegex(ValueError, "duplicate"):
             self.module.validate_poms(self.repository, "0.16.0")
 
     def test_wrong_production_dependency_version_fails(self):
-        self.write_pom("tui-widgets_3", set(), [("io.worxbend", "tui-core_3", "0.15.0", "compile")])
+        self.write_pom("tui-widgets_3", set(), [("com.worxbend", "tui-core_3", "0.15.0", "compile")])
         with self.assertRaisesRegex(ValueError, "version/scope"):
             self.module.validate_poms(self.repository, "0.16.0")
 
@@ -127,14 +137,14 @@ class PublishedPomTests(unittest.TestCase):
         exclusions = tree.getroot().find(".//m:exclusions", self.module.NS)
         assert exclusions is not None
         exclusion = ET.SubElement(exclusions, f"{{{self.module.NS['m']}}}exclusion")
-        ET.SubElement(exclusion, f"{{{self.module.NS['m']}}}groupId").text = "io.worxbend"
+        ET.SubElement(exclusion, f"{{{self.module.NS['m']}}}groupId").text = "com.worxbend"
         ET.SubElement(exclusion, f"{{{self.module.NS['m']}}}artifactId").text = "tui-core_3"
         tree.write(pom, encoding="utf-8", xml_declaration=True)
         with self.assertRaisesRegex(ValueError, "exclusion"):
             self.module.validate_poms(self.repository, "0.16.0")
 
     def test_missing_pom_fails(self):
-        pom = self.repository / "io/worxbend/tui-core_3/0.16.0/tui-core_3-0.16.0.pom"
+        pom = self.repository / "com/worxbend/tui-core_3/0.16.0/tui-core_3-0.16.0.pom"
         pom.unlink()
         with self.assertRaises(FileNotFoundError):
             self.module.validate_poms(self.repository, "0.16.0")
@@ -153,7 +163,7 @@ class RemoteArtifactsTests(unittest.TestCase):
         self.content = {}
         for artifact in self.module.ARTIFACT_EDGES:
             for suffix in (".pom", ".jar", "-sources.jar", "-javadoc.jar"):
-                relative = f"io/worxbend/{artifact}/0.18.0/{artifact}-0.18.0{suffix}"
+                relative = f"com/worxbend/{artifact}/0.18.0/{artifact}-0.18.0{suffix}"
                 data = f"explicit fixture: {relative}".encode()
                 destination = self.repository / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
@@ -222,7 +232,7 @@ class PackagedClasspathTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.repository = Path(self.directory.name)
-        self.current = self.repository / "io/worxbend/tui-core_3/0.16.0/tui-core_3-0.16.0.jar"
+        self.current = self.repository / "com/worxbend/tui-core_3/0.16.0/tui-core_3-0.16.0.jar"
         self.current.parent.mkdir(parents=True)
         self.current.write_bytes(b"explicit current-version test fixture")
 

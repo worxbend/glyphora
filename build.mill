@@ -111,7 +111,7 @@ object `package` extends Module {
 
     def pomSettings = PomSettings(
       description = moduleDescription,
-      organization = "io.worxbend",
+      organization = "com.worxbend",
       url = "https://github.com/worxbend/glyphora",
       licenses = Seq(License.MIT),
       versionControl = VersionControl.github("worxbend", "glyphora"),

@@ -14,17 +14,17 @@ minor versions.
 
 ## Current coordinates
 
-All published modules share one synchronized version under `io.worxbend`:
+All publishable modules in this checkout share one synchronized version under `com.worxbend`:
 
 ```scala
 // Mill
 def repositories = Seq("https://maven.pkg.github.com/worxbend/glyphora")
-def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.18.1")
+def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.18.1")
 ```
 
 ```scala
 // sbt
-libraryDependencies += "io.worxbend" %% "tui-dsl" % "0.18.1"
+libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.18.1"
 ```
 
 Applications normally need only `tui-dsl`. Lower-tier artifacts are `tui-core`,
@@ -38,6 +38,10 @@ classic personal access token with `read:packages`; see
 [Getting started](./getting-started#1-add-glyphora) for Mill and sbt authentication.
 Maven Central publication is separate. `0.18.1` is the synchronized release version.
 Local installation with `./mill __.publishLocal` also works.
+
+The existing `v0.18.1` GitHub Packages release uses the previous `io.worxbend`
+group. Until a release under `com.worxbend` is published, use the previous group
+for remote dependencies or install the current checkout locally.
 
 ## Migrating to 0.18.0
 
@@ -118,6 +122,16 @@ genuinely closed value types (`Position`, `Size`, `Rect`, `Cell`, `KeyEvent`,
 terminal cell and a coordinate are.
 
 ## Release process
+
+The Maven namespace is `com.worxbend`, corresponding to the domain `worxbend.com`.
+Before a Central release, verify this namespace under the account whose Portal
+token is stored in the publishing secrets. Sonatype checks the verification TXT
+record on `worxbend.com`; see [namespace verification](https://central.sonatype.org/register/namespace/).
+Scala imports continue to use `io.worxbend.tui`: the Maven group ID and Scala package
+names are independent.
+
+GitHub Packages releases through `v0.18.1` used the `io.worxbend` Maven group.
+Consumers moving to the new group must update their dependency coordinates.
 
 The **Publish GitHub Packages** workflow (`.github/workflows/publish-packages.yml`)
 runs on `v*` tag pushes and can also be started manually with a `version` input.

@@ -13,6 +13,14 @@ and make two changes that exercise state, layout, styling, and keyboard commands
 
 ## 1. Add glyphora
 
+:::info Namespace migration
+
+This checkout targets the Maven group `com.worxbend`. The existing `v0.18.1`
+GitHub Packages release uses `io.worxbend`. Until the new group is published,
+use `io.worxbend` for remote dependencies or install this checkout locally.
+
+:::
+
 :::info GitHub Packages authentication
 
 The libraries are distributed through
@@ -57,7 +65,7 @@ import mill.*, scalalib.*
 object app extends ScalaModule:
   def scalaVersion = "3.9.0"
   def repositories = Seq("https://maven.pkg.github.com/worxbend/glyphora")
-  def mvnDeps = Seq(mvn"io.worxbend::tui-dsl:0.18.1")
+  def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.18.1")
 ```
 
 Put application sources under `app/src/`, then run them with `mill app.run` (or
@@ -73,7 +81,7 @@ credentials += Credentials(
   "GitHub Package Registry", "maven.pkg.github.com",
   sys.env("GITHUB_USER"), sys.env("GITHUB_TOKEN")
 )
-libraryDependencies += "io.worxbend" %% "tui-dsl" % "0.18.1"
+libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.18.1"
 ```
 
 Put application sources under `src/main/scala/`, then use `sbt run`.
@@ -86,7 +94,7 @@ factories, style and layout extensions, reactive state, widgets, terminal events
 and runtime effects. Lower-level module dependencies are useful only when you are
 embedding glyphora or writing a widget library; see [Architecture](./architecture).
 
-The one artifact worth adding on purpose is `io.worxbend::tui-test`, in the **test**
+The one artifact worth adding on purpose is `com.worxbend::tui-test`, in the **test**
 configuration: it carries the `Pilot` driver that runs a whole app without a TTY. See
 [Testing](./testing).
 

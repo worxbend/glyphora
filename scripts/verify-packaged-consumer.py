@@ -38,7 +38,7 @@ def verify_remote_artifacts(repository: Path, url: str, version: str) -> None:
     authorization = "Basic " + base64.b64encode(credentials.encode()).decode()
     for artifact in ARTIFACT_EDGES:
         for suffix in (".pom", ".jar", "-sources.jar", "-javadoc.jar"):
-            relative = f"io/worxbend/{artifact}/{version}/{artifact}-{version}{suffix}"
+            relative = f"com/worxbend/{artifact}/{version}/{artifact}-{version}{suffix}"
             request = urllib.request.Request(f"{url.rstrip('/')}/{relative}", headers={"Authorization": authorization})
             for attempt in range(6):
                 try:
@@ -58,10 +58,10 @@ def verify_remote_artifacts(repository: Path, url: str, version: str) -> None:
 def validate_poms(repository: Path, version: str) -> None:
     """Assert coordinates, exact production edges and the absence of test-library leaks."""
     for artifact, expected in ARTIFACT_EDGES.items():
-        pom = repository / "io/worxbend" / artifact / version / f"{artifact}-{version}.pom"
+        pom = repository / "com/worxbend" / artifact / version / f"{artifact}-{version}.pom"
         project = ET.parse(pom).getroot()
         coordinates = tuple(project.findtext(f"m:{key}", namespaces=NS) for key in ("groupId", "artifactId", "version"))
-        if coordinates != ("io.worxbend", artifact, version):
+        if coordinates != ("com.worxbend", artifact, version):
             raise ValueError(f"{artifact}: wrong coordinates {coordinates}")
         actual = set()
         for dependency in project.findall("m:dependencies/m:dependency", NS):
@@ -70,7 +70,7 @@ def validate_poms(repository: Path, version: str) -> None:
             scope = dependency.findtext("m:scope", namespaces=NS) or "compile"
             if group.startswith(("org.scalatest", "org.scalacheck")):
                 raise ValueError(f"{artifact}: test dependency leaked: {group}:{name}")
-            if group == "io.worxbend":
+            if group == "com.worxbend":
                 dependency_version = dependency.findtext("m:version", namespaces=NS)
                 if dependency_version != version or scope != "compile":
                     raise ValueError(f"{artifact}: wrong dependency version/scope for {name}: {dependency_version}/{scope}")
@@ -112,7 +112,7 @@ def verify_classpath(entries: list[str], repository: Path, version: str, expecte
                     raise ValueError(f"unexpected Glyphora jar on consumer classpath: {path}")
                 if artifact in found:
                     raise ValueError(f"duplicate Glyphora artifact on consumer classpath: {artifact}")
-                staged = repository / "io/worxbend" / artifact / version / path.name
+                staged = repository / "com/worxbend" / artifact / version / path.name
                 if hashlib.sha256(path.read_bytes()).digest() != hashlib.sha256(staged.read_bytes()).digest():
                     raise ValueError(f"consumer did not resolve the staged {artifact}")
                 found.add(artifact)

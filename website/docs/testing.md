@@ -14,7 +14,7 @@ There are three useful levels: render one widget into a buffer, snapshot a whole
 frame, or drive a complete `TuiApp`.
 
 Everything on this page ships in the **`tui-test`** artifact
-(`io.worxbend::tui-test`), alongside `tui-core`, `tui-terminal`, `tui-widgets`,
+(`com.worxbend::tui-test`), alongside `tui-core`, `tui-terminal`, `tui-widgets`,
 `tui-runtime`, `tui-macros` and `tui-dsl`. Add it as a test-only dependency; the Scala
 package is `io.worxbend.tui.testsupport`.
 
