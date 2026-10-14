@@ -24,7 +24,7 @@ def validate_versions(tag: str, versions: dict[str, str]) -> str:
 
 
 def main() -> None:
-    tag = os.environ["GITHUB_REF_NAME"]
+    tag = os.environ.get("GLYPHORA_RELEASE_TAG") or os.environ["GITHUB_REF_NAME"]
     # Validate tag syntax before resolving any build task.
     validate_versions(tag, dict.fromkeys(MODULES, tag[1:]))
     env = dict(os.environ)

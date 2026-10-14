@@ -120,6 +120,9 @@ def validate(workflows: dict[str, dict], actions: dict[str, dict]) -> None:
     guard = next((step for step in package_steps if step.get("env", {}).get("VALIDATED_SHA") == SHA), {})
     require('"$actual" != "$VALIDATED_SHA"' in guard.get("run", "") and '"$actual" != "$GITHUB_SHA"' in guard.get("run", ""), "packages: exact release checkout comparison missing")
     version = next((i for i, step in enumerate(package_steps) if step.get("run") == "python3 scripts/validate-release-version.py"), len(package_steps))
+    require(version < len(package_steps) and package_steps[version].get("env") == {
+        "GLYPHORA_RELEASE_TAG": "${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}"
+    }, "packages: release version must use a project variable, not GitHub's reserved ref variable")
     credentials = [i for i, step in enumerate(package_steps) if "secrets." in str(step)]
     require(bool(credentials) and all(version < i for i in credentials), "packages: all module versions must be checked before credentials")
     require(any(step.get("run") == 'python3 scripts/verify-packaged-consumer.py --repository "$GLYPHORA_MAVEN_REPO"' for step in package_steps), "packages: remote consumer verification missing")

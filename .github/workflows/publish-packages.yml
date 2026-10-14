@@ -55,7 +55,7 @@ jobs:
       - name: All seven versions match the requested release
         timeout-minutes: 10
         env:
-          GITHUB_REF_NAME: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+          GLYPHORA_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
         run: python3 scripts/validate-release-version.py
 
       - name: Publish all seven libraries to GitHub Packages

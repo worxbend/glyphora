@@ -184,6 +184,18 @@ class ReleaseVersionTests(unittest.TestCase):
         self.assertTrue(all("GLYPHORA_GOLDEN_UPDATE" not in call.kwargs["env"] for call in run.call_args_list))
         self.assertTrue(all(call.kwargs["timeout"] > 0 for call in run.call_args_list))
 
+    def test_manual_release_uses_project_version_without_overriding_github_ref(self):
+        with patch.dict(os.environ, {"GITHUB_REF_NAME": "main", "GLYPHORA_RELEASE_TAG": "v0.18.0"}), \
+                patch.object(self.tool.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, '"0.18.0"')) as run:
+            self.tool.main()
+        self.assertEqual(run.call_count, 7)
+
+    def test_manual_release_still_rejects_module_version_mismatch(self):
+        with patch.dict(os.environ, {"GITHUB_REF_NAME": "main", "GLYPHORA_RELEASE_TAG": "v0.18.0"}), \
+                patch.object(self.tool.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, '"0.17.0"')), \
+                self.assertRaisesRegex(ValueError, "does not match"):
+            self.tool.main()
+
 
 class WorkflowPolicyTests(unittest.TestCase):
     def setUp(self):
@@ -284,6 +296,12 @@ class WorkflowPolicyTests(unittest.TestCase):
     def test_packages_remote_verification_is_required(self):
         self.workflows["publish-packages.yml"]["jobs"]["publish"]["steps"].pop()
         self.fails("packages: remote consumer verification missing")
+
+    def test_packages_version_cannot_override_reserved_github_ref(self):
+        step = next(step for step in self.workflows["publish-packages.yml"]["jobs"]["publish"]["steps"]
+                    if step.get("run") == "python3 scripts/validate-release-version.py")
+        step["env"]["GITHUB_REF_NAME"] = step["env"].pop("GLYPHORA_RELEASE_TAG")
+        self.fails("project variable")
 
     def test_credentials_cannot_be_in_wiki_remote(self):
         self.workflows["wiki.yml"]["jobs"]["publish"]["steps"][-1]["run"] += '\ngit clone "https://x-access-token:$GLYPHORA_GIT_TOKEN@github.com/test.wiki.git"'
