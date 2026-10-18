@@ -662,7 +662,33 @@ def chatPane(using ReactiveScope, Theme): Element =
 ```
 
 Use `tree(nodes, TreeState)` for in-memory hierarchy and
-`directoryTree(state)` for filesystem snapshots. `DirectoryTreeState(root)` starts
+`directoryTree(state)` for filesystem snapshots.
+
+`TreeState()` is *positional*: it names a node by its path, the child index at each
+level, so `state.expanded += Seq(0)` expands the first root. That is right for a tree
+whose shape is fixed and wrong for one you refresh — reorder the nodes and the same
+path points at a different node, so the reader's expansion and highlight land on
+strangers. A keyed state names a node by something the node carries, mirroring
+`DataTableState.keyed`, and keeps the reader's place across a refresh:
+
+```scala
+// labels unique across the whole tree: key by label
+private val services = TreeState.keyed(_.label)
+// labels repeat across branches (README.md under src and under docs): key by the label path
+private val files    = TreeState.byLabelPath
+
+def view(using ReactiveScope, Theme): Element =
+  tree(nodesFrom(snapshot.get), services)   // "api" stays expanded and selected after every refresh
+```
+
+`expanded` and `selected` are then sets and options of *keys* — `services.selected`
+is `Some("api")`, `files.selected` is `Some(Seq("src", "README.md"))` — so an app reads
+which record is selected without mapping a path back through the nodes. Keys are
+compared with `==` and must be unique within the tree. The state's type names the key:
+`TreeState[Seq[Int]]` for the positional one, `TreeState[String]` for a tree keyed by
+label.
+
+`DirectoryTreeState(root)` starts
 **unloaded**. Construction, navigation and painting never touch the filesystem;
 `childrenOf` and `visiblePaths` read only installed snapshots. Create and retain the
 state outside `view`.
