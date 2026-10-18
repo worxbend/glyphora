@@ -1,6 +1,20 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Alignment, Constraint, Flex, Line, Span, Style, Text, Widget}
+import io.worxbend.tui.core.{
+  Alignment,
+  Buffer,
+  Constraint,
+  Flex,
+  KeyCode,
+  KeyEvent,
+  Line,
+  Measured,
+  Rect,
+  Span,
+  Style,
+  Text,
+  Widget,
+}
 import io.worxbend.tui.runtime.{LogLevel, LogRecord, LogRing}
 import io.worxbend.tui.widgets.{TableCell, TableRow}
 import io.worxbend.tui.widgets as w
@@ -606,3 +620,61 @@ final case class MarkdownStreamElement(
 
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     follow.map(scroll => wheelScrolls(() => scroll.scrollUp(), () => scroll.scrollDown()))
+
+/** A unified diff drawn by [[w.DiffView]] — `git diff` output read with `Patch.parse`, or two texts compared with
+  * `Patch.of` — scrolled and stepped through by a caller-owned [[w.DiffViewState]].
+  *
+  * Focusable. While focused, `n` or `]` puts the next hunk's header on the top row and `p` or `[` the previous one;
+  * Up/Down/PageUp/PageDown and the wheel scroll, Home and End jump to the ends. The keys are the element's own, like
+  * `splitPane`'s `[`/`]`: an app binding on the same letter only fires while some other element has focus. `.split`
+  * lays the old and new sides next to each other, `.contextLines(n)` folds long runs of unchanged lines, `.lexer(…)`
+  * highlights the code, and `.withOptions` replaces every knob at once. A measured leaf: it reports one row per header
+  * and line, so it sizes itself in a column or inside a `scrollView`.
+  *
+  * The state is render-thread-only and keeps the rows of the last patch it laid out; hand the node the same `Patch`
+  * value each frame (keep it in a `val` or a `Signal`) and the diff is not recomputed between frames.
+  */
+final case class DiffViewElement(
+    patch: w.Patch,
+    state: w.DiffViewState,
+    options: w.DiffViewOptions,
+    props: ElementProps = ElementProps(),
+) extends Element:
+  type Self = DiffViewElement
+  override def debugName: String = "diffView"
+
+  /** Side by side: the old file left of the divider, the new one right of it. */
+  def split: DiffViewElement = copy(options = options.copy(layout = w.DiffLayout.Split))
+
+  /** One column, removed lines above their replacements — the default. */
+  def unified: DiffViewElement = copy(options = options.copy(layout = w.DiffLayout.Unified))
+
+  /** Keeps `lines` unchanged lines around each change and folds longer runs into one `… N unchanged lines` row. */
+  def contextLines(lines: Int): DiffViewElement = copy(options = options.copy(contextLines = Some(lines)))
+
+  /** Highlights each line's text through `lexer`, in the options' syntax theme. */
+  def lexer(lexer: w.Lexer): DiffViewElement = copy(options = options.copy(lexer = Some(lexer)))
+
+  /** Replaces every option at once — see [[w.DiffViewOptions]]. */
+  def withOptions(options: w.DiffViewOptions): DiffViewElement = copy(options = options)
+
+  // Layout measures and the frame paints the same value, so the rows are laid out once per node.
+  lazy val widget: Widget =
+    val view = w.DiffView(patch, options.copy(style = props.style.patch(options.style)))
+    new Widget with Measured:
+      def render(area: Rect, buffer: Buffer): Unit   = view.render(area, buffer, state)
+      override def heightAt(width: Int): Option[Int] = view.heightAt(width)
+
+  private[dsl] def withProps(props: ElementProps): DiffViewElement = copy(props = props)
+
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler] =
+    Some(
+      keys {
+        case KeyEvent(KeyCode.Char('n') | KeyCode.Char(']'), _) => state.nextHunk()
+        case KeyEvent(KeyCode.Char('p') | KeyCode.Char('['), _) => state.previousHunk()
+      }.orElse(scrollKeys(rows => state.scrollUp(rows), rows => state.scrollDown(rows)))
+        .orElse(scrollJumpKeys(() => state.first(), () => state.last()))
+    )
+
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
+    Some(wheelScrolls(() => state.scrollUp(), () => state.scrollDown()))

@@ -831,6 +831,29 @@ private[dsl] trait ElementFactories:
       MarkdownStreamElement(stream, theme.markdown, w.MarkdownOptions(), Some(scroll), ElementProps(focusable = true))
     }
 
+  /** A diff pane over `patch` — `Patch.parse(gitDiffOutput)` or `Patch.of(before, after)` — with file and hunk headers,
+    * line numbers on both sides and the changed words of a replaced line emphasised. `state` is caller-owned like any
+    * scroll state: create it once outside `view`. Focusable; `n`/`]` and `p`/`[` step through hunks, the arrows, Page
+    * keys, Home/End and the wheel scroll. Added lines draw in the theme's `success` style, removed ones in `error`,
+    * hunk headers in `accent` and line numbers in `muted`; `.split`, `.contextLines(n)` and `.lexer(…)` adjust the
+    * view. See [[DiffViewElement]].
+    */
+  def diffView(patch: w.Patch, state: w.DiffViewState)(using theme: Theme): DiffViewElement =
+    DiffViewElement(
+      patch,
+      state,
+      w.DiffViewOptions(
+        insertedStyle = theme.success,
+        deletedStyle = theme.error,
+        fileHeaderStyle = theme.primary.bold,
+        hunkHeaderStyle = theme.accent,
+        lineNumberStyle = theme.muted,
+        collapsedStyle = theme.muted.italic,
+        syntaxTheme = theme.syntax,
+      ),
+      ElementProps(focusable = true),
+    )
+
   /** A sortable, filterable, pageable table: `table` is the data and column definitions, `state` is the view over it.
     *
     * The state must be created once outside `view` — it holds the sort, the substring filter, the selection and the

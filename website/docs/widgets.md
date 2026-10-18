@@ -17,7 +17,7 @@ Use this page to choose a widget and understand its state model. The
 | Job | Start with | Add when needed |
 |---|---|---|
 | Arrange a screen | `row`, `column`, `panel`, `spacer`, `rule` | `scrollView`, `splitPane`, `layers`, `placeholder` |
-| Show prose or records | `text`, `list`, `table`, `tabs` | `markdown`, `SyntaxHighlighter`, `log`, `dataTable`, `treeTable`, `directoryTree`, `hexViewer`, `inspect` |
+| Show prose or records | `text`, `list`, `table`, `tabs` | `markdown`, `SyntaxHighlighter`, `log`, `dataTable`, `treeTable`, `directoryTree`, `hexViewer`, `inspect`, `diffView` |
 | Collect input | `input`, `checkbox`, `toggle`, `select`, `button` | `radioGroup`, `slider`, `rangeSlider`, `datePicker`, `timePicker`, `colorPicker`, `textArea`, `autocomplete`, `filePicker`, `selectionList`, `focusGroup`, `Form` |
 | Show a metric | `gauge`, `sparkline` | `lineGauge`, `dualSparkline`, `barChart`, `horizontalBarChart` |
 | Plot data | `chart`, `pieChart`, `heatmap` | `stackedBarChart`, `canvas`, `calendar` |
@@ -487,6 +487,8 @@ column(
 - `logConsole(ring)` shows the tail of a `LogRing` — captured `println`s, `java.util.logging`
   records, the app's own — filtered by level and logger; see below.
 - `errorBoundary(fallback)(subtree)` confines a subtree that throws to its own area; see below.
+- `diffView(patch, state)` shows a unified diff — `git diff` output read with `Patch.parse`, or
+  two texts compared with `Patch.of` — unified or side by side; see [A diff pane](#a-diff-pane).
 - `link(label, url)` emits a clickable OSC 8 hyperlink when the terminal supports it.
 - `bigText` renders banners; `image` renders raster data with half-block cells.
 
@@ -564,6 +566,45 @@ logConsole(ring)
 It owns no scroll state and always follows the tail, so it is built in the view like any
 other node; [the app shell guide](./app-shell#a-log-console-on-a-key) shows it behind a
 key the app binds. SLF4J users route through `jul-to-slf4j` — there is no SLF4J artifact.
+
+### A diff pane
+
+`Patch.parse(text)` reads unified-diff text (`git diff`, `diff -u`, a `.patch` file) into a
+`Patch`: one `FilePatch` per `---`/`+++` pair, each holding `Hunk`s of `DiffLine.Context`,
+`Added` and `Removed` lines. It returns `Either[PatchError, Patch]`, the error naming the input
+line that did not parse; `patch.unified` writes the text back. `Patch.of(before, after)` compares
+two texts line by line with Myers' algorithm and groups the changes into hunks with three lines
+of context, the way `git diff` does (`Patch.of(a, b, context = 10)` for more).
+
+```scala
+private val state = DiffViewState()
+private val patch = Patch.parse(gitDiffOutput).getOrElse(Patch.empty)
+
+def view(using ReactiveScope, Theme): Element =
+  panel("Changes")(diffView(patch, state).split.lexer(Lexer.Scala)).fill
+```
+
+`diffView(patch, state)` heads each file with its path and each hunk with its `@@` line, and
+numbers every line on both sides. A removed line and the added line that replaced it have the
+words that actually changed emphasised — `foo bar` → `foo baz` marks only `bar` and `baz`.
+Added lines take the theme's `success` style, removed lines `error`, hunk headers `accent`.
+
+- `.split` puts the old file left of a `│` and the new one right of it, a replaced line beside
+  its replacement; `.unified` (the default) lists removed lines above added ones. Columns are
+  measured in display width, so CJK text keeps both sides aligned.
+- `.contextLines(n)` keeps `n` unchanged lines around each change and folds a longer run into
+  one `… 12 unchanged lines` row.
+- `.lexer(Lexer.Scala)` highlights the code through any `Lexer`, over the added and removed
+  colours.
+- `.withOptions(DiffViewOptions(...))` sets everything at once, including every style and the
+  divider and fold glyphs.
+
+The pane is focusable. `n` or `]` scrolls the next hunk's header to the top row, `p` or `[`
+the previous one; the arrows, PageUp/PageDown, Home/End and the wheel scroll. `DiffViewState`
+is caller-owned and render-thread-only — create it once outside `view`. It keeps the rows of
+the last patch it drew, so hand the node the same `Patch` value each frame. Without the DSL,
+`DiffView(patch, options)` is a `StatefulWidget[DiffViewState]` that also implements
+`Measured`.
 
 ### Confining a failing subtree
 
@@ -2486,7 +2527,7 @@ The internal tiers document dependency order, not quality:
    spinner, animated text, marquee, skeleton, indeterminate bar, big text, notice,
    badge, tooltip, dialog, markdown, syntax highlighter.
 4. **Application-scale state** — data table, directory tree, text area, log, log
-   console, error boundary, menu, paginator, scroll view, image, links, date and time
+   console, error boundary, diff view, menu, paginator, scroll view, image, links, date and time
   pickers, colour picker, tree table, hex viewer, and inspect.
 
 Every built-in has render-to-`Buffer` tests. Interactive DSL wrappers additionally
