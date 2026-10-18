@@ -65,6 +65,10 @@ final case class FocusState private[dsl] (
   * read. `hoverStyle` and `pressedStyle` are the optional cues `.hoverStyle(...)`/`.pressedStyle(...)` install, layered
   * over the node's style while `focusState.hovered`/`focusState.pressed` holds; `None` draws nothing extra, so an app
   * that never asks for them never pays for mouse-motion tracking either.
+  *
+  * `onMouseContext` is the handler `.onMouse(ctx => …)` installs: the same events as `onMouse`, handed over with the
+  * element's own area and the position relative to it — see [[MouseContext]]. It runs after `onMouse` and before the
+  * built-in behaviour.
   */
 final case class ElementProps(
     style: Style = Style.Default,
@@ -83,6 +87,7 @@ final case class ElementProps(
     disabled: Boolean = false,
     hoverStyle: Option[Style] = None,
     pressedStyle: Option[Style] = None,
+    onMouseContext: Option[MouseContext => Boolean] = None,
 ):
 
   /** Whether this element is the one the focus pass marked — where keystrokes go this frame. */

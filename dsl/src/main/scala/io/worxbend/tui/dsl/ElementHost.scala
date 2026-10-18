@@ -46,12 +46,30 @@ final class ElementHost:
     */
   @volatile var recordBounds: Boolean = false
 
+  /** Pointer capture and click counting between mouse events — see [[PointerCapture]]. */
+  private var pointer = PointerCapture()
+
+  /** The clock click counting reads, in nanoseconds; a test swaps in a hand-moved one. */
+  private[dsl] var clock: () => Long = () => System.nanoTime()
+
+  /** Whether the last frame contained a node that only shows under all-motion tracking — a `.hoverStyle`, or an
+    * explicit `.pointer(shape)`. A host that owns its loop and sees this turn true asks its backend for
+    * `MouseCaptureMode.AllMotion`; `TuiApp` does so by itself when it runs with mouse capture on.
+    */
+  def wantsMouseMotion: Boolean = motionDemanded
+
+  private var motionDemanded = false
+
+  /** Whether the last frame drew a hover or pressed cue, so a change of hovered/pressed target owes a frame. */
+  private var cuesDemanded = false
+
   /** Retires this mount's hooks, focus history and dispatch tree. The next render starts a fresh mount. Call only
     * between frames on the owning thread. Caller-owned state, subscriptions and resources are not closed: the embedding
     * loop owns its ReactiveScope and must dispose it separately.
     */
   def reset(): Unit =
     tracker = FocusTracker()
+    pointer = PointerCapture()
     session = ViewSession()
     lastTree = None
 
@@ -104,6 +122,8 @@ final class ElementHost:
   ): Unit =
     tracker.reconcile(FocusPass.focusKeys(raw), FocusPass.autofocusRequest(raw))
     val recorder = Option.when(recordBounds)(bounds)
+    motionDemanded = false
+    cuesDemanded = false
     // a tree with a consumer of bounds in it (a click-outside backdrop) turns recording on for the frames after this one
     val tree     = FocusPass.decorate(
       raw,
@@ -112,6 +132,8 @@ final class ElementHost:
       recorder,
       onBoundsDemand = () => recordBounds = true,
       disabledStyle = disabledStyle,
+      onMotionDemand = () => motionDemanded = true,
+      onCueDemand = () => cuesDemanded = true,
     )
     lastTree = Some(tree)
     recorder.foreach(_.begin())
@@ -163,12 +185,18 @@ final class ElementHost:
   def dispatchKey(key: KeyEvent): Boolean = lastTree.exists(EventRouter.dispatchKey(_, key))
 
   /** Hit-tests the pointer, moves focus if a press landed inside a different focusable, then routes the event to the
-    * element under it. `true` when focus moved or an element consumed the event.
+    * element under it. `true` when focus moved, an element consumed the event, or the hovered or pressed target changed
+    * while the frame draws a `.hoverStyle`/`.pressedStyle` cue (so the next frame looks different).
+    *
+    * On the way it synthesises the event's `clickCount` and applies pointer capture — see [[PointerCapture]]: while a
+    * consumed press holds the pointer, drags and the release go to the pressed target wherever they land.
     */
   def dispatchMouse(mouse: MouseEvent): Boolean =
-    val target     = tracker.mouseHit(mouse.position)
+    val event      = pointer.counted(mouse, clock())
+    val under      = tracker.mouseHit(event.position)
+    val target     = pointer.route(event, under)
     val focusMoved =
-      if mouse.kind == MouseEventKind.Down then
+      if event.kind == MouseEventKind.Down then
         target.flatMap(_.target.focusIndex) match
           case Some(index) if index != tracker.focusedIndex =>
             tracker.focusTo(index)
@@ -176,8 +204,24 @@ final class ElementHost:
           case _                                            => false
       else false
 
-    val consumed = lastTree.exists(EventRouter.dispatchMouse(_, mouse, target))
-    consumed || focusMoved
+    val consumed = lastTree.exists(EventRouter.dispatchMouse(_, event, target))
+    pointer.delivered(event, target, consumed)
+    val restyled = trackPointerStates(event, under) && cuesDemanded
+    consumed || focusMoved || restyled
+
+  /** Updates the hovered and pressed targets the next focus pass stamps, `true` when either changed. Hover follows the
+    * pointer over every event that has a position on screen; pressed is set by a press and cleared by a release.
+    */
+  private def trackPointerStates(event: MouseEvent, under: Option[MouseHit]): Boolean =
+    val hovered = under.map(_.target)
+    val pressed = event.kind match
+      case MouseEventKind.Down => hovered
+      case MouseEventKind.Up   => None
+      case _                   => tracker.pressedTarget
+    val changed = hovered != tracker.hoveredTarget || pressed != tracker.pressedTarget
+    tracker.hoveredTarget = hovered
+    tracker.pressedTarget = pressed
+    changed
 
   /** The mouse pointer the last frame wants shown at `position` — see [[EventRouter.pointerShapeAt]]. A host that owns
     * its own loop hands the answer to `Backend.setPointerShape` when it changes; `TuiApp` does so on every mouse event.

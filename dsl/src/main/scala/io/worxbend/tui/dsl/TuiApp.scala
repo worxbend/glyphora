@@ -15,6 +15,7 @@ import io.worxbend.tui.runtime.{
   TerminalRunner,
 }
 import io.worxbend.tui.terminal.{Backend, BackendError, ColorDepth, HeadlessBackend, JLine3Backend, PointerShape}
+import io.worxbend.tui.terminal.MouseCaptureMode
 import io.worxbend.tui.widgets.NoticeLevel
 
 import java.util.concurrent.atomic.AtomicReference
@@ -611,6 +612,7 @@ trait TuiApp:
         // what the probe established, before the first frame: a `Theme.auto` first frame is already the right one
         colorSchemeSignal.set(backend.capabilities.colorScheme)
         shownPointer = PointerShape.Default
+        motionRequested = false
         shownTaskbar = None
         terminalFocused = true
         screenStack.beginRun()
@@ -671,6 +673,7 @@ trait TuiApp:
       )
       effects.applyTo(frame)
       syncTaskbar(using scope)
+      syncMouseMotion(run)
     // asked after either branch: an intro is an animation like any other, and it is what a run with no configured
     // `tickRate` borrows ticks for. Borrowing through this negotiation rather than through the runner's tick rate is
     // what lets the loan end when the intro does.
@@ -845,6 +848,15 @@ trait TuiApp:
       activeHandle.get().foreach(_.setTaskbarProgress(progress))
       shownTaskbar = progress
 
+  /** Upgrades a run with mouse capture to all-motion tracking the first frame that contains a hover cue or an explicit
+    * pointer shape, so `.hoverStyle` works without the app configuring anything. Once per run, and never for an app
+    * that left mouse capture off: turning the mouse on would take the terminal's own text selection away.
+    */
+  private def syncMouseMotion(run: RunState): Unit =
+    if !motionRequested && run.host.wantsMouseMotion && run.config.mouseCapture && !run.config.mouseMotion then
+      motionRequested = true
+      activeHandle.get().foreach(_.setMouseCaptureMode(MouseCaptureMode.AllMotion))
+
   /** Asks the terminal for the pointer the last frame wants at `position`, when it differs from the one showing.
     *
     * Pointer shape is terminal state, so the backend is told only on a change: a mouse moving across one button costs
@@ -907,6 +919,9 @@ trait TuiApp:
   private var shownTaskbar: Option[Double]                    = None
   private var taskbarSource: Option[Reactive[Option[Double]]] = None
   private var terminalFocused: Boolean                        = true
+
+  /** Whether this run already asked for all-motion tracking — see `syncMouseMotion`. Render thread only. */
+  private var motionRequested: Boolean = false
 
   // Everything below is per-instance state written only from the render thread (event handlers, the render lambda, and
   // the app's own callbacks all run there). None of it is reset by `runWith`, so running the same instance a second

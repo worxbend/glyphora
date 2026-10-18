@@ -82,6 +82,19 @@ private[dsl] object EventRouter:
       case pointer: PointerElement => Some(InputTarget.Pointer(pointer.pointerId))
       case _                       => None
 
+  /** The translated layout area of an input target on the path — the hit's own area for the hit target (which, under
+    * pointer capture, is the area it had when it was pressed), the recorded one for an enclosing target.
+    */
+  private def layoutArea(element: Element, hit: Option[MouseHit]): Option[Rect] =
+    targetOf(element).flatMap { target =>
+      hit.collect { case MouseHit(`target`, area) => area }.orElse {
+        element match
+          case tracked: TrackedElement => tracked.tracker.layoutAreaOf(target)
+          case pointer: PointerElement => pointer.tracker.layoutAreaOf(target)
+          case _                       => scala.None
+      }
+    }
+
   /** Original layout bounds, only while the pointer is inside the control's visible portion. */
   private def coveredArea(element: TrackedElement, event: MouseEvent): Option[Rect] =
     element.tracker
@@ -92,6 +105,9 @@ private[dsl] object EventRouter:
   /** The user's `onMouseEvent` first, then the framework's own behavior for this element. */
   private def handlesMouse(element: Element, event: MouseEvent, hit: Option[MouseHit]): Boolean =
     element.props.onMouse.exists(_(event)) ||
+      element.props.onMouseContext.exists(handler =>
+        layoutArea(element, hit).exists(area => handler(MouseContext.of(event, area)))
+      ) ||
       builtinArea(element, event, hit).exists(area => element.builtinMouseHandler.exists(_(event, area)))
 
   /** The area a built-in behavior runs against, and the gate on whether it runs at all.

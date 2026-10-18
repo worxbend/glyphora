@@ -106,6 +106,9 @@ private[dsl] final class PaintedAreas:
 
   def pointerAreaOf(id: Int): Option[Rect] = areas.get(InputTarget.Pointer(id)).map(_.hitArea)
 
+  /** Unclipped screen bounds of any recorded input target. */
+  def layoutAreaOf(target: InputTarget): Option[Rect] = areas.get(target).map(_.layoutArea)
+
   /** Unclipped screen bounds of a visible control, for local-coordinate and size arithmetic in its handlers. */
   def layoutAreaOf(index: Int): Option[Rect] = areas.get(InputTarget.Focus(index)).map(_.layoutArea)
 
@@ -317,6 +320,9 @@ private[dsl] final class FocusTracker:
   /** @see [[PaintedAreas.layoutAreaOf]] */
   def layoutAreaOf(index: Int): Option[Rect] = painted.layoutAreaOf(index)
 
+  /** @see [[PaintedAreas.layoutAreaOf(target:io\.worxbend\.tui\.dsl\.InputTarget)*]] */
+  def layoutAreaOf(target: InputTarget): Option[Rect] = painted.layoutAreaOf(target)
+
   /** @see [[PaintedAreas.pointerAreaOf]] */
   def pointerAreaOf(id: Int): Option[Rect] = painted.pointerAreaOf(id)
 
@@ -398,6 +404,8 @@ private[dsl] object FocusPass:
       bounds: Option[NodeBounds] = None,
       onBoundsDemand: () => Unit = () => (),
       disabledStyle: Style = Style.Default.dim,
+      onMotionDemand: () => Unit = () => (),
+      onCueDemand: () => Unit = () => (),
   ): Element =
     var counter        = 0
     var pointerCounter = 0
@@ -427,6 +435,10 @@ private[dsl] object FocusPass:
         element match
           case _: BoundsAwareElement => onBoundsDemand()
           case _                     => ()
+      // a hover cue, or a pointer shape asked for by name, only shows under all-motion tracking
+      if element.props.hoverStyle.isDefined || element.props.pointerShape.isDefined then onMotionDemand()
+      // a hover or pressed cue is what makes a change of hovered/pressed target change the next frame
+      if element.props.hoverStyle.isDefined || element.props.pressedStyle.isDefined then onCueDemand()
       val current  =
         if inert then themed(element, focused = false, disabled, None)
         else if element.props.focusable && !disabled then
@@ -437,8 +449,8 @@ private[dsl] object FocusPass:
         // a node that only asks for a pointer shape is a pointer target too: the shape is resolved by hit-testing, so a
         // `link` with no handler still has to record where it painted. A disabled control is one as well — it is out of
         // the tab order, but a press on it must land on it (and do nothing) rather than on whatever is drawn beneath.
-        else if element.props.focusable || element.props.onMouse.isDefined || element.builtinMouseHandler.isDefined ||
-          element.pointerShape.isDefined
+        else if element.props.focusable || element.props.onMouse.isDefined || element.props.onMouseContext.isDefined ||
+          element.builtinMouseHandler.isDefined || element.pointerShape.isDefined
         then
           val id = pointerCounter
           pointerCounter += 1
