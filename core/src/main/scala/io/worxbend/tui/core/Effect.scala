@@ -26,7 +26,63 @@ trait Effect:
       case finite: FiniteDuration => elapsed >= finite
       case _                      => false
 
+  /** This effect confined to the cells `filter` accepts — see [[Effect.filtered]]. */
+  final def filtered(filter: CellFilter): Effect = Effect.filtered(filter)(this)
+
 object Effect:
+
+  /** `effect` confined to the cells `filter` accepts: every cell the filter rejects is put back exactly as it was
+    * rendered once `effect` has run. The filter is asked about the cell as rendered, before `effect` touched it, so
+    * `filtered(CellFilter.fg(Color.Red))(fadeOut(…))` keeps fading the red text however dark it has become.
+    *
+    * Costs one snapshot of the buffer per frame. The duration is `effect`'s.
+    */
+  def filtered(filter: CellFilter)(effect: Effect): Effect =
+    new Effect:
+      def duration: Duration                                                 = effect.duration
+      def process(elapsed: FiniteDuration, buffer: Buffer, area: Rect): Unit =
+        val rendered = buffer.snapshot
+        effect.process(elapsed, buffer, area)
+        area.foreachPosition: (x, y) =>
+          val cell = rendered.get(x, y)
+          if !filter.matches(cell, x, y, area) then buffer.set(x, y, cell)
+
+  /** `effect` played with a spatial shape: each cell runs through `effect` at its own progress, which `pattern` derives
+    * from the whole run's progress and the cell's position — a fade that blooms from the centre is
+    * `patterned(Pattern.radial(center))(fadeIn(…))`.
+    *
+    * Each frame `effect` is evaluated over a scratch copy of the rendered frame once per distinct cell progress, with
+    * progress rounded to one of [[PatternLevels]] steps, and each cell takes its result from the evaluation at its own
+    * step; so the cost is bounded by that step count, not by the area. Effects that move content between cells
+    * (`slideIn`) compose too, though a cell then shows whatever its own step put there.
+    *
+    * The duration is `effect`'s; an endless `effect` has no run to spread over the area, so it plays unpatterned.
+    */
+  def patterned(pattern: Pattern)(effect: Effect): Effect =
+    effect.duration match
+      case total: FiniteDuration =>
+        new Effect:
+          def duration: Duration                                                 = total
+          def process(elapsed: FiniteDuration, buffer: Buffer, area: Rect): Unit =
+            val progress = Progress.normalized(elapsed, total)
+            val rendered = buffer.snapshot
+            val scratch  = Buffer(buffer.area)
+            val levels   = new Array[Int](area.area)
+            area.foreachPosition: (x, y) =>
+              val local = pattern(progress, x, y, area)
+              levels((y - area.y) * area.width + (x - area.x)) = math.round(local * PatternLevels).toInt
+            levels.distinct.foreach: level =>
+              scratch.copyFrom(rendered)
+              // the top step is `total` itself, not a division of it rounded down a few nanoseconds short of the end
+              val at = if level >= PatternLevels then total else (total.toNanos / PatternLevels * level).nanos
+              effect.process(at, scratch, area)
+              area.foreachPosition: (x, y) =>
+                if levels((y - area.y) * area.width + (x - area.x)) == level then buffer.set(x, y, scratch.get(x, y))
+      case _                     => effect
+
+  /** How finely [[patterned]] resolves each cell's progress: 64 steps is smoother than a terminal's colour ramps show.
+    */
+  val PatternLevels: Int = 64
 
   /** Content fades up from the background: cell colors interpolate from black to their rendered values. */
   def fadeIn(duration: FiniteDuration, easing: Easing = Easing.QuadOut): Effect =
@@ -51,19 +107,33 @@ object Effect:
         val visibleColumns = math.round(progress * area.width).toInt
         eraseWhere(buffer, area)((x, _) => x - area.x >= visibleColumns)
 
-  /** Content slides in from the right edge. */
+  /** Content slides in from the right edge — [[slideIn]] travelling [[MotionDirection.Left]]. */
   def slideInFromRight(duration: FiniteDuration, easing: Easing = Easing.QuadOut): Effect =
+    slideIn(MotionDirection.Left, duration, easing)
+
+  /** Content slides into place travelling in `direction`: `Up` enters from the bottom edge, `Left` from the right one.
+    * Cells the content has not reached yet are blank.
+    */
+  def slideIn(direction: MotionDirection, duration: FiniteDuration, easing: Easing = Easing.QuadOut): Effect =
     new TimedEffect(duration, easing):
       def transform(progress: Double, buffer: Buffer, area: Rect): Unit =
-        val shift = math.round((1 - progress) * area.width).toInt
-        if shift > 0 then
+        val remaining        = 1 - progress
+        // where the content currently sits relative to its resting place: a cell shows the source cell this far back
+        val (shiftX, shiftY) = direction match
+          case MotionDirection.Left  => (math.round(remaining * area.width).toInt, 0)
+          case MotionDirection.Right => (-math.round(remaining * area.width).toInt, 0)
+          case MotionDirection.Up    => (0, math.round(remaining * area.height).toInt)
+          case MotionDirection.Down  => (0, -math.round(remaining * area.height).toInt)
+        if shiftX != 0 || shiftY != 0 then
           val snapshot = buffer.snapshot
           var y        = area.y
           while y < area.bottom do
+            // right to left, so a wide grapheme is written after the continuation column it then reclaims
             var x = area.right - 1
             while x >= area.x do
-              val sourceX = x - shift
-              val cell    = if sourceX >= area.x then snapshot.get(sourceX, y) else Cell.Empty
+              val sourceX = x - shiftX
+              val sourceY = y - shiftY
+              val cell    = if area.contains(sourceX, sourceY) then snapshot.get(sourceX, sourceY) else Cell.Empty
               buffer.set(x, y, cell)
               x -= 1
             y += 1
@@ -87,6 +157,104 @@ object Effect:
         val phase      = (elapsed.toMillis % periodMillis).toDouble / periodMillis
         val brightness = PulseMidBrightness + PulseBrightnessSwing * math.sin(phase * 2 * math.Pi)
         mapCells(buffer, area)(style => withFgScaled(style, brightness))
+
+  /** Shifts every text cell's foreground around the HSL wheel: by the end of the run its hue has turned `hue` degrees
+    * and its saturation and lightness have moved by `saturation` and `lightness` (fractions, clamped to `[0, 1]` as
+    * [[Color.hsl]] does). A cell with no foreground of its own is shifted from white.
+    */
+  def hslShift(
+      hue: Double,
+      saturation: Double,
+      lightness: Double,
+      duration: FiniteDuration,
+      easing: Easing = Easing.Linear,
+  ): Effect =
+    new TimedEffect(duration, easing):
+      def transform(progress: Double, buffer: Buffer, area: Rect): Unit =
+        mapCells(buffer, area): style =>
+          val (h, s, l) = Color.toHsl(style.fg.getOrElse(Color.White))
+          style.withFg(Color.hsl(h + hue * progress, s + saturation * progress, l + lightness * progress))
+
+  /** Paints every text cell's foreground towards `color`, reaching it at the end of the run (an RGB mix). */
+  def paint(color: Color, duration: FiniteDuration, easing: Easing = Easing.Linear): Effect =
+    new TimedEffect(duration, easing):
+      def transform(progress: Double, buffer: Buffer, area: Rect): Unit =
+        if progress > 0 then
+          mapCells(buffer, area)(style => style.withFg(Color.mix(style.fg.getOrElse(Color.White), color, progress)))
+
+  /** Scrambles a share of the text cells — `intensity` in `[0, 1]` of them — into [[GlitchGlyphs]] for the length of
+    * the run, picking new cells and glyphs [[GlitchRate]] times a second. Seeded and a pure function of `elapsed`, so a
+    * given moment always shows the same frame; the frame the run ends on is clean.
+    */
+  def glitch(intensity: Double, duration: FiniteDuration, seed: Int = 42): Effect =
+    val total = duration
+    new Effect:
+      def duration: Duration                                                 = total
+      def process(elapsed: FiniteDuration, buffer: Buffer, area: Rect): Unit =
+        if elapsed < total && intensity > 0 then
+          // which reshuffle this moment falls in, wrapped well inside Int so it can be folded into the noise seed
+          val shuffle = Progress.steppedAtRate(elapsed, GlitchRate, GlitchShuffles)
+          val frame   = seed + shuffle * NoiseMixSeed
+          area.foreachPosition: (x, y) =>
+            val cell = buffer.get(x, y)
+            if !cell.isBlank && cellNoise(x, y, frame) < intensity then
+              val glyph = (cellNoise(y, x, frame + 1) * GlitchGlyphs.length).toInt.min(GlitchGlyphs.length - 1)
+              buffer.set(x, y, cell.copy(symbol = GlitchGlyphs(glyph)))
+
+  /** The glyphs [[glitch]] scrambles cells into: block shades and line noise, all one column wide. */
+  val GlitchGlyphs: IndexedSeq[String] =
+    IndexedSeq("░", "▒", "▓", "█", "▚", "▞", "#", "%", "&", "@", "$", "*", "/", "\\")
+
+  /** How many times a second [[glitch]] picks new cells and glyphs. */
+  val GlitchRate: Double = 15.0
+
+  private val GlitchShuffles: Int = 1 << 20
+
+  /** Runs every text cell through `symbols` in order, then settles it on its real glyph: the run is cut into one more
+    * step than there are symbols, and the last step is the content. The cell keeps its style throughout. An empty
+    * `symbols` changes nothing. [[ShadeSymbols]] is the light-to-solid block ramp.
+    */
+  def evolve(symbols: Seq[String], duration: FiniteDuration, easing: Easing = Easing.Linear): Effect =
+    val steps = symbols.toIndexedSeq
+    new TimedEffect(duration, easing):
+      def transform(progress: Double, buffer: Buffer, area: Rect): Unit =
+        val step = math.min(steps.length, math.floor(progress * (steps.length + 1)).toInt)
+        if step < steps.length then
+          val symbol = steps(step)
+          area.foreachPosition: (x, y) =>
+            val cell = buffer.get(x, y)
+            if !cell.isBlank then buffer.set(x, y, cell.copy(symbol = symbol))
+
+  /** Light shade to full block — the default ramp for [[evolve]]. */
+  val ShadeSymbols: Seq[String] = Seq("░", "▒", "▓", "█")
+
+  /** `effect` played backwards: its end first, its start last. An endless effect has no end to start from and plays
+    * unchanged.
+    */
+  def reversed(effect: Effect): Effect =
+    effect.duration match
+      case total: FiniteDuration =>
+        new Effect:
+          def duration: Duration                                                 = total
+          def process(elapsed: FiniteDuration, buffer: Buffer, area: Rect): Unit =
+            val back = total - elapsed
+            effect.process(if back > Duration.Zero then back else Duration.Zero, buffer, area)
+      case _                     => effect
+
+  /** `effect` forwards then backwards, in twice its duration, so it ends on the frame it began with — a flash that
+    * comes back. An endless effect plays unchanged.
+    */
+  def pingPong(effect: Effect): Effect =
+    effect.duration match
+      case total: FiniteDuration =>
+        new Effect:
+          def duration: Duration                                                 = total * 2
+          def process(elapsed: FiniteDuration, buffer: Buffer, area: Rect): Unit =
+            val back = total * 2 - elapsed
+            val at   =
+              if elapsed <= total then elapsed else if back > Duration.Zero then back else Duration.Zero
+            effect.process(at, buffer, area)
+      case _                     => effect
 
   /** Runs `effects` one after another. */
   def sequence(effects: Effect*): Effect =
