@@ -325,29 +325,98 @@ final case class TemplateInputElement(
   * arrows, Home/End and the shared editing chords ([[editingChords]]: selection, word motion, clipboard, kill ring,
   * `Ctrl+Z` undo, `Ctrl+Shift+Z` redo) — Tab stays free for focus traversal. A bracketed paste lands as one edit, with
   * carriage returns stripped.
+  *
+  * Search: `Ctrl+F` opens the `/query` prompt (so does `/` in a [[readOnly]] area); typing searches incrementally,
+  * `Enter` keeps the match and closes the prompt, `Esc` cancels back to where the search started. Afterwards `F3` /
+  * `Shift+F3` (and `n` / `N` when read-only) step to the next and previous match.
   */
 final case class TextAreaElement(
     state: w.TextAreaState,
+    options: w.TextAreaOptions = w.TextAreaOptions(),
+    editable: Boolean = true,
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = TextAreaElement
-  override def debugName: String                                             = "textArea"
-  override def pointerShape: Option[PointerShape]                            = textPointer(props)
+  override def debugName: String                  = "textArea"
+  override def pointerShape: Option[PointerShape] = textPointer(props)
+
+  /** Highlights the lines through `lexer` — see `TextAreaOptions.lexer`. */
+  def lexer(lexer: w.Lexer): TextAreaElement = copy(options = options.copy(lexer = Some(lexer)))
+
+  /** Soft-wraps long lines instead of scrolling sideways. */
+  def wrap: TextAreaElement = copy(options = options.copy(wrap = true))
+
+  /** Draws a line-number gutter. */
+  def lineNumbers: TextAreaElement = copy(options = options.copy(lineNumbers = true))
+
+  /** Replaces every widget option at once. */
+  def options(options: w.TextAreaOptions): TextAreaElement = copy(options = options)
+
+  /** A viewer: motion, selection, copy and search work, edits do not — and `/`, `n`, `N` search like `less`. */
+  def readOnly: TextAreaElement = copy(editable = false)
+
   private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler] = Some { text =>
-    if props.focused then
+    if props.focused && editable then
       state.insert(text.replace("\r", ""))
       true
     else false
   }
   def widget: Widget                                                         =
-    val editor = w.TextArea(showCursor = props.focused && props.caretStyle.paints, style = props.style)
+    val editor =
+      w.TextArea(showCursor = props.focused && props.caretStyle.paints, style = props.style, options = options)
     (area, buffer) =>
       editor.render(area, buffer, state)
       reportCaret(props, editor.caretAt(area, state))
   private[dsl] def withProps(props: ElementProps): TextAreaElement           = copy(props = props)
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
-    Some(
-      (editingChords(state)(_)).orElse(keys {
+    Some(event => if state.search.isDefined then searchPromptKey(event) else searchKey(event) || editKey(event))
+
+  private def searchPromptKey(event: KeyEvent): Boolean =
+    val query = state.search.getOrElse("")
+    event.code match
+      case KeyCode.Char(c) if isPlainTyping(event) =>
+        state.updateSearch(query + Character.toString(c))
+        true
+      case KeyCode.Backspace                       =>
+        state.updateSearch(CharWidth.graphemeClusters(query).toVector.dropRight(1).mkString)
+        true
+      case KeyCode.Enter                           =>
+        state.closeSearch()
+        true
+      case KeyCode.Escape                          =>
+        state.cancelSearch()
+        true
+      case _                                       => false
+
+  private def searchKey(event: KeyEvent): Boolean =
+    val mods = event.modifiers
+    event.code match
+      case KeyCode.Char('f') if mods == KeyModifiers.Ctrl         => opened()
+      case KeyCode.Char('/') if !editable && isPlainTyping(event) => opened()
+      case KeyCode.Char('n') if !editable && mods.isEmpty         => state.nextMatch()
+      case KeyCode.Char('N') if !editable && isPlainTyping(event) => state.previousMatch()
+      case KeyCode.F(3) if mods.hasAny(KeyModifiers.Shift)        => state.previousMatch()
+      case KeyCode.F(3)                                           => state.nextMatch()
+      case _                                                      => false
+
+  private def opened(): Boolean =
+    state.openSearch()
+    true
+
+  /** Keys that only move, select or copy — the whole vocabulary of a read-only area. */
+  private def isNonEditing(event: KeyEvent): Boolean =
+    event.code match
+      case KeyCode.Left | KeyCode.Right | KeyCode.Up | KeyCode.Down | KeyCode.Home | KeyCode.End => true
+      case KeyCode.Char(c) if event.modifiers.hasAny(KeyModifiers.Ctrl)                          =>
+        Character.toLowerCase(c) == 'a' || Character.toLowerCase(c) == 'c'
+      case KeyCode.Char(c) if event.modifiers.hasAny(KeyModifiers.Alt)                           =>
+        Character.toLowerCase(c) == 'b' || Character.toLowerCase(c) == 'f'
+      case _                                                                                     => false
+
+  private def editKey(event: KeyEvent): Boolean =
+    if !editable && !isNonEditing(event) then false
+    else
+      editingChords(state)(event) || keys {
         case event @ KeyEvent(KeyCode.Char(c), _) if isPlainTyping(event) =>
           state.insert(Character.toString(c))
         case KeyEvent(KeyCode.Enter, _)                                   =>
@@ -365,5 +434,4 @@ final case class TextAreaElement(
         case KeyEvent(KeyCode.Home, _)                                    =>
           state.moveHome()
         case KeyEvent(KeyCode.End, _)                                     => state.moveEnd()
-      })
-    )
+      }(event)
