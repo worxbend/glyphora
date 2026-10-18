@@ -528,7 +528,22 @@ maximum is a number nobody asked for; `.ramp` colours the bar by value, which
 
 Panes sized by their content move when the content changes width, and a dashboard
 whose cards jump on every refresh is unreadable. Every pane gets an explicit height
-instead.
+instead, and the four cards move from a `row` onto a `grid` whose tracks the grid
+itself owns: four equal columns and one row, with a gap between them. A reading that
+grows from `415` to `1015` changes what a card says, never where it sits — and adding
+a second row of cards later is one more entry in `rows`, not a nested `column`.
+
+```scala title="Main.scala"
+  private def cards(reading: Reading)(using ReactiveScope, Theme): Element =
+    grid(cols = Metric.Cards.map(_ => Constraint.Fill(1)), rows = Seq(Constraint.Fill(1)), gap = 1)(
+      Metric.Cards.map(card(_, reading))*
+    )
+```
+
+Children that say nothing about their place are flowed into the next free cell in
+reading order, so the cards land left to right; `.at(row, col)` and `.span(rows, cols)`
+place one explicitly. See [Lay out a dashboard on a grid](./layout-and-style#lay-out-a-dashboard-on-a-grid).
+The column of panes around it:
 
 ```scala title="Main.scala"
   // a Computed *field*, not a local in `view`: a Computed created inside `view`

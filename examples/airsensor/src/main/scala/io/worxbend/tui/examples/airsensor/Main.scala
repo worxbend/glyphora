@@ -167,7 +167,9 @@ class AirSensorApp(
     ).rounded
 
   private def cards(reading: Reading)(using ReactiveScope, Theme): Element =
-    row(Metric.Cards.map(metric => card(metric, reading).fill)*).gap(1)
+    grid(cols = Metric.Cards.map(_ => Constraint.Fill(1)), rows = Seq(Constraint.Fill(1)), gap = 1)(
+      Metric.Cards.map(card(_, reading))*
+    )
 
   /** Every card is the same six lines; only the [[Metric]] differs. Band shows twice on purpose — as the panel's colour
     * and as a word inside it.
