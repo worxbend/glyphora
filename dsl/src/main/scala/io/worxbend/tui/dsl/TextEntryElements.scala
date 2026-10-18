@@ -33,6 +33,60 @@ extension [E <: Element](element: E)
   def caretStyle(style: CaretStyle): element.Self =
     element.withProps(element.props.copy(caretStyle = style))
 
+/** The editing chords every free-text node shares, over the [[w.EditBuffer]] both editor states are:
+  *
+  *   - `Shift` + arrows / `Home` / `End` select; `Ctrl+Left`/`Ctrl+Right` (and `Alt+B`/`Alt+F`) move by word, with
+  *     `Shift` selecting; `Ctrl+Up`/`Ctrl+Down` move by paragraph; `Ctrl+A` selects all
+  *   - `Ctrl+C` / `Ctrl+X` / `Ctrl+V` copy, cut and paste through the app clipboard ([[AppServices.clipboard]]); with
+  *     nothing selected `Ctrl+C` and `Ctrl+X` are left to bubble, so `Ctrl+C` still quits
+  *   - `Ctrl+K` / `Ctrl+U` kill to the end / start of the line, `Ctrl+W` and `Alt+Backspace` kill the word before the
+  *     caret, `Alt+D` the word after it; `Ctrl+Y` yanks the newest kill and `Alt+Y` cycles it through the ring
+  *   - `Ctrl+Z` undoes, `Ctrl+Shift+Z` redoes
+  *
+  * Answers whether the event was one of them.
+  */
+private def editingChords(state: w.EditBuffer)(event: KeyEvent): Boolean =
+  val mods                        = event.modifiers
+  val select                      = mods.hasAny(KeyModifiers.Shift)
+  val ctrl                        = mods.hasAny(KeyModifiers.Ctrl)
+  val alt                         = mods.hasAny(KeyModifiers.Alt)
+  def did(body: => Unit): Boolean =
+    body
+    true
+  event.code match
+    case KeyCode.Left if ctrl            => did(state.moveWordLeft(select))
+    case KeyCode.Right if ctrl           => did(state.moveWordRight(select))
+    case KeyCode.Up if ctrl              => did(state.moveParagraphUp(select))
+    case KeyCode.Down if ctrl            => did(state.moveParagraphDown(select))
+    case KeyCode.Left if select          => did(state.moveLeft(select = true))
+    case KeyCode.Right if select         => did(state.moveRight(select = true))
+    case KeyCode.Up if select            => did(state.moveUp(select = true))
+    case KeyCode.Down if select          => did(state.moveDown(select = true))
+    case KeyCode.Home if select          => did(state.moveHome(select = true))
+    case KeyCode.End if select           => did(state.moveEnd(select = true))
+    case KeyCode.Backspace if alt        => did(state.deleteWordBackward())
+    case KeyCode.Char(c) if ctrl && !alt =>
+      Character.toLowerCase(c) match
+        case 'a'           => did(state.selectAll())
+        case 'c'           => state.selection.isDefined && did(state.copy(AppClipboard.current))
+        case 'x'           => state.selection.isDefined && did(state.cut(AppClipboard.current))
+        case 'v'           => did(state.paste(AppClipboard.current))
+        case 'k'           => did(state.killToEndOfLine())
+        case 'u'           => did(state.killToStartOfLine())
+        case 'w'           => did(state.deleteWordBackward())
+        case 'y'           => did(state.yank())
+        case 'z' if select => did(state.redo())
+        case 'z'           => did(state.undo())
+        case _             => false
+    case KeyCode.Char(c) if alt && !ctrl =>
+      Character.toLowerCase(c) match
+        case 'b' => did(state.moveWordLeft(select))
+        case 'f' => did(state.moveWordRight(select))
+        case 'd' => did(state.deleteWordForward())
+        case 'y' => did(state.yankPop())
+        case _   => false
+    case _                               => false
+
 /** Single-line text input. Editing state (value + cursor) is app-owned; editing keys are handled by the built-in
   * handler while focused, and any consumed key triggers a redraw.
   */
@@ -64,7 +118,7 @@ final case class InputElement(
       case KeyCode.Char(c) if isPlainTyping(event) =>
         state.insert(Character.toString(c))
         true
-      case _                                       => cursorKeys(state)(event)
+      case _                                       => editingChords(state)(event) || cursorKeys(state)(event)
 
 /** A text input with a live suggestion dropdown: typing filters `suggestions` (subsequence match), Up/Down move the
   * highlight, Enter accepts it into the input and fires `onAccept`.
@@ -268,49 +322,116 @@ final case class TemplateInputElement(
     slotKinds.exists((marker, accepts) => slot == marker && accepts(codePoint))
 
 /** Multi-line editor element. While focused it consumes printable characters, Enter (newline), Backspace, Delete,
-  * arrows, Home/End, Ctrl+Z (undo) and Ctrl+Y (redo) — Tab stays free for focus traversal. A bracketed paste lands as
-  * one edit, with carriage returns stripped.
+  * arrows, Home/End and the shared editing chords ([[editingChords]]: selection, word motion, clipboard, kill ring,
+  * `Ctrl+Z` undo, `Ctrl+Shift+Z` redo) — Tab stays free for focus traversal. A bracketed paste lands as one edit, with
+  * carriage returns stripped.
+  *
+  * Search: `Ctrl+F` opens the `/query` prompt (so does `/` in a [[readOnly]] area); typing searches incrementally,
+  * `Enter` keeps the match and closes the prompt, `Esc` cancels back to where the search started. Afterwards `F3` /
+  * `Shift+F3` (and `n` / `N` when read-only) step to the next and previous match.
   */
 final case class TextAreaElement(
     state: w.TextAreaState,
+    options: w.TextAreaOptions = w.TextAreaOptions(),
+    editable: Boolean = true,
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = TextAreaElement
-  override def debugName: String                                             = "textArea"
-  override def pointerShape: Option[PointerShape]                            = textPointer(props)
+  override def debugName: String                  = "textArea"
+  override def pointerShape: Option[PointerShape] = textPointer(props)
+
+  /** Highlights the lines through `lexer` — see `TextAreaOptions.lexer`. */
+  def lexer(lexer: w.Lexer): TextAreaElement = copy(options = options.copy(lexer = Some(lexer)))
+
+  /** Soft-wraps long lines instead of scrolling sideways. */
+  def wrap: TextAreaElement = copy(options = options.copy(wrap = true))
+
+  /** Draws a line-number gutter. */
+  def lineNumbers: TextAreaElement = copy(options = options.copy(lineNumbers = true))
+
+  /** Replaces every widget option at once. */
+  def options(options: w.TextAreaOptions): TextAreaElement = copy(options = options)
+
+  /** A viewer: motion, selection, copy and search work, edits do not — and `/`, `n`, `N` search like `less`. */
+  def readOnly: TextAreaElement = copy(editable = false)
+
   private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler] = Some { text =>
-    if props.focused then
+    if props.focused && editable then
       state.insert(text.replace("\r", ""))
       true
     else false
   }
   def widget: Widget                                                         =
-    val editor = w.TextArea(showCursor = props.focused && props.caretStyle.paints, style = props.style)
+    val editor =
+      w.TextArea(showCursor = props.focused && props.caretStyle.paints, style = props.style, options = options)
     (area, buffer) =>
       editor.render(area, buffer, state)
       reportCaret(props, editor.caretAt(area, state))
   private[dsl] def withProps(props: ElementProps): TextAreaElement           = copy(props = props)
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
-    Some(
-      keys {
-        case KeyEvent(KeyCode.Char('z'), modifiers) if modifiers.hasAny(KeyModifiers.Ctrl) => state.undo()
-        case KeyEvent(KeyCode.Char('y'), modifiers) if modifiers.hasAny(KeyModifiers.Ctrl) => state.redo()
-        case event @ KeyEvent(KeyCode.Char(c), _) if isPlainTyping(event)                  =>
+    Some(event => if state.search.isDefined then searchPromptKey(event) else searchKey(event) || editKey(event))
+
+  private def searchPromptKey(event: KeyEvent): Boolean =
+    val query = state.search.getOrElse("")
+    event.code match
+      case KeyCode.Char(c) if isPlainTyping(event) =>
+        state.updateSearch(query + Character.toString(c))
+        true
+      case KeyCode.Backspace                       =>
+        state.updateSearch(CharWidth.graphemeClusters(query).toVector.dropRight(1).mkString)
+        true
+      case KeyCode.Enter                           =>
+        state.closeSearch()
+        true
+      case KeyCode.Escape                          =>
+        state.cancelSearch()
+        true
+      case _                                       => false
+
+  private def searchKey(event: KeyEvent): Boolean =
+    val mods = event.modifiers
+    event.code match
+      case KeyCode.Char('f') if mods == KeyModifiers.Ctrl         => opened()
+      case KeyCode.Char('/') if !editable && isPlainTyping(event) => opened()
+      case KeyCode.Char('n') if !editable && mods.isEmpty         => state.nextMatch()
+      case KeyCode.Char('N') if !editable && isPlainTyping(event) => state.previousMatch()
+      case KeyCode.F(3) if mods.hasAny(KeyModifiers.Shift)        => state.previousMatch()
+      case KeyCode.F(3)                                           => state.nextMatch()
+      case _                                                      => false
+
+  private def opened(): Boolean =
+    state.openSearch()
+    true
+
+  /** Keys that only move, select or copy — the whole vocabulary of a read-only area. */
+  private def isNonEditing(event: KeyEvent): Boolean =
+    event.code match
+      case KeyCode.Left | KeyCode.Right | KeyCode.Up | KeyCode.Down | KeyCode.Home | KeyCode.End => true
+      case KeyCode.Char(c) if event.modifiers.hasAny(KeyModifiers.Ctrl)                          =>
+        Character.toLowerCase(c) == 'a' || Character.toLowerCase(c) == 'c'
+      case KeyCode.Char(c) if event.modifiers.hasAny(KeyModifiers.Alt)                           =>
+        Character.toLowerCase(c) == 'b' || Character.toLowerCase(c) == 'f'
+      case _                                                                                     => false
+
+  private def editKey(event: KeyEvent): Boolean =
+    if !editable && !isNonEditing(event) then false
+    else
+      editingChords(state)(event) || keys {
+        case event @ KeyEvent(KeyCode.Char(c), _) if isPlainTyping(event) =>
           state.insert(Character.toString(c))
-        case KeyEvent(KeyCode.Enter, _)                                                    =>
+        case KeyEvent(KeyCode.Enter, _)                                   =>
           state.newline()
-        case KeyEvent(KeyCode.Backspace, _)                                                =>
+        case KeyEvent(KeyCode.Backspace, _)                               =>
           state.backspace()
-        case KeyEvent(KeyCode.Delete, _)                                                   => state.delete()
-        case KeyEvent(KeyCode.Left, _)                                                     =>
+        case KeyEvent(KeyCode.Delete, _)                                  => state.delete()
+        case KeyEvent(KeyCode.Left, _)                                    =>
           state.moveLeft()
-        case KeyEvent(KeyCode.Right, _)                                                    =>
+        case KeyEvent(KeyCode.Right, _)                                   =>
           state.moveRight()
-        case KeyEvent(KeyCode.Up, _)                                                       => state.moveUp()
-        case KeyEvent(KeyCode.Down, _)                                                     =>
+        case KeyEvent(KeyCode.Up, _)                                      => state.moveUp()
+        case KeyEvent(KeyCode.Down, _)                                    =>
           state.moveDown()
-        case KeyEvent(KeyCode.Home, _)                                                     =>
+        case KeyEvent(KeyCode.Home, _)                                    =>
           state.moveHome()
-        case KeyEvent(KeyCode.End, _)                                                      => state.moveEnd()
-      }
-    )
+        case KeyEvent(KeyCode.End, _)                                     => state.moveEnd()
+      }(event)

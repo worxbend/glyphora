@@ -1,0 +1,121 @@
+package io.worxbend.tui.dsl
+
+import io.worxbend.tui.core.Size
+import io.worxbend.tui.terminal.HeadlessBackend
+import io.worxbend.tui.testsupport.GoldenFrames
+
+import org.scalatest.funsuite.AnyFunSuite
+
+import scala.collection.mutable
+import scala.concurrent.duration.DurationInt
+
+/** The `promptComposer` node driven through a whole app: history, reverse search, ghost suggestions, async trigger
+  * completion and large-paste compaction.
+  */
+final class PromptComposerSpec extends AnyFunSuite with PilotFixture:
+
+  private val Ctrl = KeyModifiers.Ctrl
+
+  private final class Harness(state: PromptComposerState):
+    val submitted: mutable.Buffer[String] = mutable.Buffer.empty
+    val backend                           = HeadlessBackend(Size(40, 8))
+    private val app                       = new TuiApp:
+      override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
+      def view(using ReactiveScope, Theme): Element = column(promptComposer(state)(text => submitted += text))
+    val pilot                             = startPilot(backend)(app.runWith(backend))
+    pilot.waitForIdle()
+
+    def finish(): Unit =
+      pilot.pressKey(KeyCode.Char('q'), Ctrl)
+      assert(pilot.awaitTermination())
+
+  test("Enter submits, Shift+Enter and Alt+Enter insert a newline, and a submission joins the history"):
+    val state   = PromptComposerState()
+    val harness = Harness(state)
+    import harness.pilot
+    pilot.typeText("one").pressKey(KeyCode.Enter, KeyModifiers.Shift).typeText("two")
+    pilot.pressKey(KeyCode.Enter, KeyModifiers.Alt).typeText("three").waitForIdle()
+    assert(state.value == "one\ntwo\nthree")
+    pilot.pressKey(KeyCode.Enter).waitForIdle()
+    assert(harness.submitted.toSeq == Seq("one\ntwo\nthree"))
+    assert(state.value == "")
+    assert(state.history == Seq("one\ntwo\nthree"))
+    harness.finish()
+
+  test("Up and Down at the edges recall history, and Down past the newest restores the draft"):
+    val state   = PromptComposerState(initialHistory = Seq("first", "second"))
+    val harness = Harness(state)
+    import harness.pilot
+    pilot.typeText("draft").pressKey(KeyCode.Up).waitForIdle()
+    assert(state.value == "second")
+    pilot.pressKey(KeyCode.Up).waitForIdle()
+    assert(state.value == "first")
+    pilot.pressKey(KeyCode.Up).waitForIdle()
+    assert(state.value == "first") // the oldest entry stays put
+    pilot.pressKey(KeyCode.Down).pressKey(KeyCode.Down).waitForIdle()
+    assert(state.value == "draft")
+    harness.finish()
+
+  test("Ctrl-R finds \"deploy\" by substring and Enter loads it for editing"):
+    val state   = PromptComposerState(initialHistory = Seq("deploy prod", "ls -la", "git status"))
+    val harness = Harness(state)
+    import harness.pilot
+    pilot.pressKey(KeyCode.Char('r'), Ctrl).typeText("dep").waitForIdle()
+    assert(pilot.screenLines.exists(_.contains("(reverse-i-search)`dep': deploy prod")))
+    pilot.pressKey(KeyCode.Enter).waitForIdle()
+    assert(state.value == "deploy prod")
+    assert(harness.submitted.isEmpty) // Enter accepted the match, it did not submit
+    harness.finish()
+
+  test("a ghost suggestion from history shows dim after the caret and Tab accepts it"):
+    val state   = PromptComposerState(initialHistory = Seq("git status", "git stash"))
+    val harness = Harness(state)
+    import harness.pilot
+    pilot.typeText("git stat").waitForIdle()
+    assert(pilot.screenLines.head == "git status")
+    assert(pilot.lastFrame.get(9, 0).style.modifiers.hasAny(Modifiers.Dim))
+    pilot.pressKey(KeyCode.Tab).waitForIdle()
+    assert(state.value == "git status")
+    harness.finish()
+
+  test("@ opens an async completion popup that filters as you type and Enter accepts"):
+    val people  = Seq("alice", "albert", "bob")
+    val state   = PromptComposerState(
+      completions = (trigger, query) => if trigger == '@' then people.filter(_.startsWith(query)) else Nil,
+      debounce = 0.millis,
+    )
+    val harness = Harness(state)
+    import harness.pilot
+    pilot.typeText("hi @al")
+    pilot.waitUntil("the popup lists the matches")(pilot.screenLines.exists(_.contains("albert"))).waitForIdle()
+    GoldenFrames.assertMatches("composer-mention-popup", pilot.lastFrame)
+    pilot.pressKey(KeyCode.Down).pressKey(KeyCode.Enter).waitForIdle()
+    assert(state.value == "hi @albert ")
+    assert(harness.submitted.isEmpty)
+    harness.finish()
+
+  test("/ at the start of the prompt triggers command completion; Esc closes the popup"):
+    val state   = PromptComposerState(
+      completions =
+        (trigger, query) => if trigger == '/' then Seq("help", "history").filter(_.startsWith(query)) else Nil,
+      debounce = 0.millis,
+    )
+    val harness = Harness(state)
+    import harness.pilot
+    pilot.typeText("/h")
+    pilot.waitUntil("the popup lists commands")(pilot.screenLines.exists(_.contains("history"))).waitForIdle()
+    pilot.pressKey(KeyCode.Escape).waitForIdle()
+    assert(!pilot.screenLines.exists(_.contains("history")))
+    assert(state.value == "/h")
+    harness.finish()
+
+  test("a 50-line paste collapses to a placeholder and is expanded on submit"):
+    val state   = PromptComposerState()
+    val harness = Harness(state)
+    import harness.pilot
+    val pasted  = (1 to 50).map(n => s"line $n").mkString("\n")
+    pilot.typeText("see: ").paste(pasted).waitForIdle()
+    assert(state.value == "see: [Pasted 50 lines]")
+    pilot.pressKey(KeyCode.Enter).waitForIdle()
+    assert(harness.submitted.toSeq == Seq(s"see: $pasted"))
+    harness.finish()

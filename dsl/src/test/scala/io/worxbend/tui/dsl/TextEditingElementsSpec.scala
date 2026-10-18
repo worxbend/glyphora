@@ -28,7 +28,7 @@ final class TextEditingElementsSpec extends AnyFunSuite with PilotFixture:
     assert(state.value == "one\ntwo")
     assert(pilot.screenLines.take(2) == Seq("one", "two"))
     pilot.pressKey(KeyCode.Char('z'), KeyModifiers.Ctrl).waitForIdle()
-    assert(state.value == "one\ntw")
+    assert(state.value == "one\n") // the typed word is one coalesced undo step
     pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)
     assert(pilot.awaitTermination())
 

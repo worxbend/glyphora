@@ -22,6 +22,7 @@ export const docsNavigation = [
       'layout-and-style',
       'responsive',
       'widgets',
+      'editing',
       'mouse',
       'unicode-and-accessibility',
       'architecture',

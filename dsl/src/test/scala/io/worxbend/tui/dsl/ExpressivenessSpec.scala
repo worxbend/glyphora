@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Color, Constraint, Modifiers}
+import io.worxbend.tui.core.{Color, Modifiers}
 import io.worxbend.tui.testsupport.BufferAssertions.{rendered, trimmedLines}
 
 import org.scalatest.funsuite.AnyFunSuite
@@ -61,7 +61,7 @@ final class ExpressivenessSpec extends AnyFunSuite:
     // "日本" is four columns, so the "ok" that follows it starts at column 4, not column 2
     val element = line("日本", "ok".styled(identity))
     val buffer  = rendered(element.widget, 20, 1)
-    assert(element.claim.horizontal == Constraint.Length(6))
+    assert(element.intrinsicWidth(1).contains(6))
     assert(buffer.get(4, 0).symbol == "o")
 
   test("plain String parts inherit the element's own style"):
@@ -72,8 +72,8 @@ final class ExpressivenessSpec extends AnyFunSuite:
   test("a line claims exactly one row and its measured display width"):
     // two columns per character, so a declared `.length(4)` would have been half the truth
     val element = line("日本".styled(identity), "ok".styled(identity))
-    assert(element.claim.vertical == Constraint.Length(1))
-    assert(element.claim.horizontal == Constraint.Length(6))
+    assert(element.intrinsicHeight(6).contains(1))
+    assert(element.intrinsicWidth(1).contains(6))
 
   test("the element style is the base each span layers onto"):
     val element = line("a".styled(identity), "b".styled(_.withFg(Color.Red))).bold

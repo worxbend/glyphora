@@ -49,6 +49,11 @@ final case class Badge(
   /** The width this badge wants, so a caller can size a column for it rather than guessing. A badge is always one row
     * and its width never depends on how many rows it is given, so `height` is ignored.
     */
+  /** A badge is one row tall at any width. */
+  override def heightAt(width: Int): Option[Int] =
+    val _ = width
+    Some(1)
+
   override def widthAt(height: Int): Option[Int] =
     val _    = height
     val text = CharWidth.of(label)

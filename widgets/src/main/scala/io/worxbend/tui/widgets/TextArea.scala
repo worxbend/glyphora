@@ -1,15 +1,13 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, Position, Rect, StatefulWidget, Style, Text}
+import io.worxbend.tui.core.{Buffer, CharWidth, Position, Rect, StatefulWidget, Style}
 
-import scala.collection.mutable
-
-/** Caller-owned multi-line editing state for [[TextArea]].
+/** Caller-owned multi-line editing state for [[TextArea]]: an [[EditBuffer]] of many lines.
   *
-  * Text is a vector of lines, each a vector of grapheme clusters — the cursor is `(line, column)` in cluster
-  * coordinates and can never split a combining sequence or emoji. Every editing operation snapshots onto a bounded undo
-  * stack. Edits and line joins re-segment affected lines; a splice inside a newly merged grapheme maps the cursor to
-  * that grapheme's end (right affinity), identically for insertion, deletion and either join direction.
+  * The cursor is `(line, column)` in cluster coordinates and can never split a combining sequence or emoji. Edits and
+  * line joins re-segment affected lines; a splice inside a newly merged grapheme maps the cursor to that grapheme's end
+  * (right affinity), identically for insertion, deletion and either join direction. Undo stores coalesced diffs — see
+  * [[EditBuffer]].
   *
   * Control characters other than the `\n` that separates lines are dropped on the way in — by the constructor as well
   * as by [[insert]] — because a control is zero columns wide but still fills a whole `Cell`, so storing one
@@ -19,145 +17,150 @@ import scala.collection.mutable
   * to the reactive layer: a background result written straight into it stays off screen until something unrelated
   * happens to repaint. Pair the mutation with a `Signal` write, or call `TuiApp.requestRedraw()` from the same
   * render-thread callback that made it.
+  *
+  * Incremental search lives here too: [[openSearch]], [[updateSearch]] as the query is typed, then [[nextMatch]] and
+  * [[previousMatch]]; the widget draws the open prompt and underlines [[matches]].
   */
-final class TextAreaState(initial: String = ""):
+final class TextAreaState(initial: String = "", killRing: KillRing = KillRing())
+    extends EditBuffer(initial, multiline = true, killRing):
+  import TextAreaState.Match
 
-  private var lines: Vector[Vector[String]] = clusterLinesOf(initial)
-  private var line                          = lines.size - 1
-  private var column                        = lines.last.size
-  private[widgets] var scrollRow: Int       = 0
+  private[widgets] var scrollRow: Int = 0
 
   /** Horizontal scroll offset in *columns*, shared by every line — see [[TextArea.scrolledHorizontally]]. */
   private[widgets] var scrollColumn: Int = 0
-  private val undoStack                  = mutable.Stack[(Vector[Vector[String]], Int, Int)]()
-  private val redoStack                  = mutable.Stack[(Vector[Vector[String]], Int, Int)]()
-
-  def value: String = lines.map(_.mkString).mkString("\n")
 
   /** Cursor as `(line, column)` in cluster coordinates. */
-  def cursor: (Int, Int) = (line, column)
+  def cursor: (Int, Int) = (caret.line, caret.column)
 
-  def lineCount: Int = lines.size
-
-  private[widgets] def clusterLines: Vector[Vector[String]] = lines
-
-  /** Splits `text` into one cluster vector per line, dropping controls *after* the split so that the `\n` doing the
-    * splitting survives — [[newline]] is `insert("\n")`. Reads no field, so the field initializer may call it.
-    */
-  private def clusterLinesOf(text: String): Vector[Vector[String]] =
-    Text.splitLines(text).toVector.map(GraphemeEdit.clustersOf)
-
-  def insert(text: String): Unit =
-    pushUndo()
-    val segments        = clusterLinesOf(text)
-    val (before, after) = lines(line).splitAt(column)
-    if segments.size == 1 then editLine(column, 0, segments.head.mkString)
-    else
-      val (first, _)           = GraphemeEdit.joined(before.mkString, segments.head.mkString, "")
-      val (last, mappedColumn) = GraphemeEdit.joined("", segments.last.mkString, after.mkString)
-      val middle               = segments.drop(1).dropRight(1)
-      lines = lines.take(line) ++ (first +: middle :+ last) ++ lines.drop(line + 1)
-      line += segments.size - 1
-      column = mappedColumn
+  def lineCount: Int = clusterLines.size
 
   def newline(): Unit = insert("\n")
 
-  def backspace(): Unit =
-    if column > 0 then
-      pushUndo()
-      editLine(column - 1, 1, "")
-    else if line > 0 then
-      pushUndo()
-      joinLines(line - 1)
+  // --- incremental search ----------------------------------------------------------------------------------------
 
-  def delete(): Unit =
-    if column < lines(line).size then
-      pushUndo()
-      editLine(column, 1, "")
-    else if line < lines.size - 1 then
-      pushUndo()
-      joinLines(line)
+  private var searchOrigin: Option[TextPosition]                  = None
+  private var openQuery: Option[String]                           = None
+  private var lastQuery: String                                   = ""
+  private var matchCache: Option[(AnyRef, String, Vector[Match])] = None
 
-  private def editLine(from: Int, removed: Int, inserted: String): Unit =
-    val (edited, mappedColumn) = GraphemeEdit.splice(lines(line), from, removed, inserted)
-    lines = lines.updated(line, edited)
-    column = mappedColumn
+  /** The query being typed while the search prompt is open (`None` once it closed) — what [[TextArea]] draws on its
+    * bottom row as `/query`.
+    */
+  def search: Option[String] = openQuery
 
-  private def joinLines(first: Int): Unit =
-    val (joined, mappedColumn) = GraphemeEdit.joined(lines(first).mkString, "", lines(first + 1).mkString)
-    lines = lines.updated(first, joined).patch(first + 1, Nil, 1)
-    line = first
-    column = mappedColumn
+  /** Opens the search prompt with an empty query, remembering the caret so [[cancelSearch]] can return to it. */
+  def openSearch(): Unit =
+    searchOrigin = Some(caret)
+    openQuery = Some("")
 
-  def moveLeft(): Unit =
-    if column > 0 then column -= 1
-    else if line > 0 then
-      line -= 1
-      column = lines(line).size
+  /** Sets the open prompt's query and jumps to the first match at or after where the search started, wrapping round;
+    * the caret stays at the origin when nothing matches. Case-insensitive unless the query holds a capital letter.
+    */
+  def updateSearch(query: String): Unit =
+    if openQuery.isDefined then
+      openQuery = Some(query)
+      lastQuery = query
+      val origin = searchOrigin.getOrElse(caret)
+      val found  = matches
+      found.find(_.start >= origin).orElse(found.headOption) match
+        case Some(hit) => moveTo(hit.start)
+        case None      => moveTo(origin)
 
-  def moveRight(): Unit =
-    if column < lines(line).size then column += 1
-    else if line < lines.size - 1 then
-      line += 1
-      column = 0
+  /** Closes the prompt, leaving the caret on the match; [[nextMatch]] and [[previousMatch]] keep using the query. */
+  def closeSearch(): Unit =
+    openQuery = None
+    searchOrigin = None
 
-  def moveUp(): Unit =
-    if line > 0 then
-      line -= 1
-      column = math.min(column, lines(line).size)
+  /** Closes the prompt and puts the caret back where the search started. */
+  def cancelSearch(): Unit =
+    searchOrigin.foreach(origin => moveTo(origin))
+    lastQuery = ""
+    closeSearch()
 
-  def moveDown(): Unit =
-    if line < lines.size - 1 then
-      line += 1
-      column = math.min(column, lines(line).size)
+  /** Moves to the next match of the last query after the caret, wrapping round; answers whether there was one. */
+  def nextMatch(): Boolean =
+    val found = matches
+    found.find(_.start > caret).orElse(found.headOption).map(hit => moveTo(hit.start)).isDefined
 
-  def moveHome(): Unit = column = 0
+  /** Moves to the previous match of the last query before the caret, wrapping round. */
+  def previousMatch(): Boolean =
+    val found = matches
+    found.findLast(_.start < caret).orElse(found.lastOption).map(hit => moveTo(hit.start)).isDefined
 
-  def moveEnd(): Unit = column = lines(line).size
-
-  /** Restores the text and cursor from before the most recent edit; no-op on an empty history. */
-  def undo(): Unit =
-    if undoStack.nonEmpty then
-      redoStack.push((lines, line, column))
-      val (savedLines, savedLine, savedColumn) = undoStack.pop()
-      lines = savedLines
-      line = savedLine
-      column = savedColumn
-
-  /** Re-applies the most recently undone edit; a fresh edit clears the redo history. */
-  def redo(): Unit =
-    if redoStack.nonEmpty then
-      undoStack.push((lines, line, column))
-      val (savedLines, savedLine, savedColumn) = redoStack.pop()
-      lines = savedLines
-      line = savedLine
-      column = savedColumn
-
-  private def pushUndo(): Unit =
-    redoStack.clear()
-    undoStack.push((lines, line, column))
-    // the stack's bottom holds the oldest snapshots; drop from there so the newest `UndoLimit` survive
-    while undoStack.size > TextAreaState.UndoLimit do undoStack.remove(undoStack.size - 1)
+  /** Every match of the last query, in document order — what [[TextArea]] underlines. Recomputed only when the text or
+    * the query changed since the last call.
+    */
+  def matches: Vector[Match] =
+    val lines = clusterLines
+    matchCache match
+      case Some((seen, query, found)) if (seen eq lines) && query == lastQuery => found
+      case _                                                                   =>
+        val found = TextAreaState.find(lines, lastQuery)
+        matchCache = Some((lines, lastQuery, found))
+        found
 
 object TextAreaState:
-  private val UndoLimit = 100
+
+  /** One occurrence of a search query: `[start, end)` on a single line. */
+  final case class Match(start: TextPosition, end: TextPosition)
+
+  private[widgets] def find(lines: Vector[Vector[String]], query: String): Vector[Match] =
+    val needle = GraphemeEdit.clustersOf(query)
+    if needle.isEmpty then Vector.empty
+    else
+      val sensitive                     = query.exists(_.isUpper)
+      def fold(cluster: String): String = if sensitive then cluster else cluster.toLowerCase(java.util.Locale.ROOT)
+      val target                        = needle.map(fold)
+      val found                         = Vector.newBuilder[Match]
+      lines.indices.foreach { line =>
+        val clusters = lines(line)
+        var column   = 0
+        while column + target.size <= clusters.size do
+          if target.indices.forall(offset => fold(clusters(column + offset)) == target(offset)) then
+            found += Match(TextPosition(line, column), TextPosition(line, column + target.size))
+            column += target.size
+          else column += 1
+      }
+      found.result()
 
 /** Optional knobs for [[TextArea]]; `TextAreaOptions()` is the plain editor.
   *
   * @param lexer
   *   highlights each visible line through this [[Lexer]], its token styles patched over the editor's `style`; `None`
   *   draws every cell in `style`
+  * @param wrap
+  *   soft-wraps long lines at the editor's width — after a space where there is one, between graphemes where there is
+  *   not — instead of scrolling horizontally. Up/Down still move by logical line.
+  * @param lineNumbers
+  *   draws a gutter of right-aligned 1-based line numbers, as wide as the largest number plus one column; a wrapped
+  *   line's continuation rows leave it blank
   * @param syntax
   *   the token colours the lexer paints with
+  * @param selectionStyle
+  *   patched over the selected clusters
+  * @param matchStyle
+  *   patched over every match of the state's search query
+  * @param gutterStyle
+  *   the line numbers' style
   */
 final case class TextAreaOptions(
     lexer: Option[Lexer] = None,
+    wrap: Boolean = false,
+    lineNumbers: Boolean = false,
     syntax: SyntaxTheme = SyntaxTheme(),
+    selectionStyle: Style = Style.Default.reverse,
+    matchStyle: Style = Style.Default.underline,
+    gutterStyle: Style = Style.Default.dim,
 )
 
 /** A multi-line text editor view: vertical and horizontal scroll follow the cursor, which renders as a highlighted cell
-  * (`showCursor = false` for unfocused areas). Syntax highlighting is opt-in through [[TextAreaOptions.lexer]]; only
-  * the rows on screen are highlighted, each frame, so the cost follows the viewport rather than the document.
+  * (`showCursor = false` for unfocused areas). Syntax highlighting is opt-in through [[TextAreaOptions.lexer]], soft
+  * wrap through [[TextAreaOptions.wrap]] and a line-number gutter through [[TextAreaOptions.lineNumbers]]. An open
+  * search ([[TextAreaState.openSearch]]) takes the bottom row for its `/query` prompt.
+  *
+  * Without wrap only the rows on screen are visited, each frame, so the cost follows the viewport rather than the
+  * document; with wrap the whole document is laid out into rows every frame.
   */
 final case class TextArea(
     showCursor: Boolean = true,
@@ -168,16 +171,18 @@ final case class TextArea(
 
   def render(area: Rect, buffer: Buffer, state: TextAreaState): Unit =
     if !area.isEmpty then
-      val (cursorLine, cursorColumn) = state.cursor
-      state.scrollRow = ScrollWindow.offsetFor(state.scrollRow, Some(cursorLine), state.clusterLines.size, area.height)
-      state.scrollColumn = scrolledHorizontally(state, cursorColumn, area.width)
-      state.clusterLines.slice(state.scrollRow, state.scrollRow + area.height).zipWithIndex.foreach { (clusters, row) =>
-        val lineIndex = state.scrollRow + row
-        renderLine(buffer, area, clusters, area.y + row, state, lineIndex == cursorLine)
+      val layout = layoutFor(area, state)
+      state.scrollRow = layout.scrollRow
+      state.scrollColumn = layout.scrollColumn
+      (layout.scrollRow until math.min(layout.rowCount, layout.scrollRow + layout.text.height)).foreach { index =>
+        renderRow(buffer, layout, layout.row(index), layout.text.y + index - layout.scrollRow, state)
       }
+      for prompt <- layout.prompt; query <- state.search do
+        buffer.setString(prompt.x, prompt.y, CharWidth.substringByWidth("/" + query, prompt.width), style)
 
   /** The buffer cell the caret occupies when this editor is drawn into `area` for `state` — the counterpart of
-    * `TextInput.caretAt`, for a host that parks the terminal's own cursor on the insertion point.
+    * `TextInput.caretAt`, for a host that parks the terminal's own cursor on the insertion point. While a search is
+    * open, that is the end of the prompt's query.
     *
     * Both scroll offsets are re-solved from the state's current ones with the same rules [[render]] applies, so the
     * answer is the painted cursor's cell whether this is asked before or after the frame was drawn; the state is not
@@ -187,48 +192,135 @@ final case class TextArea(
   def caretAt(area: Rect, state: TextAreaState): Option[Position] =
     if area.isEmpty then None
     else
-      val (cursorLine, cursorColumn) = state.cursor
-      val lines                      = state.clusterLines
-      val scrollRow            = ScrollWindow.offsetFor(state.scrollRow, Some(cursorLine), lines.size, area.height)
-      val scrollColumn         = scrolledHorizontally(state, cursorColumn, area.width)
-      val clusters             = lines(cursorLine)
-      val (firstCluster, from) = ClusterRow.clusterAtColumn(clusters, scrollColumn)
-      val x = area.x + (from - scrollColumn) + ClusterRow.visibleWidth(clusters, firstCluster, cursorColumn)
-      val y = area.y + cursorLine - scrollRow
-      Option.when(x >= area.x && x < area.right && y >= area.y && y < area.bottom)(Position(x, y))
+      val layout = layoutFor(area, state)
+      (layout.prompt, state.search) match
+        case (Some(prompt), Some(query)) =>
+          val x = prompt.x + 1 + ClusterRow.visibleWidth(GraphemeEdit.clustersOf(query), 0, Int.MaxValue)
+          Option.when(x < prompt.right)(Position(x, prompt.y))
+        case _                           =>
+          val text                       = layout.text
+          val (cursorLine, cursorColumn) = state.cursor
+          val clusters                   = state.clusterLines(cursorLine)
+          val x                          =
+            if options.wrap then
+              text.x + ClusterRow.visibleWidth(clusters, layout.row(layout.cursorRow).start, cursorColumn)
+            else
+              val (firstCluster, from) = ClusterRow.clusterAtColumn(clusters, layout.scrollColumn)
+              text.x + (from - layout.scrollColumn) + ClusterRow.visibleWidth(clusters, firstCluster, cursorColumn)
+          val y                          = text.y + layout.cursorRow - layout.scrollRow
+          Option.when(x >= text.x && x < text.right && y >= text.y && y < text.bottom)(Position(x, y))
 
-  /** Paints one visible line. The blank one past the last cluster is left untouched unless the cursor sits on it, so an
-    * editor does not paint its own background over whatever is behind the end of a short line — see [[ClusterRow.draw]]
-    * for the wide-glyph and cursor rules.
+  /** One screen row of text: clusters `[start, end)` of logical line `line`; `last` marks the line's final row, the one
+    * that may show the caret past the end.
     */
-  private def renderLine(
-      buffer: Buffer,
-      area: Rect,
-      clusters: Vector[String],
-      y: Int,
-      state: TextAreaState,
-      isCursorLine: Boolean,
-  ): Unit =
-    val (_, cursorColumn)    = state.cursor
-    // The offset is a column count shared by every line, and this line's clusters may not have a boundary there: a
-    // cluster straddling the offset is skipped and the row starts that much further right, so the columns of all the
-    // lines still line up. Counting the offset in clusters instead — which is what this used to pass — scrolled a line
-    // of wide characters roughly twice as far as the ASCII lines around it, and often clean off the screen.
-    val (firstCluster, from) = ClusterRow.clusterAtColumn(clusters, state.scrollColumn)
+  private final case class VisualRow(line: Int, start: Int, end: Int, last: Boolean)
+
+  /** Where everything goes this frame: the text rectangle right of the gutter, the prompt row, the rows and scroll. */
+  private final case class Layout(
+      text: Rect,
+      gutterWidth: Int,
+      prompt: Option[Rect],
+      rowCount: Int,
+      row: Int => VisualRow,
+      cursorRow: Int,
+      scrollRow: Int,
+      scrollColumn: Int,
+  )
+
+  private def layoutFor(area: Rect, state: TextAreaState): Layout =
+    val lines                      = state.clusterLines
+    val (cursorLine, cursorColumn) = state.cursor
+    val prompt                     = Option.when(state.search.isDefined)(Rect(area.x, area.bottom - 1, area.width, 1))
+    val digits                     = lines.size.toString.length
+    val gutterWidth                = if options.lineNumbers && digits + 1 < area.width then digits + 1 else 0
+    val text                       =
+      Rect(area.x + gutterWidth, area.y, area.width - gutterWidth, math.max(0, area.height - prompt.size))
+    if options.wrap then
+      val rows      = wrappedRows(lines, text.width, cursorLine, cursorColumn)
+      val cursorRow = math.max(0, rows.indexWhere(row => row.line == cursorLine && covers(row, cursorColumn)))
+      val scrollRow = ScrollWindow.offsetFor(state.scrollRow, Some(cursorRow), rows.size, text.height)
+      Layout(text, gutterWidth, prompt, rows.size, rows, cursorRow, scrollRow, 0)
+    else
+      val scrollRow = ScrollWindow.offsetFor(state.scrollRow, Some(cursorLine), lines.size, text.height)
+      val row       = (index: Int) => VisualRow(index, 0, lines(index).size, last = true)
+      Layout(text, gutterWidth, prompt, lines.size, row, cursorLine, scrollRow, scrolledHorizontally(state, text.width))
+
+  private def covers(row: VisualRow, column: Int): Boolean =
+    (column >= row.start && column < row.end) || (row.last && column == row.end)
+
+  /** Every line broken into rows of at most `width` columns. The caret's line gets one extra empty row when the caret
+    * sits past the end of a row that is already full, so the caret always has a cell to stand on.
+    */
+  private def wrappedRows(lines: Vector[Vector[String]], width: Int, cursorLine: Int, cursorColumn: Int) =
+    val rows = Vector.newBuilder[VisualRow]
+    lines.indices.foreach { line =>
+      val clusters = lines(line)
+      val spans    = TextArea.wrapSpans(clusters, width)
+      spans.zipWithIndex.foreach { case ((start, end), index) =>
+        val full = ClusterRow.visibleWidth(clusters, start, end) >= width
+        val last = index == spans.size - 1
+        if last && full && line == cursorLine && cursorColumn == clusters.size then
+          rows += VisualRow(line, start, end, last = false)
+          rows += VisualRow(line, end, end, last = true)
+        else rows += VisualRow(line, start, end, last)
+      }
+    }
+    rows.result()
+
+  /** Paints one row and its gutter cell. The blank one past the last cluster is left untouched unless the cursor sits
+    * on it, so an editor does not paint its own background over whatever is behind the end of a short line — see
+    * [[ClusterRow.draw]] for the wide-glyph and cursor rules.
+    */
+  private def renderRow(buffer: Buffer, layout: Layout, row: VisualRow, y: Int, state: TextAreaState): Unit =
+    val (cursorLine, cursorColumn) = state.cursor
+    val clusters                   = state.clusterLines(row.line)
+    if layout.gutterWidth > 0 then
+      val number = if row.start == 0 then (row.line + 1).toString else ""
+      buffer.setString(
+        layout.text.x - layout.gutterWidth,
+        y,
+        " " * (layout.gutterWidth - 1 - number.length) + number,
+        options.gutterStyle,
+      )
+    // Without wrap the offset is a column count shared by every line, and this line's clusters may not have a boundary
+    // there: a cluster straddling the offset is skipped and the row starts that much further right, so the columns of
+    // all the lines still line up. Counting the offset in clusters instead scrolled a line of wide characters roughly
+    // twice as far as the ASCII lines around it, and often clean off the screen.
+    val (firstCluster, x0)         =
+      if options.wrap then (row.start, layout.text.x)
+      else
+        val (first, from) = ClusterRow.clusterAtColumn(clusters, layout.scrollColumn)
+        (first, layout.text.x + (from - layout.scrollColumn))
     ClusterRow.draw(
       buffer,
-      x0 = area.x + (from - state.scrollColumn),
+      x0 = x0,
       y = y,
-      right = area.right,
+      right = layout.text.right,
       clusters = clusters,
       scroll = firstCluster,
       cursorAt = cursorColumn,
-      showCursor = showCursor && isCursorLine,
+      showCursor = showCursor && row.line == cursorLine && covers(row, cursorColumn),
       style = style,
       cursorStyle = cursorStyle,
       paintEndCell = false,
       tokenStyles = options.lexer.fold(IndexedSeq.empty)(lexer => tokenStyles(clusters, lexer)),
+      highlights = highlightsOn(row.line, clusters.size, state),
+      until = if row.last then clusters.size + 1 else row.end,
     )
+
+  /** Search matches, then the selection over them, as cluster ranges of `line`. */
+  private def highlightsOn(line: Int, size: Int, state: TextAreaState): Seq[ClusterRow.Highlight] =
+    val found     = state.matches.iterator
+      .filter(_.start.line == line)
+      .map(hit => ClusterRow.Highlight(hit.start.column, hit.end.column, options.matchStyle))
+      .toList
+    val selection = state.selection.toList.collect {
+      case (from, to) if from.line <= line && to.line >= line =>
+        val start = if from.line == line then from.column else 0
+        val end   = if to.line == line then to.column else size
+        ClusterRow.Highlight(start, end, options.selectionStyle)
+    }
+    found ++ selection
 
   /** One style per cluster from `lexer`, or none when its spans do not segment back into the same clusters — a lexer
     * that rewrote the text has its styling ignored rather than painted onto the wrong cells.
@@ -247,9 +339,34 @@ final case class TextArea(
     * solver works in cluster indices on the cursor's own line, so the offset is converted into that line's clusters on
     * the way in and back into columns on the way out.
     */
-  private def scrolledHorizontally(state: TextAreaState, cursorColumn: Int, width: Int): Int =
-    val (cursorLine, _) = state.cursor
-    val clusters        = state.clusterLines(cursorLine)
-    val (scrollFrom, _) = ClusterRow.clusterAtColumn(clusters, state.scrollColumn)
-    val scrolledTo      = ClusterRow.scrolledTo(clusters, scrollFrom, cursorColumn, width)
+  private def scrolledHorizontally(state: TextAreaState, width: Int): Int =
+    val (cursorLine, cursorColumn) = state.cursor
+    val clusters                   = state.clusterLines(cursorLine)
+    val (scrollFrom, _)            = ClusterRow.clusterAtColumn(clusters, state.scrollColumn)
+    val scrolledTo                 = ClusterRow.scrolledTo(clusters, scrollFrom, cursorColumn, width)
     ClusterRow.columnOfCluster(clusters, scrolledTo)
+
+object TextArea:
+
+  /** Greedy soft wrap of one line into `[start, end)` cluster spans of at most `width` columns: a span that would
+    * overflow ends after its last whitespace cluster when it has one, otherwise between graphemes. A cluster wider than
+    * `width` gets a span of its own (which the painter then refuses). An empty line is one empty span.
+    */
+  private[widgets] def wrapSpans(clusters: Vector[String], width: Int): Vector[(Int, Int)] =
+    if clusters.isEmpty || width <= 0 then Vector((0, clusters.size))
+    else
+      val spans = Vector.newBuilder[(Int, Int)]
+      var start = 0
+      while start < clusters.size do
+        var end  = start
+        var used = 0
+        while end < clusters.size && used + ClusterRow.renderedWidth(clusters(end)) <= width do
+          used += ClusterRow.renderedWidth(clusters(end))
+          end += 1
+        if end < clusters.size then
+          val space = (end until start by -1).find(k => clusters(k - 1).codePoints().allMatch(Character.isWhitespace))
+          end = space.getOrElse(end)
+        if end == start then end = start + 1
+        spans += ((start, end))
+        start = end
+      spans.result()

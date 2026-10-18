@@ -37,13 +37,15 @@ private[widgets] object LegendFit:
 
   /** How many of `total` cells a constraint permits the legend to use.
     *
-    * `Min` and `Fill` describe a floor and a share of leftover space rather than a ceiling, so as a limit on a legend
-    * they mean "no limit" and permit the whole extent.
+    * `Min`, `Fill` and `Auto` describe a floor, a share of leftover space and the content's own size rather than a
+    * ceiling, so as a limit on a legend they mean "no limit" and permit the whole extent. A `Bounded` permits its
+    * base's budget held under its ceiling.
     */
   private def budget(constraint: Constraint, total: Int): Int = constraint match
-    case Constraint.Length(cells)                 => math.min(cells, total)
-    case Constraint.Percentage(pct)               => total * pct / 100
-    case Constraint.Ratio(numerator, denominator) =>
+    case Constraint.Length(cells)                                 => math.min(cells, total)
+    case Constraint.Percentage(pct)                               => total * pct / 100
+    case Constraint.Ratio(numerator, denominator)                 =>
       if denominator == 0 then 0 else total * numerator / denominator
-    case Constraint.Max(cells)                    => math.min(cells, total)
-    case Constraint.Min(_) | Constraint.Fill(_)   => total
+    case Constraint.Max(cells)                                    => math.min(cells, total)
+    case Constraint.Min(_) | Constraint.Fill(_) | Constraint.Auto => total
+    case Constraint.Bounded(_, max, base)                         => math.min(max, budget(base, total))

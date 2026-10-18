@@ -126,6 +126,13 @@ Core structural elements:
 
 - `panel(title)(children*)` / `panel(children*)` — bordered vertical container;
 - `row(children*)` / `column(children*)` — constrained layout containers;
+- `grid(cols, rows, gap)(children*)` — two-axis tracks; children placed with
+  `.at(row, col)`, `.span(rows, cols)` or a named `.areas(…)` template, the rest
+  auto-flowed (see [Lay out a dashboard on a grid](./layout-and-style#lay-out-a-dashboard-on-a-grid));
+- `flow(gap, rowGap)(children*)` — children at their natural widths, wrapping onto
+  further lines: tags, chips, button bars;
+- `dock(top, bottom, left, right)(center)` — panes docked to the edges around a centre
+  that takes the rest;
 - `spacer` / `spacer(cells)` — flexible or fixed blank space;
 - `line(spans*)` — one row carrying several styles (see [Text, documents, and logs](#text-documents-and-logs));
 - `rule(label, borderType)` — horizontal divider, whose weight comes from the same
@@ -176,6 +183,25 @@ moves for an app that wants its own bindings — `first()`, `last()`, `scrollBy(
 move by whatever the viewport measured on the last frame rather than a fixed ten. All of
 them clamp to the content, and all of them are no-ops before the first render, because
 that is when the state first learns how tall the content and the viewport are.
+
+A `scrollView` also keeps what matters on screen without any of that arithmetic. When
+Tab moves focus onto a child below or above the window, the view scrolls just far
+enough to show it, on the same frame. An element marked `.ensureVisible` — the selected
+row of a long list, the match a search landed on — is scrolled into view when it appears
+or is first marked:
+
+```scala
+scrollView(
+  column(results.zipWithIndex.map((hit, i) => if i == current then text(hit).bold.ensureVisible else text(hit))*),
+  resultsState,
+)
+```
+
+Each request is acted on once, so a child that stays focused or marked does not drag
+the view back after the reader scrolls away; take the mark off and put it back to ask
+again. `.followFocus(false)` turns focus-following off for a view whose offset the app
+drives itself, and `ScrollViewState.reveal(top, height)` is the same "scroll just far
+enough" move for code that keeps its own state.
 
 `scrollView` draws its own scrollbar. For the rarer case of a scroll indicator beside
 something the DSL is not scrolling — a custom render loop, a pane whose offset your own
@@ -1137,7 +1163,8 @@ glyph reserves two.
 | Widget | State | Notes |
 |---|---|---|
 | `input` | `TextInputState` | one line, horizontal scrolling, paste folds newlines |
-| `textArea` | `TextAreaState` | multiple lines, 2D cursor, scrolling, bounded undo/redo |
+| `textArea` | `TextAreaState` | multiple lines, soft wrap (`.wrap`), line numbers (`.lineNumbers`), `.lexer(…)`, search (`Ctrl+F`), `.readOnly` viewer |
+| `promptComposer` | `PromptComposerState` | LLM-CLI prompt: Enter submits, history, `Ctrl+R`, ghost suggestions, `/` and `@` completion, paste compaction |
 | `numberInput` | `TextInputState` | whole numbers only; add `.decimal` to accept one decimal point |
 | `templateInput` | `TextInputState` | template field: `#` digit, `A` letter, other characters are literals |
 | `autocomplete` | `AutocompleteState` | input plus selectable suggestions and accept callback; `.maxSuggestions(n)` caps the list |
@@ -1146,6 +1173,12 @@ glyph reserves two.
 The raw `TextArea` widget highlights its visible rows through a lexer:
 `TextArea(options = TextAreaOptions(lexer = Some(Lexer.Sql)))`. Token styles are laid over
 the editor's `style`, and the cursor still shows on top of them.
+
+`input` and `textArea` share one editing engine, `EditBuffer`: selection with `Shift`, word
+motion with `Ctrl+Left`/`Ctrl+Right`, `Ctrl+A`/`Ctrl+C`/`Ctrl+X`/`Ctrl+V` through the app
+clipboard, a kill ring (`Ctrl+K`, `Ctrl+U`, `Ctrl+W`, `Ctrl+Y`, `Alt+Y`) and coalesced undo
+(`Ctrl+Z`, redo `Ctrl+Shift+Z`). The full chord table, soft wrap, search and the prompt
+composer are on [Text editing](editing.md).
 
 ### Local file picker
 

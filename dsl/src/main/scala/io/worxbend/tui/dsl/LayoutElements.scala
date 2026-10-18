@@ -1,6 +1,23 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Alignment, Buffer, Cell, Direction, Flex, Line, Measured, Rect, Style, Widget}
+import io.worxbend.tui.core.{
+  Alignment,
+  Buffer,
+  Cell,
+  Constraint,
+  CrossAlign,
+  Direction,
+  Flex,
+  GridAreas,
+  GridItem,
+  GridLayout,
+  GridPlacement,
+  Line,
+  Measured,
+  Rect,
+  Style,
+  Widget,
+}
 import io.worxbend.tui.widgets as w
 
 /** The heights of every child at `width`, or `None` if any one of them cannot say how tall it is.
@@ -80,7 +97,7 @@ final case class PanelElement(
     (area, buffer) =>
       val framed = block
       framed.render(area, buffer)
-      w.Column(children.map(_.layoutItem(Direction.Vertical)), spacing, flex).render(framed.inner(area), buffer)
+      w.Column(columnItems(children), spacing, flex).render(framed.inner(area), buffer)
 
   def withFlex(mode: Flex): PanelElement    = copy(flex = mode)
   def withSpacing(cells: Int): PanelElement = copy(spacing = math.max(0, cells))
@@ -146,6 +163,20 @@ final case class PanelElement(
   private[dsl] override def intrinsicHeight(width: Int): Option[Int]           =
     constrainedHeight(framedHeight(width))
 
+  /** The columns the widest child needs plus the frame's left and right cells and padding. Captions are not counted:
+    * they are written over the border and clipped to it, so they never widen the box.
+    */
+  private[dsl] override def intrinsicWidth(height: Int): Option[Int] =
+    val chrome = borderCells(w.Borders.Left) + borderCells(w.Borders.Right) + padding.horizontalCells
+    constrainedWidth(
+      Option
+        .when(children.nonEmpty)(
+          children.map(child => child.withProps(child.props.copy(constraint = None)).intrinsicWidth(height))
+        )
+        .fold(Option(0))(widths => Option.when(widths.forall(_.nonEmpty))(widths.flatten.max))
+        .map(_ + chrome)
+    )
+
   /** The rows this panel's chrome and children need at `width` — what [[intrinsicHeight]] answers once
     * [[constrainedHeight]] has found no explicit constraint of the caller's own to honour instead.
     */
@@ -209,12 +240,18 @@ extension (panel: PanelElement)
     */
   def mergeBorders(strategy: w.MergeStrategy): PanelElement = panel.copy(mergeBorders = strategy)
 
-/** Children laid out side by side, left to right. */
+/** Children laid out side by side, left to right.
+  *
+  * A child marked `.auto` is exactly as wide as it measures ([[Element.intrinsicWidth]]); `.alignItems(...)` places the
+  * children vertically inside the row and a child's own `.alignSelf(...)` overrides that — see
+  * [[io.worxbend.tui.core.CrossAlign]].
+  */
 final case class RowElement(
     override val children: Seq[Element],
     spacing: Int = 0,
     flex: Flex = Flex.Start,
     props: ElementProps = ElementProps(),
+    crossAlign: CrossAlign = CrossAlign.Stretch,
 ) extends FlexContainer:
   type Self = RowElement
   override def debugName: String                                             = "row"
@@ -224,7 +261,7 @@ final case class RowElement(
       val item = child.layoutItem(Direction.Horizontal)
       item.copy(widget = RowChildWidget(child, item.widget))
     }
-    w.Row(items, spacing, flex)
+    w.Row(items, spacing, flex, crossAlign)
   def widget: Widget                                                         = layout
   def withFlex(mode: Flex): RowElement                                       = copy(flex = mode)
   def withSpacing(cells: Int): RowElement                                    = copy(spacing = math.max(0, cells))
@@ -232,10 +269,13 @@ final case class RowElement(
   private[dsl] override def withChildren(children: Seq[Element]): RowElement = copy(children = children)
   private[dsl] override def intrinsicHeight(width: Int): Option[Int]         =
     constrainedHeight(layout.heightAt(width))
+  private[dsl] override def intrinsicWidth(height: Int): Option[Int]         =
+    constrainedWidth(layout.widthAt(height))
 
-/** A row child's widget with the DSL's cross-axis measurement attached. The child's explicit constraint belongs to its
-  * horizontal slot, not to its height; clear only that node's constraint for the query, preserving vertical constraints
-  * inside its subtree. Row owns allocation and the zero-width policy for both painting and measurement.
+/** A row child's widget with the DSL's measurement attached. The child's explicit constraint belongs to its horizontal
+  * slot, not to its height, so the height query clears only that node's constraint, preserving vertical constraints
+  * inside its subtree; the width query keeps it, because along the row it *is* the child's width. Row owns allocation
+  * and the zero-width policy for both painting and measurement.
   */
 private final case class RowChildWidget(element: Element, underlying: Widget) extends Widget with Measured:
   def render(area: Rect, buffer: Buffer): Unit = underlying.render(area, buffer)
@@ -243,23 +283,175 @@ private final case class RowChildWidget(element: Element, underlying: Widget) ex
   override def heightAt(width: Int): Option[Int] =
     element.withProps(element.props.copy(constraint = None)).intrinsicHeight(width)
 
-/** Children stacked top to bottom. */
+  override def widthAt(height: Int): Option[Int] = element.intrinsicWidth(height)
+
+/** A column child's widget with the DSL's measurement attached — [[RowChildWidget]] one axis over: the height query
+  * keeps the child's constraint, which along the column is its height, and the width query clears it.
+  */
+private final case class ColumnChildWidget(element: Element, underlying: Widget) extends Widget with Measured:
+  def render(area: Rect, buffer: Buffer): Unit = underlying.render(area, buffer)
+
+  override def heightAt(width: Int): Option[Int] = element.intrinsicHeight(width)
+
+  override def widthAt(height: Int): Option[Int] =
+    element.withProps(element.props.copy(constraint = None)).intrinsicWidth(height)
+
+/** `children` as the items of a vertical `w.Column`, each carrying the DSL's measurement of its element. */
+private def columnItems(children: Seq[Element]): Seq[w.LayoutItem] =
+  children.map { child =>
+    val item = child.layoutItem(Direction.Vertical)
+    item.copy(widget = ColumnChildWidget(child, item.widget))
+  }
+
+/** Children stacked top to bottom.
+  *
+  * The same vocabulary as [[RowElement]] one axis over: an `.auto` child is exactly as tall as it measures, and
+  * `.alignItems(...)` / `.alignSelf(...)` place children horizontally — a `button` in a centred column is as wide as
+  * its label rather than the column. Its measured height is the `w.Column`'s own, so painting and measurement share one
+  * allocation.
+  */
 final case class ColumnElement(
     override val children: Seq[Element],
     spacing: Int = 0,
     flex: Flex = Flex.Start,
     props: ElementProps = ElementProps(),
+    crossAlign: CrossAlign = CrossAlign.Stretch,
 ) extends FlexContainer:
   type Self = ColumnElement
   override def debugName: String                = "column"
   private[dsl] override def layoutOnly: Boolean = true
-  def widget: Widget                         = w.Column(children.map(_.layoutItem(Direction.Vertical)), spacing, flex)
-  def withFlex(mode: Flex): ColumnElement    = copy(flex = mode)
-  def withSpacing(cells: Int): ColumnElement = copy(spacing = math.max(0, cells))
+  private def layout: w.Column                  = w.Column(columnItems(children), spacing, flex, crossAlign)
+  def widget: Widget                            = layout
+  def withFlex(mode: Flex): ColumnElement       = copy(flex = mode)
+  def withSpacing(cells: Int): ColumnElement    = copy(spacing = math.max(0, cells))
   private[dsl] override def intrinsicHeight(width: Int): Option[Int]            =
-    constrainedHeight(measuredHeights(children, width).map(_.sum + spacing * math.max(0, children.size - 1)))
+    constrainedHeight(layout.heightAt(width))
+  private[dsl] override def intrinsicWidth(height: Int): Option[Int]            =
+    constrainedWidth(layout.widthAt(height))
   private[dsl] def withProps(props: ElementProps): ColumnElement                = copy(props = props)
   private[dsl] override def withChildren(children: Seq[Element]): ColumnElement = copy(children = children)
+
+/** Cross-axis alignment for the two axis containers. */
+extension (row: RowElement)
+
+  /** Places every child vertically inside the row by `align`; a child's own `.alignSelf(...)` overrides it. */
+  def alignItems(align: CrossAlign): RowElement = row.copy(crossAlign = align)
+
+extension (column: ColumnElement)
+
+  /** Places every child horizontally inside the column by `align` — `CrossAlign.Center` for a centred stack of buttons;
+    * a child's own `.alignSelf(...)` overrides it.
+    */
+  def alignItems(align: CrossAlign): ColumnElement = column.copy(crossAlign = align)
+
+/** Children placed on a two-axis grid of column and row tracks — a dashboard of cards that does not reflow when one
+  * card's content changes width.
+  *
+  * The tracks are ordinary [[io.worxbend.tui.core.Constraint]]s solved by the same solver `row` and `column` use, with
+  * `columnGap` / `rowGap` blank cells between neighbouring tracks; an `Auto` track is sized by the children sitting in
+  * that track alone. A child says where it goes with `.at(row, col)`, how many tracks it covers with `.span(rows,
+  * cols)`, or which named area of an `.areas(...)` template it fills with `.area(name)`; a child that says nothing is
+  * auto-flowed into the next free run of cells, in reading order (see [[io.worxbend.tui.core.GridLayout.autoFlow]]). A
+  * child placed past the last track is clipped to the tracks there are, or not drawn at all when it starts outside
+  * them.
+  *
+  * A child's own `.length` / `.fill` means nothing here — the tracks decide every size — so it is ignored.
+  */
+final case class GridElement(
+    columns: Seq[Constraint],
+    rows: Seq[Constraint],
+    override val children: Seq[Element],
+    columnGap: Int = 0,
+    rowGap: Int = 0,
+    template: Map[String, GridPlacement] = Map.empty,
+    props: ElementProps = ElementProps(),
+) extends Element:
+  type Self = GridElement
+  override def debugName: String                = "grid"
+  private[dsl] override def layoutOnly: Boolean = true
+
+  private def layout: w.Grid =
+    val core       = GridLayout(columns, rows).withGap(math.max(0, columnGap), math.max(0, rowGap))
+    val items      = children.map { child =>
+      val spot = child.props.gridSpot
+      spot.area.flatMap(template.get) match
+        case Some(area) => GridItem.at(area.row, area.col, area.rowSpan, area.colSpan)
+        case None       =>
+          spot.position.fold(GridItem.span(spot.rowSpan, spot.colSpan))((r, c) =>
+            GridItem.at(r, c, spot.rowSpan, spot.colSpan)
+          )
+    }
+    val placements = GridLayout.autoFlow(math.max(1, columns.size), items)
+    w.Grid(core, children.zip(placements).map((child, at) => w.GridCell(at, GridChildWidget(child))))
+
+  def widget: Widget = layout
+
+  /** Names the grid's cells with a template, one string per row: `.areas("top top", "main side")` gives a two-column
+    * `top` area over a `main` and a `side` cell, and a child marked `.area("top")` fills it. A `.` leaves a cell
+    * unnamed. A child naming an area the template does not have is auto-flowed instead.
+    *
+    * A template whose rows differ in length, or in which a name does not cover one filled rectangle, is a mistake in
+    * the view's source rather than a runtime condition, so it fails here with an `IllegalArgumentException`.
+    */
+  def areas(templateRows: String*): GridElement =
+    GridAreas.parse(templateRows*) match
+      case Right(named)  => copy(template = named)
+      case Left(problem) => throw IllegalArgumentException(problem)
+
+  /** Different gaps between columns and between rows; the `gap` the factory took sets both. */
+  def gaps(columnGap: Int, rowGap: Int): GridElement = copy(columnGap = columnGap, rowGap = rowGap)
+
+  private[dsl] def withProps(props: ElementProps): GridElement                = copy(props = props)
+  private[dsl] override def withChildren(children: Seq[Element]): GridElement = copy(children = children)
+  private[dsl] override def intrinsicHeight(width: Int): Option[Int] = constrainedHeight(layout.heightAt(width))
+
+/** A grid cell's widget with the DSL's measurement attached. The grid's tracks decide every size, so the child's own
+  * constraint is cleared for both queries.
+  */
+private final case class GridChildWidget(element: Element) extends Widget with Measured:
+  private lazy val unconstrained: Element      = element.withProps(element.props.copy(constraint = None))
+  def render(area: Rect, buffer: Buffer): Unit = element.widget.render(area, buffer)
+
+  override def heightAt(width: Int): Option[Int] = unconstrained.intrinsicHeight(width)
+
+  override def widthAt(height: Int): Option[Int] = unconstrained.intrinsicWidth(height)
+
+/** Grid placement — read only by an enclosing [[GridElement]]. */
+extension [E <: Element](element: E)
+
+  /** Puts this child's top-left corner at track `row`, `col` of the enclosing `grid` (both from zero). */
+  def at(row: Int, col: Int): element.Self =
+    element.withProps(element.props.copy(gridSpot = element.props.gridSpot.copy(position = Some((row, col)))))
+
+  /** Makes this child cover `rows` row tracks and `cols` column tracks of the enclosing `grid`, gaps included. */
+  def span(rows: Int = 1, cols: Int = 1): element.Self =
+    element.withProps(element.props.copy(gridSpot = element.props.gridSpot.copy(rowSpan = rows, colSpan = cols)))
+
+  /** Puts this child in the named area of the enclosing `grid`'s `.areas(...)` template. */
+  def area(name: String): element.Self =
+    element.withProps(element.props.copy(gridSpot = element.props.gridSpot.copy(area = Some(name))))
+
+/** Children laid left to right at their natural widths, wrapping onto a new line when the next one does not fit — tags,
+  * chips, a bar of buttons. Widths are each child's [[Element.intrinsicWidth]], so text is measured in display columns
+  * and a CJK label takes two per character; a `.length(n)` on a child fixes its width. A child that cannot say how wide
+  * it is takes a line of its own. `gap` blank columns separate neighbours and `rowGap` blank rows separate lines.
+  */
+final case class FlowElement(
+    override val children: Seq[Element],
+    gap: Int = 1,
+    rowGap: Int = 0,
+    props: ElementProps = ElementProps(),
+) extends Element:
+  type Self = FlowElement
+  override def debugName: String                                              = "flow"
+  private[dsl] override def layoutOnly: Boolean                               = true
+  private def layout: w.Flow                                                  =
+    w.Flow(children.map(child => RowChildWidget(child, child.widget)), gap, rowGap)
+  def widget: Widget                                                          = layout
+  private[dsl] def withProps(props: ElementProps): FlowElement                = copy(props = props)
+  private[dsl] override def withChildren(children: Seq[Element]): FlowElement = copy(children = children)
+  private[dsl] override def intrinsicHeight(width: Int): Option[Int] = constrainedHeight(layout.heightAt(width))
+  private[dsl] override def intrinsicWidth(height: Int): Option[Int] = constrainedWidth(layout.widthAt(height))
 
 /** Blank space: flexible by default, fixed once `.length(n)` sets a constraint. */
 final case class SpacerElement(props: ElementProps = ElementProps()) extends Element:

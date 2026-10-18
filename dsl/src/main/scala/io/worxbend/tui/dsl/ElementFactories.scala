@@ -95,6 +95,47 @@ private[dsl] trait ElementFactories:
     */
   def column(children: Element*): ColumnElement = ColumnElement(children)
 
+  /** Children on a grid of `columns` x `rows` tracks with `gap` blank cells between neighbouring tracks:
+    *
+    * {{{
+    * grid(cols = Seq(Constraint.Fill(1), Constraint.Length(30)), rows = Seq(Constraint.Length(3), Constraint.Fill(1)), gap = 1)(
+    *   topBar.span(cols = 2), main.at(1, 0), sidebar.at(1, 1))
+    * }}}
+    *
+    * Children say where they go with `.at(row, col)` and `.span(rows, cols)`, or fill a named area of
+    * `.areas("top top", "main side")` with `.area("top")`; the rest are auto-flowed into the next free cells. See
+    * [[GridElement]].
+    */
+  def grid(cols: Seq[Constraint], rows: Seq[Constraint], gap: Int = 0)(children: Element*): GridElement =
+    GridElement(cols, rows, children, gap, gap)
+
+  /** Children laid out left to right at their natural widths, wrapping onto further lines — tags, chips, button bars.
+    * `gap` blank columns between neighbours, `rowGap` blank rows between lines. See [[FlowElement]].
+    */
+  def flow(gap: Int = 1, rowGap: Int = 0)(children: Element*): FlowElement =
+    FlowElement(children, gap, rowGap)
+
+  /** `center` with panes docked to its edges: `top` and `bottom` across the full width, then `left` and `right` beside
+    * the centre, which takes whatever is left. Sugar over a `column` holding a `row` — the result is that `column`.
+    *
+    * A docked pane with no constraint of its own is `.auto`, sized to what it measures (and a fill when it cannot say);
+    * give it `.length(n)` to fix it. An edge left out is a zero-size spacer and costs nothing.
+    */
+  def dock(
+      top: Element = SpacerElement(ElementProps(constraint = Some(Constraint.Length(0)))),
+      bottom: Element = SpacerElement(ElementProps(constraint = Some(Constraint.Length(0)))),
+      left: Element = SpacerElement(ElementProps(constraint = Some(Constraint.Length(0)))),
+      right: Element = SpacerElement(ElementProps(constraint = Some(Constraint.Length(0)))),
+  )(center: Element): ColumnElement =
+    // the constraint is written through `withProps` rather than the `.auto` / `.fill` extensions: those live beside
+    // the `export Element.{…}` block, and reaching them from here is a cyclic reference
+    def sized(pane: Element, constraint: Constraint): Element =
+      pane.withProps(pane.props.copy(constraint = Some(constraint)))
+    def docked(pane: Element): Element                        =
+      if pane.props.constraint.isEmpty then sized(pane, Constraint.Auto) else pane
+    val middle = RowElement(Seq(docked(left), sized(center, Constraint.Fill(1)), docked(right)))
+    ColumnElement(Seq(docked(top), sized(middle, Constraint.Fill(1)), docked(bottom)))
+
   /** One element per item, each stamped with a `.key` derived from the item itself, so focus follows the *item* across
     * insertions and reorders rather than the screen position it happened to occupy.
     *
@@ -235,12 +276,12 @@ private[dsl] trait ElementFactories:
     * applied — the wrapped widget draws exactly what it draws.
     *
     * '''Say how big it is.''' A wrapped widget claims *all* the space its container has left over, because a bare
-    * `Widget` has no way to say otherwise — implementing [[io.worxbend.tui.core.Measured]] on it does not change this,
-    * as that is consulted by the scroll-view measurement pass and not by the layout solver. So
-    * `column(text("a"), widget(oneRowThing), text("b"))` gives the custom widget every row the two captions did not
-    * take. Say the height with `.rows(n)`: `widget(oneRowThing).rows(1)` is one row tall and full width in a `column`
-    * *and* in a `row`. Reach for `.length(n)` only when the number really is the container'''s decision, because that
-    * extension applies along whichever axis the container runs — in a `row`, `.length(1)` is one column wide.
+    * `Widget` has no way to say otherwise. So `column(text("a"), widget(oneRowThing), text("b"))` gives the custom
+    * widget every row the two captions did not take. A widget that implements [[io.worxbend.tui.core.Measured]] can be
+    * sized to what it measures with `.auto`; otherwise say the height with `.rows(n)`: `widget(oneRowThing).rows(1)` is
+    * one row tall and full width in a `column` *and* in a `row`. Reach for `.length(n)` only when the number really is
+    * the container'''s decision, because that extension applies along whichever axis the container runs — in a `row`,
+    * `.length(1)` is one column wide.
     */
   def widget(wrapped: Widget): WidgetElement = WidgetElement(wrapped)
 
@@ -785,13 +826,24 @@ private[dsl] trait ElementFactories:
   def directoryTree(state: w.DirectoryTreeState): DirectoryTreeElement =
     DirectoryTreeElement(state)
 
-  /** A multi-line editor over caller-owned [[w.TextAreaState]], with undo (`Ctrl+Z`) and redo (`Ctrl+Y`).
+  /** A multi-line editor over caller-owned [[w.TextAreaState]]: selection, word motion, clipboard, kill ring, undo
+    * (`Ctrl+Z`) and redo (`Ctrl+Shift+Z`), and incremental search (`Ctrl+F`). `options` carries the widget's knobs —
+    * `lexer`, soft `wrap`, `lineNumbers` — which the `.lexer(…)`, `.wrap` and `.lineNumbers` builders also set.
     *
     * Create the state once outside `view`, as for [[input]]; it is render-thread-only, and writing to it from outside
     * an event handler does not by itself schedule a frame.
     */
-  def textArea(state: w.TextAreaState): TextAreaElement =
-    TextAreaElement(state)
+  def textArea(state: w.TextAreaState, options: w.TextAreaOptions = w.TextAreaOptions()): TextAreaElement =
+    TextAreaElement(state, options)
+
+  /** The LLM-CLI prompt over caller-owned [[PromptComposerState]]: a soft-wrapping multi-line draft where `Enter`
+    * submits — `onSubmit` receives the text with paste placeholders expanded — and `Shift+Enter` / `Alt+Enter` insert a
+    * newline. `Up`/`Down` at the first/last line recall history, `Ctrl+R` searches it, a dim suggestion from history is
+    * accepted with `Tab` or `Right`, and `/` (at the start) or `@` (at a word start) open a popup fed by the state's
+    * async, debounced completion provider. A large paste shows as `[Pasted N lines]`.
+    */
+  def promptComposer(state: PromptComposerState)(onSubmit: String => Unit)(using ReactiveScope): PromptComposerElement =
+    PromptComposerElement.tracked(state, onSubmit)
 
   /** A focusable button; `action` runs on Enter or Space while focused, or on a click. The body is by-name, so it is
     * evaluated when the button is pressed rather than when the view is built.
