@@ -176,3 +176,39 @@ final case class ColorPickerElement(
           true
         case _                                  => false
     }
+
+/** A scrollable hex dump of `bytes` over a caller-owned [[w.HexViewerState]]. While focused, Left/Right move the
+  * selected byte by one, Up/Down by a row, PageUp/PageDown by ten rows and Home/End to either end; the wheel moves a
+  * row on hover. The view scrolls to keep the selection on screen, and the selected byte wears the focus style in both
+  * the hex and the ASCII column.
+  */
+final case class HexViewerElement(
+    bytes: IndexedSeq[Byte],
+    state: w.HexViewerState,
+    props: ElementProps = ElementProps(focusable = true),
+) extends Element:
+  type Self = HexViewerElement
+  override def debugName: String                                             = "hexViewer"
+  private val viewer: w.HexViewer                                            = w.HexViewer(bytes)
+  def widget: Widget                                                         =
+    val current = viewer.copy(style = props.style, highlightStyle = props.focusStyle)
+    (area, buffer) => current.render(area, buffer, state)
+  private[dsl] def withProps(props: ElementProps): HexViewerElement          = copy(props = props)
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
+    Some(wheelScrolls(() => move(-viewer.bytesPerRow), () => move(viewer.bytesPerRow)))
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
+    val row = viewer.bytesPerRow
+    Some(
+      keys {
+        case KeyEvent(KeyCode.Left, _)     => move(-1)
+        case KeyEvent(KeyCode.Right, _)    => move(1)
+        case KeyEvent(KeyCode.Up, _)       => move(-row)
+        case KeyEvent(KeyCode.Down, _)     => move(row)
+        case KeyEvent(KeyCode.PageUp, _)   => move(-row * PageStep)
+        case KeyEvent(KeyCode.PageDown, _) => move(row * PageStep)
+        case KeyEvent(KeyCode.Home, _)     => state.select(0, bytes.size)
+        case KeyEvent(KeyCode.End, _)      => state.select(bytes.size - 1, bytes.size)
+      }
+    )
+
+  private def move(delta: Int): Unit = state.moveBy(delta, bytes.size)

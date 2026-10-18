@@ -70,3 +70,14 @@ final class ToolElementsPilotSpec extends AnyFunSuite with PilotFixture:
     assert(chosen.contains(Color.Indexed(196)))
     assert(pilot.screenText.contains("196  #ff0000"))
     quitApp(pilot)
+
+  test("hexViewer: Down moves the selection a row and the view scrolls with it"):
+    val data  = IndexedSeq.tabulate(400)(_.toByte)
+    val state = HexViewerState()
+    val pilot = startApp(hexViewer(data, state))
+    assert(pilot.screenText.contains("00000000  00 01 02"))
+    pilot.pressKey(KeyCode.Right).pressKey(KeyCode.End).pressKey(KeyCode.Up).waitForIdle()
+    assert(state.selected.contains(383))
+    assert(pilot.screenText.contains("00000180"))
+    assert(!pilot.screenText.contains("00000000"))
+    quitApp(pilot)

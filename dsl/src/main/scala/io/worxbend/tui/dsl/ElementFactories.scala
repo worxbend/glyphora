@@ -1020,3 +1020,9 @@ private[dsl] trait ElementFactories:
       onSelect: io.worxbend.tui.core.Color => Unit = _ => (),
   ): ColorPickerElement =
     ColorPickerElement(state, onSelect)
+
+  /** A scrollable `offset | hex | ASCII` dump of `bytes` with a selected byte the arrows move — a row per 16 bytes, the
+    * selection kept on screen. `ArraySeq.unsafeWrapArray(array)` views an `Array[Byte]` without copying. See
+    * [[w.HexViewer]].
+    */
+  def hexViewer(bytes: IndexedSeq[Byte], state: w.HexViewerState): HexViewerElement = HexViewerElement(bytes, state)

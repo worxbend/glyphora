@@ -2229,6 +2229,32 @@ terminal; `state.chosen` keeps it for the app to read. The grid measures 36×17
 (`ColorPicker(showCaption = false)` drops the caption row) and the node claims exactly
 that box.
 
+### Looking at raw bytes
+
+`hexViewer(bytes, state)` is a scrollable hex dump in the familiar `hexdump -C`
+layout:
+
+```scala
+import scala.collection.immutable.ArraySeq
+
+private val payload = ArraySeq.unsafeWrapArray(java.nio.file.Files.readAllBytes(path))
+private val cursor  = HexViewerState()
+
+hexViewer(payload, cursor)
+```
+
+```text
+00000000  48 65 6c 6c 6f 2c 20 57  6f 72 6c 64 21 0a 54 68  |Hello, World!.Th|
+00000010  69 73 20 69 73 20 67 6c  79 70 68 6f 72 61 2e     |is is glyphora.|
+```
+
+Left/Right move the selected byte, Up/Down a row, PageUp/PageDown ten rows, Home/End
+to either end; the selection is highlighted in both columns and the view scrolls to
+keep it on screen. Anything outside printable ASCII — a UTF-8 sequence included — shows
+as `.` in the right-hand column. The widget, `HexViewer(bytes, bytesPerRow, …)`, is
+`Measured`: one row per `bytesPerRow` bytes, 78 columns for the default 16, and only
+the rows on screen are formatted.
+
 ## Drop to a raw Widget
 
 The DSL is not a separate renderer. Any core `Widget` can become a leaf:
