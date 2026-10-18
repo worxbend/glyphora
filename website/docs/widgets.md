@@ -50,6 +50,12 @@ def settings(using ReactiveScope): Element =
 The focused widget's built-in key handler mutates its state and requests a redraw.
 Signals add tracked reactivity where another part of the tree also needs the value.
 
+A control's look per state comes from the theme's component styles: every preset styles
+`button(...).variant(ButtonRole.Primary)` (and `ButtonRole.Danger`) as a filled button,
+and a theme can restyle the text fields (`InputRole`), the collections' selected row
+(`ListRole.Selected`) or a table header (`TableHeaderRole`) the same way — see
+[Component styles and variants](./app-shell#component-styles-and-variants).
+
 > Construct widget state **outside** `view`. Creating `TextInputState()`,
 > `ListState()`, or `DataTableState()` inside `view` would reset editing, selection,
 > and scrolling on every redraw.
@@ -124,7 +130,8 @@ DataTable.fromStrings(columns, rows, widths, DataTableOptions(highlightStyle = t
 
 Core structural elements:
 
-- `panel(title)(children*)` / `panel(children*)` — bordered vertical container;
+- `panel(title)(children*)` / `panel(children*)` — bordered vertical container; its
+  border takes `.frameStyle(...)` and its `style` is the content's, as on every node;
 - `row(children*)` / `column(children*)` — constrained layout containers;
 - `grid(cols, rows, gap)(children*)` — two-axis tracks; children placed with
   `.at(row, col)`, `.span(rows, cols)` or a named `.areas(…)` template, the rest
@@ -330,6 +337,7 @@ panel("Errors")(errorList)
   .padding(1)                       // 1 row top and bottom, 2 columns each side
   .titleBottom(s"${errors.size} total")
   .titleStyle(_.withFg(Color.Red))  // the caption reddens; the frame keeps its own style
+  .frameStyle(_.withFg(Color.Red))  // and this reddens the frame; `.fg(...)` would colour the content
 ```
 
 `.padding(1)` is *not* one cell on all four sides. A terminal cell is roughly twice as

@@ -38,9 +38,15 @@ trait Element:
   type Self >: this.type <: Element
 
   def props: ElementProps
-  def style: Style           = props.style
+  def style: Style = props.style
+
+  /** This element with `style` as its own — the *content* style on every node: a text's text, a list's body, a panel's
+    * children and inner area. A container's border is `frameStyle` instead. The fluent builders (`.fg`, `.bold`,
+    * `.styled(...)`) edit the same style rather than replacing it.
+    */
+  def style(style: Style): Self = withProps(props.copy(style = style))
   def widget: Widget
-  def children: Seq[Element] = Seq.empty
+  def children: Seq[Element]    = Seq.empty
 
   /** This node rebuilt with different props — the single write path behind every styling and layout extension. */
   private[dsl] def withProps(props: ElementProps): Self

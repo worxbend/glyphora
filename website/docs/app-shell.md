@@ -802,7 +802,7 @@ A `Theme` names every role the built-in chrome and the themed factories draw wit
 | `primary`, `accent`, `muted` | body text, highlights, secondary text |
 | `error`, `warning`, `success` | notices, badges, toasts |
 | `surface` | dialogs and raised panes |
-| `border` | the frame `panel` and `rule` draw with |
+| `border` | the frame `panel` and `rule` draw with (a panel's `.frameStyle(...)` overrides it) |
 | `focus` | the focus cue, and every element's selection highlight |
 | `loading: LoadingTheme` | spinners and progress bars |
 | `markdown: MarkdownTheme` | headings, bullets, quotes, inline code in `markdown(…)` |
@@ -836,6 +836,104 @@ The three grouped sub-palettes exist because their fields retheme together.
 custom theme rather than making you spell out all five — see
 [Widgets](./widgets#theming-the-animations).
 
+### Theme presets
+
+Nine themes ship with glyphora, all listed in `Theme.presets`:
+
+| Preset | Character |
+|---|---|
+| `Theme.Dark`, `Theme.Light` | the defaults `Theme.auto` picks between |
+| `Theme.HighContrast` | weight and underline instead of hue, for a monochrome or colour-filtered terminal |
+| `Theme.Dracula` | purple accent, pink keywords |
+| `Theme.Catppuccin` | the Mocha flavour: mauve accent over soft pastels |
+| `Theme.Nord` | frost blue over the polar-night greys |
+| `Theme.Gruvbox` | the dark variant, warm yellow accent |
+| `Theme.Solarized` | Solarized Dark, blue accent |
+| `Theme.Ansi16` | only the terminal's own sixteen colours, so it follows the user's terminal palette |
+
+The five palette presets paint foregrounds in their scheme's published colours and leave
+the terminal background alone, so they read best on a terminal set to the scheme's own
+background. `Ansi16` is the one that is right on any background. Every preset fills
+every role, the loading, Markdown and syntax palettes, and the `button.primary` and
+`button.danger` components below.
+
+### Component styles and variants
+
+The flat roles say what a colour *means*; a component style says how one kind of
+control looks in each interaction state. A `StateStyles` holds five styles — `base`,
+`focused`, `hovered`, `pressed`, `disabled` — and a theme stores one per component role:
+
+```scala
+val mine: Theme = Theme.Nord.withComponent(
+  ButtonRole.Primary,
+  StateStyles(
+    base = Style.of(Color.Black, Color.Cyan),
+    focused = Style.Default.bold.underline,
+    hovered = Style.Default.bold,
+    disabled = Style.Default.dim,
+  ),
+)
+
+button("Save")(save()).variant(ButtonRole.Primary)
+```
+
+`base` goes under the element's own style (an explicit `.fg(...)` still wins); each
+other state, when it says something, replaces the cue that state would otherwise take —
+the theme's `focus` and `disabled` styles, or the element's own `.hoverStyle(...)` /
+`.pressedStyle(...)`, which stay the per-element override. A state left at
+`Style.Default` changes nothing, so a theme with no components draws exactly as before.
+
+The built-in roles are `ButtonRole.Default` / `Primary` / `Secondary` / `Danger`,
+`InputRole` (every text field), `ListRole` and `ListRole.Selected` (the scrollable
+collections and their selected row) and `TableHeaderRole`; `ComponentRole.named("…")`
+adds one of your own. A `button` with no `.variant` resolves `ButtonRole.Default`.
+
+Roles are looked up by a hierarchical `StyleName`: `"button.primary"` falls back to
+`"button"`, merging every field the child leaves unset, so a theme can style all
+buttons once and a variant only says what differs. `theme.component(role)` and
+`theme.style(StyleName("list.selected"))` read the merged result. The host resolves
+components while it paints, so widgets themselves never see the theme.
+
+### Theme files
+
+`Theme.parse(text)` reads a theme from a small `key = value` format, and
+`Theme.render(theme)` writes one back, so an end user can restyle an app without
+recompiling it:
+
+```text
+# midnight.theme
+name    = midnight
+extends = nord
+accent  = bold #88c0d0
+border  = #4c566a
+markdown.heading1 = bold #88c0d0
+syntax.keyword    = #81a1c1
+component.button.primary         = #2e3440 on #88c0d0
+component.button.primary:focused = bold underline #2e3440 on #8fbcbb
+```
+
+Every value is a style in [`Style.parse`](./layout-and-style#styles-from-text-and-back-again)'s
+spelling. The keys are the roles (`primary` … `focus`), the palettes by dotted path
+(`loading.fill`, `markdown.table-header`, `markdown.syntax.string`, `syntax.comment`),
+`glyphs` (`full`, `box-drawing`, `ascii`), and components as `component.<name>` for the
+base style and `component.<name>:<state>` for a state. A line whose first visible
+character is `#` is a comment.
+
+A setting the file leaves out keeps the base theme's value: the `extends` preset, or
+`Theme.Dark` *without* components when there is no `extends`. That is why a file
+`Theme.render` wrote reads back as exactly the theme it came from. Failures are values:
+
+```scala
+private val loaded: Theme =
+  Theme.parse(Files.readString(path)) match
+    case Right(theme) => theme
+    case Left(error)  => // ThemeError(line, message): "line 4: accent: '#zzzzzz' is not a style word or a colour"
+      System.err.println(s"$path: $error")
+      Theme.auto
+
+override def theme: Theme = loaded
+```
+
 ### How a themed helper gets the theme
 
 `view` takes it: `def view(using ReactiveScope, Theme): Element`. Everything it calls
@@ -847,6 +945,15 @@ That signature is not decoration. A framework that installed `given Theme = them
 *around* the call to `view` would leave it out of scope *inside* the body, so an app
 that overrode `theme` and wrote `statusBar(bindings)` in its own view would silently
 get `Theme.Dark`. Carrying it in the type is what makes the override reach.
+
+An element built *outside* a view — a top-level `def`, a helper object — sees only the
+library default, `Theme.default`. It still paints in the app's theme: a themed factory
+that was handed the default records how it built the node, and the host re-resolves it
+against the app's theme when it paints, keeping any builder you applied afterwards
+(`.titleStyle(_.bold)` stays bold, over the app theme's caption colour). A factory
+handed an explicit theme — `panel(...)(using Theme.HighContrast)` — keeps that theme.
+The chrome builders (`statusBar`, `topBar`, `helpOverlay`) compose several nodes and are
+not late-bound; call them from `view`.
 
 For live switching, keep a theme index in a `Signal`, return the selected value from
 `theme`, and read the index in `view` so the tree is invalidated. A complete snippet

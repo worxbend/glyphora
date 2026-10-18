@@ -66,8 +66,8 @@ private[dsl] trait ElementFactories:
   /** A bordered box around `children`, captioned `title`.
     *
     * The frame is drawn in the ambient [[Theme]]'s `border` style and the caption in its `primary` style, so a panel
-    * looks like the rest of the app without being told to. `.fg(...)`/`.styled(...)` recolour the frame;
-    * `.titleStyle(...)` recolours only the caption.
+    * looks like the rest of the app without being told to. `.frameStyle(...)` recolours the frame, `.titleStyle(...)`
+    * only the caption, and `.fg(...)`/`.styled(...)` the content — the style the children are drawn over.
     */
   def panel(title: String)(children: Element*)(using theme: Theme): PanelElement =
     LateBinding.themed(theme) { theme =>
@@ -75,14 +75,15 @@ private[dsl] trait ElementFactories:
         Some(title),
         children,
         titleStyle = Some(theme.primary),
-        props = ElementProps(style = theme.border, glyphs = theme.glyphs),
+        frameStyle = theme.border,
+        props = ElementProps(glyphs = theme.glyphs),
       )
     }
 
   /** An untitled bordered box — see [[panel(title:String)*]] for the styling. */
   def panel(children: Element*)(using theme: Theme): PanelElement =
     LateBinding.themed(theme) { theme =>
-      PanelElement(None, children, props = ElementProps(style = theme.border, glyphs = theme.glyphs))
+      PanelElement(None, children, frameStyle = theme.border, props = ElementProps(glyphs = theme.glyphs))
     }
 
   /** Lays `children` out left to right, splitting the width between them.
