@@ -1233,3 +1233,27 @@ private[dsl] trait ElementFactories:
       placeholder: String = "",
   ): TagInputElement =
     TagInputElement(state, onChange, placeholder)
+
+  /** A one-row menu bar whose menus drop down over everything else: `Alt+<mnemonic>` (the title's first letter unless
+    * the [[w.MenuBarMenu]] names another) opens a menu and `F10` (the `menu-bar` framework key) the first, whatever
+    * holds focus. While a menu is open the arrows move between menus and items, Enter runs the item — `onSelect`
+    * receives the menu's and the item's index — and Esc closes it. `state` is caller-owned: keep it in a field.
+    *
+    * {{{
+    * menuBar(Seq(MenuBarMenu("File", Seq(MenuEntry.Item("Open", Some("^O")), MenuEntry.Item("Quit")))), bar) {
+    *   case (0, 1) => quit()
+    *   case _      => ()
+    * }
+    * }}}
+    */
+  def menuBar(menus: Seq[w.MenuBarMenu], state: w.MenuBarState)(onSelect: (Int, Int) => Unit): MenuBarElement =
+    MenuBarElement(menus, state, onSelect)
+
+  /** `target` with a right-click menu: a right-button press inside it opens the [[menu]] over `items` at the pointer,
+    * flipped away from the frame's edges. Up/Down/Enter work while it is open whatever holds focus; Enter or a click
+    * hands the item's index to `onSelect`; Esc or a click elsewhere closes it. `state` is caller-owned.
+    */
+  def contextMenu(items: Seq[w.MenuEntry], state: w.ContextMenuState)(onSelect: Int => Unit)(
+      target: Element
+  ): ContextMenuElement =
+    ContextMenuElement(target, items, state, onSelect)

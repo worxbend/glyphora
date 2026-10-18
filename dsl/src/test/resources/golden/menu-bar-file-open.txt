@@ -1,0 +1,7 @@
+ File  Edit
+╭─────────╮rown fox jumps
+│ New  ^N │zy dog, twice
+│ Open    │
+│─────────│
+│ Quit    │
+╰─────────╯

@@ -153,6 +153,9 @@ The keys the framework handles once nothing else claimed them are ids as well:
 | `command-palette` | `ctrl+p` | open the command palette |
 | `quit` | `ctrl+c` | quit |
 | `close-modal` | `esc` | close a modal that asked to be closed by Esc |
+| `menu-bar` | `f10` | open the first menu of a `menuBar` |
+| `window-move` | `alt+m` | arrange mode: the arrows move the focused `window` |
+| `window-resize` | `alt+r` | arrange mode: the arrows resize the focused `window` |
 
 Override `frameworkKeys` to move them, and set `pageStep` — how many rows
 PageUp/PageDown move every list, table and scroll view, 10 by default — on the same

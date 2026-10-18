@@ -216,6 +216,17 @@ final class VersionedStatesSpec extends AnyFunSuite:
       "remove"               -> (_.remove(0)),
       "input.insert"         -> (_.input.insert("x")),
     ),
+    row("MenuBarState", MenuBarState(Some(0)))(
+      "openMenu"             -> (_.openMenu(1)),
+      "close"                -> (_.close()),
+      "move"                 -> (_.move(1, 3)),
+      "menu.selected ="      -> (_.menu.selected = Some(0)),
+    ),
+    row("ContextMenuState", ContextMenuState())(
+      "openAt"               -> (_.openAt(io.worxbend.tui.core.Position(1, 1))),
+      "close"                -> (_.close()),
+      "menu.selected ="      -> (_.menu.selected = Some(0)),
+    ),
   )
 
   private def register[S <: Versioned](entry: Row[S]): Unit =

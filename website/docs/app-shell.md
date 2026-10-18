@@ -72,6 +72,22 @@ scaffold(
 For layouts without the full chrome, use `sidebarLayout`, `masterDetail`, `centered`,
 or `place`; see [Layout & style](./layout-and-style).
 
+A desktop-style shell adds a menu bar above everything, a toolbar under it, and
+floating windows over the content — `menuBar`, `toolbar` and `window` in the
+[widgets guide](./widgets#application-chrome):
+
+```scala
+column(
+  menuBar(menus, bar)(runMenuItem),
+  toolbar(button("New")(newDoc()), button("Save")(save())),
+  layers(mainView, windowStack(inspector, console)).fill,
+)
+```
+
+`Alt+<letter>` and `F10` reach the menu bar whatever holds focus, and `Alt+M` / `Alt+R`
+move and resize the focused window; all three are rebindable framework keys
+(`menu-bar`, `window-move`, `window-resize` — see [Key bindings](./keybindings)).
+
 ## Declare commands once
 
 ```scala

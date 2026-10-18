@@ -1,8 +1,8 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.Size
+import io.worxbend.tui.core.{MouseButton, Size}
 import io.worxbend.tui.terminal.HeadlessBackend
-import io.worxbend.tui.testsupport.Pilot
+import io.worxbend.tui.testsupport.{GoldenFrames, Pilot}
 
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -105,4 +105,70 @@ final class ChromeElementsPilotSpec extends AnyFunSuite with PilotFixture:
     assert(changes.last == Seq("scala", "jvm", "native"))
     pilot.typeText("x").press("backspace").waitForIdle() // erases the typed x, not a tag
     assert(state.tags.size == 3)
+    quitApp(pilot)
+
+  private val fileEdit = Seq(
+    MenuBarMenu(
+      "File",
+      Seq(MenuEntry.Item("New", Some("^N")), MenuEntry.Item("Open"), MenuEntry.Separator, MenuEntry.Item("Quit")),
+    ),
+    MenuBarMenu("Edit", Seq(MenuEntry.Item("Undo"), MenuEntry.Item("Redo"))),
+  )
+
+  test("menuBar: Alt+F opens File over the content, Right moves to Edit, Enter runs the item"):
+    val bar   = MenuBarState()
+    var ran   = Vector.empty[(Int, Int)]
+    val pilot = startApp(Size(30, 8)) {
+      column(
+        menuBar(fileEdit, bar)((menu, item) => ran :+= (menu -> item)),
+        text("the quick brown fox jumps"),
+        text("over the lazy dog, twice"),
+        input(TextInputState("typing here")),
+      )
+    }
+    pilot.press("alt+f").waitForIdle()
+    assert(bar.open.contains(0))
+    GoldenFrames.assertMatches("menu-bar-file-open", pilot.lastFrame)
+    pilot.press("right").waitForIdle()
+    assert(bar.open.contains(1))
+    assert(pilot.screenText.contains("Redo") && !pilot.screenText.contains("Open"))
+    pilot.press("down", "enter").waitForIdle()
+    assert(ran == Vector(1 -> 1))
+    assert(bar.open.isEmpty && !pilot.screenText.contains("Redo"))
+    quitApp(pilot)
+
+  test("menuBar: F10 opens the first menu, a click on a title switches menus, Esc and a click away close"):
+    val bar   = MenuBarState()
+    val pilot = startApp(Size(30, 8))(column(menuBar(fileEdit, bar)((_, _) => ()), text("content")))
+    pilot.press("f10").waitForIdle()
+    assert(bar.open.contains(0))
+    pilot.click(7, 0).waitForIdle()
+    assert(bar.open.contains(1))
+    pilot.press("escape").waitForIdle()
+    assert(bar.open.isEmpty)
+    pilot.click(1, 0).waitForIdle()
+    assert(bar.open.contains(0))
+    pilot.click(25, 6).waitForIdle()
+    assert(bar.open.isEmpty)
+    quitApp(pilot)
+
+  test("contextMenu: a right click opens the menu at the pointer, flipped near the right and bottom edges"):
+    val menuState = ContextMenuState()
+    var chosen    = Vector.empty[Int]
+    val items     = Seq(MenuEntry.Item("Copy"), MenuEntry.Item("Paste"), MenuEntry.Item("Delete"))
+    val pilot     = startApp(Size(30, 8)) {
+      contextMenu(items, menuState)(index => chosen :+= index)(column(text("right-click anywhere"), button("ok")(())))
+    }
+    pilot.clickWith(2, 1, MouseButton.Right).waitForIdle()
+    assert(menuState.at.isDefined)
+    assert(pilot.screenLines(1).startsWith("  ╭"))
+    pilot.press("down", "enter").waitForIdle()
+    assert(chosen == Vector(1))
+    assert(!menuState.isOpen)
+    // near the bottom-right corner the menu opens up and to the left of the pointer, ending on the clicked cell
+    pilot.clickWith(28, 7, MouseButton.Right).waitForIdle()
+    val lines     = pilot.screenLines
+    assert(lines(7).stripTrailing.length == 29 && lines(7).stripTrailing.endsWith("╯") && lines(3).contains("╭"))
+    pilot.press("escape").waitForIdle()
+    assert(!menuState.isOpen)
     quitApp(pilot)

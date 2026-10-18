@@ -2557,6 +2557,54 @@ blank field and a Tab with nothing to accept keep bubbling, so a form's submit a
 focus traversal still work. The node measures as many rows as its chips wrap onto; the
 widget is `TagInput(placeholder, showCursor, style, chipStyle, suggestionStyle)`.
 
+### Menu bars and context menus
+
+`menuBar(menus, state)(onSelect)` is a one-row bar of titles whose menus drop down over
+everything else, drawn by the same `Menu` widget a `menu` uses:
+
+```scala
+private val bar = MenuBarState()
+
+private val menus = Seq(
+  MenuBarMenu("File", Seq(MenuEntry.Item("Open", Some("^O")), MenuEntry.Separator, MenuEntry.Item("Quit"))),
+  MenuBarMenu("Edit", Seq(MenuEntry.Item("Undo"), MenuEntry.Item("Redo"))),
+  MenuBarMenu("View", Seq(MenuEntry.Item("Zoom")), mnemonic = Some('w')),
+)
+
+menuBar(menus, bar) {
+  case (0, 2) => quit()
+  case (menu, item) => log(s"chose $item of $menu")
+}
+```
+
+Each title's mnemonic — its first letter unless `mnemonic` names another — is drawn
+underlined, and `Alt+<mnemonic>` opens that menu whatever holds focus; `F10`, the
+`menu-bar` framework key, opens the first. While a menu is open `Left` and `Right` move
+to the neighbouring menu, `Up` and `Down` move the highlight past separators and
+disabled items, `Enter` runs the item — `onSelect` gets the menu's index and the item's —
+and `Esc` closes the bar. A click on a title opens or closes its menu, a click on an
+item runs it, and a click anywhere else closes the bar. The bar is not a tab stop; it
+takes the keyboard only while a menu is open, and its keys come before the focused
+control's, so a field's own `Alt+F` word motion yields to a bar with a `File` menu.
+
+`contextMenu(items, state)(onSelect)(target)` gives any subtree a right-click menu:
+
+```scala
+private val rowMenu = ContextMenuState()
+
+contextMenu(Seq(MenuEntry.Item("Copy"), MenuEntry.Item("Delete")), rowMenu)(runRowAction)(
+  list(files, fileList),
+)
+```
+
+A right-button press inside `target` that nothing in it consumed opens the menu with its
+top-left corner on the clicked cell. Near the right edge of the frame it opens to the
+left of the pointer and near the bottom it opens upwards, so it always ends on the
+clicked cell rather than running off screen (`ContextMenu.placement(at, width, height,
+frame)` is that rule). While it is open the arrows and `Enter` drive it whatever holds
+focus; `Esc`, `Tab` or a click elsewhere close it. Both menus float through the frame
+root like a `portal`, so a menu opened inside a bordered panel spills past its border.
+
 ## Drop to a raw Widget
 
 The DSL is not a separate renderer. Any core `Widget` can become a leaf:
