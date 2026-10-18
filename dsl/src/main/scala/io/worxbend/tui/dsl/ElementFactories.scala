@@ -2,6 +2,7 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Constraint, Direction, Line, Size, Span, Style, Text, Widget}
 import io.worxbend.tui.runtime.{LogRing, ReactiveScope, Signal}
+import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets.TableRow
 import io.worxbend.tui.widgets as w
 
@@ -721,7 +722,7 @@ private[dsl] trait ElementFactories:
     * show the styled text and nothing is lost.
     */
   def link(label: String, url: String): WidgetElement =
-    WidgetElement(w.Link(label, url), rows = Some(1))
+    WidgetElement(w.Link(label, url), rows = Some(1)).pointer(PointerShape.Pointer)
 
   /** Renders a pragmatic Markdown subset — headings, bullets, quotes, fenced (and syntax-highlighted) code, inline
     * emphasis and links. Prose always wraps at the available width; the node reports its own wrapped height, so it

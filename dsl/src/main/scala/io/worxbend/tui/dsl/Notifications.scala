@@ -31,6 +31,16 @@ trait Notifications:
   /** Drops every toast, shown or still queued. */
   def dismissToasts(): Unit
 
+  /** Tells the user something finished, wherever they are looking.
+    *
+    * Always a toast, so the message is on the frame when the user comes back to it. When the terminal window is
+    * *unfocused* (the terminal reported `FocusLost` and no `FocusGained` since) the same message also goes out as a
+    * desktop notification — OSC 9, 777 or 99, whichever the terminal speaks — because a toast nobody is looking at
+    * tells nobody anything. Best-effort on that second half: a terminal without a notification protocol, or one inside
+    * a multiplexer, shows the toast alone.
+    */
+  def desktop(title: String, body: String): Unit
+
   /** `message` for the default three seconds, in the theme's accent colour. */
   final def info(message: String): Unit = notify(message, NoticeLevel.Info, DefaultToastDuration)
 

@@ -1,6 +1,7 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Constraint, Direction, KeyEvent, Measured, MouseEvent, Rect, Style, Widget}
+import io.worxbend.tui.core.{Constraint, Direction, KeyEvent, Measured, MouseEvent, Position, Rect, Style, Widget}
+import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets as w
 
 /** Framework key behavior an element performs while focused, `true` when the event is consumed. */
@@ -59,6 +60,20 @@ trait Element:
 
   /** Framework paste behavior: how a bracketed paste lands in this element while focused. */
   private[dsl] def builtinPasteHandler: Option[BuiltinPasteHandler] = None
+
+  /** The mouse pointer this node wants shown over it, when it wants one: the hand over a `button` or a `link`, the
+    * I-beam over a text field. `None` leaves the pointer as it is. An explicit `.pointer(shape)` on the node lands in
+    * `props.pointerShape` and takes precedence; the interactive nodes override this with their own default.
+    */
+  def pointerShape: Option[PointerShape] = props.pointerShape
+
+  /** [[pointerShape]] for one cell of this node's painted `area` — the hook for a node whose pointer depends on *where*
+    * inside it the mouse is, such as a split pane that is draggable only on its divider. The default is the same answer
+    * everywhere.
+    */
+  private[dsl] def pointerShapeAt(position: Position, area: Rect): Option[PointerShape] =
+    val _ = (position, area)
+    pointerShape
 
   /** Whether this node paints nothing of its own and only arranges, spaces or stacks its children — a `row`, a
     * `column`, a `spacer`, a `layers`. The click-outside backdrop uses it to tell a press on a dialog's border or

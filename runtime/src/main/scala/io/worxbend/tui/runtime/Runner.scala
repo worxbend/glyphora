@@ -1,7 +1,7 @@
 package io.worxbend.tui.runtime
 
 import io.worxbend.tui.core.{Event, Widget}
-import io.worxbend.tui.terminal.BackendError
+import io.worxbend.tui.terminal.{BackendError, PointerShape}
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -265,9 +265,9 @@ trait Runner:
   * **adding a method here is a source-breaking change.** An existing implementation stops compiling until it supplies
   * the new method — which is the intended outcome, since the alternative is an implementation that compiles and then
   * does nothing — but it means a release that adds one is not a drop-in replacement for the release before it.
-  * [[insertBefore]] was added on those terms in 0.13.0. The trait is written to be *called*, not implemented, so the
-  * population this affects is test doubles; a double that wants the old behaviour can implement the new method as `()`
-  * in one line.
+  * [[insertBefore]] was added on those terms in 0.13.0, and [[setPointerShape]], [[notifyDesktop]] and
+  * [[setTaskbarProgress]] in 0.20.0. The trait is written to be *called*, not implemented, so the population this
+  * affects is test doubles; a double that wants the old behaviour can implement the new method as `()` in one line.
   */
 trait RunnerHandle:
   def quit(): Unit
@@ -304,6 +304,24 @@ trait RunnerHandle:
     * and `height` rows tall, and whatever it paints becomes durable output. A `height` of zero or less inserts nothing.
     */
   def insertBefore(height: Int, widget: Widget): Unit
+
+  /** Asks the terminal to draw the mouse pointer as `shape` (OSC 22) — see
+    * [[io.worxbend.tui.terminal.Backend.setPointerShape]]. Best-effort: a terminal without the protocol, or one the
+    * backend knows will swallow it, changes nothing. Terminal state, so call it when what is under the pointer changes,
+    * not on every frame.
+    */
+  def setPointerShape(shape: PointerShape): Unit
+
+  /** Raises a desktop notification (OSC 9, 777 or 99, whichever the terminal speaks) — see
+    * [[io.worxbend.tui.terminal.Backend.notifyDesktop]]. Best-effort; for telling a user who has looked away.
+    */
+  def notifyDesktop(title: String, body: String): Unit
+
+  /** Shows `progress` on the terminal's tab or the taskbar (OSC 9;4), or clears it with `None` — see
+    * [[io.worxbend.tui.terminal.Backend.setTaskbarProgress]]. Best-effort, and terminal state: emit it when the
+    * fraction changes.
+    */
+  def setTaskbarProgress(progress: Option[Double]): Unit
 
 /** Every queued-body failure one run absorbed, collapsed into a single report.
   *

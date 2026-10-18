@@ -1,6 +1,7 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Rect, Widget}
+import io.worxbend.tui.core.{Position, Rect, Widget}
+import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets as w
 
 import java.util.logging.{Level, Logger}
@@ -25,6 +26,9 @@ private[dsl] trait DecoratingElement extends Element:
   private[dsl] override def claim: SizeClaim                                 = inner.claim
   private[dsl] override def layoutOnly: Boolean                              = inner.layoutOnly
   override def debugName: String                                             = inner.debugName
+  override def pointerShape: Option[PointerShape]                            = inner.pointerShape
+  private[dsl] override def pointerShapeAt(position: Position, area: Rect): Option[PointerShape] =
+    inner.pointerShapeAt(position, area)
 
   /** With no constraint of its own, a decorator measures as whatever it wraps. The trait default cannot serve here: a
     * decorator's own `widget` is a lambda around `inner.widget`, so it is not a [[io.worxbend.tui.core.Measured]] and

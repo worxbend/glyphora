@@ -1,12 +1,13 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Effect, Event, KeyCode, KeyEvent, KeyModifiers, Rect, Size, Widget}
+import io.worxbend.tui.core.{ColorScheme, Effect, Event, KeyCode, KeyEvent, KeyModifiers, Position, Rect, Size, Widget}
 import io.worxbend.tui.runtime.{
   CaptureStdio,
   Cleanup,
   EventOutcome,
   Frame,
   GenerationalScope,
+  Reactive,
   ReactiveScope,
   RunnerConfig,
   RunnerError,
@@ -14,7 +15,7 @@ import io.worxbend.tui.runtime.{
   Signal,
   TerminalRunner,
 }
-import io.worxbend.tui.terminal.{Backend, BackendError, ColorDepth, HeadlessBackend, JLine3Backend}
+import io.worxbend.tui.terminal.{Backend, BackendError, ColorDepth, HeadlessBackend, JLine3Backend, PointerShape}
 import io.worxbend.tui.widgets.NoticeLevel
 
 import java.nio.file.Path
@@ -66,6 +67,11 @@ trait TuiApp:
   /** The theme the built-in overlays (toasts, palette), the chrome presets and the themed element factories render
     * with. Overriding it re-themes all of them, because it is handed to [[view]] as a `using` parameter.
     *
+    * The default is [[Theme.auto]]: `Theme.Light` on a terminal that reported a light background, `Theme.Dark` on a
+    * dark one and on one that could not say, following a live switch where the terminal reports one (mode 2031). An app
+    * that returns any other theme pins it and sees none of that; [[colorScheme]] and `lightDark` are still there to
+    * read the terminal's answer by hand.
+    *
     * Read once per frame, on the render thread, *outside* the tracking scope — so this is a constant for the lifetime
     * of a run unless something else asks for a repaint. An app that switches theme at runtime should back it with a
     * `Signal[Theme]` and read that signal inside `view`:
@@ -78,7 +84,7 @@ trait TuiApp:
     *   scaffold(statusBar = Some(statusBar(bindings)))(body)
     * }}}
     */
-  def theme: Theme = Theme.Dark
+  def theme: Theme = Theme.auto
 
   /** Called once on the render thread, after the terminal is ready and before the first frame is composed.
     *
@@ -151,6 +157,35 @@ trait TuiApp:
 
   /** The current [[Breakpoint]] band, as a reactive read — `terminalSize` bucketed by width. */
   protected final def breakpoint(using scope: ReactiveScope): Breakpoint = Breakpoint.of(terminalSize)
+
+  /** Whether the terminal is light or dark, as a reactive read: the capability probe's answer at start-up (OSC 11),
+    * then whatever mode 2031 reports. `Unknown` when the terminal could not say — read it as dark, as [[Theme.auto]]
+    * does. A view that branches on it recomputes when the terminal flips.
+    */
+  protected final def colorScheme(using scope: ReactiveScope): ColorScheme = colorSchemeSignal.get(using scope)
+
+  /** [[colorScheme]] read without subscribing — the spelling for [[theme]] and for an event handler, neither of which
+    * has a [[ReactiveScope]]. A `theme` override that picks between two palettes by it still follows a live switch,
+    * because every frame subscribes to the scheme before it asks for the theme.
+    */
+  protected final def colorSchemeNow: ColorScheme = colorSchemeSignal.peek
+
+  /** Mirrors `progress` on the terminal's tab or the taskbar (OSC 9;4) until [[clearTaskbarProgress]] — see
+    * [[AppServices.taskbarProgress]]. Call it from [[onStart]] or a handler; binding again replaces the source.
+    */
+  protected final def taskbarProgress(progress: Reactive[Option[Double]]): Unit =
+    taskbarSource = Some(progress)
+    requestRedraw()
+
+  /** Stops mirroring the bound progress source and clears the indicator. */
+  protected final def clearTaskbarProgress(): Unit =
+    taskbarSource = None
+    showTaskbar(None)
+
+  /** A toast, plus a desktop notification when the terminal window is unfocused — see [[Notifications.desktop]]. */
+  protected final def notifyDesktop(title: String, body: String): Unit =
+    notify(if title.isEmpty then body else s"$title: $body")
+    if !terminalFocused then activeHandle.get().foreach(_.notifyDesktop(title, body))
 
   /** Called when an interrupt (`Ctrl+C`, i.e. SIGINT/SIGQUIT) reaches the app.
     *
@@ -334,6 +369,10 @@ trait TuiApp:
       ExternalEditor.edit(ExternalEditor.command(editorEnvironment), initial, suffix, body => suspend(body))
     def openInEditor(path: Path, line: Option[Int]): Unit                           =
       ExternalEditor.open(ExternalEditor.command(editorEnvironment), path, line, body => suspend(body))
+    def desktop(title: String, body: String): Unit                = TuiApp.this.notifyDesktop(title, body)
+    def colorScheme: Reactive[ColorScheme]                        = colorSchemeSignal
+    def taskbarProgress(progress: Reactive[Option[Double]]): Unit = TuiApp.this.taskbarProgress(progress)
+    def clearTaskbarProgress(): Unit                              = TuiApp.this.clearTaskbarProgress()
 
   /** Just this app's toast stack, for a helper that notifies and does nothing else. The same object as [[services]]. */
   protected final def notifications: Notifications = services
@@ -577,6 +616,11 @@ trait TuiApp:
         run.renderLoop = Some(AnimationClock.attachToCurrentLoop())
         // the same loop's `animateTo` motions sample this run's clock and ask this run for their frames
         SignalMotion.attachToCurrentLoop(nanoTime, () => requestRedraw())
+        // what the probe established, before the first frame: a `Theme.auto` first frame is already the right one
+        colorSchemeSignal.set(backend.capabilities.colorScheme)
+        shownPointer = PointerShape.Default
+        shownTaskbar = None
+        terminalFocused = true
         screenStack.beginRun()
         onStart()
         screenStack.enterRemaining()
@@ -628,8 +672,13 @@ trait TuiApp:
       // a modal that closes on a click outside reads where its dialog was painted, so the frame that first shows it
       // already records — the host's own demand detection would only switch recording on for the frame after
       if !run.host.recordBounds && modalClosesOnClickOutside then run.host.recordBounds = true
-      run.host.renderComposed(frame, theme, effectiveView(using scope), () => syncFocusLayers(run))(using scope)
+      // inside the generation, so a `Theme.auto` frame subscribes to the colour scheme and a mode 2031 report repaints
+      val resolved = resolvedTheme(using scope)
+      run.host.renderComposed(frame, resolved, effectiveView(resolved)(using scope), () => syncFocusLayers(run))(using
+        scope
+      )
       effects.applyTo(frame)
+      syncTaskbar(using scope)
     // asked after either branch: an intro is an animation like any other, and it is what a run with no configured
     // `tickRate` borrows ticks for. Borrowing through this negotiation rather than through the runner's tick rate is
     // what lets the loan end when the intro does.
@@ -668,26 +717,36 @@ trait TuiApp:
   private def handleEvent(event: Event, run: RunState, handle: RunnerHandle): EventOutcome =
     activeHandle.set(Some(handle))
     val redraw = event match
-      case Event.Key(key)        => handleKey(key, run, handle) || run.invalidated
-      case Event.Mouse(mouse)    => run.host.dispatchMouse(mouse) || run.invalidated
+      case Event.Key(key)                   => handleKey(key, run, handle) || run.invalidated
+      case Event.Mouse(mouse)               =>
+        val consumed = run.host.dispatchMouse(mouse)
+        followPointer(run, mouse.position, handle)
+        consumed || run.invalidated
       // Releases reach the focused element's own `.onKeyRelease` and stop there. They deliberately do not bubble on
       // to `bindings`: a binding names a press, so firing it again on the way up would run every chord twice.
-      case Event.KeyRelease(key) => run.host.dispatchKeyRelease(key) || run.invalidated
-      case Event.Paste(text)     =>
+      case Event.KeyRelease(key)            => run.host.dispatchKeyRelease(key) || run.invalidated
+      case Event.Paste(text)                =>
         val consumed = run.host.dispatchPaste(text)
         consumed || run.invalidated
-      case Event.FocusGained     =>
+      case Event.FocusGained                =>
+        terminalFocused = true
         onTerminalFocus(true)
         run.invalidated
-      case Event.FocusLost       =>
+      case Event.FocusLost                  =>
+        terminalFocused = false
         onTerminalFocus(false)
         run.invalidated
-      case Event.Interrupt       => onInterrupt()
+      // a mode 2031 report: the terminal flipped between light and dark under the app. The signal write is what owes
+      // the frame — a `Theme.auto` view read it and recomputes; a view that never looked is left alone.
+      case Event.ColorSchemeChanged(scheme) =>
+        colorSchemeSignal.set(scheme)
+        run.invalidated
+      case Event.Interrupt                  => onInterrupt()
       // Deliberately routed nowhere. The runner is stopping the loop whatever this answers, so handing the end of the
       // stream to the focused element would only invite a handler to redraw a frame nobody will see; an app that wants
       // to act on it overrides `handleEvent` itself. `false`: no repaint is owed.
-      case Event.EndOfInput      => false
-      case Event.Resize(size)    =>
+      case Event.EndOfInput                 => false
+      case Event.Resize(size)               =>
         // the render pass sets this too, from the frame it is about to draw; doing it here as well means an
         // `onResize` override — and anything it calls — already peeks the new size rather than the previous frame's.
         // What is published is the app's own area, not the terminal's: an inline app owns the bottom few rows, so the
@@ -698,7 +757,7 @@ trait TuiApp:
         terminalSizeSignal.set(Size(area.width, area.height))
         onResize(size)
         true
-      case Event.Tick            => handleTick(run)
+      case Event.Tick                       => handleTick(run)
     if redraw then EventOutcome.Redraw else EventOutcome.Ignored
 
   private def handleTick(run: RunState): Boolean =
@@ -772,8 +831,41 @@ trait TuiApp:
     * merely installed as a given around the call — a given installed here is lexically scoped to this method and would
     * not be in scope inside an app's own `view` body.
     */
-  private def effectiveView(using scope: ReactiveScope): Element =
-    given Theme      = theme
+  /** [[theme]] with [[Theme.auto]] resolved against the terminal's colour scheme; any other theme is returned as is.
+    * Reading the scheme through `scope` is what subscribes a frame to a later mode 2031 report.
+    */
+  private def resolvedTheme(using scope: ReactiveScope): Theme =
+    // subscribed before `theme` is asked and whether or not it answers `auto`, so an override that reads
+    // `colorSchemeNow` to choose between two palettes of its own is repainted by a mode 2031 report too
+    val scheme     = colorSchemeSignal.get(using scope)
+    val configured = theme
+    if configured eq Theme.auto then Theme.forScheme(scheme) else configured
+
+  /** Pushes the bound progress source's current value to the taskbar when it differs from what is showing. Read under
+    * `scope`, so a change to the source schedules the frame that pushes it.
+    */
+  private def syncTaskbar(using scope: ReactiveScope): Unit =
+    taskbarSource.foreach(source => showTaskbar(source.get(using scope)))
+
+  /** Hands `progress` to the backend when it is not what the taskbar already shows. */
+  private def showTaskbar(progress: Option[Double]): Unit =
+    if progress != shownTaskbar then
+      activeHandle.get().foreach(_.setTaskbarProgress(progress))
+      shownTaskbar = progress
+
+  /** Asks the terminal for the pointer the last frame wants at `position`, when it differs from the one showing.
+    *
+    * Pointer shape is terminal state, so the backend is told only on a change: a mouse moving across one button costs
+    * one OSC 22, not one per cell.
+    */
+  private def followPointer(run: RunState, position: Position, handle: RunnerHandle): Unit =
+    val wanted = run.host.pointerShapeAt(position)
+    if wanted != shownPointer then
+      handle.setPointerShape(wanted)
+      shownPointer = wanted
+
+  private def effectiveView(resolved: Theme)(using scope: ReactiveScope): Element =
+    given Theme      = resolved
     val entries      = screenStack.entries
     val firstVisible = entries.lastIndexWhere(_._2.presentation == Presentation.Full)
     if firstVisible >= 0 then
@@ -809,6 +901,20 @@ trait TuiApp:
     * that gap through [[terminalSize]], which is only readable from `view`.
     */
   private val terminalSizeSignal: Signal[Size] = Signal(Size(0, 0))
+
+  /** The terminal's colour scheme: what the capability probe established at start-up, then whatever mode 2031 reports
+    * afterwards. `Unknown` until a run publishes the probe's answer, which every reader takes as dark.
+    */
+  private val colorSchemeSignal: Signal[ColorScheme] = Signal(ColorScheme.Unknown)
+
+  // Terminal-state bookkeeping for the modern OSC set, written only on the render thread and reset at the start of every
+  // run: the pointer shape and taskbar progress the terminal was last told, the bound progress source, and whether the
+  // terminal window has focus (true until the terminal says otherwise, since a terminal without focus reporting never
+  // says anything).
+  private var shownPointer: PointerShape                      = PointerShape.Default
+  private var shownTaskbar: Option[Double]                    = None
+  private var taskbarSource: Option[Reactive[Option[Double]]] = None
+  private var terminalFocused: Boolean                        = true
 
   // Everything below is per-instance state written only from the render thread (event handlers, the render lambda, and
   // the app's own callbacks all run there). None of it is reset by `runWith`, so running the same instance a second

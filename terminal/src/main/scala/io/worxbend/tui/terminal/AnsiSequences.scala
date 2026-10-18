@@ -14,15 +14,15 @@ private[terminal] object AnsiSequences:
   val ShowCursor: String           = s"$Esc[?25h"
 
   /** DECSCUSR with parameter 0: hands the cursor's shape back to the user's own terminal configuration. */
-  val ResetCursorShape: String      = s"$Esc[0 q"
+  val ResetCursorShape: String          = s"$Esc[0 q"
   // DECSET/DECRST 12, "cursor blink" — whether the terminal's own caret blinks. Purely cosmetic; a form might blink
   // the caret in the field being typed into and hold it steady while idle. Deliberately *not* part of RestoreAll
   // below: everything in that string is a mode *reset*, which is idempotent and therefore safe to send unconditionally
   // from a shutdown hook that cannot know what was enabled. Re-enabling blink is not idempotent in the way that
   // matters — a user whose emulator is configured for a steady caret would have that preference overwritten by an app
   // that never touched blink at all. JLine3Backend therefore restores it only when it was the one that turned it off.
-  val EnableCursorBlink: String     = s"$Esc[?12h"
-  val DisableCursorBlink: String    = s"$Esc[?12l"
+  val EnableCursorBlink: String         = s"$Esc[?12h"
+  val DisableCursorBlink: String        = s"$Esc[?12l"
   // Why four modes, in that order. 1000 asks for presses and releases and 1002 adds motion while a button is held;
   // 1003 (see MouseCaptureMode) adds motion with none held. The other two are *encodings* of the report rather than
   // requests for more of them. The original X10 encoding writes each coordinate as one byte biased by 32, which cannot
@@ -33,24 +33,41 @@ private[terminal] object AnsiSequences:
   // 1015 is here only for a terminal that ignores 1006: without it such a terminal keeps sending X10, and its clicks
   // are unreadable across most of a modern window. Pixel reporting (1016) is deliberately not requested — its
   // coordinates are pixels, and every layer above `Backend` addresses cells.
-  val EnableMouseCapture: String    = s"$Esc[?1000h$Esc[?1002h$Esc[?1015h$Esc[?1006h"
-  val EnableMouseAllMotion: String  = s"$Esc[?1000h$Esc[?1002h$Esc[?1003h$Esc[?1015h$Esc[?1006h"
+  val EnableMouseCapture: String        = s"$Esc[?1000h$Esc[?1002h$Esc[?1015h$Esc[?1006h"
+  val EnableMouseAllMotion: String      = s"$Esc[?1000h$Esc[?1002h$Esc[?1003h$Esc[?1015h$Esc[?1006h"
   // resets 1003 as well, whether or not it was ever set: a DEC private-mode reset for a mode that is already off is a
   // no-op on every terminal, and sending it unconditionally means no path can leave all-motion tracking stuck on,
   // flooding the user's shell with reports after the app has exited
-  val DisableMouseCapture: String   = s"$Esc[?1006l$Esc[?1015l$Esc[?1003l$Esc[?1002l$Esc[?1000l"
-  val ResetStyle: String            = s"$Esc[0m"
-  val EnableBracketedPaste: String  = s"$Esc[?2004h"
-  val DisableBracketedPaste: String = s"$Esc[?2004l"
-  val EnableFocusReporting: String  = s"$Esc[?1004h"
-  val DisableFocusReporting: String = s"$Esc[?1004l"
+  val DisableMouseCapture: String       = s"$Esc[?1006l$Esc[?1015l$Esc[?1003l$Esc[?1002l$Esc[?1000l"
+  val ResetStyle: String                = s"$Esc[0m"
+  val EnableBracketedPaste: String      = s"$Esc[?2004h"
+  val DisableBracketedPaste: String     = s"$Esc[?2004l"
+  val EnableFocusReporting: String      = s"$Esc[?1004h"
+  val DisableFocusReporting: String     = s"$Esc[?1004l"
   // DECSTBM with no parameters — the scroll region becomes the whole screen again. Declared here, above RestoreAll,
   // rather than beside `setScrollRegion` further down: an object's `val`s initialise in declaration order, and
   // RestoreAll names this one, so a definition below it would be read as null while RestoreAll was being built.
   // See `setScrollRegion` for what a region is and why leaving one set is the failure worth guarding against.
-  val ResetScrollRegion: String     = s"$Esc[r"
-  val BeginSynchronized: String     = s"$Esc[?2026h"
-  val EndSynchronized: String       = s"$Esc[?2026l"
+  val ResetScrollRegion: String         = s"$Esc[r"
+  val BeginSynchronized: String         = s"$Esc[?2026h"
+  val EndSynchronized: String           = s"$Esc[?2026l"
+  // The three modern input modes the capability probe asks about, each enabled only after the terminal has been heard
+  // from (see JLine3Backend.dressRawMode) and reset with everything else on the way out. 2031 asks for a colour-scheme
+  // report whenever the user's system theme flips; 2048 asks for resize reports on the input stream instead of only
+  // SIGWINCH; 2027 asks the terminal to measure text in grapheme clusters, which is how CharWidth measures it.
+  val EnableColorSchemeUpdates: String  = enablePrivateMode(CapabilityReplies.ColorSchemeUpdatesMode)
+  val DisableColorSchemeUpdates: String = disablePrivateMode(CapabilityReplies.ColorSchemeUpdatesMode)
+  val EnableInBandResize: String        = enablePrivateMode(CapabilityReplies.InBandResizeMode)
+  val DisableInBandResize: String       = disablePrivateMode(CapabilityReplies.InBandResizeMode)
+  val EnableUnicodeWidth: String        = enablePrivateMode(CapabilityReplies.UnicodeWidthMode)
+  val DisableUnicodeWidth: String       = disablePrivateMode(CapabilityReplies.UnicodeWidthMode)
+
+  /** [[pointerShape]] for [[PointerShape.Default]]: the user's own pointer back. Declared up here, above RestoreAll,
+    * for the reason ResetScrollRegion gives — RestoreAll names it, and a `val` declared below RestoreAll would be read
+    * as null while RestoreAll was being built. It belongs in RestoreAll because asking for the default pointer when
+    * nothing ever changed it leaves the pointer exactly where it was.
+    */
+  val ResetPointerShape: String = pointerShape(PointerShape.Default)
 
   /** One frame's worth of output, wrapped so the terminal shows the previous frame until the whole batch arrives.
     *
@@ -166,7 +183,8 @@ private[terminal] object AnsiSequences:
     */
   val RestoreAll: String =
     s"$EndSynchronized$DisableMouseCapture$ResetCursorShape$ShowCursor$LeaveAlternateScreen$ResetScrollRegion$PopKittyKeyboard" +
-      s"$DisableFocusReporting$DisableBracketedPaste$ResetStyle"
+      s"$DisableFocusReporting$DisableBracketedPaste$DisableColorSchemeUpdates$DisableInBandResize$DisableUnicodeWidth" +
+      s"$ResetPointerShape$ResetStyle"
 
   /** OSC 8 hyperlink opener; pair every open with [[LinkClose]].
     *
@@ -261,6 +279,29 @@ private[terminal] object AnsiSequences:
     */
   val RequestTextAreaPixels: String = s"$Esc[14t"
 
+  /** DECSET (`CSI ? mode h`) — turns a DEC private mode on. */
+  def enablePrivateMode(mode: Int): String = s"$Esc[?${mode}h"
+
+  /** DECRST (`CSI ? mode l`) — turns a DEC private mode off. Resetting a mode that was never set is a no-op on every
+    * terminal, which is what lets [[RestoreAll]] carry one for each mode the backend can enable.
+    */
+  def disablePrivateMode(mode: Int): String = s"$Esc[?${mode}l"
+
+  /** OSC 11 with a `?` payload — asks the terminal what colour it paints behind the text.
+    *
+    * The answer comes back on the input stream as `ESC ] 11 ; rgb:RRRR/GGGG/BBBB ST` and is read by
+    * `CapabilityReplies.backgroundColor` inside the capability probe. A terminal that does not implement it never
+    * answers, which the probe's DA1 fence absorbs.
+    */
+  val QueryBackgroundColor: String = s"$Esc]11;?$Esc\\"
+
+  /** DSR 996 (`CSI ? 996 n`) — asks a terminal that implements mode 2031 whether it is light or dark right now.
+    *
+    * The answer is `CSI ? 997 ; 1 n` for dark and `; 2 n` for light, the same report the terminal sends unprompted once
+    * mode 2031 is on. A terminal without the extension ignores an unknown DSR parameter.
+    */
+  val QueryColorScheme: String = s"$Esc[?996n"
+
   /** DECRQM (`CSI ? mode $ p`) — asks whether a DEC private mode is recognised, and what state it is in.
     *
     * The answer is a DECRPM, `CSI ? mode ; state $ y`; `CapabilityReplies` reads it. A terminal that does not implement
@@ -282,6 +323,49 @@ private[terminal] object AnsiSequences:
     * for exactly that reason.
     */
   val QueryPrimaryDeviceAttributes: String = s"$Esc[c"
+
+  /** OSC 22 — asks the terminal to draw the mouse pointer as `shape` while it is over the window.
+    *
+    * The names are the CSS cursor keywords kitty, foot, WezTerm and Ghostty accept (xterm also takes its own X11 cursor
+    * font names, which this library does not emit). A terminal without OSC 22 ignores the string.
+    */
+  def pointerShape(shape: PointerShape): String = s"$Esc]22;${PointerShape.name(shape)}$Esc\\"
+
+  /** A desktop notification in the dialect `protocol` names — see [[DesktopNotificationProtocol]] for which terminal
+    * speaks which.
+    *
+    * `title` and `body` are stripped of controls for the reason [[linkOpen]] strips them: an OSC string ends at BEL or
+    * ST, so a stray `ESC \` inside a message would close the notification early and let the rest of the text run as
+    * terminal commands — and a notification body is exactly the kind of text that comes from somewhere else. The `;`
+    * that separates the OSC 777 fields is also removed from the title, since a title containing one would push the rest
+    * of itself into the body.
+    */
+  def desktopNotification(protocol: DesktopNotificationProtocol, title: String, body: String): String =
+    val safeTitle = stripControls(title).replace(";", ",")
+    val safeBody  = stripControls(body)
+    protocol match
+      case DesktopNotificationProtocol.Osc9   =>
+        val text = if safeTitle.isEmpty then safeBody else s"$safeTitle: $safeBody"
+        s"$Esc]9;$text$Esc\\"
+      case DesktopNotificationProtocol.Osc777 => s"$Esc]777;notify;$safeTitle;$safeBody$Esc\\"
+      case DesktopNotificationProtocol.Osc99  =>
+        // kitty's protocol sends the title and the body as two chunks of one notification: `d=0` says more is coming,
+        // `d=1` closes it, and `p=body` names the second chunk as the body rather than a second title
+        s"$Esc]99;i=1:d=0;$safeTitle$Esc\\$Esc]99;i=1:d=1:p=body;$safeBody$Esc\\"
+
+  /** OSC 9;4 — the ConEmu progress indicator Windows Terminal, Ghostty, WezTerm and others show on the tab or taskbar.
+    *
+    * `Some(fraction)` is a determinate bar at `fraction` of the way, clamped to `0.0..1.0` and rounded to the whole
+    * percent the protocol takes (`9;4;1;percent`); `NaN` reads as empty. `None` clears the indicator (`9;4;0`). The
+    * protocol's error, indeterminate and paused states are deliberately not offered: the one caller is a progress
+    * signal, and a signal is either a fraction or nothing.
+    */
+  def taskbarProgress(progress: Option[Double]): String =
+    progress match
+      case Some(fraction) =>
+        val clamped = if fraction.isNaN then 0.0 else math.min(1.0, math.max(0.0, fraction))
+        s"$Esc]9;4;1;${math.round(clamped * 100)}$Esc\\"
+      case None           => s"$Esc]9;4;0$Esc\\"
 
   /** Moves the cursor to an absolute zero-based position (ANSI rows/columns are one-based). */
   def moveTo(x: Int, y: Int): String =
