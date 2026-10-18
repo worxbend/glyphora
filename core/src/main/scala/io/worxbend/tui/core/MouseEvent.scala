@@ -27,10 +27,16 @@ enum MouseEventKind:
   * three-argument construction written before the field existed still compiles and still means what it meant. That
   * default is a convenience for hand-built events only: what the decoder reports for a wheel notch, and for an X10
   * release that cannot name a button, is [[MouseButton.Unknown]].
+  *
+  * `clickCount` is how many presses in a row this `Down` is: `2` for the second press of a double click, `3` for a
+  * triple. Terminals report no such thing — every press arrives as a single `Down` — so the count is *synthesised* by
+  * whoever routes the events (the DSL's `ElementHost` counts presses of the same button on the same cell within 400
+  * ms), and the decoder, like every hand-built event, leaves it at `1`. It is `1` on every kind other than `Down`.
   */
 final case class MouseEvent(
     position: Position,
     kind: MouseEventKind,
     modifiers: KeyModifiers,
     button: MouseButton = MouseButton.Left,
+    clickCount: Int = 1,
 )
