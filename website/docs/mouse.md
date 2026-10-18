@@ -329,6 +329,28 @@ underneath it. Focusable elements are resolved differently — by smallest cover
 which has no notion of z-order — so give an overlay's controls their own layer rather
 than relying on paint order to shadow a focusable beneath them.
 
+### A click outside a dialog
+
+A modal pushed with `Dismissal.ClickOutside` (or a `dismissibleOverlay` layered by hand)
+closes on a press that lands outside the dialog. Two rules decide what "outside" is:
+
+1. A press that resolves to one of the dialog's controls — a button, an input, anything
+   focusable or carrying a handler — is delivered there, as above, and the dialog stays
+   open whatever the control does with it.
+2. A press that resolves to no control is compared against the **painted bounds** of the
+   dialog's nodes. If it lies within a node that draws something — a `panel` border, a
+   `text`, a `rule`, a `badge` — it is inside the dialog and is absorbed. If it lies only
+   within nodes that arrange space and draw nothing — `row`, `column`, `spacer`, `layers`,
+   `positioned`, `portal`, `responsive`, and the `backdrop` fill of `place` — it is
+   outside, and the dialog closes.
+
+So the border of a dialog is part of the dialog, which it was not before 0.20.0, when a
+border carried no control and so counted as outside. The bounds the second rule reads are
+the same per-node record that `boundsOf(key)` and the element-tree snapshot use (see
+[Testing](testing.md#find-elements-by-key)); an app on a real terminal starts recording
+them on the frame that first shows a click-outside modal and keeps recording for the rest
+of the run, while a headless run records from its first frame.
+
 ## Hover and all-motion tracking
 
 `Moved` — the pointer moving with **no** button held — is the one kind you do not get

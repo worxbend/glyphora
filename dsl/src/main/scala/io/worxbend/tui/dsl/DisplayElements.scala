@@ -30,8 +30,9 @@ final case class TextElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = TextElement
+  override def debugName: String = "text"
   // Layout and painting share this immutable description and its bounded measurement cache. Node copies start fresh.
-  lazy val widget: Widget = w.Paragraph(Text.styled(content, props.style), alignment, overflow)
+  lazy val widget: Widget        = w.Paragraph(Text.styled(content, props.style), alignment, overflow)
 
   /** Breaks lines that do not fit onto further rows instead of cutting them off at the right edge.
     *
@@ -82,6 +83,7 @@ final case class TextElement(
 final case class LineElement(spans: Seq[Span], align: Option[Alignment] = None, props: ElementProps = ElementProps())
     extends Element:
   type Self = LineElement
+  override def debugName: String                               = "line"
   lazy val widget: Widget                                      =
     w.Paragraph(Text(Seq(Line(spans, align, props.style))))
   private[dsl] def withProps(props: ElementProps): LineElement = copy(props = props)
@@ -123,6 +125,7 @@ final case class GaugeElement(
 ) extends Element,
       ProgressMeterBuilders[GaugeElement]:
   type Self = GaugeElement
+  override def debugName: String = "gauge"
   def widget: Widget = w.Gauge(ratio, label, trackStyle.patch(props.style), fillStyle.patch(props.style), fillRamp)
 
   protected def progressLabel: w.ProgressLabel                                                = label
@@ -145,7 +148,8 @@ final case class NoticeElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = NoticeElement
-  def widget: Widget =
+  override def debugName: String = "notice"
+  def widget: Widget             =
     w.Notice(
       message,
       level,
@@ -174,7 +178,8 @@ final case class BadgeElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = BadgeElement
-  def widget: Widget = w.Badge(label, variant, badgeStyle.patch(props.style))
+  override def debugName: String = "badge"
+  def widget: Widget             = w.Badge(label, variant, badgeStyle.patch(props.style))
 
   /** Bracketed text with no block of colour behind it — for a badge sitting inside prose. */
   def outline: BadgeElement = copy(variant = w.BadgeVariant.Outline)
@@ -199,7 +204,8 @@ final case class SparklineElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = SparklineElement
-  def widget: Widget = w.Sparkline(data, max, direction, style = props.style, styleFor = styleFor)
+  override def debugName: String = "sparkline"
+  def widget: Widget             = w.Sparkline(data, max, direction, style = props.style, styleFor = styleFor)
 
   /** Pins the top of the scale instead of letting it float to the largest value present.
     *
@@ -243,6 +249,7 @@ final case class TabsElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = TabsElement
+  override def debugName: String                               = "tabs"
   def widget: Widget                                           = w.Tabs(titles.map(Line.raw), selected, props.style)
   private[dsl] def withProps(props: ElementProps): TabsElement = copy(props = props)
   private[dsl] override def claim: SizeClaim                   = SizeClaim.OneRow
@@ -264,7 +271,8 @@ final case class TableElement(
     props: ElementProps = ElementProps(),
 ) extends FlexContainer:
   type Self = TableElement
-  def widget: Widget =
+  override def debugName: String = "table"
+  def widget: Widget             =
     // every argument by name, so that this call deliberately stopping at `style` — leaving `headerStyle` and
     // `footerStyle` at their defaults — is visible, and a new `ofStrings` parameter cannot slide into the wrong slot
     w.Table.ofStrings(
@@ -333,7 +341,8 @@ final case class StyledTableElement(
     props: ElementProps = ElementProps(),
 ) extends FlexContainer:
   type Self = StyledTableElement
-  def widget: Widget =
+  override def debugName: String = "styledTable"
+  def widget: Widget             =
     w.Table(rows, widths, header, footer, columnSpacing, flex, props.style)
 
   /** This table rebuilt with the leftover width placed differently — see [[TableElement.withFlex]]. */
@@ -371,7 +380,8 @@ final case class WidgetElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = WidgetElement
-  def widget: Widget = wrapped
+  override def debugName: String = "widget"
+  def widget: Widget             = wrapped
 
   /** This widget rebuilt to claim exactly `count` rows of height, taking the container's full width.
     *
@@ -407,7 +417,8 @@ final case class CanvasElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = CanvasElement
-  def widget: Widget = w.Canvas(xBounds, yBounds, shapes, marker = marker, resolution = resolution)
+  override def debugName: String = "canvas"
+  def widget: Widget             = w.Canvas(xBounds, yBounds, shapes, marker = marker, resolution = resolution)
 
   /** One `glyph` per hit cell — the coarsest mode, and the one that needs no special font. */
   def markers(glyph: String): CanvasElement = copy(marker = glyph, resolution = w.CanvasResolution.Cell)

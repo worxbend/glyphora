@@ -390,6 +390,62 @@ pilot.waitForDraws(3)   // the app repainted at least three times
 Keep coordinates tied to a deliberate test layout and size. A test that clicks a
 magic coordinate in a changing screen is hard to maintain.
 
+## Find elements by key
+
+A test that clicks `(12, 5)` is tied to one layout: move the button and the test clicks a
+label. The element already has a stable identity — the `.key("save")` focus follows across
+renders — so ask the app where that element landed and aim at the answer:
+
+```scala
+pilot.click(app.boundsOf("save").get).waitForIdle()
+assert(app.saves == 1)
+
+pilot.hover(app.boundsOf("status").get).waitForIdle()   // a pointer move to its centre
+```
+
+`boundsOf(key)` is a public method on `TuiApp`: the rect the keyed element was painted into
+on the last frame, in frame coordinates and mapped out of any `scrollView` it sits in, or
+`None` when no element on the last frame carried the key, when it was scrolled entirely
+out of view, or when the app is not running. Read it after a `waitForIdle()`, like every
+other observation of the frame. `pilot.click(rect)` and `pilot.hover(rect)` aim at the
+rect's centre and fail the test for an empty rect rather than pressing at its origin.
+
+The split between the two halves is deliberate: `tui-test` is built below `tui-dsl`, so
+the pilot knows nothing about keys — the app resolves the key to a rect and only the
+geometry crosses over. An embedding host has the same method, `ElementHost.boundsOf`.
+
+Bounds are recorded on every frame of a headless run. On a real terminal an app records
+them only once something asks — the first `boundsOf` call, or a modal that closes on a
+click outside — because recording wraps every node per frame; the cost is small (see the
+`ElementHostBench` numbers in `website/docs/performance.md`) but not free.
+
+### Snapshot the element tree
+
+When a key is not where you expect — focus did not land on it, `boundsOf` answers `None` —
+a frame dump shows glyphs, not structure. `ElementTreeSnapshot.render(app)` dumps the
+decorated tree of the last frame instead: one line per node with its type, key, focus
+index, the `focused`/`inert` marks, its constraint and its painted bounds:
+
+```scala
+pilot.readOnRenderThread(ElementTreeSnapshot.render(app))
+```
+
+```text
+column @ 0,0 20x4
+  text @ 0,0 20x1
+  row Length(1) @ 0,1 20x1
+    spacer @ 0,1 10x1
+    button key=save focus=0 focused Length(10) @ 10,1 10x1
+  spacer @ 0,2 20x2
+```
+
+Read it on the render thread — the tree belongs to the loop that painted it — and compare
+it the way you would a golden frame. The bounds column reads `-` for a frame rendered with
+recording off, and for a node scrolled entirely out of a `scrollView`'s viewport, which was
+never painted; a node under a scroll view keeps frame coordinates, so a column that starts
+above the viewport shows a negative `y`. `ElementTreeSnapshot.render(host)` does the same
+for an `ElementHost`.
+
 ## Send the bytes a terminal sends
 
 `press` builds a `KeyEvent` from a key spec and queues it, which never involves the

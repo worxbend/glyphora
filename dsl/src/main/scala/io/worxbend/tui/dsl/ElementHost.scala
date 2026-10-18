@@ -35,6 +35,16 @@ final class ElementHost:
   private var session                   = ViewSession()
   private var lastTree: Option[Element] = None
 
+  /** The one recorder of where every node was painted — see [[NodeBounds]]. Filled only while [[recordBounds]] is on.
+    */
+  private[dsl] val bounds: NodeBounds = NodeBounds()
+
+  /** Whether the next frames record the painted rect of every node, which is what [[boundsOf]], the element-tree
+    * snapshot and the click-outside backdrop read. Off by default because it costs a wrapper per node per frame; a call
+    * to [[boundsOf]] switches it on, as does `TuiApp` for a headless run and for a click-outside modal.
+    */
+  @volatile var recordBounds: Boolean = false
+
   /** Retires this mount's hooks, focus history and dispatch tree. The next render starts a fresh mount. Call only
     * between frames on the owning thread. Caller-owned state, subscriptions and resources are not closed: the embedding
     * loop owns its ReactiveScope and must dispose it separately.
@@ -87,9 +97,31 @@ final class ElementHost:
     */
   private[dsl] def renderTree(raw: Element, focusStyle: Style, paint: Element => Unit): Unit =
     tracker.reconcile(FocusPass.focusKeys(raw), FocusPass.autofocusRequest(raw))
-    val tree = FocusPass.decorate(raw, tracker, focusStyle)
+    val recorder = Option.when(recordBounds)(bounds)
+    // a tree with a consumer of bounds in it (a click-outside backdrop) turns recording on for the frames after this one
+    val tree     = FocusPass.decorate(raw, tracker, focusStyle, recorder, onBoundsDemand = () => recordBounds = true)
     lastTree = Some(tree)
-    paint(tree)
+    recorder.foreach(_.begin())
+    try paint(tree)
+    finally recorder.foreach(_.publish())
+
+  /** The rect the element declared with `.key(key)` was painted into on the last [[render]], in the coordinates of the
+    * buffer that frame was drawn into and mapped out of any scroll view it sits in — so a test can click its centre
+    * without knowing the layout. `None` when no node on the last frame carried the key, when it was scrolled entirely
+    * out of view, or when recording was off for that frame.
+    *
+    * Asking is the opt-in: a call on a host that was not recording switches [[recordBounds]] on, so the *next* frame
+    * answers. Safe to call from another thread once that thread has observed the frame as drawn — the answer is a read
+    * of the last published frame, not of the paint in progress.
+    */
+  def boundsOf(key: String): Option[Rect] =
+    recordBounds = true
+    bounds.current.boundsOf(key)
+
+  /** The focus-decorated tree the last [[render]] painted — what events are routed against and what
+    * [[ElementTreeSnapshot]] prints. `None` before the first frame. Render-thread only, like the tree itself.
+    */
+  private[dsl] def decoratedTree: Option[Element] = lastTree
 
   /** Delivers a key to the focused element and the ancestors it bubbles through.
     *
