@@ -37,6 +37,10 @@ final case class FocusState private[dsl] (
   * as `panel(...).borderType(BorderType.Thick)` keeps it: the ceiling belongs to the terminal the app is running on,
   * not to the border the author picked, so an explicit choice still degrades on a terminal that cannot draw it. An
   * element built outside a themed factory keeps the permissive default and degrades nothing.
+  *
+  * `caretStyle` is read only by the text-entry nodes: whether, while focused, they paint their cursor cell, report it
+  * for the terminal's own cursor to follow, or both — see [[CaretStyle]]. It rides on the props so one
+  * `.caretStyle(...)` builder serves every text node rather than each carrying a field of its own.
   */
 final case class ElementProps(
     style: Style = Style.Default,
@@ -50,6 +54,7 @@ final case class ElementProps(
     focusKey: Option[String] = None,
     focusState: FocusState = FocusState(),
     glyphs: GlyphSupport = GlyphSupport.Full,
+    caretStyle: CaretStyle = CaretStyle.Both,
 ):
 
   /** Whether this element is the one the focus pass marked — where keystrokes go this frame. */

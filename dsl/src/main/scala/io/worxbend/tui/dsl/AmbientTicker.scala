@@ -50,7 +50,10 @@ private[dsl] final class AmbientTicker(effects: EffectStack, toasts: ToastStack,
     if !run.runnerTicks then
       // the toasts and the post-render effects age in clock time and are not part of the tree, so they ask for ticks
       // separately; the ticker runs at whichever of the two demands is the shorter
-      val ageing = if !effects.isEmpty || toasts.isLive then Some(AnimationClock.DefaultInterval) else None
+      // ...and so does a signal in flight under `animateTo`, which is sampled on the same tick
+      val ageing =
+        if !effects.isEmpty || toasts.isLive || SignalMotion.isActive then Some(AnimationClock.DefaultInterval)
+        else None
       // the intro is not in the tree either, and it is the one thing here that an app with no `tickRate` of its own
       // cannot animate without ticks; the demand goes away with the frame that ends it
       val intro  = Option.when(run.splash.isActive)(SplashPlayer.TickRate)
@@ -76,6 +79,7 @@ private[dsl] final class AmbientTicker(effects: EffectStack, toasts: ToastStack,
     */
   private def tick(run: RunState): Unit =
     AnimationClock.advanceUnlessPinned()
+    SignalMotion.step()
     toasts.age()
     val _ = effects.prune()
     // the intro is driven from here for a run that configured no `tickRate`; `advance` is what ends it, and the redraw

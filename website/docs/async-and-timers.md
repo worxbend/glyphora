@@ -166,6 +166,12 @@ load.cancel() // Cancel one task without cancelling siblings.
 tasks.close() // Keep the scope and call this from onLeave / onStop.
 ```
 
+`tasks.latest(key)(work)(onDone)` is `runCatching` with latest-wins delivery: a new start
+under a key that already has a task in flight cancels that task and discards its result,
+even one already queued, so only the newest start per key is ever delivered — a search
+that reloads on every keystroke, or a run that can be restarted mid-flight. See
+[Drop a stale response](./live-data#drop-a-stale-response).
+
 Each scoped operation returns a `Cancelable`. Submission, cancellation and
 `close()` are thread-safe. Both success and failure callbacks return to the scope's
 captured owner, even if submission happens on another thread. Closing is

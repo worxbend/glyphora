@@ -73,11 +73,20 @@ final class ElementHost:
   ): Unit =
     val raw = session.resolve(view, Size(frame.area.width, frame.area.height), theme)
     beforeFocus()
-    renderTree(
-      raw,
-      theme.focus,
-      tree => frame.renderWidget((area, buffer) => session.paint(tree, area, buffer), frame.area),
-    )
+    renderTree(raw, theme.focus, tree => paintWithCaret(frame, tree))
+
+  /** Paints `tree` into `frame`, then parks the frame's caret where the focused text node said its insertion point is.
+    *
+    * The node reports the cell from inside its render, through [[CaretRegister]], which maps it through the scroll
+    * views above it while their coordinate stack is live; here, after the paint, it is already a screen cell and goes
+    * straight to `Frame.setCursorPosition`. A frame in which nothing reported — focus is on a button, the focused field
+    * is scrolled out of view, the node asked for a painted caret only — asks for no cursor, and the runner hides it.
+    */
+  private def paintWithCaret(frame: Frame, tree: Element): Unit =
+    val caret = CaretRegister.collect {
+      frame.renderWidget((area, buffer) => session.paint(tree, area, buffer), frame.area)
+    }
+    caret.foreach(frame.setCursorPosition)
 
   /** The half of [[render]] after the view has been resolved: reconcile, decorate, remember, paint.
     *

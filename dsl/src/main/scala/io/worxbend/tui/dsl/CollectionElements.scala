@@ -76,7 +76,7 @@ final case class ListElement(
   */
 final case class TreeElement(
     nodes: Seq[w.TreeNode],
-    state: w.TreeState,
+    state: w.TreeState[?],
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = TreeElement
