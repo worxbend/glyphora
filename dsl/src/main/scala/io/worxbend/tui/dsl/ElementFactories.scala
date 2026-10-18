@@ -276,11 +276,10 @@ private[dsl] trait ElementFactories:
     * applied — the wrapped widget draws exactly what it draws.
     *
     * '''Say how big it is.''' A wrapped widget claims *all* the space its container has left over, because a bare
-    * `Widget` has no way to say otherwise — implementing [[io.worxbend.tui.core.Measured]] on it does not change this,
-    * as that is consulted by the scroll-view measurement pass and not by the layout solver. So
-    * `column(text("a"), widget(oneRowThing), text("b"))` gives the custom widget every row the two captions did not
-    * take. Say the height with `.rows(n)`: `widget(oneRowThing).rows(1)` is one row tall and full width in a `column`
-    * *and* in a `row`. Reach for `.length(n)` only when the number really is the container'''s decision, because that
+    * `Widget` has no way to say otherwise. So `column(text("a"), widget(oneRowThing), text("b"))` gives the custom
+    * widget every row the two captions did not take. A widget that implements [[io.worxbend.tui.core.Measured]] can
+    * be sized to what it measures with `.auto`; otherwise say the height with `.rows(n)`: `widget(oneRowThing).rows(1)`
+    * is one row tall and full width in a `column` *and* in a `row`. Reach for `.length(n)` only when the number really is the container'''s decision, because that
     * extension applies along whichever axis the container runs — in a `row`, `.length(1)` is one column wide.
     */
   def widget(wrapped: Widget): WidgetElement = WidgetElement(wrapped)
