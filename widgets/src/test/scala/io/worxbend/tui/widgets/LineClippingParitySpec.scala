@@ -80,6 +80,9 @@ final class LineClippingParitySpec extends AnyFunSuite:
             ""
           else
             val tail = CharWidth.dropByWidth(span.content, skipped)
+            // a cluster straddling the skip edge is dropped whole, and the column of it past the edge stays blank
+            // rather than closing up, so the surviving clusters keep their source columns
+            at += span.width - CharWidth.of(tail) - skipped
             skipped = 0
             tail
         val drawn = expected.setString(at, 1, text, base.patch(line.style).patch(span.style), x + budget - at)

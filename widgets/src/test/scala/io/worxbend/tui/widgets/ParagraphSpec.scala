@@ -1,7 +1,7 @@
 package io.worxbend.tui.widgets
 
 import io.worxbend.tui.core.{Alignment, CharWidth, Color, Line, Modifiers, Span, Style, Text}
-import io.worxbend.tui.testsupport.BufferAssertions.{rendered, trimmedLines}
+import io.worxbend.tui.testsupport.BufferAssertions.{lines, rendered, trimmedLines}
 
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -279,10 +279,19 @@ final class ParagraphSpec extends AnyFunSuite:
     assert(trimmedLines(buffer) == Seq("defg", "4567"))
 
   test("scrollX never cuts a wide grapheme in half"):
-    // Skipping one column would land inside "你", so the drawing starts one column later instead and the first cell
-    // written is the whole character, not half of it.
+    // Skipping one column would land inside "你", so the whole character is dropped and the column of it that lay past
+    // the edge is left blank: "好" is written where the source puts it, one column in, not pulled left into the gap.
     val buffer = rendered(Paragraph(Text.raw("你好"), scrollX = 1), 4, 1)
-    assert(buffer.get(0, 0).symbol == "好")
+    assert(buffer.get(0, 0).symbol == " ")
+    assert(buffer.get(1, 0).symbol == "好")
+
+  test("scrollX keeps source columns aligned across rows when a wide glyph straddles the edge"):
+    // Source column 4 holds `a` on both rows. One column scrolled off drops `漢` (columns 0–1) whole, but the column it
+    // would have occupied past the edge stays blank rather than closing up, so `字abc` on the first row sits under
+    // `zabc` on the second exactly as it does in the source — the rule `TextArea` has always followed for the same
+    // scroll. Closing the gap used to draw `字` one column early and leave a stray blank inside the row.
+    val buffer = rendered(Paragraph(Text.raw("漢字abc\nxyzabc"), scrollX = 1), 6, 2)
+    assert(lines(buffer) == Seq(" 字abc", "yzabc "))
 
   test("scrollX moves a right-aligned line further towards its beginning"):
     // Without an offset a right-aligned over-wide line keeps its end, "cdef". Two columns of scroll throw two more

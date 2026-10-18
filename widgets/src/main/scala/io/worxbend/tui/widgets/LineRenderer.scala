@@ -18,7 +18,10 @@ private[widgets] object LineRenderer:
     * `skipWidth` throws the first `skipWidth` columns of the line away before drawing, which is how a caller shows the
     * *end* of a line too wide for the space it has instead of its beginning. Skipping walks the line-wide
     * [[io.worxbend.tui.core.Line.styledGraphemes]] stream. A cluster straddling the edge is dropped whole, even when
-    * its code points belong to differently styled spans.
+    * its code points belong to differently styled spans — and the columns of it that lay past the edge are left blank
+    * rather than closed up, so every surviving cluster lands on the column it has in the source and the rows of one
+    * text stay aligned with each other, the rule [[TextArea]] follows for the same scroll. The blank column is not
+    * painted: it keeps whatever the caller put under the line.
     *
     * `alignment` places the line inside the `maxWidth` columns it was given. `Left` — the default, and what every
     * caller got before this parameter existed — starts drawing at `x`; `Center` and `Right` start further right by the
@@ -69,7 +72,11 @@ private[widgets] object LineRenderer:
     while cursor.remaining > 0 && !truncated && clusters.hasNext do
       val grapheme = clusters.next()
       val width    = grapheme.width
-      if remaining > 0 then remaining -= width
+      if remaining > 0 then
+        remaining -= width
+        // a wide cluster straddling the skip edge takes more than was left to skip; the overshoot is the column of it
+        // past the edge, which stays blank so the next cluster is not pulled left of its source column
+        if remaining < 0 then cursor.skip(-remaining)
       else
         val before = cursor.at
         cursor.write(grapheme.cluster, grapheme.style)
