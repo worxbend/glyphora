@@ -521,7 +521,9 @@ private[dsl] object FocusPass:
         )
       )
 
-    def transform(element: Element, ancestorInert: Boolean, ancestorDisabled: Boolean): Element =
+    def transform(built: Element, ancestorInert: Boolean, ancestorDisabled: Boolean): Element =
+      // a node a themed factory built against the ambient default theme takes this frame's theme instead
+      val element  = LateBinding.resolve(built, theme)
       val inert    = ancestorInert || element.props.inert
       val disabled = ancestorDisabled || element.props.disabled
       val nodeId   = nodeCounter

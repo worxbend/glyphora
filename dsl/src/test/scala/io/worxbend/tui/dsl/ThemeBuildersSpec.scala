@@ -170,7 +170,9 @@ final class ThemeBuildersSpec extends AnyFunSuite:
     assert(Theme.Dark.withName("mine").toString == "Theme(mine)")
 
   test("the presets and the ambient given are unchanged"):
-    assert(summon[Theme] eq Theme.Dark)
+    // equal to Dark, but its own instance: that is how a themed factory tells "no theme in scope" from `using Dark`
+    assert(summon[Theme] == Theme.Dark)
+    assert(summon[Theme] ne Theme.Dark)
     assert(Seq(Theme.Dark, Theme.Light, Theme.HighContrast).map(_.name) == Seq("dark", "light", "high-contrast"))
     assert(Seq(Theme.Dark, Theme.Light, Theme.HighContrast).forall(_.glyphs == GlyphSupport.Full))
 

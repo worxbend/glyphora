@@ -70,16 +70,20 @@ private[dsl] trait ElementFactories:
     * `.titleStyle(...)` recolours only the caption.
     */
   def panel(title: String)(children: Element*)(using theme: Theme): PanelElement =
-    PanelElement(
-      Some(title),
-      children,
-      titleStyle = Some(theme.primary),
-      props = ElementProps(style = theme.border, glyphs = theme.glyphs),
-    )
+    LateBinding.themed(theme) { theme =>
+      PanelElement(
+        Some(title),
+        children,
+        titleStyle = Some(theme.primary),
+        props = ElementProps(style = theme.border, glyphs = theme.glyphs),
+      )
+    }
 
   /** An untitled bordered box — see [[panel(title:String)*]] for the styling. */
   def panel(children: Element*)(using theme: Theme): PanelElement =
-    PanelElement(None, children, props = ElementProps(style = theme.border, glyphs = theme.glyphs))
+    LateBinding.themed(theme) { theme =>
+      PanelElement(None, children, props = ElementProps(style = theme.border, glyphs = theme.glyphs))
+    }
 
   /** Lays `children` out left to right, splitting the width between them.
     *
@@ -215,13 +219,15 @@ private[dsl] trait ElementFactories:
     * colours the fill by how far along it is. See [[w.Gauge]].
     */
   def gauge(ratio: Double)(using theme: Theme): GaugeElement =
-    GaugeElement(
-      ratio,
-      w.ProgressLabel.Percentage,
-      theme.loading.track,
-      theme.loading.fill,
-      theme.loading.fillRamp,
-    )
+    LateBinding.themed(theme) { theme =>
+      GaugeElement(
+        ratio,
+        w.ProgressLabel.Percentage,
+        theme.loading.track,
+        theme.loading.fill,
+        theme.loading.fillRamp,
+      )
+    }
 
   /** A one-row dense chart: one column per data point, oldest on the left, drawn with the eight block glyphs.
     *
@@ -434,16 +440,18 @@ private[dsl] trait ElementFactories:
     * next to without being told to; `.thumbStyle(...)` overrides the moving part on its own.
     */
   def scrollbar(contentLength: Int, position: Int = 0)(using theme: Theme): ScrollbarElement =
-    ScrollbarElement(
-      contentLength,
-      position,
-      w.ScrollbarOptions(
-        style = theme.border,
-        thumbStyle = theme.primary,
-        trackSymbol = w.ScrollbarSymbols.Plain.track,
-        thumbSymbol = w.ScrollbarSymbols.Plain.thumb,
-      ),
-    )
+    LateBinding.themed(theme) { theme =>
+      ScrollbarElement(
+        contentLength,
+        position,
+        w.ScrollbarOptions(
+          style = theme.border,
+          thumbStyle = theme.primary,
+          trackSymbol = w.ScrollbarSymbols.Plain.track,
+          thumbSymbol = w.ScrollbarSymbols.Plain.thumb,
+        ),
+      )
+    }
 
   /** A month grid for `month` (1–12) of `year`, weeks starting Monday, with `selected` (a day of the month)
     * highlighted. Needs 20 columns and up to 8 rows; anything smaller clips. See [[w.Calendar]], and
@@ -493,14 +501,16 @@ private[dsl] trait ElementFactories:
 
   /** A spinner on a clock the caller drives, for a progress animation tied to something other than wall time. */
   def spinnerAt(elapsed: FiniteDuration, label: String = "")(using theme: Theme): SpinnerElement =
-    SpinnerElement(
-      elapsed,
-      label,
-      w.SpinnerPreset.Dots,
-      theme.loading.spinner,
-      theme.loading.label,
-      props = ElementProps(glyphs = theme.glyphs),
-    )
+    LateBinding.themed(theme) { theme =>
+      SpinnerElement(
+        elapsed,
+        label,
+        w.SpinnerPreset.Dots,
+        theme.loading.spinner,
+        theme.loading.label,
+        props = ElementProps(glyphs = theme.glyphs),
+      )
+    }
 
   /** Text carrying a time-based effect, on the ambient [[AnimationClock]].
     *
@@ -512,19 +522,27 @@ private[dsl] trait ElementFactories:
 
   /** Animated text on a clock the caller drives. */
   def animatedTextAt(content: String, elapsed: FiniteDuration)(using theme: Theme): AnimatedTextElement =
-    AnimatedTextElement(content, elapsed, w.TextEffect.Wave(), theme.muted, theme.accent)
+    LateBinding.themed(theme) { theme =>
+      AnimatedTextElement(content, elapsed, w.TextEffect.Wave(), theme.muted, theme.accent)
+    }
 
   /** One styled message line: an icon, an optional timestamp, and the message. Colors follow the level. */
   def notice(message: String, level: w.NoticeLevel = w.NoticeLevel.Info)(using theme: Theme): NoticeElement =
-    NoticeElement(message, level, None, theme.primary, noticeLevelStyle(level), theme.muted)
+    LateBinding.themed(theme) { theme =>
+      NoticeElement(message, level, None, theme.primary, noticeLevelStyle(level)(using theme), theme.muted)
+    }
 
   /** A short inline label. Defaults to a solid badge in the theme's accent; `.outline` and `.dot` are quieter. */
   def badge(label: String)(using theme: Theme): BadgeElement =
-    BadgeElement(label, w.BadgeVariant.Solid, theme.accent)
+    LateBinding.themed(theme) { theme =>
+      BadgeElement(label, w.BadgeVariant.Solid, theme.accent)
+    }
 
   /** A badge carrying a severity's own tag and color — `badge(NoticeLevel.Error)` reads `FAIL`. */
   def badge(level: w.NoticeLevel)(using theme: Theme): BadgeElement =
-    BadgeElement(level.tag, w.BadgeVariant.Solid, noticeLevelStyle(level))
+    LateBinding.themed(theme) { theme =>
+      BadgeElement(level.tag, w.BadgeVariant.Solid, noticeLevelStyle(level)(using theme))
+    }
 
   /** Blanks its area so a popup drawn over it starts from a clean background.
     *
@@ -545,9 +563,11 @@ private[dsl] trait ElementFactories:
   def dialog(title: String, message: String, buttons: Seq[String] = Seq("OK"), selected: Int = 0)(using
       theme: Theme
   ): WidgetElement =
-    WidgetElement(
-      w.Dialog(title, Text.raw(message), buttons, selected, style = theme.primary, highlightStyle = theme.focus)
-    )
+    LateBinding.themed(theme) { theme =>
+      WidgetElement(
+        w.Dialog(title, Text.raw(message), buttons, selected, style = theme.primary, highlightStyle = theme.focus)
+      )
+    }
 
   /** A dialog that answers its own keys: Left/Right (and Tab) move between the buttons, Space or Enter presses the
     * selected one, Esc cancels.
@@ -565,16 +585,18 @@ private[dsl] trait ElementFactories:
       onPress: Int => Unit,
       onCancel: () => Unit,
   )(using theme: Theme): ConfirmDialogElement =
-    ConfirmDialogElement(
-      title,
-      message,
-      buttons,
-      selected,
-      onSelect,
-      onPress,
-      onCancel,
-      ElementProps(style = theme.primary, focusable = true, focusState = FocusState(focusStyle = theme.focus)),
-    )
+    LateBinding.themed(theme) { theme =>
+      ConfirmDialogElement(
+        title,
+        message,
+        buttons,
+        selected,
+        onSelect,
+        onPress,
+        onCancel,
+        ElementProps(style = theme.primary, focusable = true, focusState = FocusState(focusStyle = theme.focus)),
+      )
+    }
 
   /** Two sparklines sharing one area — `upper` in the top half, `lower` in the bottom — for comparing a pair of series
     * such as ingress against egress. Each series is scaled independently, so the shapes are comparable but the heights
@@ -594,7 +616,9 @@ private[dsl] trait ElementFactories:
 
   /** A skeleton on a clock the caller drives. */
   def skeletonAt(elapsed: FiniteDuration)(using theme: Theme): SkeletonElement =
-    SkeletonElement(elapsed, theme.loading.track, theme.loading.band)
+    LateBinding.themed(theme) { theme =>
+      SkeletonElement(elapsed, theme.loading.track, theme.loading.band)
+    }
 
   /** A figure with an arc chasing round it — a spinner big enough to fill a pane. Needs a tick to animate — its own
     * `config.tickRate` or the ambient one — and nothing else: it reads the ambient [[AnimationClock]], so there is no
@@ -609,10 +633,12 @@ private[dsl] trait ElementFactories:
 
   /** An orbit spinner on a clock the caller drives. */
   def orbitSpinnerAt(elapsed: FiniteDuration)(using theme: Theme): OrbitSpinnerElement =
-    OrbitSpinnerElement(
-      elapsed,
-      w.OrbitSpinnerOptions(style = theme.loading.track, arcStyle = theme.loading.spinner),
-    )
+    LateBinding.themed(theme) { theme =>
+      OrbitSpinnerElement(
+        elapsed,
+        w.OrbitSpinnerOptions(style = theme.loading.track, arcStyle = theme.loading.spinner),
+      )
+    }
 
   /** A head travelling a one-cell track, on the ambient [[AnimationClock]] — the row-or-column-shaped member of the
     * family, for a status line under a log pane or a column beside one.
@@ -622,7 +648,9 @@ private[dsl] trait ElementFactories:
 
   /** A linear spinner on a clock the caller drives. */
   def linearSpinnerAt(elapsed: FiniteDuration)(using theme: Theme): LinearSpinnerElement =
-    LinearSpinnerElement(elapsed, theme.loading.track, theme.loading.spinner)
+    LateBinding.themed(theme) { theme =>
+      LinearSpinnerElement(elapsed, theme.loading.track, theme.loading.spinner)
+    }
 
   /** A block of phase-offset spinners, on the ambient [[AnimationClock]]. `.preset(...)` picks the per-slot animation
     * from the ordinary spinner catalogue — including the ASCII ones — and `.phase(...)` decides whether the block
@@ -633,13 +661,15 @@ private[dsl] trait ElementFactories:
 
   /** A spinner grid on a clock the caller drives. */
   def spinnerGridAt(elapsed: FiniteDuration)(using theme: Theme): SpinnerGridElement =
-    SpinnerGridElement(
-      elapsed,
-      w.SpinnerPreset.DotsRing,
-      w.GridPhase.Diagonal(),
-      theme.loading.spinner,
-      props = ElementProps(glyphs = theme.glyphs),
-    )
+    LateBinding.themed(theme) { theme =>
+      SpinnerGridElement(
+        elapsed,
+        w.SpinnerPreset.DotsRing,
+        w.GridPhase.Diagonal(),
+        theme.loading.spinner,
+        props = ElementProps(glyphs = theme.glyphs),
+      )
+    }
 
   /** A progress bar for work of unknown length, on the ambient [[AnimationClock]].
     *
@@ -650,14 +680,16 @@ private[dsl] trait ElementFactories:
 
   /** An indeterminate bar on a clock the caller drives. */
   def indeterminateBarAt(elapsed: FiniteDuration)(using theme: Theme): IndeterminateElement =
-    IndeterminateElement(
-      elapsed,
-      w.IndeterminateMotion.Bounce,
-      w.ProgressPreset.Line,
-      theme.loading.track,
-      theme.loading.fill,
-      props = ElementProps(glyphs = theme.glyphs),
-    )
+    LateBinding.themed(theme) { theme =>
+      IndeterminateElement(
+        elapsed,
+        w.IndeterminateMotion.Bounce,
+        w.ProgressPreset.Line,
+        theme.loading.track,
+        theme.loading.fill,
+        props = ElementProps(glyphs = theme.glyphs),
+      )
+    }
 
   /** A one-row determinate progress bar: a caption then a filled track.
     *
@@ -665,15 +697,17 @@ private[dsl] trait ElementFactories:
     * `.preset(ProgressPreset.Blocks)` moves smoothly with sub-cell partials.
     */
   def progressBar(ratio: Double)(using theme: Theme): ProgressBarElement =
-    ProgressBarElement(
-      ratio,
-      w.ProgressLabel.Percentage,
-      w.ProgressPreset.Line,
-      theme.loading.track,
-      theme.loading.fill,
-      theme.loading.fillRamp,
-      props = ElementProps(glyphs = theme.glyphs),
-    )
+    LateBinding.themed(theme) { theme =>
+      ProgressBarElement(
+        ratio,
+        w.ProgressLabel.Percentage,
+        w.ProgressPreset.Line,
+        theme.loading.track,
+        theme.loading.fill,
+        theme.loading.fillRamp,
+        props = ElementProps(glyphs = theme.glyphs),
+      )
+    }
 
   /** `progressBar` for counts rather than a fraction: `progressBar(3, 10)` is a 30% bar. */
   def progressBar(current: Int, total: Int)(using Theme): ProgressBarElement =
@@ -774,21 +808,27 @@ private[dsl] trait ElementFactories:
     * constructs are supported.
     */
   def markdown(source: String)(using theme: Theme): WidgetElement =
-    WidgetElement(w.Markdown(source, theme.markdown))
+    LateBinding.themed(theme) { theme =>
+      WidgetElement(w.Markdown(source, theme.markdown))
+    }
 
   /** Markdown that is still arriving, read from a caller-owned [[w.MarkdownStream]] — `stream.append(chunk)` as tokens
     * come in. Half-written syntax (`**bold`, a link, an open fence) renders as it will once complete. A measured leaf,
     * like [[markdown]]; see [[MarkdownStreamElement]].
     */
   def markdownStream(stream: w.MarkdownStream)(using theme: Theme): MarkdownStreamElement =
-    MarkdownStreamElement(stream, theme.markdown, w.MarkdownOptions(), follow = None)
+    LateBinding.themed(theme) { theme =>
+      MarkdownStreamElement(stream, theme.markdown, w.MarkdownOptions(), follow = None)
+    }
 
   /** The same stream as its own scroll view, pinned to the newest row while content arrives until the user scrolls up;
     * End rejoins the tail. `scroll` is caller-owned like any [[w.ScrollViewState]]: create it once outside `view`.
     * Focusable; Up/Down/PageUp/PageDown/Home/End and the wheel scroll it.
     */
   def markdownStream(stream: w.MarkdownStream, scroll: w.ScrollViewState)(using theme: Theme): MarkdownStreamElement =
-    MarkdownStreamElement(stream, theme.markdown, w.MarkdownOptions(), Some(scroll), ElementProps(focusable = true))
+    LateBinding.themed(theme) { theme =>
+      MarkdownStreamElement(stream, theme.markdown, w.MarkdownOptions(), Some(scroll), ElementProps(focusable = true))
+    }
 
   /** A sortable, filterable, pageable table: `table` is the data and column definitions, `state` is the view over it.
     *
@@ -935,15 +975,17 @@ private[dsl] trait ElementFactories:
     * and `error`, the timestamp and logger its `muted`.
     */
   def logConsole(ring: LogRing)(using theme: Theme): LogConsoleElement =
-    LogConsoleElement(
-      ring,
-      minimumLevel = io.worxbend.tui.runtime.LogLevel.Trace,
-      prefix = "",
-      zone = java.time.ZoneId.systemDefault(),
-      warningStyle = theme.warning,
-      errorStyle = theme.error,
-      mutedStyle = theme.muted,
-    )
+    LateBinding.themed(theme) { theme =>
+      LogConsoleElement(
+        ring,
+        minimumLevel = io.worxbend.tui.runtime.LogLevel.Trace,
+        prefix = "",
+        zone = java.time.ZoneId.systemDefault(),
+        warningStyle = theme.warning,
+        errorStyle = theme.error,
+        mutedStyle = theme.muted,
+      )
+    }
 
   /** Keeps a failing `subtree` from ending the run: a non-fatal throwable while it is built or painted paints
     * `fallback(error)` in its area instead, logs the failure, and the next frame tries the subtree again. See
@@ -965,15 +1007,17 @@ private[dsl] trait ElementFactories:
     * `panel(...).borderType(BorderType.Thick)` can be given the same weight and read as part of the same frame.
     */
   def rule(label: String = "", borderType: w.BorderType = w.BorderType.Plain)(using theme: Theme): WidgetElement =
-    WidgetElement(
-      w.Rule(
-        Option(label).filter(_.nonEmpty),
-        style = theme.border,
-        labelStyle = theme.muted,
-        borderType = borderType.degraded(theme.glyphs),
-      ),
-      rows = Some(1),
-    )
+    LateBinding.themed(theme) { theme =>
+      WidgetElement(
+        w.Rule(
+          Option(label).filter(_.nonEmpty),
+          style = theme.border,
+          labelStyle = theme.muted,
+          borderType = borderType.degraded(theme.glyphs),
+        ),
+        rows = Some(1),
+      )
+    }
 
   /** Banner text drawn from a built-in 3x5 block font — the splash-screen and header building block.
     *

@@ -36,7 +36,8 @@ object LoadingTheme:
   *
   * A `TuiApp` hands its own [[TuiApp.theme]] to `view` as a `using` parameter, so everything a view calls sees it
   * without any `given` ceremony. Outside a view — a widget-level test, an element built in a helper object — the
-  * ambient [[Theme.default]] applies.
+  * ambient [[Theme.default]] applies at construction, and an element built against it is re-resolved against the app's
+  * own theme when it is painted (see [[LateBinding]]), so a helper's panel follows `Theme.Light` like the rest.
   *
   * The three sub-palettes are grouped rather than flattened because they retheme as units: `loading` for the spinner
   * and progress family, `markdown` for a rendered document, and `markdown.syntax` (mirrored as [[syntax]] for the
@@ -422,8 +423,11 @@ object Theme:
     * bug this arrangement fixes: a `given` installed by the framework *around* the call to `view` is not in scope
     * inside the view's body, so an app that overrode `theme` and then called `statusBar(bindings)` used to fall back
     * here without saying so.
+    *
+    * It is `Dark` by every measure but identity: a distinct instance, so a themed factory can tell "no theme in scope"
+    * from an explicit `using Theme.Dark` and late-bind only the former to the app's theme when it is painted.
     */
-  given default: Theme = Dark
+  given default: Theme = Dark.withName(Dark.name)
 
   /** `base` with its glyph ceiling lowered to whatever the environment justifies — see
     * [[io.worxbend.tui.terminal.TerminalGlyphs.detect]] for the rules and for the `GLYPHORA_ASCII` override.

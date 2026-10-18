@@ -86,7 +86,8 @@ final case class FocusState private[dsl] (
   * `.at(row, col)`, `.span(rows, cols)` and `.area(name)` put this element inside a `grid`; outside one it is unused.
   *
   * `variant` is the [[ComponentRole]] `.variant(role)` picked — `ButtonRole.Primary` — which the focus pass looks up in
-  * the app's theme instead of the node type's own default role.
+  * the app's theme instead of the node type's own default role. `lateBinding` is how a themed factory that saw only the
+  * ambient default theme lets the focus pass re-resolve the node against the app's theme — see [[LateBinding]].
   */
 final case class ElementProps(
     style: Style = Style.Default,
@@ -111,6 +112,7 @@ final case class ElementProps(
     ensureVisible: Boolean = false,
     gridSpot: GridSpot = GridSpot.Flowed,
     variant: Option[ComponentRole] = None,
+    lateBinding: Option[LateBinding] = None,
 ):
 
   /** Whether this element is the one the focus pass marked — where keystrokes go this frame. */
