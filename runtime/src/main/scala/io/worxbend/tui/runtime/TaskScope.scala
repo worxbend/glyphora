@@ -23,16 +23,39 @@ import scala.util.control.NonFatal
   * entry still waits in the bounded worker queue until dequeued, where its work is skipped.
   */
 final class TaskScope private[runtime] (owner: RenderThread.RenderLoop) extends AutoCloseable:
-  private val closed  = AtomicBoolean(false)
-  private val tasks   = mutable.Set.empty[Task]
+  private val closed      = AtomicBoolean(false)
+  private val tasks       = mutable.Set.empty[Task]
+  // the newest task started under each `latest` key; guarded by `monitor` like `tasks`
+  private val latestByKey = mutable.Map.empty[Any, Task]
   // guards `tasks`; a private monitor rather than `this`, which is public through `Async.scope()`
-  private val monitor = new Object
+  private val monitor     = new Object
 
   /** Delivers success or non-fatal failure on this scope's owner; cancellation suppresses either outcome. Dispatch
     * failures escape to the worker's uncaught handler without revoking a result already accepted by the owner queue.
     */
   def runCatching[A](work: => A)(onDone: Either[Throwable, A] => Unit): Cancelable =
-    val task = register()
+    submit(register(None), work)(onDone)
+
+  /** [[runCatching]] under a key, latest-wins: starting a task whose key already has one in flight cancels that earlier
+    * task, and its result is discarded even if its work was already running or its callback already queued — only the
+    * task that is still the newest under `key` when its result reaches the owner is delivered. Each key therefore
+    * delivers at most one result per start, in start order, and never a result for a start that has been superseded.
+    *
+    * This is what a search box, a "reload on every keystroke" or a reset-and-restart needs instead of a generation
+    * counter checked by hand in the continuation: the scope does the stamp-and-compare. Keys are compared with `==`; a
+    * completed, failed or cancelled task releases its key, so the next start under it runs normally.
+    *
+    * Same cancellation contract as the rest of the scope — best effort, no interruption: the superseded work keeps
+    * running to completion on its worker, it just reaches nobody. Give long work a cooperative check of its own if
+    * finishing it is itself expensive.
+    */
+  def latest[A](key: Any)(work: => A)(onDone: Either[Throwable, A] => Unit): Cancelable =
+    val task     = register(Some(key))
+    val previous = monitor.synchronized(latestByKey.put(key, task))
+    previous.foreach(_.cancel())
+    submit(task, work)(onDone)
+
+  private def submit[A](task: Task, work: => A)(onDone: Either[Throwable, A] => Unit): Cancelable =
     try
       val delivery = owner.reserve()
       task.installDelivery(delivery)
@@ -69,13 +92,13 @@ final class TaskScope private[runtime] (owner: RenderThread.RenderLoop) extends 
       Async.scheduler.scheduleAtFixedRate(callback, millis, millis, TimeUnit.MILLISECONDS)
     )
 
-  private def schedule(body: => Unit, repeat: Boolean)(submit: Runnable => Future[?]): Cancelable =
-    val task = register()
+  private def schedule(body: => Unit, repeat: Boolean)(submitTimer: Runnable => Future[?]): Cancelable =
+    val task = register(None)
     try
       val delivery = owner.reserve()
       task.installDelivery(delivery)
       task.install(
-        submit(() =>
+        submitTimer(() =>
           // a firing that finds the task inactive (owner retired, scope closed, or cancelled under a racing close)
           // retires it rather than firing on; a throwing wake is reported instead of ending the periodic task inside
           // its own future — see `Async.scheduleCancelable`, whose runnable makes the same two moves
@@ -93,15 +116,22 @@ final class TaskScope private[runtime] (owner: RenderThread.RenderLoop) extends 
         throw error
     task
 
-  private def register(): Task = monitor.synchronized {
+  private def register(key: Option[Any]): Task = monitor.synchronized {
     if closed.get() || owner.isClosed then throw IllegalStateException("task scope is closed")
-    val task = new Task
+    val task = new Task(key)
     tasks += task
     task
   }
 
+  /** Forgets a finished or cancelled task — and releases its `latest` key, but only if that key still points at *this*
+    * task: a superseded task being removed must not take the newer task's registration with it.
+    */
   private def remove(task: Task): Unit = monitor.synchronized {
     val _ = tasks.remove(task)
+    task.key.foreach { key =>
+      if latestByKey.get(key).exists(_ eq task) then
+        val _ = latestByKey.remove(key)
+    }
   }
 
   override def close(): Unit =
@@ -109,12 +139,13 @@ final class TaskScope private[runtime] (owner: RenderThread.RenderLoop) extends 
       val pending = monitor.synchronized {
         val snapshot = tasks.toList
         tasks.clear()
+        latestByKey.clear()
         snapshot
       }
       pending.foreach(_.cancel())
       owner.detach(this)
 
-  private final class Task extends Cancelable:
+  private final class Task(val key: Option[Any]) extends Cancelable:
     private val cancelled                        = AtomicBoolean(false)
     // the task's own monitor, for its own two slots; never held while taking the scope's
     private val monitor                          = new Object

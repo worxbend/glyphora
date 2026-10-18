@@ -97,18 +97,55 @@ private[dsl] trait ElementFactories:
     * It returns a `Seq[Element]`, not a container, so it splices into whichever container the call site wants:
     * `column(each(…)*)`, `row(each(…)*)`, `panel("Processes")(each(…)*)`.
     *
+    * The same key is also the identity of the hooks `render` calls: `render` runs inside `keyed(key)`, so a row that
+    * declares `useSignal`/`useState` keeps its own state across insertions and reorders without a second `keyed` of its
+    * own. One key, one identity, for focus and for state alike — the two used to be separate mechanisms that could
+    * disagree. (Before 0.20.0 the hooks under `each` were positional; see the 0.20.0 migration notes.)
+    *
     * Keys must be unique within one frame — use something that identifies the item (a database id, a process id, a file
     * path), not its index, which is the positional identity this exists to replace. Two children sharing a key
     * re-anchor focus to the first of them.
     */
   def each[A](items: Seq[A])(keyOf: A => String)(render: A => Element): Seq[Element] =
-    items.map(item => render(item).key(keyOf(item)))
+    items.map { item =>
+      val itemKey: String = keyOf(item)
+      ViewState.scopeIfActive(itemKey)(render(item)).key(itemKey)
+    }
 
   /** [[each]] with a `prefix` on every key, for two keyed lists in one view whose key functions would otherwise collide
-    * — two panes both keyed by a row number, say. The prefix and the key are joined with a colon.
+    * — two panes both keyed by a row number, say. The prefix and the key are joined with a colon, for the focus key and
+    * the hook scope alike.
     */
   def each[A](items: Seq[A], prefix: String)(keyOf: A => String)(render: A => Element): Seq[Element] =
-    items.map(item => render(item).key(s"$prefix:${keyOf(item)}"))
+    items.map { item =>
+      val itemKey: String = s"$prefix:${keyOf(item)}"
+      ViewState.scopeIfActive(itemKey)(render(item)).key(itemKey)
+    }
+
+  /** A subtree built once and handed back unchanged on every later frame whose `deps` are `==` to the ones it was built
+    * with — for a part of the view that is expensive to *compose* (a large table, a tree with thousands of nodes, a
+    * markdown document) and changes less often than the frames around it.
+    *
+    * {{{
+    * memo(rows.get, sortColumn.get)(dataTable(columns, rows.peek, widths))
+    * }}}
+    *
+    * The deps are the whole contract. The cached subtree is not re-evaluated on a frame whose deps are unchanged, so a
+    * `Signal` read *inside* `subtree` does not subscribe that frame to the signal: read every signal the subtree
+    * depends on in the deps list, where the comparison sees it, and `peek` it inside. For the same reason the subtree
+    * must not own hooks — a `useSignal` or `useState` inside it is reached only on frames that rebuild, and a slot not
+    * reached is swept at the end of the frame — so state the subtree needs lives beside the `memo` call and is passed
+    * in as a dep. Children of the cached subtree keep their focus keys and handlers exactly as built, which is what
+    * makes the cache transparent to focus and events.
+    *
+    * Deps compare with `==`: an immutable collection or a case class compares structurally and a mutable object
+    * compares by identity, so a mutable `ListState` as a dep never triggers a rebuild on its own. The cache is a hook
+    * slot and follows the hook rules on [[ViewState]]: it belongs to its call site (scope it with `each` or `keyed` in
+    * a loop) and is released one frame after the call stops being reached. Outside a view evaluation `memo` simply
+    * builds the subtree.
+    */
+  def memo(deps: Any*)(subtree: => Element): Element =
+    ViewState.memoIfActive(deps)(() => subtree)
 
   /** Flexible blank space (fills what siblings leave over). */
   def spacer: SpacerElement = SpacerElement()
