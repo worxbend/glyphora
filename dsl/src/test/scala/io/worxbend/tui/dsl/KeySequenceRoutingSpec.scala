@@ -74,3 +74,53 @@ final class KeySequenceRoutingSpec extends AnyFunSuite with PilotFixture:
     pilot.press("g", "esc", "g").waitForIdle()
     assert(app.tops == 0)
     quitApp(pilot)
+
+/** The which-key popup `TuiApp` lays over the view while a prefix is pending. */
+final class WhichKeyPopupSpec extends AnyFunSuite with PilotFixture:
+
+  private final class EditorApp(popup: Boolean) extends TuiApp:
+    override def whichKey: Boolean = popup
+
+    override def bindings: KeyBindings = KeyBindings(
+      binding("ctrl+k ctrl+s", "save all")(()),
+      binding("ctrl+k ctrl+w", "close all")(()),
+      binding("ctrl+k z", "zen mode")(()),
+      binding("ctrl+q", "quit")(quit()),
+    )
+
+    def view(using ReactiveScope, Theme): Element =
+      column(text("editor body").fill, statusBar(activeBindings))
+
+  private def start(popup: Boolean = true): Pilot =
+    val backend = HeadlessBackend(Size(44, 9))
+    val pilot   = startPilot(backend)(EditorApp(popup).runWith(backend))
+    pilot.waitForIdle()
+
+  test("after ctrl+k the popup lists the continuations and the status bar shows the prefix"):
+    val pilot = start()
+    pilot.press("ctrl+k").waitForIdle()
+    pilot.assertGolden("which-key-ctrl-k")
+    pilot.press("esc").waitForIdle()
+    assert(!pilot.screenText.contains("zen mode"), "cancelling the prefix closes the popup and restores the hints")
+    pilot.press("ctrl+q")
+    assert(pilot.awaitTermination())
+
+  test("an app with no tickRate borrows ambient ticks to time a pending prefix out"):
+    val backend = HeadlessBackend(Size(44, 9))
+    val clock   = ManualClock()
+    val pilot   = startPilot(backend)(EditorApp(popup = true).runWith(backend, clock.reading))
+    pilot.waitForIdle()
+    pilot.press("ctrl+k").waitForIdle()
+    assert(pilot.screenText.contains("zen mode"))
+    val _       = clock.advance(2.seconds)
+    pilot.waitUntil("the prefix to time out")(!pilot.screenText.contains("zen mode"))
+    pilot.press("ctrl+q")
+    assert(pilot.awaitTermination())
+
+  test("whichKey = false keeps the popup off while still showing the prefix in the status bar"):
+    val pilot = start(popup = false)
+    pilot.press("ctrl+k").waitForIdle()
+    assert(pilot.screenLines.count(_.contains("save all")) == 1, "only the status bar lists the continuations")
+    assert(pilot.screenText.contains("ctrl+k …   │  ctrl+s save all"))
+    pilot.press("esc", "ctrl+q")
+    assert(pilot.awaitTermination())

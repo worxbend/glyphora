@@ -36,12 +36,16 @@ def statusBar(hints: Seq[(String, String)])(using theme: Theme): Element =
   FilledElement(row, theme.surface).length(1)
 
 /** Status bar fed directly from the app's declared [[KeyBindings]]: the live hints, led by the current mode as
-  * `[normal]` when the bindings declare modes and by the pending prefix as `g …` while a key sequence is half typed.
+  * `[normal]` when the bindings declare modes. While a key sequence is half typed the hints give way to the pending
+  * prefix as `g …` followed by the keys that may come next, so the bar answers "what now?" even with the which-key
+  * popup switched off.
   */
 def statusBar(bindings: KeyBindings)(using Theme): Element =
-  val mode    = Option.when(bindings.modes.nonEmpty)(bindings.mode).flatten.map(id => (s"[$id]", ""))
-  val pending = bindings.pending.map(prefix => (s"${prefix.spelling} …", ""))
-  statusBar(mode.toSeq ++ pending.toSeq ++ bindings.hints)
+  val mode  = Option.when(bindings.modes.nonEmpty)(bindings.mode).flatten.map(id => (s"[$id]", ""))
+  val hints = bindings.pending match
+    case Some(prefix) => (s"${prefix.spelling} …", "") +: bindings.continuations(prefix.keys)
+    case None         => bindings.hints
+  statusBar(mode.toSeq ++ hints)
 
 /** Which edge of the content a [[Sidebar]] sits against. */
 enum Side:

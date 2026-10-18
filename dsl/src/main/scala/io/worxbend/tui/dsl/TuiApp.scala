@@ -238,6 +238,11 @@ trait TuiApp:
     */
   protected final def keyMode: Signal[ModeId] = keyModeSignal
 
+  /** Whether a pending key-sequence prefix shows the [[whichKeyPopup]] of its possible continuations. On by default; it
+    * only ever appears in an app whose bindings declare sequences, because only those can leave a prefix pending.
+    */
+  def whichKey: Boolean = true
+
   private lazy val keyModeSignal: Signal[ModeId] = Signal(bindings.modes.headOption.getOrElse(ModeId.Default))
 
   /** The screen's bindings followed by the app's, minus any app binding the screen has completely taken over.
@@ -993,9 +998,13 @@ trait TuiApp:
     val withPalette  =
       if palette.isOpen then Element.layers(FocusPass.suppressFocus(withScreens), palette.element)
       else withScreens
+    val withWhichKey =
+      if whichKey then
+        whichKeyPopup(activeBindings, terminalSizeSignal.peek).fold(withPalette)(Element.layers(withPalette, _))
+      else withPalette
     toasts.overlay(terminalSizeSignal.peek.width) match
-      case Some(stack) => Element.layers(withPalette, stack)
-      case None        => withPalette
+      case Some(stack) => Element.layers(withWhichKey, stack)
+      case None        => withWhichKey
 
   // ---- per-instance state ----
 
