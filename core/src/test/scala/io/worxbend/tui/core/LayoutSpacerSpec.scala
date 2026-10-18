@@ -47,8 +47,8 @@ final class LayoutSpacerSpec extends AnyFunSuite:
     layout.splitWithSpacers(area)._2.map(extentOf(layout.direction, _))
 
   test("segments and spacers tile the area exactly, on both axes"):
-    assertTiles(Layout.horizontal(3, 4).copy(spacing = 1), Rect(2, 1, 10, 5))
-    assertTiles(Layout.vertical(3, 4).copy(spacing = 1), Rect(2, 1, 10, 12))
+    assertTiles(Layout.horizontal(3, 4).withSpacing(1), Rect(2, 1, 10, 5))
+    assertTiles(Layout.vertical(3, 4).withSpacing(1), Rect(2, 1, 10, 12))
     assertTiles(Layout.horizontal(0.5, 0.5), Rect(0, 0, 9, 3))
 
   test("adjacent segments with no spacing leave zero-extent spacers"):
@@ -121,7 +121,7 @@ final class LayoutSpacerSpec extends AnyFunSuite:
 
   test("split agrees with splitWithSpacers"):
     val layouts = Seq(
-      Layout.horizontal(3, 4).copy(spacing = 2),
+      Layout.horizontal(3, 4).withSpacing(2),
       Layout.vertical(0.3, 0.7),
       Layout(Direction.Horizontal, Seq(Constraint.Min(3), Constraint.Length(2)), flex = Flex.SpaceAround),
       Layout(Direction.Vertical, Seq.empty),

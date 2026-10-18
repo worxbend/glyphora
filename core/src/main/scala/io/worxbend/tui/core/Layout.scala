@@ -15,13 +15,20 @@ package io.worxbend.tui.core
   * and each segment is pulled back over the one before it so the two share that many columns or rows — which is how two
   * bordered blocks come to share one border line instead of drawing two adjacent ones. `between` takes precedence over
   * `spacing` when it is set, and `spacing` is what every layout that has not heard of `between` keeps using.
+  *
+  * A `final class` with a private constructor rather than a `case class`, because new constraint or flex behaviour is
+  * expected to add fields here. A case class rewrites `apply`, `copy` and `unapply` on every new field, and a consumer
+  * compiled against the old shape fails with `NoSuchMethodError`; here the compatibility surface is
+  * [[Layout.horizontal]], [[Layout.vertical]] and the builders [[withSpacing]], [[withFlex]], [[spaced]] and
+  * [[withoutBetween]], all of which a new field leaves untouched. There is no `copy` and no pattern extractor; equality
+  * and `hashCode` are structural over every field.
   */
-final case class Layout(
-    direction: Direction,
-    constraints: Seq[Constraint],
-    spacing: Int = 0,
-    flex: Flex = Flex.Start,
-    between: Option[Spacing] = None,
+final class Layout private (
+    val direction: Direction,
+    val constraints: Seq[Constraint],
+    val spacing: Int,
+    val flex: Flex,
+    val between: Option[Spacing],
 ):
 
   /** [[spacing]] as the layout actually spends it, when no [[between]] was given. */
@@ -212,9 +219,62 @@ final case class Layout(
   /** This layout with `spacing` replaced by an explicit [[Spacing]], so `Layout.horizontal(4, 4).spaced(Overlap(1))`
     * reads at the call site as what it does.
     */
-  def spaced(spacing: Spacing): Layout = copy(between = Some(spacing))
+  def spaced(spacing: Spacing): Layout = new Layout(direction, constraints, this.spacing, flex, Some(spacing))
+
+  /** This layout with no explicit [[between]], so [[spacing]] is what it spends between segments again. The way back
+    * from [[spaced]] — and the call that makes a later [[withSpacing]] take effect on a layout that was `spaced`.
+    */
+  def withoutBetween: Layout = new Layout(direction, constraints, spacing, flex, None)
+
+  /** This layout with `cells` empty cells between adjacent segments (negative is treated as zero, as for the field).
+    *
+    * An explicit [[between]] keeps precedence: `layout.spaced(x).withSpacing(n)` still spends `x`, and `n` is unused
+    * until [[withoutBetween]] clears it. `spaced(Spacing.Gap(n))` is the spelling that overrides a `between` in place.
+    */
+  def withSpacing(cells: Int): Layout = new Layout(direction, constraints, cells, flex, between)
+
+  /** This layout placing its segments by `flex` — see [[Flex]] for the six modes. */
+  def withFlex(flex: Flex): Layout = new Layout(direction, constraints, spacing, flex, between)
+
+  /** Structural equality over every field, reference equality tried first. */
+  override def equals(other: Any): Boolean =
+    other match
+      case that: Layout =>
+        (this eq that) ||
+        (direction == that.direction && spacing == that.spacing && flex == that.flex && between == that.between &&
+          constraints == that.constraints)
+      case _            => false
+
+  /** Hashes every field [[equals]] compares. */
+  override def hashCode(): Int =
+    var hash = direction.hashCode()
+    hash = 31 * hash + constraints.hashCode()
+    hash = 31 * hash + spacing
+    hash = 31 * hash + flex.hashCode()
+    31 * hash + between.hashCode()
+
+  /** Every field, named, in constructor order — what a failed assertion over two layouts has to show. */
+  override def toString: String =
+    s"Layout($direction, $constraints, spacing=$spacing, flex=$flex, between=$between)"
 
 object Layout:
+
+  /** A layout from its fields — `spacing`, `flex` and `between` default to no gap, [[Flex.Start]] and none.
+    *
+    * This is a construction convenience, not the compatibility surface. Adding a field changes its descriptor and
+    * renumbers its default-argument getters, so a consumer compiled against `Layout(direction, constraints, spacing =
+    * …)` still fails with `NoSuchMethodError` on the next field until it recompiles; at that growth the previous arity
+    * is kept as a plain default-free overload so compiled callers keep working. Code that must survive a new field
+    * without recompiling starts from [[horizontal]] or [[vertical]] and builds with the `with*` methods and [[spaced]].
+    */
+  def apply(
+      direction: Direction,
+      constraints: Seq[Constraint],
+      spacing: Int = 0,
+      flex: Flex = Flex.Start,
+      between: Option[Spacing] = None,
+  ): Layout = new Layout(direction, constraints, spacing, flex, between)
+
   /** Constraint shorthand: a plain `Int` means `Length(cells)`, a `Double` means a fraction of the whole (`0.5` →
     * `Percentage(50)`, truncating — use `Constraint.Ratio` when exact thirds matter), and any `Constraint` passes
     * through. A union-typed overload rather than implicit `Conversion`s so call sites need no language import.

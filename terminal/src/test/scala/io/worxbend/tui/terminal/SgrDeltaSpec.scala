@@ -175,7 +175,7 @@ final class SgrDeltaSpec extends AnyFunSuite:
       Style.Default.blink,
       Style.Default.blink.rapidBlink,
       Style.Default.reverse.hidden.crossedOut,
-      Style.Default.copy(modifiers = Modifiers.All),
+      Style.mods(Modifiers.All),
       Style.Default.withFg(orange),
       Style.Default.withBg(navy),
       Style.Default.withFg(orange).withBg(navy).bold,

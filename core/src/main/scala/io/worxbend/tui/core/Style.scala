@@ -11,7 +11,15 @@ enum UnderlineStyle:
 /** How a cell is drawn: optional foreground/background colors plus text-attribute modifiers.
   *
   * `None` for a color means "leave the terminal default in effect". Builders return a new immutable `Style`; they are
-  * `with`-prefixed for the color fields because a case-class field and a `def` cannot share a name.
+  * `with`-prefixed for the color fields because a field and a `def` cannot share a name.
+  *
+  * A `final class` with a private constructor rather than a `case class`, because this is the type most likely to gain
+  * a field as terminals grow attributes. A case class rewrites `apply`, `copy` and `unapply` on every new field, and a
+  * consumer compiled against the old shape fails with `NoSuchMethodError`; here the compatibility surface is
+  * [[Style.Default]], [[Style.Reset]], the [[Style.fg]]/[[Style.bg]]/[[Style.of]]/[[Style.mods]] factories and the
+  * `with*` builders, all of which a new field leaves untouched. There is no `copy` and no pattern extractor; equality
+  * and `hashCode` are structural over every field, which [[Cell]] — a case class holding a `Style` — and so [[Buffer]]
+  * equality, frame diffing and style memoisation all rely on.
   *
   * Text attributes are carried in *two* bitsets, not one (ratatui's `add_modifier`/`sub_modifier` pair). [[modifiers]]
   * is what the cell renders with; [[clearedModifiers]] records the flags the style was asked to turn off. Without the
@@ -22,25 +30,56 @@ enum UnderlineStyle:
   *   flags this style turns off when it is layered onto another with [[patch]]. Always disjoint from [[modifiers]]:
   *   every builder that sets a flag clears it here and vice versa, so the last call in a chain wins.
   */
-final case class Style(
-    fg: Option[Color] = None,
-    bg: Option[Color] = None,
-    modifiers: Modifiers = Modifiers.None,
-    link: Option[String] = None,
-    underlineColor: Option[Color] = None,
-    underlineStyle: UnderlineStyle = UnderlineStyle.None,
-    clearedModifiers: Modifiers = Modifiers.None,
+final class Style private (
+    val fg: Option[Color],
+    val bg: Option[Color],
+    val modifiers: Modifiers,
+    val link: Option[String],
+    val underlineColor: Option[Color],
+    val underlineStyle: UnderlineStyle,
+    val clearedModifiers: Modifiers,
 ):
-  def withFg(color: Color): Style = copy(fg = Some(color))
+
+  /** This style with the named fields replaced — the one place the builders below spell out the constructor. */
+  private def updated(
+      fg: Option[Color] = fg,
+      bg: Option[Color] = bg,
+      modifiers: Modifiers = modifiers,
+      link: Option[String] = link,
+      underlineColor: Option[Color] = underlineColor,
+      underlineStyle: UnderlineStyle = underlineStyle,
+      clearedModifiers: Modifiers = clearedModifiers,
+  ): Style = new Style(fg, bg, modifiers, link, underlineColor, underlineStyle, clearedModifiers)
+
+  def withFg(color: Color): Style = updated(fg = Some(color))
 
   /** Attaches an OSC 8 hyperlink target — terminals that support it make the cells clickable. */
-  def withLink(url: String): Style = copy(link = Some(url))
-  def withBg(color: Color): Style  = copy(bg = Some(color))
-  def bold: Style                  = setting(Modifiers.Bold)
-  def dim: Style                   = setting(Modifiers.Dim)
-  def italic: Style                = setting(Modifiers.Italic)
-  def underline: Style             = setting(Modifiers.Underline)
-  def blink: Style                 = setting(Modifiers.Blink)
+  def withLink(url: String): Style = updated(link = Some(url))
+
+  /** Drops the hyperlink target. `link = None` is the silent case in [[patch]], so a style layered onto a linked one
+    * afterwards leaves the link in place; there is no spelling for "no link, and I mean it".
+    */
+  def withoutLink: Style          = updated(link = None)
+  def withBg(color: Color): Style = updated(bg = Some(color))
+
+  /** Replaces the set text attributes wholesale with `flags`, and withdraws any earlier request to turn those flags
+    * off, so the two bitsets stay disjoint exactly as they do after [[bold]] and the other single-flag builders. Those
+    * add one flag; this is for a caller that holds a whole [[Modifiers]] value, the shape [[Style.mods]] takes.
+    */
+  def withModifiers(flags: Modifiers): Style =
+    updated(modifiers = flags, clearedModifiers = clearedModifiers.without(flags))
+
+  /** Replaces the cleared text attributes wholesale with `flags`, dropping them from [[modifiers]] so the two bitsets
+    * stay disjoint — the whole-set counterpart of [[without]].
+    */
+  def withClearedModifiers(flags: Modifiers): Style =
+    updated(modifiers = modifiers.without(flags), clearedModifiers = flags)
+
+  def bold: Style      = setting(Modifiers.Bold)
+  def dim: Style       = setting(Modifiers.Dim)
+  def italic: Style    = setting(Modifiers.Italic)
+  def underline: Style = setting(Modifiers.Underline)
+  def blink: Style     = setting(Modifiers.Blink)
 
   /** Turns on rapid blink (SGR 6) rather than the ordinary [[blink]] (SGR 5). See [[Modifiers.RapidBlink]] for how
     * thinly terminals support the distinction.
@@ -53,7 +92,7 @@ final case class Style(
 
   /** Turns `flags` on, and withdraws any earlier request to turn them off, so `style.notBold.bold` is bold. */
   private def setting(flags: Modifiers): Style =
-    copy(modifiers = modifiers | flags, clearedModifiers = clearedModifiers.without(flags))
+    updated(modifiers = modifiers | flags, clearedModifiers = clearedModifiers.without(flags))
 
   /** Clears specific text-attribute flags (ratatui's `sub_modifier`) — e.g. `style.without(Modifiers.Bold)` un-bolds a
     * style inherited from a theme or parent.
@@ -63,7 +102,7 @@ final case class Style(
     * it off in whatever it is layered onto.
     */
   def without(flags: Modifiers): Style =
-    copy(modifiers = modifiers.without(flags), clearedModifiers = clearedModifiers | flags)
+    updated(modifiers = modifiers.without(flags), clearedModifiers = clearedModifiers | flags)
 
   def notBold: Style       = without(Modifiers.Bold)
   def notDim: Style        = without(Modifiers.Dim)
@@ -82,12 +121,12 @@ final case class Style(
     * of whatever it is layered onto comes straight back. Recording the clear as an explicit `Some(Color.Reset)` is what
     * turns "silent about the foreground" into "no foreground, and I mean it".
     */
-  def withoutFg: Style = copy(fg = Some(Color.Reset))
+  def withoutFg: Style = updated(fg = Some(Color.Reset))
 
   /** Sets the background to [[Color.Reset]] — the terminal's default — and, exactly like [[without]] does for text
     * attributes, makes that choice survive [[patch]]. See [[withoutFg]] for why `None` is not the same thing.
     */
-  def withoutBg: Style = copy(bg = Some(Color.Reset))
+  def withoutBg: Style = updated(bg = Some(Color.Reset))
 
   /** This style with everything [[Style.Reset]] clears layered on top — the same value as `patch(Style.Reset)`.
     *
@@ -98,7 +137,7 @@ final case class Style(
 
   /** Colors the underline separately from the glyph (SGR 58) — terminals without support draw a default-colored line.
     */
-  def withUnderlineColor(color: Color): Style = copy(underlineColor = Some(color))
+  def withUnderlineColor(color: Color): Style = updated(underlineColor = Some(color))
 
   /** Picks a styled underline.
     *
@@ -106,7 +145,7 @@ final case class Style(
     * `None`) emits nothing extra and defers to the plain [[Modifiers.Underline]] flag — combine it with [[underline]]
     * if you want a line.
     */
-  def withUnderlineStyle(style: UnderlineStyle): Style = copy(underlineStyle = style)
+  def withUnderlineStyle(style: UnderlineStyle): Style = updated(underlineStyle = style)
   def doubleUnderline: Style                           = withUnderlineStyle(UnderlineStyle.Double)
   def curlyUnderline: Style                            = withUnderlineStyle(UnderlineStyle.Curly)
   def dottedUnderline: Style                           = withUnderlineStyle(UnderlineStyle.Dotted)
@@ -146,8 +185,35 @@ final case class Style(
     bg.exists(_ != Color.Reset) ||
       modifiers.hasAny(Modifiers.Reverse | Modifiers.Underline | Modifiers.Blink | Modifiers.CrossedOut)
 
-  /** The derived `toString` renders both bitsets as the integers they are, which is unreadable in exactly the place it
-    * is read most: a failed assertion on a cell's style. Fields left at their default are elided so the common style
+  /** Structural equality over every field, reference equality tried first.
+    *
+    * This runs once per cell in [[Buffer]]'s equality and frame diff and in [[MemoizedStyleTransform]], and a run of
+    * cells written by one call usually shares the very same `Style` object, so the `eq` short-cut is the common exit.
+    * The two bitsets are compared before the `Option`s because they are plain `Int`s.
+    */
+  override def equals(other: Any): Boolean =
+    other match
+      case that: Style =>
+        (this eq that) ||
+        (modifiers == that.modifiers && clearedModifiers == that.clearedModifiers && fg == that.fg && bg == that.bg &&
+          underlineStyle == that.underlineStyle && underlineColor == that.underlineColor && link == that.link)
+      case _           => false
+
+  /** Hashes every field [[equals]] compares. A hash that forgot one would make two unequal styles collide in a
+    * `Set[Style]`, in `.distinct` and in the memoised transforms — silently, since `equals` would still tell them
+    * apart.
+    */
+  override def hashCode(): Int =
+    var hash = fg.hashCode()
+    hash = 31 * hash + bg.hashCode()
+    hash = 31 * hash + modifiers.hashCode()
+    hash = 31 * hash + link.hashCode()
+    hash = 31 * hash + underlineColor.hashCode()
+    hash = 31 * hash + underlineStyle.hashCode()
+    31 * hash + clearedModifiers.hashCode()
+
+  /** The default `toString` of a class is its name and an object hash, which is unreadable in exactly the place it is
+    * read most: a failed assertion on a cell's style. Fields left at their default are elided so the common style
     * prints as a short line.
     */
   override def toString: String =
@@ -192,6 +258,24 @@ final case class Style(
     calls.foldLeft("Style.Default")((expression, call) => s"$expression.$call")
 
 object Style:
+
+  /** A style from its fields, every one defaulting to silent — `Style(fg = Some(Color.Red))` is [[Style.fg]].
+    *
+    * This is a construction convenience, not the compatibility surface. Adding a field changes its descriptor and
+    * renumbers its default-argument getters, so a consumer compiled against `Style(fg = …)` still fails with
+    * `NoSuchMethodError` on the next field until it recompiles; at that growth the previous arity is kept as a plain
+    * default-free overload so compiled callers keep working. Code that must survive a new field without recompiling
+    * starts from [[Default]], [[Reset]] or one of the factories below and builds with the `with*` methods.
+    */
+  def apply(
+      fg: Option[Color] = None,
+      bg: Option[Color] = None,
+      modifiers: Modifiers = Modifiers.None,
+      link: Option[String] = None,
+      underlineColor: Option[Color] = None,
+      underlineStyle: UnderlineStyle = UnderlineStyle.None,
+      clearedModifiers: Modifiers = Modifiers.None,
+  ): Style = new Style(fg, bg, modifiers, link, underlineColor, underlineStyle, clearedModifiers)
 
   /** The style that states nothing: every field silent, so patching anything with it changes nothing. */
   val Default: Style = Style()
