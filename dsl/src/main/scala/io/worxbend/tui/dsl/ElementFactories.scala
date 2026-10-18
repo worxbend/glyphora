@@ -1041,3 +1041,9 @@ private[dsl] trait ElementFactories:
     */
   def inspect[A](value: A)(using pretty: io.worxbend.tui.macros.Pretty[A], theme: Theme): InspectElement =
     InspectElement(pretty.describe(value, PrettyValueShape), theme.accent, theme.muted)
+
+  /** A scannable QR code for `text` — a URL, a pairing token — drawn two modules per cell in half blocks, dark on light
+    * whatever the terminal's own background. Byte mode, the smallest version from 1 to 10 that fits at `ecc`; longer
+    * text draws `QR: too long`. See [[w.QrCode]].
+    */
+  def qrCode(text: String, ecc: w.QrEcc = w.QrEcc.Medium): QrCodeElement = QrCodeElement(w.QrCode(text, ecc))

@@ -41,3 +41,11 @@ final class ToolElementsSpec extends AnyFunSuite:
     val element = inspect(config)
     assert(element.debugName == "inspect")
     GoldenFrames.assertMatches("inspect-nested-case-class", rendered(element.widget, 52, 10))
+
+  test("qrCode claims exactly the box its symbol and quiet zone measure"):
+    val element = qrCode("HELLO WORLD")
+    assert(element.debugName == "qrCode")
+    // version 1 is 21 modules; a two-module quiet zone each side makes 25 columns and 13 half-block rows
+    val buffer  = rendered(row(element, text("after")).widget, 32, 13)
+    assert(lines(buffer).head.drop(25).startsWith("after"))
+    assert(buffer.get(2, 1).symbol == "█")

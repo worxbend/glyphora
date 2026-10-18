@@ -16,9 +16,9 @@ Use this page to choose a widget and understand its state model. The
 
 | Job | Start with | Add when needed |
 |---|---|---|
-| Arrange a screen | `row`, `column`, `panel`, `spacer`, `rule` | `scrollView`, `splitPane`, `layers` |
-| Show prose or records | `text`, `list`, `table`, `tabs` | `markdown`, `SyntaxHighlighter`, `log`, `dataTable`, `directoryTree` |
-| Collect input | `input`, `checkbox`, `toggle`, `select`, `button` | `radioGroup`, `slider`, `textArea`, `autocomplete`, `filePicker`, `selectionList`, `focusGroup`, `Form` |
+| Arrange a screen | `row`, `column`, `panel`, `spacer`, `rule` | `scrollView`, `splitPane`, `layers`, `placeholder` |
+| Show prose or records | `text`, `list`, `table`, `tabs` | `markdown`, `SyntaxHighlighter`, `log`, `dataTable`, `treeTable`, `directoryTree`, `hexViewer`, `inspect` |
+| Collect input | `input`, `checkbox`, `toggle`, `select`, `button` | `radioGroup`, `slider`, `rangeSlider`, `datePicker`, `timePicker`, `colorPicker`, `textArea`, `autocomplete`, `filePicker`, `selectionList`, `focusGroup`, `Form` |
 | Show a metric | `gauge`, `sparkline` | `lineGauge`, `dualSparkline`, `barChart`, `horizontalBarChart` |
 | Plot data | `chart`, `pieChart`, `heatmap` | `stackedBarChart`, `canvas`, `calendar` |
 | Communicate progress | `spinner`, `progressBar`, `orbitSpinner`, `skeleton`, `indeterminateBar` | `marquee`, `animatedText`, effects, toasts |
@@ -2334,6 +2334,31 @@ whose children are all atoms stays on one row while that row is at most
 `Atom`, `Seq`, `Map`, `Product(name, fields)` — for values described by hand, and is
 `Measured`, so the node claims exactly its rows.
 
+### QR codes
+
+`qrCode(text)` draws a scannable QR code — a pairing link, a URL to the docs, a
+Wi-Fi string — two modules per cell with half blocks, so version 1 with its quiet
+zone is 25 columns by 13 rows:
+
+```scala
+row(
+  qrCode("https://github.com/worxbend/glyphora"),
+  text("Scan to open the docs").dim,
+)
+```
+
+The encoder is built in, with no dependency: UTF-8 text in byte mode, versions 1 to
+10, and all four error-correction levels — `qrCode(text, QrEcc.High)` survives more
+damage and holds less (up to 271 bytes at `QrEcc.Low`, 119 at `QrEcc.High`). The
+smallest version that fits is chosen and the mask is picked by the standard's penalty
+rules. Text longer than version 10 holds draws `QR: too long` instead.
+
+Every module is painted with an explicit colour, `darkColor` on `lightColor` (black
+on white by default), because a reader needs dark modules on a light ground whatever
+the terminal's own background is. The widget, `QrCode(text, ecc, quietZone,
+darkColor, lightColor)`, is `Measured`, and the node claims exactly its box: a code is
+only readable whole, so give it that room.
+
 ## Drop to a raw Widget
 
 The DSL is not a separate renderer. Any core `Widget` can become a leaf:
@@ -2413,14 +2438,15 @@ The internal tiers document dependency order, not quality:
 
 1. **Foundation** — block, row/column, spacer, rule, clear, paragraph, list view, table,
    tabs, gauge, line gauge, sparkline, scrollbar, button, checkbox, toggle, select,
-   radio group, slider, text input, tree.
+   radio group, slider, range slider, text input, tree, placeholder.
 2. **Visualization** — canvas, chart, bar chart, column chart, stacked bar chart,
-   pie chart, heatmap, dual sparkline, calendar.
+   pie chart, heatmap, dual sparkline, calendar, QR code.
 3. **Rich content** — spinner and its presets, spinner grid, orbit spinner, linear
    spinner, animated text, marquee, skeleton, indeterminate bar, big text, notice,
    badge, tooltip, dialog, markdown, syntax highlighter.
 4. **Application-scale state** — data table, directory tree, text area, log, log
-   console, error boundary, menu, paginator, scroll view, image, and links.
+   console, error boundary, menu, paginator, scroll view, image, links, date and time
+  pickers, colour picker, tree table, hex viewer, and inspect.
 
 Every built-in has render-to-`Buffer` tests. Interactive DSL wrappers additionally
 have focus and event-routing tests.

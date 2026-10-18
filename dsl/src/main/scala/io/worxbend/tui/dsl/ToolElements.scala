@@ -266,3 +266,19 @@ private[dsl] object PrettyValueShape extends PrettyShape[w.PrettyValue]:
   def sequence(name: String, items: Seq[w.PrettyValue]): w.PrettyValue               = w.PrettyValue.Seq(name, items)
   def map(name: String, entries: Seq[(w.PrettyValue, w.PrettyValue)]): w.PrettyValue = w.PrettyValue.Map(name, entries)
   def product(name: String, fields: Seq[(String, w.PrettyValue)]): w.PrettyValue = w.PrettyValue.Product(name, fields)
+
+/** A scannable QR code for `text` — see [[w.QrCode]]. Claims exactly the box the symbol and its quiet zone measure, so
+  * it sits beside text in a `row` without being stretched; the code is only readable whole, so give it that room.
+  */
+final case class QrCodeElement(
+    code: w.QrCode,
+    props: ElementProps = ElementProps(),
+) extends Element:
+  type Self = QrCodeElement
+  override def debugName: String                                 = "qrCode"
+  def widget: Widget                                             = code
+  private[dsl] def withProps(props: ElementProps): QrCodeElement = copy(props = props)
+  private[dsl] override def claim: SizeClaim                     =
+    (code.widthAt(0), code.heightAt(0)) match
+      case (Some(width), Some(height)) => SizeClaim.box(width, height)
+      case _                           => SizeClaim.Fill
