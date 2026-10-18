@@ -205,3 +205,18 @@ final class ColorDepthSpec extends AnyFunSuite:
     assert(Sgr.sgr(style, ColorDepth.TrueColor).contains("38;2;255;0;0"))
     assert(Sgr.sgr(style, ColorDepth.Ansi256).contains("38;5;196"))
     assert(Sgr.sgr(style, ColorDepth.Ansi16).contains("91"))
+
+  /** `FORCE_COLOR` is the Node/chalk convention print mode has to honour alongside `CLICOLOR_FORCE`: set, it forces
+    * colour on over `NO_COLOR` and over an absent `TERM`; `1`/`2`/`3` pick the depth outright; `0` is an opt-out.
+    */
+  test("FORCE_COLOR forces color on, picks a depth by level, and 0 opts out"):
+    assert(
+      ColorDepth.detect(Map("FORCE_COLOR" -> "1", "NO_COLOR" -> "1", "COLORTERM" -> "truecolor")) == ColorDepth.Ansi16
+    )
+    assert(ColorDepth.detect(Map("FORCE_COLOR" -> "2")) == ColorDepth.Ansi256)
+    assert(ColorDepth.detect(Map("FORCE_COLOR" -> "3", "TERM" -> "dumb")) == ColorDepth.TrueColor)
+    // any other value — `true`, or the empty string Node treats as "on" — forces the capability the terminal reports,
+    // lifted to sixteen colours when that capability was "none"
+    assert(ColorDepth.detect(Map("FORCE_COLOR" -> "true", "COLORTERM" -> "truecolor")) == ColorDepth.TrueColor)
+    assert(ColorDepth.detect(Map("FORCE_COLOR" -> "")) == ColorDepth.Ansi16)
+    assert(ColorDepth.detect(Map("FORCE_COLOR" -> "0", "COLORTERM" -> "truecolor")) == ColorDepth.NoColor)

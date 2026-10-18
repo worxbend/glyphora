@@ -1,6 +1,6 @@
 package io.worxbend.tui.terminal
 
-import io.worxbend.tui.core.{Buffer, Cell, CharWidth, Style}
+import io.worxbend.tui.core.{Buffer, Cell, CharWidth, Color, Modifiers, Style, UnderlineStyle}
 
 /** Turns the difference between two frames into the ANSI text that moves the terminal from one to the other.
   *
@@ -125,6 +125,74 @@ private[tui] final class FrameEncoder(colorDepth: ColorDepth):
       body ++= AnsiSequences.ResetStyle
       body.result()
 
+  /** Every row of `buffer` as styled text to be *printed*, rows separated by newlines — what print mode writes.
+    *
+    * Three things set it apart from [[encodeAll]], which writes a frame that owns the screen. There is no cursor
+    * movement at all: the terminal decides which scrollback line each row lands on, so a `CUP` would be wrong there.
+    * Style is written as a delta from the terminal's default rather than as the absolute, reset-first form — so a style
+    * that renders identically to the default at `colorDepth` writes *nothing*, and under [[ColorDepth.NoColor]] a frame
+    * whose styles are colour-only comes out as plain text with no escape sequence in it, which is what `NO_COLOR` asks
+    * for and what a file the output is redirected into should hold. Rows are terminated with a style reset exactly when
+    * they emitted a style, so the last cell's colour cannot leak into the shell prompt that follows.
+    *
+    * Trailing cells that would not be visible — blank, no background at this depth, no underline, reverse or
+    * strikethrough — are dropped, because a row padded to the terminal's width is a scrollback line whose background
+    * runs to the window's edge for as long as the line exists. Continuation columns of a wide grapheme are skipped, as
+    * [[encodeRow]] skips them. Unlike [[encodeRow]] this does not restate the whole style per run, so it is the
+    * encoding to reach for from outside the backend; `encodeRow` stays as the scrollback path `insertBefore` uses.
+    */
+  def encodeLines(buffer: Buffer): String =
+    val rows = Vector.newBuilder[String]
+    var y    = buffer.area.y
+    while y < buffer.area.bottom do
+      rows += encodeLine(buffer, y)
+      y += 1
+    rows.result().mkString("\n")
+
+  /** One row of [[encodeLines]]: delta-styled from the default, reset at the end only when a style was emitted. */
+  private def encodeLine(buffer: Buffer, y: Int): String =
+    val end = lastVisibleColumn(buffer, y)
+    if end < buffer.area.x then ""
+    else
+      val body                        = StringBuilder()
+      var currentStyle: Style         = Style.Default
+      var currentLink: Option[String] = None
+      var styled                      = false
+      var x                           = buffer.area.x
+      while x <= end do
+        if !buffer.isContinuation(x, y) then
+          val cell = buffer.get(x, y)
+          if !((cell.style eq currentStyle) || cell.style == currentStyle) then
+            val delta = Sgr.sgrDelta(currentStyle, cell.style, colorDepth)
+            if delta.nonEmpty then
+              body ++= delta
+              styled = true
+            currentStyle = cell.style
+          currentLink = carryLink(body, currentLink, cell.style.link)
+          body ++= guarded(cell.symbol)
+        x += 1
+      carryLink(body, currentLink, None)
+      if styled then body ++= AnsiSequences.ResetStyle
+      body.result()
+
+  /** The rightmost column of row `y` that a reader could see at this depth, or one less than the row's first column
+    * when nothing in the row is visible. A blank cell is visible when it paints a background (a colour this depth
+    * actually emits), or carries an attribute a blank still shows — reverse video, an underline, a strikethrough.
+    */
+  private def lastVisibleColumn(buffer: Buffer, y: Int): Int =
+    var last = buffer.area.x - 1
+    var x    = buffer.area.x
+    while x < buffer.area.right do
+      val cell = buffer.get(x, y)
+      if !buffer.isContinuation(x, y) && (!cell.isBlank || blankIsVisible(cell.style)) then last = x
+      x += 1
+    last
+
+  private def blankIsVisible(style: Style): Boolean =
+    (colorDepth != ColorDepth.NoColor && style.bg.exists(_ != Color.Reset)) ||
+      style.modifiers.hasAny(Modifiers.Reverse | Modifiers.Underline | Modifiers.CrossedOut) ||
+      style.underlineStyle != UnderlineStyle.None
+
   /** The rightmost column of row `y` that carries anything worth writing, or one less than the row's first column when
     * the whole row is blank in the default style.
     */
@@ -225,3 +293,20 @@ private[tui] final class FrameEncoder(colorDepth: ColorDepth):
       if open.nonEmpty then body ++= AnsiSequences.LinkClose
       next.foreach(url => body ++= AnsiSequences.linkOpen(url))
     next
+
+/** The two whole-frame encodings that leave the backend: what print mode and a no-TTY run write to standard output.
+  *
+  * The class above is not published API: the diff encoder's contract (`previous` is what the terminal shows) only holds
+  * inside a backend or a recorder that tracks what was written. These two have no such precondition — a buffer in, text
+  * out, callable from any thread — so they are the published face of the encoder.
+  */
+object FrameEncoder:
+
+  /** [[FrameEncoder.encodeLines]] for a one-off encoder at `colorDepth`. */
+  def encodeLines(buffer: Buffer, colorDepth: ColorDepth): String = FrameEncoder(colorDepth).encodeLines(buffer)
+
+  /** The glyphs of `buffer` and nothing else, one string per row with trailing blanks trimmed — the accessible form of
+    * a frame, for a screen reader, a log, or a `Plain` no-TTY run. Shares [[Backend.plainRows]]'s rules on wide
+    * graphemes.
+    */
+  def plainLines(buffer: Buffer): Seq[String] = Backend.plainRows(buffer)
