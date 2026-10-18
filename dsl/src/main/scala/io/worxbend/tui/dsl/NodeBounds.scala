@@ -24,13 +24,18 @@ private[dsl] final case class NodeBoundsEntry(
     visible: Rect,
 )
 
-/** One frame's worth of recorded node bounds, immutable once published. */
+/** One frame's worth of recorded node bounds, immutable once published.
+  *
+  * The two indexes are lazy on purpose: a frame is published on every paint, and the one consumer that reads every
+  * frame — the click-outside backdrop — scans `entries`, so building a map per frame for the lookups a test or a
+  * snapshot makes now and then would be most of the recorder's cost for nothing.
+  */
 private[dsl] final class NodeBoundsFrame(val entries: Vector[NodeBoundsEntry]):
 
-  private val byKey: Map[String, NodeBoundsEntry] =
+  private lazy val byKey: Map[String, NodeBoundsEntry] =
     entries.iterator.filter(_.key.isDefined).map(entry => entry.key.get -> entry).toMap
 
-  private val byId: Map[Int, NodeBoundsEntry] = entries.iterator.map(entry => entry.id -> entry).toMap
+  private lazy val byId: Map[Int, NodeBoundsEntry] = entries.iterator.map(entry => entry.id -> entry).toMap
 
   /** The translated, unclipped rect of the node declared with `.key(key)`, when it was on screen. */
   def boundsOf(key: String): Option[Rect] = byKey.get(key).map(_.layout)

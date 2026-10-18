@@ -23,21 +23,31 @@ object ElementHostBench:
   private val sizes: Seq[(String, Rect)] =
     Seq("80x24" -> Rect(0, 0, 80, 24), "200x50" -> Rect(0, 0, 200, 50))
 
-  def main(args: Array[String]): Unit =
-    val _       = args
-    val results = sizes.flatMap { (label, area) =>
-      Seq(false, true).map { recording =>
-        val host   = ElementHost()
-        host.recordBounds = recording
-        val buffer = Buffer(area)
-        val state  = ScrollViewState()
-        Bench.measure(s"$label recording ${if recording then "on" else "off"}", iterations = 100) { () =>
-          buffer.reset()
-          host.render(area, buffer, Theme.Dark, dashboard(state))
-          Bench.consume(buffer.area.width.toLong)
-        }
+  /** One configuration under test: a host with recording off or on, painting one size. */
+  private final class Configuration(label: String, area: Rect, recording: Boolean):
+    private val host   = ElementHost()
+    private val buffer = Buffer(area)
+    private val state  = ScrollViewState()
+    host.recordBounds = recording
+
+    def name: String = s"$label recording ${if recording then "on" else "off"}"
+
+    def measure(iterations: Int): Bench.Result =
+      Bench.measure(name, iterations) { () =>
+        buffer.reset()
+        host.render(area, buffer, Theme.Dark, dashboard(state))
+        Bench.consume(buffer.area.width.toLong)
       }
-    }
+
+  def main(args: Array[String]): Unit =
+    val _              = args
+    val configurations =
+      sizes.flatMap((label, area) => Seq(false, true).map(recording => Configuration(label, area, recording)))
+    // every configuration shares the same resolve, focus-pass and paint code, so the first one measured would
+    // otherwise pay for compiling it: warm all of them, several rounds over, before timing any of them — and time
+    // them in reverse, so whatever warmth is left favours "recording off" and the recorder's cost reads high, not low
+    (1 to 3).foreach(_ => configurations.foreach(_.measure(iterations = 100)))
+    val results        = configurations.reverse.map(_.measure(iterations = 100)).reverse
     Bench.report("ElementHost frame (resolve, focus pass, paint)", results)
     println(s"checksum ${Bench.consumed}")
 
