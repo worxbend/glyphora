@@ -23,13 +23,16 @@ export Element.{
   dataTable,
   dialog,
   directoryTree,
+  dock,
   dropdown,
   dualSparkline,
   each,
   errorBoundary,
   filePicker,
+  flow,
   focusGroup,
   gauge,
+  grid,
   heatmap,
   horizontalBarChart,
   image,
@@ -133,6 +136,7 @@ export io.worxbend.tui.core.{
   Color,
   ColorScheme,
   Constraint,
+  CrossAlign,
   Direction,
   Easing,
   Effect,
@@ -609,21 +613,76 @@ extension [E <: Element](element: E)
 /** Layout constraints — how much space the element claims inside its container. */
 extension [E <: Element](element: E)
 
-  def length(cells: Int): element.Self  = constrained(element, Constraint.Length(cells))
-  def percent(pct: Int): element.Self   = constrained(element, Constraint.Percentage(pct))
-  def fill: element.Self                = constrained(element, Constraint.Fill(1))
-  def fill(weight: Int): element.Self   = constrained(element, Constraint.Fill(weight))
-  def minSize(cells: Int): element.Self = constrained(element, Constraint.Min(cells))
-  def maxSize(cells: Int): element.Self = constrained(element, Constraint.Max(cells))
+  def length(cells: Int): element.Self = sized(element, Constraint.Length(cells))
+  def percent(pct: Int): element.Self  = sized(element, Constraint.Percentage(pct))
+  def fill: element.Self               = sized(element, Constraint.Fill(1))
+  def fill(weight: Int): element.Self  = sized(element, Constraint.Fill(weight))
+
+  /** Exactly as big as the content measures along the container's axis — its [[Element.intrinsicHeight]] in a `column`,
+    * its [[Element.intrinsicWidth]] in a `row` — or a `.fill` when the content cannot say.
+    */
+  def auto: element.Self = sized(element, Constraint.Auto)
+
+  /** A floor of `cells`. On its own it is a `Constraint.Min` — the floor plus a share of the leftover. Combined with a
+    * size, before or after it — `.minSize(20).maxSize(60).fill`, `.auto.minSize(8)` — it bounds that size instead: the
+    * element gets what the size gives it, but never fewer than `cells`.
+    */
+  def minSize(cells: Int): element.Self =
+    constrained(
+      element,
+      element.props.constraint match
+        case None | Some(Constraint.Min(_))         => Constraint.Min(cells)
+        case Some(Constraint.Max(max))              => Constraint.Bounded(cells, max, Constraint.Fill(1))
+        case Some(Constraint.Bounded(_, max, base)) => Constraint.Bounded(cells, max, base)
+        case Some(base)                             => Constraint.Bounded(cells, Int.MaxValue, base),
+    )
+
+  /** A ceiling of `cells`; the mirror of [[minSize]]. On its own it is a `Constraint.Max` — leftover space up to the
+    * cap — and combined with a size it bounds that size.
+    */
+  def maxSize(cells: Int): element.Self =
+    constrained(
+      element,
+      element.props.constraint match
+        case None | Some(Constraint.Max(_))         => Constraint.Max(cells)
+        case Some(Constraint.Min(min))              => Constraint.Bounded(min, cells, Constraint.Fill(1))
+        case Some(Constraint.Bounded(min, _, base)) => Constraint.Bounded(min, cells, base)
+        case Some(base)                             => Constraint.Bounded(0, cells, base),
+    )
 
   /** An exact fraction of the container: `.ratio(1, 3)` claims a third. The whole-number companion to [[percent]], for
     * the splits a percentage cannot say without truncating — `Layout`'s own advice for exact thirds.
     */
   def ratio(numerator: Int, denominator: Int): element.Self =
-    constrained(element, Constraint.Ratio(numerator, denominator))
+    sized(element, Constraint.Ratio(numerator, denominator))
+
+  /** Where this element sits across its container's axis — horizontally in a `column`, vertically in a `row` — instead
+    * of the container's own `.alignItems(...)`. Anything but `CrossAlign.Stretch` shrinks it to its measured size, and
+    * an element that cannot measure itself stretches whatever is asked.
+    */
+  def alignSelf(align: CrossAlign): element.Self =
+    element.withProps(element.props.copy(alignSelf = Some(align)))
+
+  /** Asks the enclosing `scrollView` to scroll this element into view on the frame it appears or is first marked — the
+    * selected row of a long list, the line a search landed on. Marking it again on later frames does not pull the view
+    * back each time, so the reader can still scroll away; take the mark off and put it back to ask again.
+    */
+  def ensureVisible: element.Self =
+    element.withProps(element.props.copy(ensureVisible = true))
 
 private def constrained(element: Element, constraint: Constraint): element.Self =
   element.withProps(element.props.copy(constraint = Some(constraint)))
+
+/** Sets `base` as the element's size, keeping any floor or ceiling `.minSize` / `.maxSize` already put on it. */
+private def sized(element: Element, base: Constraint): element.Self =
+  constrained(
+    element,
+    element.props.constraint match
+      case Some(Constraint.Bounded(min, max, _)) => Constraint.Bounded(min, max, base)
+      case Some(Constraint.Min(min))             => Constraint.Bounded(min, Int.MaxValue, base)
+      case Some(Constraint.Max(max))             => Constraint.Bounded(0, max, base)
+      case _                                     => base,
+  )
 
 /** `handler` first, then whatever handler was already attached: handlers compose rather than replace, so the most
   * recently added runs first and its `false` falls through to the previous one.

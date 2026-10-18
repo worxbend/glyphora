@@ -37,10 +37,10 @@ private[dsl] final class CommandPalette(declared: () => KeyBindings):
   def close(): Unit =
     opened.set(false)
 
-  /** The bindings whose description matches the current filter, in declaration order. */
+  /** The bindings live in the current key mode whose description matches the current filter, in declaration order. */
   def matches: Seq[KeyBinding] =
     val accepts = Fuzzy.matcher(query.value)
-    declared().bindings.filter(bound => accepts(bound.description))
+    declared().active.filter(bound => accepts(bound.description))
 
   /** The palette panel, sized to its matches and centered over the view it layers on.
     *

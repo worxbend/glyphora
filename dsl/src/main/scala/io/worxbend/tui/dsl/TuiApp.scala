@@ -225,12 +225,39 @@ trait TuiApp:
     */
   protected final def activeBindings(using scope: ReactiveScope): KeyBindings =
     merged(screenStack.top(using scope))
+      .snapshot(keyModeSignal.get(using scope), pendingKeys.signal.get(using scope).map(_.sequence))
 
   /** [[activeBindings]] read without subscribing: the spelling for the event path, which must not add a dependency to
     * whatever view happens to be recomputing. Dispatch, the `Ctrl+P` gate and the command palette all read this one
     * accessor, so they cannot disagree about which keys exist.
     */
-  private def activeBindingsNow: KeyBindings = merged(screenStack.topNow)
+  private def activeBindingsNow: KeyBindings =
+    merged(screenStack.topNow).snapshot(keyModeSignal.peek, pendingKeys.current.map(_.sequence))
+
+  /** How long a started key sequence waits for its next key before it is dropped — `g` of `g g` pressed and then
+    * nothing. Checked on every tick; a run with no `config.tickRate` borrows ambient ticks while a prefix is pending.
+    */
+  def sequenceTimeout: FiniteDuration = 1.second
+
+  /** The mode the app's [[bindings]] dispatch in — see `KeyBindings.modes`. Starts at the first declared mode (or
+    * `ModeId.Default` for bindings with no modes); a binding switches it with `keyMode.set(ModeId("insert"))`.
+    * Render-thread only, like every `Signal`.
+    */
+  protected final def keyMode: Signal[ModeId] = keyModeSignal
+
+  /** Whether a pending key-sequence prefix shows the [[whichKeyPopup]] of its possible continuations. On by default; it
+    * only ever appears in an app whose bindings declare sequences, because only those can leave a prefix pending.
+    */
+  def whichKey: Boolean = true
+
+  /** The keys the framework handles once nothing else claimed them — focus traversal, the command palette, quit, the
+    * modal close — and the PageUp/PageDown step, each rebindable through a user keymap:
+    * `override def frameworkKeys = FrameworkKeys.default.rebind(userKeymap)`. Read for every key that reaches that
+    * stage, on the render thread.
+    */
+  def frameworkKeys: FrameworkKeys = FrameworkKeys.default
+
+  private lazy val keyModeSignal: Signal[ModeId] = Signal(bindings.modes.headOption.getOrElse(ModeId.Default))
 
   /** The screen's bindings followed by the app's, minus any app binding the screen has completely taken over.
     *
@@ -248,7 +275,7 @@ trait TuiApp:
       // every one of its keys" and was dropped for as long as any screen was on the stack. A binding with no trigger
       // cannot be shadowed by anything, because there is nothing to shadow.
       val shadowed = (app: KeyBinding) => app.triggers.nonEmpty && app.triggers.forall(claimed.contains)
-      screen.bindings ++ KeyBindings(bindings.bindings.filterNot(shadowed)*)
+      screen.bindings ++ bindings.filter(!shadowed(_))
     }
 
   /** An intro screen shown before the first `view` render — see [[SplashScreen]]. Any key skips it. */
@@ -383,6 +410,7 @@ trait TuiApp:
     def taskbarProgress(progress: Reactive[Option[Double]]): Unit = TuiApp.this.taskbarProgress(progress)
     def clearTaskbarProgress(): Unit                              = TuiApp.this.clearTaskbarProgress()
     override def clipboard: Clipboard                             = appClipboard
+    def keyMode: Signal[ModeId]                                   = keyModeSignal
 
   /** Just this app's toast stack, for a helper that notifies and does nothing else. The same object as [[services]]. */
   protected final def notifications: Notifications = services
@@ -842,7 +870,7 @@ trait TuiApp:
         terminalSizeSignal.set(Size(area.width, area.height))
         onResize(size)
         true
-      case Event.Tick                       => handleTick(run)
+      case Event.Tick                       => handleTick(run) | pendingKeys.expire(sequenceTimeout)
     if redraw then EventOutcome.Redraw else EventOutcome.Ignored
 
   private def handleTick(run: RunState): Boolean =
@@ -865,9 +893,39 @@ trait TuiApp:
     * framework's own keys.
     */
   private def routeKey(key: KeyEvent, run: RunState, handle: RunnerHandle): Boolean =
-    val consumed = run.host.dispatchKey(key)
-    val bound    = !consumed && !palette.isOpenNow && activeBindingsNow.handle(key)
+    pendingKeys.current match
+      case Some(prefix) => continueSequence(prefix, key, run, handle)
+      case None         => routeFresh(key, run, handle)
+
+  /** A key arriving while a sequence is pending goes to the sequence first — the user has started typing a binding, so
+    * the focused element does not get to swallow the rest of it. A key that continues nothing drops the prefix; `Esc`
+    * is consumed as the cancel, anything else is routed afresh as if no prefix had been typed.
+    */
+  private def continueSequence(prefix: PendingPrefix, key: KeyEvent, run: RunState, handle: RunnerHandle): Boolean =
+    activeBindingsNow.dispatch(prefix.keys, key) match
+      case KeyMatch.Fired         =>
+        pendingKeys.clear()
+        true
+      case KeyMatch.Pending(keys) =>
+        pendingKeys.start(keys)
+        true
+      case KeyMatch.NoMatch       =>
+        pendingKeys.clear()
+        key.code == KeyCode.Escape || routeFresh(key, run, handle)
+
+  private def routeFresh(key: KeyEvent, run: RunState, handle: RunnerHandle): Boolean =
+    val consumed = FrameworkKeys.currentPageStep.withValue(frameworkKeys.pageStep)(run.host.dispatchKey(key))
+    val bound    = !consumed && !palette.isOpenNow && dispatchBinding(key)
     if consumed || bound then true else handleFrameworkKey(key, run.tracker, handle)
+
+  /** A key no element consumed, offered to the bindings: it fires one, or starts a sequence and waits. */
+  private def dispatchBinding(key: KeyEvent): Boolean =
+    activeBindingsNow.dispatch(Vector.empty, key) match
+      case KeyMatch.Fired         => true
+      case KeyMatch.Pending(keys) =>
+        pendingKeys.start(keys)
+        true
+      case KeyMatch.NoMatch       => false
 
   /** The last stage: the keys the framework reserves for itself once nothing else claimed the event — `Tab` /
     * `Shift+Tab` focus traversal, `Ctrl+P` for the command palette, `Ctrl+C` to quit, and `Esc` when the modal on top
@@ -880,22 +938,21 @@ trait TuiApp:
     * without going through a signal; opening the palette and quitting each schedule their own redraw.
     */
   private def handleFrameworkKey(key: KeyEvent, tracker: FocusTracker, handle: RunnerHandle): Boolean =
-    key match
-      case KeyEvent(KeyCode.Tab, modifiers) if modifiers.hasAny(KeyModifiers.Shift)        => tracker.focusPrevious()
-      case KeyEvent(KeyCode.Tab, _)                                                        => tracker.focusNext()
-      case KeyEvent(KeyCode.Char('p'), modifiers)
-          if modifiers.hasAny(KeyModifiers.Ctrl) && activeBindingsNow.bindings.nonEmpty && !palette.isOpenNow =>
-        openPalette()
-        false
-      case KeyEvent(KeyCode.Char('c'), modifiers) if modifiers.hasAny(KeyModifiers.Ctrl)   =>
-        handle.quit()
-        false
-      case KeyEvent(KeyCode.Escape, _) if topScreenClosesOnEscape                          =>
-        popScreen()
-        false
-      case KeyEvent(code, modifiers) if spatialNavigation && modifiers == KeyModifiers.Alt =>
-        SpatialDirection.of(code).exists(tracker.focusInDirection)
-      case _                                                                               => false
+    val keys = frameworkKeys
+    if keys.fires(keys.focusPrevious, key) then tracker.focusPrevious()
+    else if keys.fires(keys.focusNext, key) then tracker.focusNext()
+    else if keys.fires(keys.commandPalette, key) && activeBindingsNow.bindings.nonEmpty && !palette.isOpenNow then
+      openPalette()
+      false
+    else if keys.fires(keys.quit, key) then
+      handle.quit()
+      false
+    else if keys.fires(keys.closeModal, key) && topScreenClosesOnEscape then
+      popScreen()
+      false
+    else if spatialNavigation && key.modifiers == KeyModifiers.Alt then
+      SpatialDirection.of(key.code).exists(tracker.focusInDirection)
+    else false
 
   /** Whether the screen on top of the stack is a modal that asked to be closed by `Esc`.
     *
@@ -987,9 +1044,13 @@ trait TuiApp:
     val withPalette  =
       if palette.isOpen then Element.layers(FocusPass.suppressFocus(withScreens), palette.element)
       else withScreens
+    val withWhichKey =
+      if whichKey then
+        whichKeyPopup(activeBindings, terminalSizeSignal.peek).fold(withPalette)(Element.layers(withPalette, _))
+      else withPalette
     toasts.overlay(terminalSizeSignal.peek.width) match
-      case Some(stack) => Element.layers(withPalette, stack)
-      case None        => withPalette
+      case Some(stack) => Element.layers(withWhichKey, stack)
+      case None        => withWhichKey
 
   // ---- per-instance state ----
 
@@ -1024,7 +1085,9 @@ trait TuiApp:
   private val toasts: ToastStack       = ToastStack(runClock.now)
   private val palette: CommandPalette  = CommandPalette(() => activeBindingsNow)
   private val effects: EffectStack     = EffectStack(runClock.now)
-  private val ambientTicker            = AmbientTicker(effects, toasts, () => requestRedraw())
+  private val pendingKeys: PendingKeys = PendingKeys(runClock.now)
+  private val ambientTicker            =
+    AmbientTicker(effects, toasts, () => requestRedraw(), pendingKeys, () => sequenceTimeout)
   private val activeHandle             = AtomicReference[Option[RunnerHandle]](None)
 
   /** The running invocation's focus tracker, so [[focusTo]] and [[clearFocus]] can reach it. `None` outside a run,

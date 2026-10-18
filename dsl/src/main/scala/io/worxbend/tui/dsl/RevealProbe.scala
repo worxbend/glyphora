@@ -1,0 +1,44 @@
+package io.worxbend.tui.dsl
+
+import io.worxbend.tui.core.Rect
+
+/** The visibility requests the content of one `scrollView` made during one render: the focused child's area, when the
+  * view follows focus, and the first `.ensureVisible` element's area. Each carries an identity, so a request that is
+  * still present on the next frame can be told apart from a new one.
+  *
+  * Areas are in the scroll view's *content* coordinates — the rects its content subtree is handed while it renders into
+  * the offscreen buffer — which is the space `ScrollViewState.reveal` takes. Owned by the render that created it and
+  * touched only on that render thread.
+  */
+private[dsl] final class RevealRequests(val followFocus: Boolean):
+  private var visible: Option[(String, Rect)] = None
+  private var focused: Option[(String, Rect)] = None
+
+  def offerVisible(id: String, area: Rect): Unit = if visible.isEmpty then visible = Some(id -> area)
+
+  def offerFocused(id: String, area: Rect): Unit = if followFocus && focused.isEmpty then focused = Some(id -> area)
+
+  /** The request to act on: an explicit `.ensureVisible` wins over following focus. */
+  def chosen: Option[(String, Rect)] = visible.orElse(focused)
+
+/** Routes visibility requests to the innermost `scrollView` rendering on this thread.
+  *
+  * A scroll view pushes its [[RevealRequests]] for exactly the duration of its content render and pops it in a
+  * `finally`, the way [[FrameCoordinates]] scopes a viewport transform; the focused [[TrackedElement]] and every
+  * [[RevealElement]] report into whichever collector is on top. With no scroll view rendering — a tree painted outside
+  * one — a report goes nowhere. A thread-local stack, so independently running render threads never share one.
+  */
+private[dsl] object RevealProbe:
+  private val stack: ThreadLocal[List[RevealRequests]] = ThreadLocal.withInitial(() => Nil)
+
+  def collecting[A](requests: RevealRequests)(body: => A): A =
+    val previous = stack.get()
+    stack.set(requests :: previous)
+    try body
+    finally if previous.isEmpty then stack.remove() else stack.set(previous)
+
+  /** The element in tab position `index` is focused and was handed `area`. */
+  def focused(index: Int, area: Rect): Unit = stack.get().headOption.foreach(_.offerFocused(s"focus:$index", area))
+
+  /** An element marked `.ensureVisible`, identified by `id`, was handed `area`. */
+  def visible(id: String, area: Rect): Unit = stack.get().headOption.foreach(_.offerVisible(s"visible:$id", area))

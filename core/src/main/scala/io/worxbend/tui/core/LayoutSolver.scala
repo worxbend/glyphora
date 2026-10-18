@@ -16,6 +16,12 @@ package io.worxbend.tui.core
   *   1. if nothing grew and the constraints between them claim the whole axis proportionally, the cells lost to integer
   *      division are handed back so the segments fill the container exactly.
   *
+  * Two constraints are resolved before those steps run. `Auto` becomes the `Length` the caller's `measure` function
+  * answers for that segment, or a `Fill(1)` when it answers `None` (or when the caller had nothing to measure with).
+  * `Bounded` is solved as its base and then checked: a segment that came out below its floor or above its ceiling is
+  * frozen at that bound as a fixed demand and the whole axis is solved again for the others, until no bound is
+  * violated. Each round freezes at least one segment, so there are at most as many rounds as bounded constraints.
+  *
   * Applications reach this through [[Layout.split]] and rarely call [[solve]] directly; it is public because how a
   * toolkit decides sizes is the part users most need to be able to read, and a `private` object documents it to nobody.
   */
@@ -41,6 +47,7 @@ object LayoutSolver:
       growthWeight: Int,
       growthCap: Int,
       proportional: Option[Demand.Proportional],
+      bounds: Option[Demand.Bounds] = None,
   )
 
   private object Demand:
@@ -49,6 +56,10 @@ object LayoutSolver:
       * it in whole cells lost to integer division — the key the leftover is ranked by.
       */
     final case class Proportional(share: Double, lostFraction: Double)
+
+    /** The floor and ceiling a `Bounded` constraint holds its solved size between; `floor <= ceiling` by construction.
+      */
+    final case class Bounds(floor: Int, ceiling: Int)
 
     /** A constraint that claims a fixed number of cells and never grows. */
     def fixedCells(cells: Int): Demand = Demand(math.max(0, cells), 0, 0, None)
@@ -59,15 +70,22 @@ object LayoutSolver:
   private def demandOf(constraint: Constraint, available: Int): Demand =
     val axis = math.max(0, available)
     constraint match
-      case Constraint.Length(cells)   => Demand.fixedCells(cells)
-      case Constraint.Percentage(pct) => proportionalDemand(axis, math.max(0, pct), 100)
+      case Constraint.Length(cells)           => Demand.fixedCells(cells)
+      case Constraint.Percentage(pct)         => proportionalDemand(axis, math.max(0, pct), 100)
       // a non-positive denominator is not a ratio anyone can honor; it claims nothing rather than dividing by zero
-      case Constraint.Ratio(num, den) => proportionalDemand(axis, math.max(0, num), den)
+      case Constraint.Ratio(num, den)         => proportionalDemand(axis, math.max(0, num), den)
       // a floor that also competes for the leftover, so it keeps growing past its floor
-      case Constraint.Min(cells)      => Demand(math.max(0, cells), 1, Int.MaxValue, None)
+      case Constraint.Min(cells)              => Demand(math.max(0, cells), 1, Int.MaxValue, None)
       // a cap takes only leftover, and only up to the cap
-      case Constraint.Max(cells)      => Demand(0, 1, math.max(0, cells), None)
-      case Constraint.Fill(weight)    => Demand(0, math.max(0, weight), Int.MaxValue, None)
+      case Constraint.Max(cells)              => Demand(0, 1, math.max(0, cells), None)
+      case Constraint.Fill(weight)            => Demand(0, math.max(0, weight), Int.MaxValue, None)
+      // only reached when nothing was measured for the segment: `resolveAuto` has already replaced every measured one
+      case Constraint.Auto                    => Demand(0, 1, Int.MaxValue, None)
+      // solved as the base, then held between the bounds by `solveDemands`; a bounded proportion no longer counts
+      // towards "the constraints claim the whole axis", because a clamp can take it away from the share it asked for
+      case Constraint.Bounded(min, max, base) =>
+        val floor = math.max(0, min)
+        demandOf(base, axis).copy(proportional = None, bounds = Some(Demand.Bounds(floor, math.max(floor, max))))
 
   /** The demand a `numerator / denominator` fraction of an `axis`-cell axis makes: whole cells now, plus the fraction
     * of a cell the divide threw away so the leftover can be ranked by who lost the most.
@@ -90,9 +108,54 @@ object LayoutSolver:
 
   /** The solved size of each constraint, in the order given, for an axis of `available` cells (spacing already
     * deducted). Sizes may exceed `available` when the fixed demands do; [[Layout]] clamps at the far edge.
+    *
+    * With no measure function an `Auto` constraint is a `Fill(1)`; see the three-argument overload.
     */
   def solve(constraints: Seq[Constraint], available: Int): IndexedSeq[Int] =
-    val demands  = withGrowthWhenEveryWeightIsZero(constraints.map(demandOf(_, available)).toIndexedSeq)
+    solve(constraints, available, _ => None)
+
+  /** [[solve]] with the content's own sizes: `measure(i)` is the number of cells segment `i` needs along the axis, or
+    * `None` when it cannot say. Only `Auto` constraints (and the `Auto` base of a `Bounded`) read it; a measured size
+    * is floored at zero and claimed as a `Length`, and `None` is claimed as a `Fill(1)` — never as zero.
+    */
+  def solve(constraints: Seq[Constraint], available: Int, measure: Int => Option[Int]): IndexedSeq[Int] =
+    val resolved = constraints.zipWithIndex.map((constraint, index) => resolveAuto(constraint, () => measure(index)))
+    solveBounded(resolved.map(demandOf(_, available)).toIndexedSeq, available)
+
+  /** `constraint` with every `Auto` in it replaced by what `measured` says for this segment. */
+  private def resolveAuto(constraint: Constraint, measured: () => Option[Int]): Constraint =
+    constraint match
+      case Constraint.Auto => measured().fold(Constraint.Fill(1))(cells => Constraint.Length(math.max(0, cells)))
+      case Constraint.Bounded(min, max, base) => Constraint.Bounded(min, max, resolveAuto(base, measured))
+      case other                              => other
+
+  /** Solves `demands`, then freezes any bounded segment that landed outside its bounds at the violated bound and solves
+    * again, until every bounded segment sits inside its bounds. A frozen segment is a fixed demand with no bounds left
+    * to violate, so each round retires at least one and the loop ends within `demands.size` rounds.
+    */
+  private def solveBounded(demands: IndexedSeq[Demand], available: Int): IndexedSeq[Int] =
+    var current = demands
+    var sizes   = solveDemands(current, available)
+    var frozen  = true
+    while frozen do
+      frozen = false
+      current = current.indices.map { index =>
+        val demand = current(index)
+        demand.bounds match
+          case Some(Demand.Bounds(floor, _)) if sizes(index) < floor     =>
+            frozen = true
+            Demand.fixedCells(floor)
+          case Some(Demand.Bounds(_, ceiling)) if sizes(index) > ceiling =>
+            frozen = true
+            Demand.fixedCells(ceiling)
+          case _                                                         => demand
+      }
+      if frozen then sizes = solveDemands(current, available)
+    sizes
+
+  /** The three-step solve over already-classified demands — see the class documentation. */
+  private def solveDemands(classified: IndexedSeq[Demand], available: Int): IndexedSeq[Int] =
+    val demands  = withGrowthWhenEveryWeightIsZero(classified)
     val fixed    = demands.map(_.fixed)
     // summed as `Long`: two `Min(Int.MaxValue)` floors add up to more than an `Int` holds, and an `Int` sum there would
     // wrap around to a negative total and report a huge leftover to share out

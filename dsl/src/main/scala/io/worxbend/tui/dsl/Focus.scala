@@ -545,7 +545,11 @@ private[dsl] object FocusPass:
       // Inert trees still paint, including deferred portals: keep theme and coordinate wrappers, but no input records.
       val children = viewportWrapped(element, current.children.map(child => transform(child, inert, disabled)))
       val recorded = bounds.fold(current)(recorder => boundsWrapped(current, nodeId, nodeCounter - 1, recorder))
-      recorded.withChildren(children)
+      val revealed =
+        if element.props.ensureVisible && !inert then
+          revealWrapped(recorded, element.props.focusKey.getOrElse(nodeId.toString))
+        else recorded
+      revealed.withChildren(children)
 
     transform(root, ancestorInert = false, ancestorDisabled = false)
 
@@ -557,6 +561,15 @@ private[dsl] object FocusPass:
       case tracked: TrackedElement => tracked.copy(inner = BoundsElement(tracked.inner, id, lastDescendantId, recorder))
       case pointer: PointerElement => pointer.copy(inner = BoundsElement(pointer.inner, id, lastDescendantId, recorder))
       case other                   => BoundsElement(other, id, lastDescendantId, recorder)
+
+  /** `current` with a [[RevealElement]] around the node — under any input wrapper, for the reason [[boundsWrapped]]
+    * gives.
+    */
+  private def revealWrapped(current: Element, id: String): Element =
+    current match
+      case tracked: TrackedElement => tracked.copy(inner = RevealElement(tracked.inner, id))
+      case pointer: PointerElement => pointer.copy(inner = RevealElement(pointer.inner, id))
+      case other                   => RevealElement(other, id)
 
   /** A scroll view renders its content into an offscreen buffer, so every rect the content subtree is handed — and
     * hence every area recorded underneath it — is in content coordinates. Wrapping the content re-anchors those records

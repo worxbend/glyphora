@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Constraint, GlyphSupport, KeyEvent, MouseEvent, Style}
+import io.worxbend.tui.core.{CrossAlign, Constraint, GlyphSupport, KeyEvent, MouseEvent, Style}
 import io.worxbend.tui.terminal.PointerShape
 
 /** The focus bookkeeping the framework writes and an application only reads.
@@ -71,6 +71,11 @@ final case class FocusState private[dsl] (
   * built-in behaviour.
   *
   * `trapFocus` is what `.trapFocus` sets: while focus is inside this subtree, `Tab` and `Shift+Tab` cycle within it.
+  *
+  * `alignSelf` is where `.alignSelf(...)` places this element across its container's axis — see
+  * [[io.worxbend.tui.core.CrossAlign]]; `None` takes the container's own alignment. `ensureVisible` is what
+  * `.ensureVisible` sets: an enclosing `scrollView` scrolls to keep this element on screen. `gridSpot` is where
+  * `.at(row, col)`, `.span(rows, cols)` and `.area(name)` put this element inside a `grid`; outside one it is unused.
   */
 final case class ElementProps(
     style: Style = Style.Default,
@@ -91,6 +96,9 @@ final case class ElementProps(
     pressedStyle: Option[Style] = None,
     onMouseContext: Option[MouseContext => Boolean] = None,
     trapFocus: Boolean = false,
+    alignSelf: Option[CrossAlign] = None,
+    ensureVisible: Boolean = false,
+    gridSpot: GridSpot = GridSpot.Flowed,
 ):
 
   /** Whether this element is the one the focus pass marked — where keystrokes go this frame. */
@@ -110,3 +118,16 @@ final case class ElementProps(
 
   /** A button is down on this element — see [[FocusState.pressed]]. */
   private[dsl] def pressed: Boolean = focusState.pressed
+
+/** Where a child of a `grid` asked to sit — written by `.at(row, col)`, `.span(rows, cols)` and `.area(name)`, read
+  * only by the grid that contains it.
+  *
+  * `position` fixes the top-left cell; `area` names a cell of the grid's `.areas(...)` template and wins over
+  * `position`; with neither, the grid's auto-flow picks the next free run of cells that fits the spans.
+  */
+final case class GridSpot(position: Option[(Int, Int)], rowSpan: Int, colSpan: Int, area: Option[String])
+
+object GridSpot:
+
+  /** No position and one cell each way: wherever the grid's auto-flow puts it. */
+  val Flowed: GridSpot = GridSpot(None, 1, 1, None)
