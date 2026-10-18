@@ -239,6 +239,50 @@ object DataTableState:
   */
 final case class KeyedRow[K](key: K, cells: Seq[String])
 
+/** Rows a [[DataTable]] asks for one at a time, for data too large or too remote to hold as a sequence: a million
+  * records behind a query, a log indexed on disk. Implement `count` and `apply`; the table reads only the rows it can
+  * paint — the body window, the selected row's key, the rows of the current page — so rendering costs the viewport and
+  * not the data (research idea L4).
+  *
+  * A provider *is* a `Seq[KeyedRow[K]]`, so it goes wherever a row sequence went, `DataTable(columns, rows, widths)`
+  * included, and a plain `Vector` of rows needs no adapter at all. Three things follow from that:
+  *
+  *   - `state.sort` and `state.filter` still walk every row, because sorting and filtering are defined on the cells the
+  *     table draws. A provider over a store should sort and filter *at the source* and leave both unset — or accept
+  *     that the first frame after a sort materialises the view once, which [[DataTableState]] then memoises.
+  *   - The memoised view is keyed by the provider's identity, as it is for a sequence: keep one provider instance while
+  *     its contents stand, replace it (or call `state.invalidate()`) when they change.
+  *   - [[DataTable.selectKey]] and a selection whose row has moved since the last frame scan for the key, which is as
+  *     expensive as the provider makes `apply`; a selection whose row has not moved is confirmed with one read.
+  *
+  * `toString` names the count rather than printing a million rows. Equality is the sequence's structural equality and
+  * is never consulted by the table, which compares providers with `eq`.
+  */
+abstract class TableRows[K]
+    extends scala.collection.immutable.AbstractSeq[KeyedRow[K]]
+    with scala.collection.immutable.IndexedSeq[KeyedRow[K]]:
+
+  /** How many rows there are; answered on every frame, so it must be cheap. */
+  def count: Int
+
+  /** Row `index`, in `0 until count`. The table calls this only for rows it is about to paint or anchor to. */
+  def apply(index: Int): KeyedRow[K]
+
+  final def length: Int = count
+
+  override def toString: String = s"TableRows(count = $count)"
+
+object TableRows:
+
+  /** `rows` seen as a provider — for a caller that has a provider-typed slot to fill from a sequence it already holds.
+    * A `DataTable` needs no such wrapping, since it takes the sequence as it is.
+    */
+  def from[K](rows: Seq[KeyedRow[K]]): TableRows[K] =
+    val indexed = rows.toIndexedSeq
+    new TableRows[K]:
+      def count: Int                     = indexed.length
+      def apply(index: Int): KeyedRow[K] = indexed(index)
+
 /** Everything about a [[DataTable]] that is not its columns, rows or widths: layout, looks, and the per-cell styling
   * hook.
   *
@@ -338,7 +382,8 @@ final case class DataTableOptions(
   * @param columns
   *   the column titles; the header settles how many columns the table has
   * @param rows
-  *   the body rows — see [[KeyedRow]] for the key's contract
+  *   the body rows — see [[KeyedRow]] for the key's contract. Any sequence; a [[TableRows]] provider for data that
+  *   should be read a row at a time rather than held in memory
   * @param widths
   *   one [[Constraint]] per column. An empty sequence means "equal columns": each of the `columns` titles gets an equal
   *   share of the area. Before that fallback existed an empty sequence drew a blank rectangle instead.
@@ -466,8 +511,12 @@ final case class DataTable[K](
     */
   private def reconcileSelection(state: DataTableState[K], view: Seq[KeyedRow[K]], bodyHeight: Int): Unit =
     val anchored = state.selectedRowKey.flatMap { key =>
-      val index = view.indexWhere(_.key == key)
-      Option.when(index >= 0)(index)
+      // the row the selection sat on last frame is checked first: on the common frame, where nothing moved, that is
+      // one read, and a provider over a million rows is not scanned for a key that has not gone anywhere
+      state.selected.filter(index => view.lift(index).exists(_.key == key)).orElse {
+        val index = view.indexWhere(_.key == key)
+        Option.when(index >= 0)(index)
+      }
     }
     val selected = Selection.clamped(anchored.orElse(state.selected), view.size)
     state.selected = selected

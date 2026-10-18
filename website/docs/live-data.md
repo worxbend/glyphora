@@ -175,29 +175,40 @@ proves the poller was ever started. See [Testing](./testing) for `Pilot` itself.
 ## Drop a stale response
 
 Work already submitted cannot be un-submitted. A run that is reset or restarted
-while in flight still delivers its callback, so stamp each start and check the stamp
-in the continuation:
+while in flight still finishes, and its callback would declare the *current* run
+finished with numbers it never produced. `TaskScope.latest(key)` is the stamp-and-compare
+done for you: starting a task under a key that already has one in flight cancels the
+earlier task, and its result is discarded even if its work was already running or its
+callback already queued — only the newest start under the key is ever delivered.
 
 ```scala
+private val tasks = Async.scope() // in onStart; closed in onStop
+
 private def start(): Unit =
   if phase.peek != Phase.Running then
     clearCounters()
     phase.set(Phase.Running)
-    runId += 1
-    val thisRun = runId
-    runner.start(plan.peek)(outcome => finish(thisRun, outcome))
+    tasks.latest("run")(runner.drive(plan.peek)) {
+      case Right(outcome) => finish(outcome)
+      case Left(failure)  => finish(RunOutcome.Crashed(failure.toString))
+    }
 
-private def finish(forRun: Int, outcome: RunOutcome): Unit =
-  if forRun == runId && phase.peek == Phase.Running then
-    absorb()
-    phase.set(Phase.Finished(outcome))
+private def finish(outcome: RunOutcome): Unit =
+  absorb()
+  phase.set(Phase.Finished(outcome))
 ```
 
-Without the comparison, the abandoned run's callback declares the *current* run
-finished, and the screen reports a summary for numbers it never produced. The same
-counter guards the producer side: `loadtest`'s workers compare the generation they
-were started with before enqueuing each result, so a worker from a reset run cannot
-drop a stale sample into the next run's counters.
+The same shape fits a search box that reloads on every keystroke — `tasks.latest("search")(api.search(query))(results.set)`
+— and anything else where only the most recent answer is the right one. A completed,
+failed or cancelled task releases its key, so the next start under it runs normally;
+different keys never cancel each other. Cancellation is the scope's usual best effort:
+the superseded work runs to completion on its worker and reaches nobody, so give long
+work a cooperative stop of its own when finishing it is itself expensive.
+
+The counter is still the right tool on the *producer* side, where no scope sees the
+work: `loadtest`'s workers compare the generation they were started with before
+enqueuing each result, so a worker from a reset run cannot drop a stale sample into
+the next run's counters.
 
 ## Own the executor inside one Async.run
 

@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, CharWidth, Rect, StatefulWidget, Style}
+import io.worxbend.tui.core.{Buffer, CharWidth, Position, Rect, StatefulWidget, Style}
 
 /** Caller-owned single-line editing state. The text is stored as grapheme clusters, so the cursor can never land inside
   * a combining sequence or split an emoji; the cursor is a cluster index in `[0, length]` (the top value meaning
@@ -79,6 +79,27 @@ final case class TextInput(
       else
         state.scrollCluster = ClusterRow.scrolledTo(clusters, state.scrollCluster, state.cursor, area.width)
         renderClusters(area, buffer, state, clusters)
+
+  /** The buffer cell the caret occupies when this widget is drawn into `area` for `state` — where a host parks the
+    * terminal's own cursor so that a screen reader and an input method follow the insertion point the painted cursor
+    * shows.
+    *
+    * Computed from the same scroll and width arithmetic [[render]] uses, so the two can never disagree: the scroll
+    * offset is re-solved from the state's current one, which is a no-op after a render and the same answer before one.
+    * The state is not written. `None` when `area` is empty or the caret's cell would fall past the area's right edge,
+    * which is when the painter draws no cursor either. Independent of `showCursor` — that flag decides whether the
+    * painted cursor shows, and a host hiding the painted cell still needs the geometry.
+    */
+  def caretAt(area: Rect, state: TextInputState): Option[Position] =
+    if area.isEmpty then None
+    else
+      val clusters = state.clusterSeq
+      val column   =
+        if clusters.isEmpty then area.x
+        else
+          val scroll = ClusterRow.scrolledTo(clusters, state.scrollCluster, state.cursor, area.width)
+          area.x + ClusterRow.visibleWidth(clusters, scroll, state.cursor)
+      Option.when(column < area.right)(Position(column, area.y))
 
   private def renderEmpty(area: Rect, buffer: Buffer): Unit =
     buffer.setString(area.x, area.y, CharWidth.substringByWidth(placeholder, area.width), placeholderStyle)
