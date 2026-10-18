@@ -184,6 +184,25 @@ move by whatever the viewport measured on the last frame rather than a fixed ten
 them clamp to the content, and all of them are no-ops before the first render, because
 that is when the state first learns how tall the content and the viewport are.
 
+A `scrollView` also keeps what matters on screen without any of that arithmetic. When
+Tab moves focus onto a child below or above the window, the view scrolls just far
+enough to show it, on the same frame. An element marked `.ensureVisible` — the selected
+row of a long list, the match a search landed on — is scrolled into view when it appears
+or is first marked:
+
+```scala
+scrollView(
+  column(results.zipWithIndex.map((hit, i) => if i == current then text(hit).bold.ensureVisible else text(hit))*),
+  resultsState,
+)
+```
+
+Each request is acted on once, so a child that stays focused or marked does not drag
+the view back after the reader scrolls away; take the mark off and put it back to ask
+again. `.followFocus(false)` turns focus-following off for a view whose offset the app
+drives itself, and `ScrollViewState.reveal(top, height)` is the same "scroll just far
+enough" move for code that keeps its own state.
+
 `scrollView` draws its own scrollbar. For the rarer case of a scroll indicator beside
 something the DSL is not scrolling — a custom render loop, a pane whose offset your own
 code owns — use `scrollbar(contentLength, position)`. It owns no state: where the thumb
