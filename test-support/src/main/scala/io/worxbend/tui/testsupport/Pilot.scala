@@ -517,6 +517,14 @@ final class Pilot private (
     GoldenFrames.assertMatches(name, lastFrame)
     this
 
+  /** Compares the last rendered frame — colours, modifiers and links included — against the `golden/<name>.ansi`
+    * fixture, and returns `this` for chaining like [[assertGolden]]. A mismatch writes the visual report
+    * `GoldenFrames.assertMatchesStyled` describes and names its files in the failure.
+    */
+  def assertGoldenStyled(name: String): Pilot =
+    GoldenFrames.assertMatchesStyled(name, lastFrame)
+    this
+
   /** The cell at `(x, y)` of the last rendered frame. */
   def cellAt(x: Int, y: Int): Cell = lastFrame.get(x, y)
 

@@ -3,6 +3,7 @@ package io.worxbend.tui.runtime
 import io.worxbend.tui.core.{Event, Widget}
 import io.worxbend.tui.terminal.{BackendError, PointerShape}
 
+import java.nio.file.Path
 import scala.concurrent.duration.FiniteDuration
 
 /** Runner configuration: an optional tick rate (synthetic [[Event.Tick]]s for animation) and whether to capture mouse
@@ -49,6 +50,13 @@ import scala.concurrent.duration.FiniteDuration
   * captures nothing, while `TuiApp` captures into `printAbove`. Set it explicitly —
   * `withCaptureStdio(CaptureStdio.Off)` — to overrule that host default.
   *
+  * `recording`, when set, writes every flushed frame of the run to that file as an asciicast v2 recording — see
+  * [[AsciicastRecorder]]. The runner opens the file before it touches the terminal (a path that cannot be opened ends
+  * `run` with [[RunnerError.Handler]] and the terminal untouched), records synchronously after each flush alongside any
+  * `onFrame` observer, and closes it during teardown. `None`, the default, records nothing — unless the JVM was started
+  * with `-Dglyphora.record=<file>`, which names the file for a run whose configuration did not; the configuration wins
+  * when both are set.
+  *
   * An immutable value with a private constructor: build one from [[RunnerConfig.Default]] (or the companion `apply`)
   * and the `with*` methods, each of which returns a new configuration. The two Booleans and every `Option` come as a
   * pair — `withMouseCapture`/`withoutMouseCapture`, `withTickRate(d)`/`withoutTickRate` — so a call site reads as a
@@ -67,6 +75,7 @@ final class RunnerConfig private (
     val keyEventTypes: Boolean,
     val onFrameTiming: Option[FrameTiming => Unit],
     val captureStdio: Option[CaptureStdio],
+    val recording: Option[Path],
 ):
 
   /** Synthetic [[Event.Tick]]s every `rate` — the whole-app clock for animation; see the class notes on why the type is
@@ -122,6 +131,13 @@ final class RunnerConfig private (
   /** Back to the host's default: nothing for a bare runner, `printAbove` under `TuiApp`. The default. */
   def withoutCaptureStdio: RunnerConfig = updated(captureStdio = None)
 
+  /** Records every flushed frame of the run to `path` as asciicast v2 — see the class notes and [[AsciicastRecorder]].
+    */
+  def withRecording(path: Path): RunnerConfig = updated(recording = Some(path))
+
+  /** No recording from the configuration (`-Dglyphora.record` may still name one). The default. */
+  def withoutRecording: RunnerConfig = updated(recording = None)
+
   private def updated(
       tickRate: Option[FiniteDuration] = tickRate,
       mouseCapture: Boolean = mouseCapture,
@@ -131,8 +147,19 @@ final class RunnerConfig private (
       keyEventTypes: Boolean = keyEventTypes,
       onFrameTiming: Option[FrameTiming => Unit] = onFrameTiming,
       captureStdio: Option[CaptureStdio] = captureStdio,
+      recording: Option[Path] = recording,
   ): RunnerConfig =
-    new RunnerConfig(tickRate, mouseCapture, onTaskError, onFrame, viewport, keyEventTypes, onFrameTiming, captureStdio)
+    new RunnerConfig(
+      tickRate,
+      mouseCapture,
+      onTaskError,
+      onFrame,
+      viewport,
+      keyEventTypes,
+      onFrameTiming,
+      captureStdio,
+      recording,
+    )
 
   /** Structural over every field; the three function-valued fields compare by reference (see the class notes). */
   override def equals(other: Any): Boolean =
@@ -141,7 +168,7 @@ final class RunnerConfig private (
         (this eq that) ||
         (mouseCapture == that.mouseCapture && keyEventTypes == that.keyEventTypes && tickRate == that.tickRate &&
           viewport == that.viewport && onTaskError == that.onTaskError && onFrame == that.onFrame &&
-          onFrameTiming == that.onFrameTiming && captureStdio == that.captureStdio)
+          onFrameTiming == that.onFrameTiming && captureStdio == that.captureStdio && recording == that.recording)
       case _                  => false
 
   override def hashCode(): Int =
@@ -152,7 +179,8 @@ final class RunnerConfig private (
     hash = 31 * hash + viewport.hashCode()
     hash = 31 * hash + keyEventTypes.hashCode()
     hash = 31 * hash + onFrameTiming.hashCode()
-    31 * hash + captureStdio.hashCode()
+    hash = 31 * hash + captureStdio.hashCode()
+    31 * hash + recording.hashCode()
 
   /** Only the fields that differ from [[RunnerConfig.Default]], so the common configuration prints as one short line; a
     * function field prints as `<installed>`, a lambda having no readable text of its own.
@@ -167,6 +195,7 @@ final class RunnerConfig private (
       Option.when(keyEventTypes)("keyEventTypes=true"),
       Option.when(onFrameTiming.nonEmpty)("onFrameTiming=<installed>"),
       captureStdio.map(mode => s"captureStdio=$mode"),
+      recording.map(path => s"recording=$path"),
     ).flatten
     if fields.isEmpty then "RunnerConfig.Default" else fields.mkString("RunnerConfig(", ", ", ")")
 
@@ -190,11 +219,22 @@ object RunnerConfig:
       keyEventTypes: Boolean = false,
       onFrameTiming: Option[FrameTiming => Unit] = None,
       captureStdio: Option[CaptureStdio] = None,
+      recording: Option[Path] = None,
   ): RunnerConfig =
-    new RunnerConfig(tickRate, mouseCapture, onTaskError, onFrame, viewport, keyEventTypes, onFrameTiming, captureStdio)
+    new RunnerConfig(
+      tickRate,
+      mouseCapture,
+      onTaskError,
+      onFrame,
+      viewport,
+      keyEventTypes,
+      onFrameTiming,
+      captureStdio,
+      recording,
+    )
 
-  /** The seven-field arity `apply` had before `captureStdio` was added, kept default-free so code compiled against it
-    * keeps working — the policy the eight-field `apply` above documents.
+  /** The seven-field arity `apply` had before `captureStdio` and `recording` were added, kept default-free so code
+    * compiled against it keeps working — the policy the nine-field `apply` above documents.
     */
   def apply(
       tickRate: Option[FiniteDuration],
@@ -205,7 +245,7 @@ object RunnerConfig:
       keyEventTypes: Boolean,
       onFrameTiming: Option[FrameTiming => Unit],
   ): RunnerConfig =
-    new RunnerConfig(tickRate, mouseCapture, onTaskError, onFrame, viewport, keyEventTypes, onFrameTiming, None)
+    new RunnerConfig(tickRate, mouseCapture, onTaskError, onFrame, viewport, keyEventTypes, onFrameTiming, None, None)
 
   /** Full screen, no ticks, no mouse or key-release reporting, no observers: what `RunnerConfig()` builds and where
     * every `with*` chain starts.

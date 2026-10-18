@@ -14,6 +14,7 @@ final class RunnerConfigSpec extends AnyFunSuite:
   private val onTaskError: RenderTaskErrorHandler = _ => ()
   private val onFrame: CompletedFrame => Unit     = _ => ()
   private val onFrameTiming: FrameTiming => Unit  = _ => ()
+  private val cast                                = java.nio.file.Path.of("demo.cast")
 
   /** Every field set to something other than its default. */
   private val populated = RunnerConfig(
@@ -25,6 +26,7 @@ final class RunnerConfigSpec extends AnyFunSuite:
     keyEventTypes = true,
     onFrameTiming = Some(onFrameTiming),
     captureStdio = Some(CaptureStdio.PrintAbove),
+    recording = Some(cast),
   )
 
   test("every with* builder round-trips its field from the default configuration"):
@@ -39,6 +41,7 @@ final class RunnerConfigSpec extends AnyFunSuite:
       RunnerConfig.Default.withCaptureStdio(CaptureStdio.PrintAbove)
         == RunnerConfig(captureStdio = Some(CaptureStdio.PrintAbove))
     )
+    assert(RunnerConfig.Default.withRecording(cast) == RunnerConfig(recording = Some(cast)))
 
   test("each builder leaves every other field as it was"):
     assert(populated.withTickRate(1.second).mouseCapture)
@@ -67,6 +70,8 @@ final class RunnerConfigSpec extends AnyFunSuite:
     assert(populated.withoutOnFrameTiming.withOnFrameTiming(onFrameTiming) == populated)
     assert(populated.withoutCaptureStdio.captureStdio.isEmpty)
     assert(populated.withoutCaptureStdio.withCaptureStdio(CaptureStdio.PrintAbove) == populated)
+    assert(populated.withoutRecording.recording.isEmpty)
+    assert(populated.withoutRecording.withRecording(cast) == populated)
 
   test("equals and hashCode agree on all fields"):
     val twin            = RunnerConfig.Default
@@ -78,6 +83,7 @@ final class RunnerConfigSpec extends AnyFunSuite:
       .withKeyEventTypes
       .withOnFrameTiming(onFrameTiming)
       .withCaptureStdio(CaptureStdio.PrintAbove)
+      .withRecording(cast)
     assert(twin == populated)
     assert(twin.hashCode == populated.hashCode)
     val variants        = Seq(
@@ -89,10 +95,11 @@ final class RunnerConfigSpec extends AnyFunSuite:
       populated.withoutKeyEventTypes,
       populated.withOnFrameTiming(_ => ()),
       populated.withCaptureStdio(CaptureStdio.Off),
+      populated.withoutRecording,
     )
     for variant <- variants do
       assert(variant != populated, variant.toString)
-      // seven one-field changes to a seven-field hash: a collision among them would mean a field the hash forgot
+      // one-field changes to a field-by-field hash: a collision among them would mean a field the hash forgot
       assert(variant.hashCode != populated.hashCode, variant.toString)
     val notAConfig: Any = "not a config"
     assert(populated != notAConfig)
@@ -124,9 +131,10 @@ final class RunnerConfigSpec extends AnyFunSuite:
         true,
         Some(onFrameTiming),
         Some(CaptureStdio.PrintAbove),
+        Some(cast),
       ) == populated
     )
-    // the seven-field arity is kept as a plain overload for callers compiled before `captureStdio` existed
+    // the seven-field arity is kept as a plain overload for callers compiled before `captureStdio`/`recording` existed
     assert(
       RunnerConfig(
         Some(100.millis),
@@ -137,7 +145,7 @@ final class RunnerConfigSpec extends AnyFunSuite:
         true,
         Some(onFrameTiming),
       )
-        == populated.withoutCaptureStdio
+        == populated.withoutCaptureStdio.withoutRecording
     )
 
   test("toString lists only the fields that differ from the default"):
@@ -152,4 +160,4 @@ final class RunnerConfigSpec extends AnyFunSuite:
         == "RunnerConfig(viewport=Inline(3), keyEventTypes=true)"
     )
     assert(populated.toString.startsWith("RunnerConfig(tickRate=Some(100 milliseconds), mouseCapture=true, "))
-    assert(populated.toString.endsWith(", captureStdio=PrintAbove)"))
+    assert(populated.toString.endsWith(", captureStdio=PrintAbove, recording=demo.cast)"))

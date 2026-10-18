@@ -183,11 +183,32 @@ drops every style from a screen still matches its golden file byte for byte. Use
 golden frame for "did anything move?" and keep a handful of `cellAt` / style
 assertions beside it for "is it still the right colour?".
 
+### A styled golden records everything
+
+When the question *is* the styling — is the selected row still reversed, did the
+error line keep its colour — snapshot the styles too:
+
+```scala
+GoldenFrames.assertMatchesStyled("dashboard-first-render", buffer)
+pilot.press("down").waitForIdle().assertGoldenStyled("list-second-row")
+```
+
+The fixture is `golden/<name>.ansi`: the frame's `BufferExport.ansi` export, every
+row and column, with one SGR sequence per run of same-styled cells and OSC 8 around a
+link. It is compared byte for byte after the same trailing-newline normalisation as a
+text golden. The price is a fixture that cannot be read in review, so a mismatch does
+the reading for you: it writes `<name>.expected.svg`, `<name>.actual.svg` and a
+side-by-side `<name>.diff.html` with every differing cell outlined next to the fixture
+(into the JVM's temp directory when the fixture came out of a jar), and the failure
+message names the three paths. Open the HTML, look, then either fix the code or
+re-record. Keep a text golden beside it for "did anything move?" — the two answer
+different questions, and only the text one is reviewable as a diff.
+
 ### Regenerate a golden frame
 
 You never write these files by hand. Run the tests with `GLYPHORA_GOLDEN_UPDATE`
-pointing at the resources directory to write, and every `assertMatches` call writes
-its *actual* frame instead of comparing:
+pointing at the resources directory to write, and every `assertMatches` and
+`assertMatchesStyled` call writes its *actual* frame instead of comparing:
 
 ```bash
 GLYPHORA_GOLDEN_UPDATE=widgets/src/test/resources ./mill widgets.test
@@ -234,7 +255,41 @@ time would be reported as an orphan, so keep those names literal. A missing sour
 directory fails loudly rather than reporting the whole module as orphaned.
 
 In this repository the check runs once, from `GoldenFixtureDisciplineSpec` in
-`dsl.test`, over every module and example in the checkout.
+`dsl.test`, over every module and example in the checkout. Styled fixtures
+(`golden/<name>.ansi`) are held to the same rule; `assertMatchesStyled` and
+`assertGoldenStyled` count as references.
+
+## Export a frame as SVG, HTML or ANSI
+
+`BufferExport` in `tui-core` turns any `Buffer` into a file a person can open without a
+terminal. It is pure — no terminal, no runner, callable from any thread — and keeps
+colours, text attributes, wide graphemes and OSC 8 links:
+
+```scala
+import io.worxbend.tui.core.{BufferExport, ExportOptions}
+
+val picture = BufferExport.svg(buffer, ExportOptions(title = "Dashboard", cellWidth = 9, cellHeight = 18))
+val page    = BufferExport.html(buffer)
+val dump    = BufferExport.ansi(buffer)
+```
+
+The SVG is `columns * cellWidth` by `rows * cellHeight` pixels: a background `<rect>`,
+one `<text>` per run of same-styled cells (a two-column grapheme gets a `<text>` of its
+own spanning both columns), a `<rect>` under every run with a background colour and an
+`<a href>` around every linked run. The HTML is a `<pre>` of `<span>`s with inline CSS.
+The ANSI dump writes each colour in its own SGR spelling — named colours as `31`,
+indexed as `38;5;n`, RGB as `38;2;r;g;b` — so it survives a round trip through a parser;
+it is what a styled golden stores.
+
+`ExportOptions` carries the typeface stack, the cell geometry, a `palette` that decides
+how named and indexed colours are painted (`ExportPalette.Default` is the xterm 256-colour
+table, `palette.Xterm256`; supply your own to render a screenshot in a specific terminal
+theme), the `foreground`/`background` a cell with no colour of its own is painted in, and
+a `title`. Every field defaults, so `ExportOptions()` is a sensible dark screenshot.
+
+Render the real widget in a test and write the SVG into `docs/assets/`, and a
+documentation screenshot can never drift from the code it shows — see
+[Contributing](./contributing#improve-the-documentation).
 
 ## Drive a full app with Pilot
 
@@ -672,6 +727,36 @@ observer through the worker's uncaught-exception boundary, not `RunnerError`.
 For elapsed composition/draw/observer phase measurements without frame snapshots,
 see [Performance](./performance#measure-the-running-application-first).
 
+### Record a run as an asciicast
+
+A run can record itself as an [asciicast v2](https://docs.asciinema.org/manual/asciicast/v2/)
+file, playable with `asciinema play` or the web player and convertible to a GIF with
+`agg`:
+
+```scala
+override def config: RunnerConfig = RunnerConfig.Default.withRecording(Path.of("demo.cast"))
+```
+
+or, for a run whose configuration says nothing about it, from the command line:
+
+```bash
+java -Dglyphora.record=demo.cast -jar my-app.jar
+```
+
+The configuration wins when both name a file. The recorder opens the file *before* the
+terminal is dressed — a path that cannot be written ends `run` with `RunnerError.Handler`
+and the terminal untouched — then writes a JSON header and one `[time, "o", data]`
+event per flushed frame that changed something, where `data` is the very ANSI diff a
+terminal would have received (`FrameEncoder`'s, so the playback is what the screen
+showed). A frame that changed nothing writes no event; the file is closed first thing in
+teardown, so the last frame is on disk whatever `onStop` does. Recording happens
+synchronously after each flush, on the render thread, alongside any `onFrame` observer:
+one buffered write per frame, which is cheap, but it is still I/O inside the frame — do
+not leave it on in a release build.
+
+`AsciicastRecorder` is also a plain `CompletedFrame => Unit` with an injectable clock,
+which is how the tape runner below produces deterministic recordings.
+
 ## Assert an animated frame
 
 Every animated widget is a pure function of elapsed time, so pin the clock and the
@@ -763,6 +848,50 @@ effect.process(1.second, buffer, buffer.area)
 ```
 
 Use fixed seeds for `coalesce` and `dissolve`.
+
+## Script a demo with a tape
+
+A *tape* is a text script in the subset of [VHS](https://github.com/charmbracelet/vhs)
+syntax a `Pilot` can perform. `Tape.parse` reads it and `Tape.run` drives an app with it,
+leaving behind a `.cast` recording and screenshots — which is how documentation GIFs and
+screenshots become build outputs instead of files somebody captured by hand once:
+
+```text
+# docs/tapes/counter.tape
+Set Width 44
+Set Height 8
+Type "+++"
+Sleep 500ms
+Wait /Count: 3/
+Screenshot counter-three
+Key ctrl+r
+Enter
+```
+
+The subset: `Type "text"` (one key per code point, with `\"` and `\\` escapes),
+`Enter`, `Tab`, `Key <spec>` in `binding`'s spelling, `Sleep 500ms` / `Sleep 1.5s`,
+`Wait /regex/` against the screen text, `Screenshot name`, and `Set Width n` /
+`Set Height n` — the terminal size before the app starts, a resize afterwards. Blank
+lines and `#` comments are skipped; anything else fails `parse` with the line number.
+
+```scala
+val tape   = Tape.parse(Files.readString(Path.of("docs/tapes/counter.tape"))).fold(fail(_), identity)
+val result = Tape.run(tape, outputDirectory, "counter")(backend => CounterApp().runWith(backend))
+GoldenFrames.assertMatches("counter-three", result.frames("counter-three"))
+```
+
+`run` starts the pilot at the tape's size, performs each command followed by a
+`waitForIdle`, and records a frame after every one into `<name>.cast`. Its clock is
+virtual: only `Sleep` (and a 50 ms `TypingDelay` per typed key) advances it, so the same
+tape over the same app produces the same recording byte for byte, and nothing waits in
+real time except `Wait`. `Screenshot label` writes `<label>.txt` (the plain frame, a text
+golden's content) and `<label>.svg` (`BufferExport.svg`), and keeps the frame in
+`result.frames` for a golden assertion after the app has exited. A `Wait` that never
+matches fails naming the pattern; the pilot is closed either way.
+
+`scripts/render-tapes.sh` runs the tape suites with `GLYPHORA_TAPE_OUTPUT` pointing at
+`build/tapes` (or wherever you set it), so regenerating every recording and screenshot
+is one command — no `agg`, `ffmpeg` or `asciinema` needed to produce the files.
 
 ## Run the repository checks
 
