@@ -92,6 +92,25 @@ once to standard output at the terminal's width, styled, and returns. It honours
 `NO_COLOR`, `FORCE_COLOR` and `TERM=dumb`, and writes no colour into a pipe unless
 forced. See [Print mode and no-TTY runs](./print-mode).
 
+## Can I ask a question from a command-line program?
+
+Yes. `Prompt.text`, `Prompt.select`, `Prompt.confirm`, `Prompt.form[A]` and the rest ask
+one question in a small inline strip, return the answer and leave a one-line summary in
+the scrollback; `Prompt.answers(Seq(...))` pre-supplies the answers for tests and CI.
+See [Prompts and progress](./prompts).
+
+## Can prompts read from the terminal when stdin is a pipe?
+
+No, and deliberately. glyphora opens its terminal through JLine's system terminal
+(`TerminalBuilder.system(true)`), which needs standard input *and* standard output to be
+the terminal. With standard input a pipe, JLine cannot build one: it falls back to a
+dumb terminal (and logs a warning), and it does not go looking for `/dev/tty`. Prompts
+therefore check standard input first and, when it is not a terminal, ask in the plain
+line shape and read the answers from the pipe — which is what
+`printf 'alpha\ny\n' | mytool` means. A tool that wants to read data from a pipe *and*
+ask the person at the keyboard has to open `/dev/tty` itself and hand a backend over it
+to `PromptSession.terminal(open = ...)`; nothing in glyphora does that implicitly.
+
 ## Does it work on Windows?
 
 Unknown — glyphora targets Linux and CI no longer builds or tests on Windows. Nothing

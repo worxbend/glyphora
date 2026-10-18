@@ -25,6 +25,16 @@ object StandardOutput:
       case Some(jni) => jni.isSystemStream(SystemStream.Output)
       case None      => Option(System.console()).exists(_.isTerminal)
 
+  /** Whether standard *input* is a terminal — the question an interactive prompt asks before opening one. With stdin a
+    * pipe, JLine's system terminal cannot be built (it degrades to a dumb terminal, logging a warning), and it does not
+    * fall back to reading `/dev/tty`; a prompt that asks this first answers over the pipe instead. Same provider and
+    * fallback as [[isTerminal]].
+    */
+  def isInputTerminal: Boolean =
+    provider match
+      case Some(jni) => jni.isSystemStream(SystemStream.Input)
+      case None      => Option(System.console()).exists(_.isTerminal)
+
   /** The terminal's width in columns, or `None` when standard output is not a terminal or the width cannot be read. */
   def width: Option[Int] =
     if !isTerminal then None
