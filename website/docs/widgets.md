@@ -2488,6 +2488,32 @@ app can open a section itself (`settings.open = Some(2)`) and the next frame sho
 Outside the DSL the same picture is the `Accordion(sections, style, openStyle,
 collapsedSymbol, expandedSymbol)` widget over the same state.
 
+### A wizard
+
+`wizard(state)(steps*)(onFinish)` is an ordered flow of screens: a progress header, the
+current step's content, and a `Back` / `Next` row. Each `WizardStep` names its title, its
+content and the check `Next` runs before leaving it:
+
+```scala
+private val signup = WizardState()
+private val email  = Signal("")
+
+wizard(signup)(
+  WizardStep("Account", textInput(email), () => Option.when(email.peek.isEmpty)("email is required")),
+  WizardStep("Profile", profileForm),
+  WizardStep("Confirm", summary),
+)(submit())
+```
+
+The header reads `✓ Account ─ ● Profile ─ ○ Confirm` — finished, current, ahead — and
+says `Step 2 of 3 · Profile` when the row is too narrow for every title. A check that
+returns `Some(message)` keeps the user on the step and shows the message in the theme's
+error style until they move; on the last step `Next` reads `Finish` and runs `onFinish`
+once the step passes. `Back` is disabled on the first step. The buttons carry the focus
+keys `wizard-back` and `wizard-next`, so focus stays on `Next` while the user walks
+forward. `WizardState` holds the step and the message — `signup.current` is the step on
+screen — and the header alone is the `Wizard(titles, current)` widget.
+
 ## Drop to a raw Widget
 
 The DSL is not a separate renderer. Any core `Widget` can become a leaf:

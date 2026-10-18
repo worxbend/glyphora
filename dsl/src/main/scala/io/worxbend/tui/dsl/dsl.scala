@@ -108,6 +108,7 @@ export Element.{
   tree,
   treeTable,
   widget,
+  wizard,
 }
 // Form signatures are part of the one-import application surface too. `Codec` is the context bound of `persisted`, and
 // an app teaching the derivation about its own type writes `given Codec[Mine] = Codec.atom(...)`, so it is named here;
@@ -325,6 +326,7 @@ export io.worxbend.tui.widgets.{
   ChartOptions,
   AccordionState,
   ColorPickerState,
+  WizardState,
   ColorRamp,
   ColumnSort,
   DataTable,

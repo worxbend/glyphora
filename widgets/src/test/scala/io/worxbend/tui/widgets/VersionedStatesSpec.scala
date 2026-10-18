@@ -203,6 +203,12 @@ final class VersionedStatesSpec extends AnyFunSuite:
       "open ="               -> (_.open = Some(1)),
       "toggle"               -> (_.toggle(0)),
     ),
+    row("WizardState", WizardState())(
+      "next"                 -> (_.next(3)),
+      "back"                 -> (_.back()),
+      "fail"                 -> (_.fail("no")),
+      "clearError"           -> (_.clearError()),
+    ),
   )
 
   private def register[S <: Versioned](entry: Row[S]): Unit =

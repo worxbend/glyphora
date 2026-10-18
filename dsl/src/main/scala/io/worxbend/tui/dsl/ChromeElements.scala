@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{MouseButton, MouseEventKind, Style, Widget}
+import io.worxbend.tui.core.{CharWidth, MouseButton, MouseEventKind, Style, Widget}
 import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets as w
 
@@ -61,3 +61,48 @@ private[dsl] object AccordionElement:
       CollapsibleElement(title, body, state.open.contains(index), _ => state.toggle(index))
     }
     AccordionElement(ColumnElement(headers))
+
+/** One screen of a [[Element.wizard]]: its title in the progress header, its content, and the check `Next` runs before
+  * leaving it — `Some(message)` refuses and shows the message, `None` lets the user on. The check runs on the render
+  * thread when `Next` is pressed, so it may `peek` the signals the step's controls write.
+  */
+final case class WizardStep(title: String, content: Element, validate: () => Option[String] = () => None)
+
+/** An ordered multi-step flow over a caller-owned [[w.WizardState]]: the [[w.Wizard]] progress header, the refusal
+  * message of the last failed `Next` (in the theme's error style), the current step's content, and a `Back` / `Next`
+  * row — `Next` reads `Finish` on the last step and runs `onFinish` once that step validates. `Back` is disabled on the
+  * first step. The two buttons carry the focus keys `wizard-back` and `wizard-next`, so focus stays on `Next` while the
+  * user walks forward.
+  */
+final case class WizardElement(content: Element, props: ElementProps = ElementProps()) extends Element:
+  type Self = WizardElement
+  override def debugName: String                                                = "wizard"
+  override def children: Seq[Element]                                           = Seq(content)
+  def widget: Widget                                                            = content.widget
+  private[dsl] override def layoutOnly: Boolean                                 = true
+  private[dsl] def withProps(props: ElementProps): WizardElement                = copy(props = props)
+  private[dsl] override def withChildren(children: Seq[Element]): WizardElement =
+    children.headOption.fold(this)(child => copy(content = child))
+
+private[dsl] object WizardElement:
+
+  def of(state: w.WizardState, steps: Seq[WizardStep], onFinish: () => Unit, errorStyle: Style): WizardElement =
+    val current  = math.max(0, math.min(steps.size - 1, state.current))
+    val last     = current == steps.size - 1
+    val header   = WidgetElement(w.Wizard(steps.map(_.title), current), rows = Some(1))
+    val error    = state.error.map(message => TextElement(message).style(errorStyle).length(1))
+    val body     = steps.lift(current).fold[Element](SpacerElement())(_.content).fill
+    val advance  = () =>
+      steps.lift(current).flatMap(_.validate()) match
+        case Some(message) => state.fail(message)
+        case None if last  =>
+          state.clearError()
+          onFinish()
+        case None          => state.next(steps.size)
+    val nextText = if last then "Finish" else "Next"
+    val back     = ButtonElement("Back", () => state.back()).disabled(current == 0).key("wizard-back")
+    val next     = ButtonElement(nextText, advance).key("wizard-next")
+    val buttons  = RowElement(
+      Seq(back.length(CharWidth.of("Back") + 4), SpacerElement(), next.length(CharWidth.of(nextText) + 4))
+    ).length(1)
+    WizardElement(ColumnElement(Seq(header) ++ error.toSeq ++ Seq(body, buttons)))

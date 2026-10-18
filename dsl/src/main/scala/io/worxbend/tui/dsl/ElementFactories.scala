@@ -1195,3 +1195,18 @@ private[dsl] trait ElementFactories:
     */
   def accordion(state: w.AccordionState)(sections: (String, Element)*): AccordionElement =
     AccordionElement.of(state, sections)
+
+  /** An ordered multi-step flow: a progress header (`✓ Account ─ ● Profile ─ ○ Confirm`), the current step's content,
+    * and `Back` / `Next` buttons. `Next` runs the step's `validate` first and stays put, showing the message in the
+    * theme's error style, when it refuses; on the last step it reads `Finish` and runs `onFinish`. `state` is
+    * caller-owned and holds the step on screen — keep it in a field. See [[WizardStep]] and [[w.WizardState]].
+    *
+    * {{{
+    * wizard(signup)(
+    *   WizardStep("Account", accountForm, () => Option.when(email.peek.isEmpty)("email is required")),
+    *   WizardStep("Confirm", summary),
+    * )(submit())
+    * }}}
+    */
+  def wizard(state: w.WizardState)(steps: WizardStep*)(onFinish: => Unit)(using theme: Theme): WizardElement =
+    LateBinding.themed(theme)(theme => WizardElement.of(state, steps, () => onFinish, theme.error))

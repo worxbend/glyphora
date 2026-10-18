@@ -45,3 +45,26 @@ final class ChromeElementsPilotSpec extends AnyFunSuite with PilotFixture:
     pilot.press("enter").waitForIdle()
     assert(state.open.isEmpty)
     quitApp(pilot)
+
+  test("wizard: Next is blocked while the step fails validation, then walks on and Finish runs onFinish"):
+    val state    = WizardState()
+    var accepted = false
+    var finished = 0
+    val pilot    = startApp(Size(40, 8)) {
+      wizard(state)(
+        WizardStep("Account", text("account form"), () => Option.when(!accepted)("email is required")),
+        WizardStep("Confirm", text("all good")),
+      )(finished += 1)
+    }
+    assert(pilot.screenLines.head.stripTrailing == "● Account ─ ○ Confirm")
+    pilot.press("enter").waitForIdle()
+    assert(state.current == 0)
+    assert(pilot.screenText.contains("email is required"))
+    pilot.readOnRenderThread { accepted = true }
+    pilot.press("enter").waitForIdle()
+    assert(state.current == 1)
+    assert(pilot.screenText.contains("all good") && !pilot.screenText.contains("email is required"))
+    assert(pilot.screenText.contains("[ Finish ]"))
+    pilot.press("enter").waitForIdle()
+    assert(finished == 1)
+    quitApp(pilot)
