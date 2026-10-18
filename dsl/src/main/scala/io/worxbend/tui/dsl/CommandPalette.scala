@@ -59,7 +59,7 @@ private[dsl] final class CommandPalette(declared: () => KeyBindings):
       .panel("Commands")(
         (Element.input(query, placeholder = "type to filter…").length(1) +: listing)*
       )
-      .styled(_ => theme.accent)
+      .frameStyle(theme.accent)
       .onKeyEvent(handleKey)
     centered(PaletteWidth, math.min(PaletteChrome + visible.size, PaletteMaxHeight))(body)
 

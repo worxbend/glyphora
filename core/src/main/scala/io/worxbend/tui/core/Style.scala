@@ -321,6 +321,33 @@ object Style:
     */
   def mods(modifiers: Modifiers): Style = Style(modifiers = modifiers)
 
+  /** Reads a style written the way a theme file writes one: `bold #ff0000 on black`.
+    *
+    * The words, separated by spaces, in any order:
+    *
+    *   - a text attribute — `bold`, `dim`, `italic`, `underline`, `blink`, `rapid-blink`, `reverse`, `hidden`,
+    *     `crossed-out` — sets it, and the same word with `not-` in front (`not-bold`) clears it the way
+    *     [[Style.notBold]] does;
+    *   - an underline variant — `straight-underline`, `double-underline`, `curly-underline`, `dotted-underline`,
+    *     `dashed-underline`;
+    *   - a colour on its own is the foreground, and `on <colour>` the background; `underline-color <colour>` colours
+    *     the underline. A colour is anything [[Color.parse]] reads — a name, `#rrggbb`, a palette index — and a
+    *     two-word name (`bright red`, `light blue`, `dark grey`) may be written with its space;
+    *   - `link <url>` attaches a hyperlink target, which therefore cannot contain a space.
+    *
+    * `default`, or nothing at all, is [[Default]]. A word that is none of these, a second foreground, or an `on` with
+    * no colour after it is a `Left` naming the word, so a theme file can report the line it came from. Every style
+    * [[render]] writes parses back to an equal style.
+    */
+  def parse(text: String): Either[String, Style] =
+    StyleSyntax.parse(text)
+
+  /** Writes `style` in the spelling [[parse]] reads back: attributes, then cleared attributes, then the underline
+    * variant, the foreground, `on` the background, the underline colour and the link. [[Default]] is `default`.
+    */
+  def render(style: Style): String =
+    StyleSyntax.render(style)
+
   /** `value` as a Scala string literal, with the two characters that would break out of one escaped, so a link
     * containing a quote or a backslash still pastes back as the same string.
     */

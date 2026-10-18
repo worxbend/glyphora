@@ -20,6 +20,12 @@ import io.worxbend.tui.terminal.PointerShape
   * handlers and built-ins are not run, and it draws in `disabledStyle` — the theme's `disabled` style, stamped on every
   * node the way `focusStyle` is.
   *
+  * `component` is the [[StateStyles]] the theme holds for this node's role — its `.variant(...)`, or the role the node
+  * type declares (`button` is `ButtonRole.Default`) — and `theme` the theme the pass resolved it from, which a node
+  * with further named parts (a list's `"list.selected"` row) reads its other lookups from. Both are stamped by the
+  * focus pass on every frame, so a theme change reaches the next frame without the view being rebuilt; a tree no focus
+  * pass has run over draws with [[StateStyles.Empty]], exactly as it did before component styles existed.
+  *
   * The constructor is package-private on purpose. [[FocusPass]] rewrites this on every render and [[EventRouter]]
   * honours what it finds, so an application able to build one could hand itself focus that the router would then
   * respect. There is no supported way to construct one outside the framework.
@@ -32,6 +38,8 @@ final case class FocusState private[dsl] (
     pressed: Boolean = false,
     disabled: Boolean = false,
     disabledStyle: Style = Style.Default.dim,
+    component: StateStyles = StateStyles.Empty,
+    theme: Theme = Theme.default,
 )
 
 /** The cross-cutting properties every [[Element]] carries: its style, an optional layout constraint (how much space it
@@ -76,6 +84,10 @@ final case class FocusState private[dsl] (
   * [[io.worxbend.tui.core.CrossAlign]]; `None` takes the container's own alignment. `ensureVisible` is what
   * `.ensureVisible` sets: an enclosing `scrollView` scrolls to keep this element on screen. `gridSpot` is where
   * `.at(row, col)`, `.span(rows, cols)` and `.area(name)` put this element inside a `grid`; outside one it is unused.
+  *
+  * `variant` is the [[ComponentRole]] `.variant(role)` picked — `ButtonRole.Primary` — which the focus pass looks up in
+  * the app's theme instead of the node type's own default role. `lateBinding` is how a themed factory that saw only the
+  * ambient default theme lets the focus pass re-resolve the node against the app's theme — see [[LateBinding]].
   */
 final case class ElementProps(
     style: Style = Style.Default,
@@ -99,6 +111,8 @@ final case class ElementProps(
     alignSelf: Option[CrossAlign] = None,
     ensureVisible: Boolean = false,
     gridSpot: GridSpot = GridSpot.Flowed,
+    variant: Option[ComponentRole] = None,
+    lateBinding: Option[LateBinding] = None,
 ):
 
   /** Whether this element is the one the focus pass marked — where keystrokes go this frame. */

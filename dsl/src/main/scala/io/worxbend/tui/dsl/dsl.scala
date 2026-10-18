@@ -601,6 +601,14 @@ extension [E <: Element](element: E)
   def pressedStyle(style: Style): element.Self =
     element.withProps(element.props.copy(pressedStyle = Some(style)))
 
+  /** Draws this element as `role` from the app's theme instead of its node type's own role —
+    * `button("Save")(save()).variant(ButtonRole.Primary)`. The styles are looked up when the frame is painted, with the
+    * hierarchical fallback [[Theme.component]] describes, so a theme with nothing for the role draws the element as it
+    * would have been drawn without the call.
+    */
+  def variant(role: ComponentRole): element.Self =
+    element.withProps(element.props.copy(variant = Some(role)))
+
   /** Keeps `Tab` and `Shift+Tab` inside this subtree while focus is in it — for a popover or an inline editor that is
     * not a modal layer but should still hold the keyboard until it is dismissed. Focus gets in the usual ways (a click,
     * `.autofocus`, `focusTo`); getting out is the app's call, by moving focus from code or removing the subtree. A
