@@ -43,16 +43,144 @@ import scala.concurrent.duration.FiniteDuration
   *
   * `viewport` decides how much of the terminal the run owns — the whole alternate screen (the default), or a strip of
   * rows at the bottom of the primary screen that leaves the shell's own output visible above it. See [[Viewport]].
+  *
+  * An immutable value with a private constructor: build one from [[RunnerConfig.Default]] (or the companion `apply`)
+  * and the `with*` methods, each of which returns a new configuration. The two Booleans and every `Option` come as a
+  * pair — `withMouseCapture`/`withoutMouseCapture`, `withTickRate(d)`/`withoutTickRate` — so a call site reads as a
+  * sentence rather than a `true`. Equality and `hashCode` are structural over every field, with one caveat the type
+  * system forces: `onTaskError`, `onFrame` and `onFrameTiming` hold functions, which compare by reference — two
+  * configurations built from the same handler instance are equal, two built from separately written lambdas with the
+  * same body are not — exactly as they did when this was a `case class`. `toString` lists only the fields that differ
+  * from the default, so the common configuration prints as one short line.
   */
-final case class RunnerConfig(
-    tickRate: Option[FiniteDuration] = None,
-    mouseCapture: Boolean = false,
-    onTaskError: Option[RenderTaskErrorHandler] = None,
-    onFrame: Option[CompletedFrame => Unit] = None,
-    viewport: Viewport = Viewport.Fullscreen,
-    keyEventTypes: Boolean = false,
-    onFrameTiming: Option[FrameTiming => Unit] = None,
-)
+final class RunnerConfig private (
+    val tickRate: Option[FiniteDuration],
+    val mouseCapture: Boolean,
+    val onTaskError: Option[RenderTaskErrorHandler],
+    val onFrame: Option[CompletedFrame => Unit],
+    val viewport: Viewport,
+    val keyEventTypes: Boolean,
+    val onFrameTiming: Option[FrameTiming => Unit],
+):
+
+  /** Synthetic [[Event.Tick]]s every `rate` — the whole-app clock for animation; see the class notes on why the type is
+    * `FiniteDuration`.
+    */
+  def withTickRate(rate: FiniteDuration): RunnerConfig = updated(tickRate = Some(rate))
+
+  /** No synthetic ticks at all: the loop blocks on input for its default poll between events. The default. */
+  def withoutTickRate: RunnerConfig = updated(tickRate = None)
+
+  /** Asks the terminal to report mouse events, which reach the app as [[Event.Mouse]]. */
+  def withMouseCapture: RunnerConfig = updated(mouseCapture = true)
+
+  /** Leaves mouse reporting off. The default. */
+  def withoutMouseCapture: RunnerConfig = updated(mouseCapture = false)
+
+  /** Takes over the reporting of queued-body failures as they happen — see the class notes for what that changes about
+    * what `run` returns, and keep the handler total.
+    */
+  def withOnTaskError(handler: RenderTaskErrorHandler): RunnerConfig = updated(onTaskError = Some(handler))
+
+  /** Back to accumulating queued-body failures and returning them as [[RunnerError.QueuedTask]]. The default. */
+  def withoutOnTaskError: RunnerConfig = updated(onTaskError = None)
+
+  /** Observes every flushed frame on the render thread — see [[CompletedFrame]] and the class notes on cost and on a
+    * throwing observer.
+    */
+  def withOnFrame(observer: CompletedFrame => Unit): RunnerConfig = updated(onFrame = Some(observer))
+
+  /** No frame observation, and no snapshot taken. The default. */
+  def withoutOnFrame: RunnerConfig = updated(onFrame = None)
+
+  /** How much of the terminal the run owns — see [[Viewport]]. */
+  def withViewport(viewport: Viewport): RunnerConfig = updated(viewport = viewport)
+
+  /** Asks the terminal to report key releases as well as presses, as [[Event.KeyRelease]] — best-effort, see the class
+    * notes.
+    */
+  def withKeyEventTypes: RunnerConfig = updated(keyEventTypes = true)
+
+  /** Key presses only. The default. */
+  def withoutKeyEventTypes: RunnerConfig = updated(keyEventTypes = false)
+
+  /** Opts into elapsed phase measurements per frame — see [[FrameTiming]]. */
+  def withOnFrameTiming(observer: FrameTiming => Unit): RunnerConfig = updated(onFrameTiming = Some(observer))
+
+  /** No phase timing, and no profiling clock reads. The default. */
+  def withoutOnFrameTiming: RunnerConfig = updated(onFrameTiming = None)
+
+  private def updated(
+      tickRate: Option[FiniteDuration] = tickRate,
+      mouseCapture: Boolean = mouseCapture,
+      onTaskError: Option[RenderTaskErrorHandler] = onTaskError,
+      onFrame: Option[CompletedFrame => Unit] = onFrame,
+      viewport: Viewport = viewport,
+      keyEventTypes: Boolean = keyEventTypes,
+      onFrameTiming: Option[FrameTiming => Unit] = onFrameTiming,
+  ): RunnerConfig =
+    new RunnerConfig(tickRate, mouseCapture, onTaskError, onFrame, viewport, keyEventTypes, onFrameTiming)
+
+  /** Structural over every field; the three function-valued fields compare by reference (see the class notes). */
+  override def equals(other: Any): Boolean =
+    other match
+      case that: RunnerConfig =>
+        (this eq that) ||
+        (mouseCapture == that.mouseCapture && keyEventTypes == that.keyEventTypes && tickRate == that.tickRate &&
+          viewport == that.viewport && onTaskError == that.onTaskError && onFrame == that.onFrame &&
+          onFrameTiming == that.onFrameTiming)
+      case _                  => false
+
+  override def hashCode(): Int =
+    var hash = tickRate.hashCode()
+    hash = 31 * hash + mouseCapture.hashCode()
+    hash = 31 * hash + onTaskError.hashCode()
+    hash = 31 * hash + onFrame.hashCode()
+    hash = 31 * hash + viewport.hashCode()
+    hash = 31 * hash + keyEventTypes.hashCode()
+    31 * hash + onFrameTiming.hashCode()
+
+  /** Only the fields that differ from [[RunnerConfig.Default]], so the common configuration prints as one short line; a
+    * function field prints as `<installed>`, a lambda having no readable text of its own.
+    */
+  override def toString: String =
+    val fields = List(
+      Option.when(tickRate.nonEmpty)(s"tickRate=$tickRate"),
+      Option.when(mouseCapture)("mouseCapture=true"),
+      Option.when(onTaskError.nonEmpty)("onTaskError=<installed>"),
+      Option.when(onFrame.nonEmpty)("onFrame=<installed>"),
+      Option.when(viewport != Viewport.Fullscreen)(s"viewport=$viewport"),
+      Option.when(keyEventTypes)("keyEventTypes=true"),
+      Option.when(onFrameTiming.nonEmpty)("onFrameTiming=<installed>"),
+    ).flatten
+    if fields.isEmpty then "RunnerConfig.Default" else fields.mkString("RunnerConfig(", ", ", ")")
+
+object RunnerConfig:
+
+  /** A configuration from its fields, every one defaulting to off — `RunnerConfig(tickRate = Some(d))` is
+    * `RunnerConfig.Default.withTickRate(d)`.
+    *
+    * This is a construction convenience, not the compatibility surface. Adding a field changes its descriptor and
+    * renumbers its default-argument getters, so a consumer compiled against `RunnerConfig(tickRate = …)` still fails
+    * with `NoSuchMethodError` on the next field until it recompiles; at that growth the previous arity is kept as a
+    * plain default-free overload so compiled callers keep working. Code that must survive a new field without
+    * recompiling starts from [[Default]] and builds with the `with*` methods.
+    */
+  def apply(
+      tickRate: Option[FiniteDuration] = None,
+      mouseCapture: Boolean = false,
+      onTaskError: Option[RenderTaskErrorHandler] = None,
+      onFrame: Option[CompletedFrame => Unit] = None,
+      viewport: Viewport = Viewport.Fullscreen,
+      keyEventTypes: Boolean = false,
+      onFrameTiming: Option[FrameTiming => Unit] = None,
+  ): RunnerConfig =
+    new RunnerConfig(tickRate, mouseCapture, onTaskError, onFrame, viewport, keyEventTypes, onFrameTiming)
+
+  /** Full screen, no ticks, no mouse or key-release reporting, no observers: what `RunnerConfig()` builds and where
+    * every `with*` chain starts.
+    */
+  val Default: RunnerConfig = RunnerConfig()
 
 /** An event handler's answer to one question: does this event change what is on screen?
   *
@@ -160,15 +288,25 @@ enum RunnerError:
 
   /** Secondary teardown failures, in release order. The error case and its primary failure are unchanged. Populated by
     * the owning runner before returning; read only after `run` finishes.
+    *
+    * Identity-bound: the record lives on the instance the runner returned, not in the case's value. Equality,
+    * `hashCode`, `toString` and pattern matching see only the case's own fields, so two errors that differ only here
+    * compare equal, and a value rebuilt from an extracted payload — `RunnerError.Backend(error, tasks)` — starts with
+    * none. The durable record is the suppressed chain on the primary throwable, where every failure is attached as
+    * well; [[message]] reports how many there were.
     */
   def cleanupFailures: Vector[Throwable] = cleanupErrors
 
-  private[tui] def addCleanupFailure(error: Throwable): Unit =
-    val primary = this match
+  /** The throwable behind this error, when its case carries one: the thing cleanup failures are suppressed onto. */
+  private[runtime] def primaryThrowable: Option[Throwable] =
+    this match
       case Handler(cause)                     => Some(cause)
       case QueuedTask(failures)               => Some(failures.first)
       case Backend(BackendError.Io(cause), _) => Some(cause)
       case _                                  => None
+
+  private[tui] def addCleanupFailure(error: Throwable): Unit =
+    val primary = primaryThrowable
     if !primary.exists(_ eq error) && !cleanupErrors.exists(_ eq error) then
       cleanupErrors = cleanupErrors :+ error
       primary.foreach(Cleanup.suppress(_, error))
@@ -197,10 +335,12 @@ enum RunnerError:
     *
     * The generated `toString` of an enum case is a constructor call — `Backend(Io(java.io.IOException: ...),None)` —
     * which is a fine debugging string and a poor thing to print at someone. This is the sentence to print instead;
-    * [[RunnerError.Backend]] delegates to [[BackendError.message]] for its half.
+    * [[RunnerError.Backend]] delegates to [[BackendError.message]] for its half. When teardown failed as well, the line
+    * ends with how many [[cleanupFailures]] there were — ` (+2 cleanup failures)` — so the one line an app prints
+    * admits that `onStop` or the terminal restore went wrong too, rather than leaving that to a field nobody reads.
     */
   def message: String =
-    this match
+    val primary = this match
       case Backend(error, queuedTasks) =>
         val tasks = queuedTasks.map(failures => s" (${describe(failures)} beforehand)").getOrElse("")
         s"${error.message}$tasks"
@@ -208,6 +348,11 @@ enum RunnerError:
       case Handler(error)              =>
         val detail = Option(error.getMessage).getOrElse(error.getClass.getName)
         s"an app callback threw on the render thread: $detail"
+    val cleanup = cleanupErrors.size match
+      case 0 => ""
+      case 1 => " (+1 cleanup failure)"
+      case n => s" (+$n cleanup failures)"
+    s"$primary$cleanup"
 
   /** How many render-thread bodies failed and what the first one said. */
   private def describe(failures: QueuedTaskFailures): String =
