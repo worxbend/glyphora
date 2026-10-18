@@ -205,10 +205,17 @@ final class DataTableState[K]:
 object DataTableState:
 
   /** The state of a plain-text table, keyed by original row position — the spelling `DataTableState()` keeps for the
-    * tables [[DataTable.fromStrings]] builds. A table with its own key type writes the type out:
-    * `DataTableState[String]()`.
+    * tables [[DataTable.fromStrings]] builds. A table with its own key type names it through [[keyed]]:
+    * `DataTableState.keyed[String]`.
     */
   def apply(): DataTableState[Int] = new DataTableState[Int]
+
+  /** The state of a table whose [[KeyedRow]]s carry their own key type — `DataTableState.keyed[String]` for a table
+    * keyed by name, `keyed[Long]` for one keyed by PID. A separate factory rather than a type parameter on `apply`,
+    * because a generic `apply[K]()` would infer `Nothing` for the bare `DataTableState()` every plain-text table
+    * writes. Starts out exactly as [[apply]] does: nothing selected, no sort, no filter, scrolled to the top.
+    */
+  def keyed[K]: DataTableState[K] = new DataTableState[K]
 
   /** Everything that can change the filtered/sorted view, used as the memoization key. */
   private[widgets] final case class ViewKey(

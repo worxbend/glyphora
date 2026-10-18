@@ -17,6 +17,18 @@ final class DataTableSpec extends AnyFunSuite:
   private def withOptions(table: DataTable[Int])(change: DataTableOptions => DataTableOptions): DataTable[Int] =
     table.copy(options = change(table.options))
 
+  test("DataTableState.keyed builds a state for a non-Int key"):
+    // `DataTableState[String]()` does not compile — the companion's `apply` takes no type parameter — and
+    // `new DataTableState[String]` is a spelling the docs never show. `keyed` is the factory for a table with its own
+    // key type, and it starts out exactly as a fresh `DataTableState()` does.
+    val state: DataTableState[String] = DataTableState.keyed[String]
+    assert(state.selected.isEmpty)
+    assert(state.selectedColumn.isEmpty)
+    assert(state.sort.isEmpty)
+    assert(state.offset == 0)
+    assert(state.paging.isEmpty)
+    assert(state.filter.isEmpty)
+
   test("renders the header row then the data rows"):
     val lines = trimmedLines(rendered(table, DataTableState(), 15, 4))
     assert(lines == Seq("name     size", "beta     20", "alpha    100", "gamma    3"))
