@@ -18,9 +18,11 @@ export Element.{
   checkbox,
   clear,
   collapsible,
+  colorPicker,
   column,
   confirmDialog,
   dataTable,
+  datePicker,
   dialog,
   directoryTree,
   dock,
@@ -34,11 +36,13 @@ export Element.{
   gauge,
   grid,
   heatmap,
+  hexViewer,
   horizontalBarChart,
   image,
   indeterminateBar,
   indeterminateBarAt,
   input,
+  inspect,
   interactiveWidget,
   layers,
   line,
@@ -61,11 +65,14 @@ export Element.{
   paginator,
   panel,
   pieChart,
+  placeholder,
   portal,
   positioned,
   progressBar,
   promptComposer,
+  qrCode,
   radioGroup,
+  rangeSlider,
   responsive,
   row,
   rule,
@@ -91,9 +98,11 @@ export Element.{
   templateInput,
   text,
   textArea,
+  timePicker,
   toggle,
   tooltip,
   tree,
+  treeTable,
   widget,
 }
 // Form signatures are part of the one-import application surface too. `Codec` is the context bound of `persisted`, and
@@ -101,6 +110,8 @@ export Element.{
 // `deriveCodec` stays behind the macros import with `deriveForm`, because `Codec.derived` already summons it for every
 // mirrored type and the explicit form is only ever written beside a type definition.
 export io.worxbend.tui.macros.{Codec, DerivedField, FieldValidation, FormSpec}
+// `inspect(value)` takes a `Pretty[A]`, and an app redacting a field writes `given Pretty[Secret] = Pretty.atom(...)`.
+export io.worxbend.tui.macros.{Pretty, PrettyShape}
 
 // Every core type the exported API's own signatures mention, so a view never needs a second import.
 //
@@ -306,11 +317,13 @@ export io.worxbend.tui.widgets.{
   Bounds,
   CanvasResolution,
   ChartOptions,
+  ColorPickerState,
   ColorRamp,
   ColumnSort,
   DataTable,
   DataTableOptions,
   DataTableState,
+  DatePickerState,
   Dataset,
   DirectoryEntry,
   DirectoryListing,
@@ -320,6 +333,7 @@ export io.worxbend.tui.widgets.{
   DropdownState,
   GraphType,
   GridPhase,
+  HexViewerState,
   HighlightSpacing,
   Image,
   IndeterminateMotion,
@@ -358,7 +372,11 @@ export io.worxbend.tui.widgets.{
   Paging,
   Painter,
   ProgressLabel,
+  PrettyValue,
   ProgressPreset,
+  QrEcc,
+  RangeSliderState,
+  RangeThumb,
   ScrollbarOptions,
   ScrollbarSide,
   ScrollViewState,
@@ -376,9 +394,12 @@ export io.worxbend.tui.widgets.{
   TextAreaState,
   TextEffect,
   TextInputState,
+  TimeField,
+  TimePickerState,
   TitlePosition,
   TreeNode,
   TreeState,
+  TreeTable,
 }
 
 /** The shape of an app's `view` (and any sub-view helper): a computation, run under a tracking [[ReactiveScope]] *and*

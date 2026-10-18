@@ -16,9 +16,9 @@ Use this page to choose a widget and understand its state model. The
 
 | Job | Start with | Add when needed |
 |---|---|---|
-| Arrange a screen | `row`, `column`, `panel`, `spacer`, `rule` | `scrollView`, `splitPane`, `layers` |
-| Show prose or records | `text`, `list`, `table`, `tabs` | `markdown`, `SyntaxHighlighter`, `log`, `dataTable`, `directoryTree` |
-| Collect input | `input`, `checkbox`, `toggle`, `select`, `button` | `radioGroup`, `slider`, `textArea`, `autocomplete`, `filePicker`, `selectionList`, `focusGroup`, `Form` |
+| Arrange a screen | `row`, `column`, `panel`, `spacer`, `rule` | `scrollView`, `splitPane`, `layers`, `placeholder` |
+| Show prose or records | `text`, `list`, `table`, `tabs` | `markdown`, `SyntaxHighlighter`, `log`, `dataTable`, `treeTable`, `directoryTree`, `hexViewer`, `inspect` |
+| Collect input | `input`, `checkbox`, `toggle`, `select`, `button` | `radioGroup`, `slider`, `rangeSlider`, `datePicker`, `timePicker`, `colorPicker`, `textArea`, `autocomplete`, `filePicker`, `selectionList`, `focusGroup`, `Form` |
 | Show a metric | `gauge`, `sparkline` | `lineGauge`, `dualSparkline`, `barChart`, `horizontalBarChart` |
 | Plot data | `chart`, `pieChart`, `heatmap` | `stackedBarChart`, `canvas`, `calendar` |
 | Communicate progress | `spinner`, `progressBar`, `orbitSpinner`, `skeleton`, `indeterminateBar` | `marquee`, `animatedText`, effects, toasts |
@@ -2160,6 +2160,238 @@ badge("BETA").fg(Color.Magenta)
 accent and accepts any `.fg(...)`. Both report a `widthAt`, so a caller can size a
 column for them rather than guessing.
 
+## Pickers, inspectors and prototyping
+
+### Placeholders while the layout settles
+
+`placeholder("Sidebar")` stands in for a panel that is not written yet: a dashed
+box with the label centred in it and, underneath, the size the layout actually gave
+it. It fills whatever its container hands out, so tuning a `row(...)` of constraints
+is a matter of reading the numbers, and swapping the placeholder for the real content
+moves nothing around it.
+
+```scala
+row(
+  placeholder("Sidebar").length(24),
+  column(placeholder("Editor").fill, placeholder("Terminal").length(8)),
+)
+```
+
+```text
+┌╌╌╌╌╌╌╌╌╌╌┐
+╎ Sidebar  ╎
+╎   12×4   ╎
+└╌╌╌╌╌╌╌╌╌╌┘
+```
+
+An area under three cells either way drops the frame and keeps the label and size.
+The widget behind it, `Placeholder(label, style, labelStyle, borderType)`, takes any
+`BorderType`.
+
+### Picking a date or a time
+
+`datePicker(state, onSelect)` is the interactive form of `calendar`: the grid shows
+whichever month the cursor is in, so moving past the last day of a month simply
+turns the page.
+
+```scala
+import java.time.{LocalDate, LocalTime}
+
+private val due  = DatePickerState(LocalDate.now())
+private val time = TimePickerState(LocalTime.of(9, 0), withSeconds = false)
+private val chosen = Signal(Option.empty[LocalDate])
+
+def view(using ReactiveScope, Theme): Element =
+  column(
+    datePicker(due, date => chosen.set(Some(date))),
+    timePicker(time),
+  )
+```
+
+| Key | `datePicker` | `timePicker` |
+|---|---|---|
+| Left / Right | one day back / forward | previous / next field |
+| Up / Down | one week back / forward | step the time by the focused field |
+| PageUp / PageDown | one month back / forward | — |
+| `t` | jump to today | — |
+| Enter / Space | choose the cursor's date (`state.selected`, `onSelect`) | — |
+
+A time step moves the whole clock and wraps round midnight, so one minute up from
+`23:59` is `00:00`. `DatePickerState(initial, today)` takes the clock `t` reads, so a
+test can pin it; the widgets behind the nodes, `DatePicker(options, selectedStyle)`
+and `TimePicker(style, highlightStyle)`, take a `CalendarOptions` and plain styles.
+
+### Selecting a range
+
+`rangeSlider(state, onChange)` is `slider` with two thumbs. The state owns the pair
+and the keyboard focus between them:
+
+```scala
+private val price = RangeSliderState(SliderRange.of(0, 500, 10), 50, 200, minGap = 20)
+
+rangeSlider(price, (low, high) => filter.set(low to high))
+```
+
+```text
+├──●━━━━━━━●────────┤
+```
+
+Left/Right move the focused thumb by the range's step and Home/End send it to its
+limit. A thumb pushed into the other stops there — they can meet, never cross — and
+`minGap` keeps them that many units apart. Tab hands the keyboard from the lower thumb
+to the upper one and Shift+Tab back; Tab from the upper thumb is not consumed, so focus
+moves on to the next control and nobody gets stuck inside the slider. A press on the
+track moves whichever thumb is nearer, and dragging keeps moving it.
+
+### Choosing a colour
+
+`colorPicker(state, onSelect)` lays the 256 xterm colours out as a grid — the
+sixteen system colours in two rows, the 6×6×6 cube in twelve rows of eighteen (two
+rows per red level), the 24-step grey ramp in two rows — each swatch two cells of its
+own background, with a caption naming the cursor's index and approximate RGB value:
+
+```scala
+private val accent = ColorPickerState(initial = 33)
+
+colorPicker(accent, color => theme.set(Theme.Dark.withAccent(Style.Default.withFg(color))))
+```
+
+Arrows move the `[]` cursor, Enter or a click chooses. The value is a
+`Color.Indexed`, so it draws exactly as the swatch looked on any 256-colour
+terminal; `state.chosen` keeps it for the app to read. The grid measures 36×17
+(`ColorPicker(showCaption = false)` drops the caption row) and the node claims exactly
+that box.
+
+### Looking at raw bytes
+
+`hexViewer(bytes, state)` is a scrollable hex dump in the familiar `hexdump -C`
+layout:
+
+```scala
+import scala.collection.immutable.ArraySeq
+
+private val payload = ArraySeq.unsafeWrapArray(java.nio.file.Files.readAllBytes(path))
+private val cursor  = HexViewerState()
+
+hexViewer(payload, cursor)
+```
+
+```text
+00000000  48 65 6c 6c 6f 2c 20 57  6f 72 6c 64 21 0a 54 68  |Hello, World!.Th|
+00000010  69 73 20 69 73 20 67 6c  79 70 68 6f 72 61 2e     |is is glyphora.|
+```
+
+Left/Right move the selected byte, Up/Down a row, PageUp/PageDown ten rows, Home/End
+to either end; the selection is highlighted in both columns and the view scrolls to
+keep it on screen. Anything outside printable ASCII — a UTF-8 sequence included — shows
+as `.` in the right-hand column. The widget, `HexViewer(bytes, bytesPerRow, …)`, is
+`Measured`: one row per `bytesPerRow` bytes, 78 columns for the default 16, and only
+the rows on screen are formatted.
+
+### A tree with columns
+
+`treeTable(table, state)` puts `tree`'s collapsible hierarchy in the first column
+and a grid of cells beside it. The cells come from a lookup by the row's key in the
+`TreeState`, so the records stay in your own map instead of being folded into labels:
+
+```scala
+private val files = Map(
+  "src"        -> Seq("dir", "-"),
+  "Main.scala" -> Seq("file", "1200"),
+  "README.md"  -> Seq("file", "80"),
+)
+private val nodes = Seq(TreeNode("src", Seq(TreeNode("Main.scala"))), TreeNode("README.md"))
+private val state = TreeState.keyed(_.label)
+
+treeTable(
+  TreeTable[String](nodes, Seq("Name", "Kind", "Bytes"), files(_), Seq(Constraint.Fill(1), Constraint.Length(5), Constraint.Length(6))),
+  state,
+)
+```
+
+```text
+Name                Kind  Bytes
+▾ src               dir   -
+    Main.scala      file  1200
+  README.md         file  80
+```
+
+Up/Down move the selection through the visible rows, Enter toggles the selected
+branch, Right expands and Left collapses it. The header stays pinned while the body
+scrolls, the selected row is highlighted across every column, and each cell is cut to
+its column's display width through `CharWidth`, so a CJK cell never spills half a
+character into its neighbour. `cells` is only called for rows on screen.
+
+### Inspecting a value
+
+`inspect(value)` draws any value as a tree — the debugging view Rich's `inspect` and
+Term.jl give you:
+
+```scala
+enum Mode:
+  case Dev, Prod
+final case class Database(host: String, port: Int, replicas: List[String])
+final case class Config(name: String, mode: Mode, database: Database, flags: Map[String, Boolean], timeout: Option[Int])
+
+inspect(config)
+```
+
+```text
+Config
+├─ name: "glyphora"
+├─ mode: Prod
+├─ database: Database
+│  ├─ host: "db.internal"
+│  ├─ port: 5432
+│  └─ replicas: List("replica-a", "replica-b")
+├─ flags: Map("beta" -> true)
+└─ timeout: None
+```
+
+The description comes from a `Pretty[A]` typeclass in `tui-macros`, derived at compile
+time through the type's `Mirror` for any case class, enum or sealed hierarchy — no
+reflection, so it works in a native image. Primitives, `String`, `Option` and the
+standard immutable collections have instances already; declare a given beside a type
+to change how it is shown, which is also how a field is kept off the screen:
+
+```scala
+final case class Token(value: String)
+object Token:
+  given Pretty[Token] = Pretty.atom(_ => "<redacted>")
+```
+
+`derivePretty[A]` is the explicit form, for a `given` written beside a type. A node
+whose children are all atoms stays on one row while that row is at most
+`inlineWidth` columns (60 by default); everything else is expanded. The widget,
+`Inspect(value: PrettyValue, …)`, takes the `PrettyValue` description directly —
+`Atom`, `Seq`, `Map`, `Product(name, fields)` — for values described by hand, and is
+`Measured`, so the node claims exactly its rows.
+
+### QR codes
+
+`qrCode(text)` draws a scannable QR code — a pairing link, a URL to the docs, a
+Wi-Fi string — two modules per cell with half blocks, so version 1 with its quiet
+zone is 25 columns by 13 rows:
+
+```scala
+row(
+  qrCode("https://github.com/worxbend/glyphora"),
+  text("Scan to open the docs").dim,
+)
+```
+
+The encoder is built in, with no dependency: UTF-8 text in byte mode, versions 1 to
+10, and all four error-correction levels — `qrCode(text, QrEcc.High)` survives more
+damage and holds less (up to 271 bytes at `QrEcc.Low`, 119 at `QrEcc.High`). The
+smallest version that fits is chosen and the mask is picked by the standard's penalty
+rules. Text longer than version 10 holds draws `QR: too long` instead.
+
+Every module is painted with an explicit colour, `darkColor` on `lightColor` (black
+on white by default), because a reader needs dark modules on a light ground whatever
+the terminal's own background is. The widget, `QrCode(text, ecc, quietZone,
+darkColor, lightColor)`, is `Measured`, and the node claims exactly its box: a code is
+only readable whole, so give it that room.
+
 ## Drop to a raw Widget
 
 The DSL is not a separate renderer. Any core `Widget` can become a leaf:
@@ -2239,14 +2471,15 @@ The internal tiers document dependency order, not quality:
 
 1. **Foundation** — block, row/column, spacer, rule, clear, paragraph, list view, table,
    tabs, gauge, line gauge, sparkline, scrollbar, button, checkbox, toggle, select,
-   radio group, slider, text input, tree.
+   radio group, slider, range slider, text input, tree, placeholder.
 2. **Visualization** — canvas, chart, bar chart, column chart, stacked bar chart,
-   pie chart, heatmap, dual sparkline, calendar.
+   pie chart, heatmap, dual sparkline, calendar, QR code.
 3. **Rich content** — spinner and its presets, spinner grid, orbit spinner, linear
    spinner, animated text, marquee, skeleton, indeterminate bar, big text, notice,
    badge, tooltip, dialog, markdown, syntax highlighter.
 4. **Application-scale state** — data table, directory tree, text area, log, log
-   console, error boundary, menu, paginator, scroll view, image, and links.
+   console, error boundary, menu, paginator, scroll view, image, links, date and time
+  pickers, colour picker, tree table, hex viewer, and inspect.
 
 Every built-in has render-to-`Buffer` tests. Interactive DSL wrappers additionally
 have focus and event-routing tests.
