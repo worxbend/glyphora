@@ -63,6 +63,12 @@ trait TuiApp:
 
   def config: RunnerConfig = RunnerConfig()
 
+  /** Whether Alt+arrow keys move focus spatially — to the nearest focusable painted in that direction — once nothing in
+    * the tree and no binding claimed them. Off by default, because Alt+arrows are a common app binding and a terminal
+    * may reserve them; turn it on for grid-shaped screens (a dashboard of tiles, a keypad).
+    */
+  def spatialNavigation: Boolean = false
+
   /** The theme the built-in overlays (toasts, palette), the chrome presets and the themed element factories render
     * with. Overriding it re-themes all of them, because it is handed to [[view]] as a `using` parameter.
     *
@@ -791,19 +797,21 @@ trait TuiApp:
     */
   private def handleFrameworkKey(key: KeyEvent, tracker: FocusTracker, handle: RunnerHandle): Boolean =
     key match
-      case KeyEvent(KeyCode.Tab, modifiers) if modifiers.hasAny(KeyModifiers.Shift)      => tracker.focusPrevious()
-      case KeyEvent(KeyCode.Tab, _)                                                      => tracker.focusNext()
+      case KeyEvent(KeyCode.Tab, modifiers) if modifiers.hasAny(KeyModifiers.Shift)        => tracker.focusPrevious()
+      case KeyEvent(KeyCode.Tab, _)                                                        => tracker.focusNext()
       case KeyEvent(KeyCode.Char('p'), modifiers)
           if modifiers.hasAny(KeyModifiers.Ctrl) && activeBindingsNow.bindings.nonEmpty && !palette.isOpenNow =>
         openPalette()
         false
-      case KeyEvent(KeyCode.Char('c'), modifiers) if modifiers.hasAny(KeyModifiers.Ctrl) =>
+      case KeyEvent(KeyCode.Char('c'), modifiers) if modifiers.hasAny(KeyModifiers.Ctrl)   =>
         handle.quit()
         false
-      case KeyEvent(KeyCode.Escape, _) if topScreenClosesOnEscape                        =>
+      case KeyEvent(KeyCode.Escape, _) if topScreenClosesOnEscape                          =>
         popScreen()
         false
-      case _                                                                             => false
+      case KeyEvent(code, modifiers) if spatialNavigation && modifiers == KeyModifiers.Alt =>
+        SpatialDirection.of(code).exists(tracker.focusInDirection)
+      case _                                                                               => false
 
   /** Whether the screen on top of the stack is a modal that asked to be closed by `Esc`.
     *

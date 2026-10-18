@@ -216,10 +216,40 @@ dataTable(table, tableState).onMouseEvent { event =>
 
 A vertical wheel notch over a list still moves its selection; a sideways one deliberately
 does not, because a swipe is not a row move. The position is
-in absolute screen cells and zero-based, the same coordinate space a `Rect` uses — so a
-handler that wants coordinates relative to its own area subtracts that area's origin
-(`event.position.x - area.x`). Custom widgets should compare the position with the
-element's known model, or use built-in interactive elements when possible.
+in absolute screen cells and zero-based, the same coordinate space a `Rect` uses. A
+handler that wants coordinates relative to its own area should use `.onMouse` below
+rather than subtracting an origin it was never given.
+
+## Local coordinates, double clicks and capture
+
+`.onMouse(ctx => …)` is the mouse handler to reach for first. It sees the same events as
+`.onMouseEvent`, wrapped in a `MouseContext`: `ctx.event` is the raw event, `ctx.local`
+is the position relative to the element's own top-left cell — `(0, 0)` at the corner,
+wherever layout put the element — and `ctx.area` is the element's laid-out rect:
+
+```scala
+canvas(40, 10)(draw).onMouse { ctx =>
+  if ctx.event.kind == MouseEventKind.Down && ctx.event.clickCount == 2 then
+    zoomInAt(ctx.local)
+    true
+  else false
+}
+```
+
+`MouseEvent.clickCount` is `2` for the second press of a double click and `3` for a
+triple: the host counts presses of the same button on the same cell within 400 ms.
+Terminals report no such thing, so the count is synthesised before any handler runs; it is
+always `1` on anything but a `Down`.
+
+A press that a handler or a built-in consumes **captures the pointer**. Until the button
+comes back up, every drag and the release go to that element, with the area it had when
+it was pressed, even once the pointer has left it — which is how a `slider` drag or a
+`splitPane` divider keeps following the mouse past the control's edge. `ctx.local` can
+then be negative or larger than the area, so clamp it. A press nobody consumed captures
+nothing.
+
+`.onMouseEvent` and the absolute-coordinate helpers (`onClickAt`, `onHover`, `onDrag`)
+stay, and run before `.onMouse` on the same element.
 
 ## Which button
 
@@ -296,8 +326,8 @@ You do not need custom handlers for common interactions:
 | button, checkbox, toggle | click activates |
 | list, menu, tree, directoryTree, selectionList, filePicker | wheel moves the selection one entry |
 | log, scrollView | wheel changes the offset |
-| slider | click or drag positions the value |
-| split pane | drag moves the divider |
+| slider | click or drag positions the value; a drag keeps going past the edge |
+| split pane | drag moves the divider, also past the panes' edges |
 
 `dataTable` is the one selectable collection with no wheel behavior: its selection
 indexes the visible page, so a wheel step would have to choose between moving inside
@@ -370,7 +400,89 @@ backend.enableMouseCapture(MouseCaptureMode.AllMotion)
 It is opt-in because it is not free: the terminal sends a report for every cell the
 pointer crosses, which costs nothing locally and is noticeable over a slow ssh link.
 `MouseCaptureMode.Buttons` is the default and is what the no-argument
-`enableMouseCapture()` requests.
+`enableMouseCapture()` requests. A runner asks for all-motion tracking from its first
+frame with `RunnerConfig.Default.withMouseMotion`, which implies mouse capture.
+
+A `TuiApp` running with mouse capture does not need to: the first frame that contains a
+`.hoverStyle(...)` or an explicit `.pointer(shape)` switches the terminal to all-motion
+tracking by itself. An app with mouse capture off is never switched on — that would take
+the terminal's own text selection away.
+
+### Hover and pressed styles
+
+The framework works out which element the pointer is resting over and which one a button
+is down on, and a control asks to show either:
+
+```scala
+button("Deploy")(deploy())
+  .hoverStyle(Style.Default.bold)
+  .pressedStyle(Style.Default.underline)
+```
+
+Only the innermost target under the pointer is hovered, so a container's hover style
+shows where none of its children is. Pressed lasts from the press to the release, wherever
+the release lands. A hover cue must never be the only way to find something: a terminal
+without motion reporting never sends a hover.
+
+## Disable a control
+
+`.disabled(condition)` disables an element and everything inside it while `condition`
+holds:
+
+```scala
+button("Save")(save()).disabled(!form.isValid)
+```
+
+A disabled control leaves the tab order (`Tab` skips it and `focusTo` refuses it), none of
+its handlers or built-ins run — a click lands on it and stops there, neither activating it
+nor moving focus — and it draws in the theme's `disabled` style (`muted`, dimmed). The
+pointer over it is `PointerShape.NotAllowed`. It stays in the tree and keeps its space, so
+nothing moves when it is re-enabled.
+
+Colour announces nothing to a screen reader, so the state is also spelled out:
+`app.accessibleLabel("save")` answers `Some("button Save, disabled")` for a keyed element
+(`button Save, focused` when it holds the keyboard), and the element-tree snapshot marks the
+node `disabled`. Put that label in an announcement line or a status bar for users who
+cannot see the dimming.
+
+## Focus groups
+
+A toolbar of six buttons should not cost six presses of `Tab`. `focusGroup(children*)`
+makes its children one tab stop with the arrow keys moving inside it — a roving tab stop:
+
+```scala
+column(
+  input(search),
+  focusGroup(button("New")(create()), button("Open")(open()), button("Delete")(delete())),
+  list(items, state),
+)
+```
+
+`Tab` from the input lands on `New`; `Right`/`Down` and `Left`/`Up` cycle through the
+three, wrapping; the next `Tab` goes to the list; `Shift+Tab` comes back to whichever
+member the group was left on. A member that consumes an arrow itself keeps it. Pass a
+single `column(...)` for a vertical group.
+
+### Keep Tab inside a popover
+
+`.trapFocus` keeps `Tab` and `Shift+Tab` cycling inside a subtree while focus is in it —
+for a popover or an inline editor that is not a modal screen but should hold the keyboard
+until it closes. A pushed modal `Screen` needs none of this; the layer below it is already
+out of the tab order.
+
+```scala
+column(text("Rename"), input(name).autofocus, row(button("OK")(ok()), button("Cancel")(cancel()))).trapFocus
+```
+
+## Move focus by direction
+
+On a grid-shaped screen, `Tab` order is a poor fit. Overriding
+`TuiApp.spatialNavigation` to `true` makes `Alt+Left/Right/Up/Down` move focus to the
+nearest focusable painted in that direction — from the top-left tile of a 2×2 grid,
+`Alt+Right` is the top-right tile and `Alt+Down` the bottom-left. Only an Alt+arrow
+nothing in the tree and no binding claimed reaches it, and it stays inside a
+`.trapFocus` subtree. A host with its own loop calls
+`ElementHost.focusInDirection(SpatialDirection.Right)` itself.
 
 ## Pointer shapes
 

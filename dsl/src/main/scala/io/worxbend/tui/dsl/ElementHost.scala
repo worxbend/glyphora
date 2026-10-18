@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Buffer, KeyEvent, MouseEvent, MouseEventKind, Position, Rect, Size, Style}
+import io.worxbend.tui.core.{Buffer, KeyCode, KeyEvent, MouseEvent, MouseEventKind, Position, Rect, Size, Style}
 import io.worxbend.tui.runtime.{Frame, ReactiveScope}
 import io.worxbend.tui.terminal.PointerShape
 
@@ -120,7 +120,7 @@ final class ElementHost:
       paint: Element => Unit,
       disabledStyle: Style = Style.Default.dim,
   ): Unit =
-    tracker.reconcile(FocusPass.focusKeys(raw), FocusPass.autofocusRequest(raw))
+    tracker.reconcile(FocusPass.focusKeys(raw), FocusPass.autofocusRequest(raw), FocusScope.of(raw))
     val recorder = Option.when(recordBounds)(bounds)
     motionDemanded = false
     cuesDemanded = false
@@ -182,7 +182,24 @@ final class ElementHost:
     * focus and does not quit: Tab traversal and Ctrl+C are policy, and policy belongs to whoever owns the loop — call
     * [[focusNext]] or [[focusPrevious]] from your own key handling if you want the usual meaning.
     */
-  def dispatchKey(key: KeyEvent): Boolean = lastTree.exists(EventRouter.dispatchKey(_, key))
+  def dispatchKey(key: KeyEvent): Boolean =
+    lastTree.exists(EventRouter.dispatchKey(_, key)) || (lastTree.isDefined && groupArrow(key))
+
+  /** An unmodified arrow nobody on the focus path consumed moves focus inside the focused element's focus group. That
+    * is the group's own behaviour rather than app policy, so it belongs here and an embedding host gets it too.
+    */
+  private def groupArrow(key: KeyEvent): Boolean =
+    if !key.modifiers.isEmpty then false
+    else
+      key.code match
+        case KeyCode.Right | KeyCode.Down => tracker.moveInGroup(forward = true)
+        case KeyCode.Left | KeyCode.Up    => tracker.moveInGroup(forward = false)
+        case _                            => false
+
+  /** Moves focus to the nearest focusable painted in `direction` from the focused one — spatial navigation, which
+    * `TuiApp` binds to Alt+arrows when `spatialNavigation` is on. `true` when focus moved; takes effect next frame.
+    */
+  def focusInDirection(direction: SpatialDirection): Boolean = tracker.focusInDirection(direction)
 
   /** Hit-tests the pointer, moves focus if a press landed inside a different focusable, then routes the event to the
     * element under it. `true` when focus moved, an element consumed the event, or the hovered or pressed target changed

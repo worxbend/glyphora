@@ -69,6 +69,8 @@ final case class FocusState private[dsl] (
   * `onMouseContext` is the handler `.onMouse(ctx => …)` installs: the same events as `onMouse`, handed over with the
   * element's own area and the position relative to it — see [[MouseContext]]. It runs after `onMouse` and before the
   * built-in behaviour.
+  *
+  * `trapFocus` is what `.trapFocus` sets: while focus is inside this subtree, `Tab` and `Shift+Tab` cycle within it.
   */
 final case class ElementProps(
     style: Style = Style.Default,
@@ -88,6 +90,7 @@ final case class ElementProps(
     hoverStyle: Option[Style] = None,
     pressedStyle: Option[Style] = None,
     onMouseContext: Option[MouseContext => Boolean] = None,
+    trapFocus: Boolean = false,
 ):
 
   /** Whether this element is the one the focus pass marked — where keystrokes go this frame. */

@@ -27,6 +27,7 @@ export Element.{
   dualSparkline,
   each,
   filePicker,
+  focusGroup,
   gauge,
   heatmap,
   horizontalBarChart,
@@ -551,6 +552,14 @@ extension [E <: Element](element: E)
   /** The style layered over this element from a button going down on it to the release, wherever that lands. */
   def pressedStyle(style: Style): element.Self =
     element.withProps(element.props.copy(pressedStyle = Some(style)))
+
+  /** Keeps `Tab` and `Shift+Tab` inside this subtree while focus is in it — for a popover or an inline editor that is
+    * not a modal layer but should still hold the keyboard until it is dismissed. Focus gets in the usual ways (a click,
+    * `.autofocus`, `focusTo`); getting out is the app's call, by moving focus from code or removing the subtree. A
+    * pushed modal `Screen` needs none of this: the layer below it is already out of the tab order.
+    */
+  def trapFocus: element.Self =
+    element.withProps(element.props.copy(trapFocus = true))
 
   /** Asks for the keyboard when this element first appears — a search box on a screen that opens, the first field of a
     * form, the default button of a dialog. Without it, focus starts on whichever focusable happens to come first in the

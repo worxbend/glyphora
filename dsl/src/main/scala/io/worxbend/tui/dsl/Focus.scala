@@ -150,6 +150,14 @@ private[dsl] final class FocusTracker:
     * [[focusToKey]] can answer "which index is the element named `email`?" without walking the tree again.
     */
   private var focusKeysSeen = Vector.empty[Option[String]]
+
+  /** The focus scope of every focusable in the last reconciled tree, aligned with [[focusKeysSeen]]; empty means "every
+    * focusable is its own tab stop", which is what a caller that passes no scopes gets.
+    */
+  private var scopes = Vector.empty[FocusScope]
+
+  /** The member each focus group was last left on, by group id — where the next `Tab` into the group lands. */
+  private val groupEntry    = mutable.Map.empty[Int, Int]
   private var lastAutofocus = Option.empty[AutofocusRequest]
 
   /** Where everything rendered this frame — a separate job from "where focus is", forwarded rather than exposed so a
@@ -189,8 +197,13 @@ private[dsl] final class FocusTracker:
     * every frame instead would pin the keyboard to that one element forever: Tab would move focus and the next render
     * would take it straight back.
     */
-  def reconcile(keys: Seq[Option[String]], autofocus: Option[AutofocusRequest]): Unit =
+  def reconcile(
+      keys: Seq[Option[String]],
+      autofocus: Option[AutofocusRequest],
+      focusScopes: Seq[FocusScope] = Seq.empty,
+  ): Unit =
     focusKeysSeen = keys.toVector
+    scopes = focusScopes.toVector
     focusableCount = keys.size
     if anchor.index < 0 then anchor = FocusAnchor.Cleared
     else
@@ -209,6 +222,7 @@ private[dsl] final class FocusTracker:
       val index = clampedIndex(request.index)
       anchor = FocusAnchor(index, keys.lift(index).flatten)
     }
+    scopeOf(anchor.index).group.foreach(group => groupEntry(group) = anchor.index)
     clearAreas()
 
   /** An index pulled back inside the tab order, or zero when there is nothing focusable to point at. */
@@ -268,9 +282,80 @@ private[dsl] final class FocusTracker:
         anchor = FocusAnchor(0, scala.None)
         lastAutofocus = None
 
-  /** `Tab`. From the no-focus state this lands on the *first* focusable rather than the second one. */
+  private def scopeOf(index: Int): FocusScope = scopes.lift(index).getOrElse(FocusScope.Unscoped)
+
+  private def membersOf(group: Int): Vector[Int] =
+    (0 until focusableCount).filter(scopeOf(_).group.contains(group)).toVector
+
+  /** The tab stops from where focus stands: every ungrouped focusable, one member per focus group (the focused one,
+    * else the one the group was last left on, else its first), and — while focus is inside a `.trapFocus` subtree —
+    * only those inside the innermost such subtree.
+    */
+  private def tabStops: Vector[Int] =
+    val current = scopeOf(focusedIndex)
+    val trapped = Option.when(focusedIndex >= 0)(current.traps.headOption).flatten
+    (0 until focusableCount).filter { index =>
+      val scope = scopeOf(index)
+      trapped.forall(scope.traps.contains) && scope.group.forall { group =>
+        val members = membersOf(group)
+        val entry   =
+          if members.contains(focusedIndex) then focusedIndex
+          else groupEntry.get(group).filter(members.contains).getOrElse(members.head)
+        index == entry
+      }
+    }.toVector
+
+  /** Steps through [[tabStops]] from the focused index, wrapping; `false` when there is nowhere else to go. */
+  private def stepStops(forward: Boolean): Boolean =
+    val stops = tabStops
+    if stops.isEmpty then false
+    else if focusedIndex < 0 then
+      focusTo(if forward then stops.head else stops.last)
+      true
+    else
+      val next =
+        if forward then stops.find(_ > focusedIndex).getOrElse(stops.head)
+        else stops.findLast(_ < focusedIndex).getOrElse(stops.last)
+      if next == focusedIndex then false
+      else
+        focusTo(next)
+        true
+
+  /** An arrow inside a focus group: the next (`forward`) or previous member, wrapping. `false` when focus is in no
+    * group or the group has a single member, so the arrow keeps bubbling.
+    */
+  def moveInGroup(forward: Boolean): Boolean =
+    scopeOf(focusedIndex).group.map(membersOf).filter(_.size > 1) match
+      case Some(members) =>
+        val at = members.indexOf(focusedIndex)
+        focusTo(members((at + (if forward then 1 else members.size - 1)) % members.size))
+        true
+      case None          => false
+
+  /** Spatial navigation: the nearest focusable painted in `direction` from the focused one, by the hit areas the last
+    * frame recorded — see [[SpatialNavigation]]. Stays inside a `.trapFocus` subtree; `false` when nothing lies that
+    * way or the focused element was not painted.
+    */
+  def focusInDirection(direction: SpatialDirection): Boolean =
+    val trapped = scopeOf(focusedIndex).traps.headOption
+    areaOf(focusedIndex) match
+      case None       => false
+      case Some(from) =>
+        val candidates = (0 until focusableCount)
+          .filter(index => index != focusedIndex && trapped.forall(scopeOf(index).traps.contains))
+          .flatMap(index => areaOf(index).map(index -> _))
+        SpatialNavigation.nearest(from, candidates, direction) match
+          case Some(index) =>
+            focusTo(index)
+            true
+          case None        => false
+
+  /** `Tab`. From the no-focus state this lands on the *first* focusable rather than the second one. A focus group
+    * counts once, and a `.trapFocus` subtree holding focus keeps it — see [[tabStops]].
+    */
   def focusNext(): Boolean =
     if focusableCount == 0 then false
+    else if scopes.nonEmpty then stepStops(forward = true)
     else if focusedIndex < 0 then
       focusTo(0)
       true
@@ -284,6 +369,7 @@ private[dsl] final class FocusTracker:
     */
   def focusPrevious(): Boolean =
     if focusableCount == 0 then false
+    else if scopes.nonEmpty then stepStops(forward = false)
     else if focusedIndex < 0 then
       focusTo(focusableCount - 1)
       true

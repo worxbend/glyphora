@@ -785,6 +785,14 @@ private[dsl] trait ElementFactories:
   def button(label: String)(action: => Unit): ButtonElement =
     ButtonElement(label, () => action)
 
+  /** One tab stop for `children`, laid out as a `row`, with the arrow keys moving focus between them — a toolbar, a row
+    * of choices, a menu bar. See [[FocusGroupElement]]; for a vertical group pass a single `column(...)`.
+    */
+  def focusGroup(children: Element*): FocusGroupElement =
+    children match
+      case Seq(single) => FocusGroupElement(single)
+      case many        => FocusGroupElement(RowElement(many))
+
   /** Later layers paint over earlier ones across the full area. */
   def layers(base: Element, overlays: Element*): LayersElement =
     LayersElement(base +: overlays)
