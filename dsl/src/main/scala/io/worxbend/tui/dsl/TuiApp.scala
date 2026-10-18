@@ -7,6 +7,7 @@ import io.worxbend.tui.runtime.{
   EventOutcome,
   Frame,
   GenerationalScope,
+  NonInteractivePolicy,
   Reactive,
   ReactiveScope,
   RunnerConfig,
@@ -21,6 +22,7 @@ import io.worxbend.tui.widgets.NoticeLevel
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.util.control.NonFatal
 
 /** How long a toast lives when the caller does not say. */
 private val DefaultToastDuration: FiniteDuration = 3.seconds
@@ -549,11 +551,56 @@ trait TuiApp:
     */
   protected def createBackend(): Either[BackendError, Backend] = JLine3Backend.create(colorDepth = colorDepth)
 
-  /** Runs on the terminal [[createBackend]] opens. Blocks until the app quits. */
+  /** Where this run prints when the process has no terminal to be interactive on, or `None` when it has one.
+    *
+    * Consulted by [[run]] only when `config.nonInteractive` is not [[NonInteractivePolicy.Fail]] — the default never
+    * asks, so an app that has not opted in behaves exactly as before and the environment is not even read. The default
+    * answer is `Some(PrintTarget.detect())` when [[Console.isNonInteractive]] says so (standard output is not a
+    * terminal, or `CI` is set): the frame is composed at `COLUMNS`×`LINES` (80×24 when unset), encoded at the colour
+    * depth [[Console.detectedColors]] resolves, and written to standard output.
+    *
+    * Override it to decide for yourself: `None` forces the interactive path whatever the environment looks like;
+    * `Some(PrintTarget(size, colors, sink))` is how a test captures what a no-TTY run prints. Read once per [[run]], on
+    * the calling thread.
+    */
+  protected def printTarget: Option[PrintTarget] =
+    Option.when(Console.isNonInteractive())(PrintTarget.detect())
+
+  /** Runs on the terminal [[createBackend]] opens — or, under a [[NonInteractivePolicy]] other than `Fail` in a process
+    * [[printTarget]] says has no terminal, drives the app once without one and prints what it composed. Blocks until
+    * the app quits.
+    */
   final def run(): Either[RunnerError, Unit] =
-    createBackend() match
-      case Left(error)    => Left(RunnerError.Backend(error))
-      case Right(backend) => runWith(backend)
+    nonInteractiveRun() match
+      case Some(result) => result
+      case None         =>
+        createBackend() match
+          case Left(error)    => Left(RunnerError.Backend(error))
+          case Right(backend) => runWith(backend)
+
+  /** The print-mode branch of [[run]]: `Some(result)` when a policy other than `Fail` applies and [[printTarget]] names
+    * a target, `None` to take the terminal path.
+    */
+  private def nonInteractiveRun(): Option[Either[RunnerError, Unit]] =
+    // `config` is the app's own and may throw. A throwing one is left for the interactive path to evaluate, because
+    // that path owns the preparation-failure contract — the backend is closed and `onStop` runs exactly once
+    // (`TuiAppLifecycleSpec`) — and a second policy for the same failure would be one too many.
+    val policy =
+      try config.nonInteractive
+      catch case NonFatal(_) => NonInteractivePolicy.Fail
+    if policy == NonInteractivePolicy.Fail then None
+    else printTarget.map(target => runPrinting(policy, target))
+
+  /** Drives the app over a [[PrintBackend]] at the target's size and writes what the policy asks for. The run ends on
+    * the loop's first wait for input — see [[PrintBackend]] — so `onStart`, the first frame and synchronously queued
+    * work are what gets printed.
+    */
+  private def runPrinting(policy: NonInteractivePolicy, target: PrintTarget): Either[RunnerError, Unit] =
+    val printer = FramePrinter(policy, target.colors, target.write)
+    val backend = PrintBackend(target.size, printer.frame, () => quit())
+    val result  = runWith(backend)
+    printer.finish()
+    result
 
   /** Runs over an explicit backend — how headless tests drive a `TuiApp`.
     *
@@ -596,7 +643,7 @@ trait TuiApp:
       // the app default for stdio: a `println` lands above the UI rather than on it. Only a config that left the field
       // unset takes it, so `RunnerConfig(tickRate = …)` keeps the capture and `.withCaptureStdio(CaptureStdio.Off)`
       // is how an app declines it
-      runConfig.captureStdio.fold(runConfig.withCaptureStdio(CaptureStdio.PrintAbove))(_ => runConfig),
+      withStdioDefault(runConfig, backend),
       nanoTime,
       redrawRequested = () => run.invalidated,
       onStop = () => stopRun(run, scope),
@@ -628,6 +675,15 @@ trait TuiApp:
       handleEvent(_, run, _),
       frame => renderFrame(frame, run, scope),
     )
+
+  /** `config` with the app's stdio-capture default applied. A print run ([[PrintBackend]]) never captures: it has no UI
+    * for a `println` to land above, and the headless `printAbove` it would be handed to drops it — so the app's own
+    * output goes straight to standard output, interleaved with the frames printed.
+    */
+  private def withStdioDefault(config: RunnerConfig, backend: Backend): RunnerConfig =
+    backend match
+      case _: PrintBackend => config.withCaptureStdio(CaptureStdio.Off)
+      case _               => config.captureStdio.fold(config.withCaptureStdio(CaptureStdio.PrintAbove))(_ => config)
 
   /** Releases all run-owned resources while the runner is still registered. Terminal services become inert first;
     * screen callbacks precede app cleanup, and framework releases cannot be skipped by a callback failure.

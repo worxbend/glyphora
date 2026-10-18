@@ -243,6 +243,7 @@ export io.worxbend.tui.runtime.{
   LogLevel,
   LogRecord,
   LogRing,
+  NonInteractivePolicy,
   Persisted,
   QueuedTaskFailures,
   Reactive,
