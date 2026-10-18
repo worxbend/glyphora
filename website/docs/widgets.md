@@ -2441,6 +2441,31 @@ the terminal's own background is. The widget, `QrCode(text, ecc, quietZone,
 darkColor, lightColor)`, is `Measured`, and the node claims exactly its box: a code is
 only readable whole, so give it that room.
 
+## Application chrome
+
+The pieces around an application's content: where the user is, what they can do, and
+the windows and menus they do it in.
+
+### A breadcrumb trail
+
+`breadcrumb(items, onSelect)` draws a one-row trail, `Home › Projects › glyphora`, with
+the last item — where the user is — in the theme's accent and the separators muted. A
+click on a visible item hands its index to `onSelect`:
+
+```scala
+// clicking a step pops every screen above it; "Home" (index 0) resets the stack
+breadcrumb("Home" +: screenLabels, step => (step until screenLabels.size).foreach(_ => popScreen()))
+```
+
+When the row is too narrow the middle items fold into one `…`, earliest first, so the
+start of the trail and the items nearest the end stay readable longest:
+`Home › … › widgets › Breadcrumb`, then `Home › … › Breadcrumb`, then `… › Breadcrumb`,
+and finally the last item alone, clipped. Every width is measured by display width, so
+CJK labels fold at the right column. The fold itself is not clickable. The widget,
+`Breadcrumb(items, separator, style, currentStyle, separatorStyle, ellipsis)`, exposes
+the same fold as `segments(width)` and `itemAt(width, x)` for a caller doing its own hit
+testing.
+
 ## Drop to a raw Widget
 
 The DSL is not a separate renderer. Any core `Widget` can become a leaf:

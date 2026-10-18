@@ -11,6 +11,7 @@ export Element.{
   badge,
   barChart,
   bigText,
+  breadcrumb,
   button,
   calendar,
   canvas,

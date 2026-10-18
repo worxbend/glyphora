@@ -412,7 +412,7 @@ same depth read without subscribing, for a handler.
 
 ### Name the screens, and draw a breadcrumb
 
-A screen can carry a short human name. Nothing in the library draws it — it is there so
+A screen can carry a short human name. Nothing draws it on its own — it is there so
 the application can build its own trail:
 
 ```scala
@@ -427,6 +427,9 @@ def view(using ReactiveScope, Theme): Element =
     body,
   )
 ```
+
+`breadcrumb("Home" +: screenLabels, onSelect)` draws the same trail clickable, folding its
+middle items into `…` when the row runs short — see the widgets guide.
 
 `screenLabels` lists the stacked screens outermost first, which is the order a breadcrumb
 reads in, and skips any screen that has no label — a dialog that never wanted a name adds

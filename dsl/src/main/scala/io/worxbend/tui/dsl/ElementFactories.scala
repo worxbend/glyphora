@@ -1178,3 +1178,13 @@ private[dsl] trait ElementFactories:
     * text draws `QR: too long`. See [[w.QrCode]].
     */
   def qrCode(text: String, ecc: w.QrEcc = w.QrEcc.Medium): QrCodeElement = QrCodeElement(w.QrCode(text, ecc))
+
+  /** A one-row navigation trail — `breadcrumb("Home" +: screenLabels, index => …)` inside a [[TuiApp]] — whose middle
+    * items fold into `…` when the row is too narrow, by display width. A click on a visible item hands its index to
+    * `onSelect`. The separators draw in the theme's muted style, the last item (where the user is) in its accent. See
+    * [[w.Breadcrumb]].
+    */
+  def breadcrumb(items: Seq[String], onSelect: Int => Unit = _ => ())(using theme: Theme): BreadcrumbElement =
+    LateBinding.themed(theme) { theme =>
+      BreadcrumbElement(items, onSelect, separatorStyle = theme.muted, currentStyle = theme.accent.bold)
+    }
