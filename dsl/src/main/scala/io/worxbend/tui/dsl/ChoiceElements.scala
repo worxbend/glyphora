@@ -16,6 +16,7 @@ final case class CheckboxElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = CheckboxElement
+  override def debugName: String                                   = "checkbox"
   def widget: Widget                                               = w.Checkbox(label, checked, focusStyled(props))
   private[dsl] def withProps(props: ElementProps): CheckboxElement = copy(props = props)
   private[dsl] override def claim: SizeClaim                       = SizeClaim.OneRow
@@ -32,6 +33,7 @@ final case class ToggleElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = ToggleElement
+  override def debugName: String                                             = "toggle"
   def widget: Widget                                                         = w.Toggle(label, on, focusStyled(props))
   private[dsl] def withProps(props: ElementProps): ToggleElement             = copy(props = props)
   private[dsl] override def claim: SizeClaim                                 = SizeClaim.OneRow
@@ -50,6 +52,7 @@ final case class SelectElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = SelectElement
+  override def debugName: String                                             = "select"
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some(clickActivates(() => if options.nonEmpty then onSelect((selected + 1) % options.size)))
   def widget: Widget = w.Select(options, selected, focusStyled(props))
@@ -93,6 +96,7 @@ final case class DropdownElement(
     floating: Seq[Element] = Seq.empty,
 ) extends Element:
   type Self = DropdownElement
+  override def debugName: String = "dropdown"
 
   private def dropdownWidget: w.Dropdown =
     w.Dropdown(options, selected, maxVisibleRows, focusStyled(props), props.focusStyle)
@@ -216,7 +220,8 @@ private[dsl] final case class DropdownPopupElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = DropdownPopupElement
-  def widget: Widget = (area, buffer) => dropdown.renderPopup(area, buffer, state)
+  override def debugName: String = "dropdownPopup"
+  def widget: Widget             = (area, buffer) => dropdown.renderPopup(area, buffer, state)
   private[dsl] def withProps(props: ElementProps): DropdownPopupElement      = copy(props = props)
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] = Some(handleMouse)
 
@@ -255,6 +260,7 @@ private[dsl] final case class DropdownPopupElement(
 private[dsl] final case class DropdownScrimElement(state: w.DropdownState, props: ElementProps = ElementProps())
     extends Element:
   type Self = DropdownScrimElement
+  override def debugName: String                                             = "dropdownScrim"
   def widget: Widget                                                         = (_, _) => ()
   private[dsl] def withProps(props: ElementProps): DropdownScrimElement      = copy(props = props)
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] = Some { (event, _) =>
@@ -273,7 +279,8 @@ final case class RadioGroupElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = RadioGroupElement
-  def widget: Widget = w.RadioGroup(options, selected, props.style, focusStyled(props).bold)
+  override def debugName: String = "radioGroup"
+  def widget: Widget             = w.RadioGroup(options, selected, props.style, focusStyled(props).bold)
   private[dsl] def withProps(props: ElementProps): RadioGroupElement     = copy(props = props)
   private[dsl] override def claim: SizeClaim                             = SizeClaim.rows(math.max(1, options.size))
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler] =
@@ -299,6 +306,7 @@ final case class SliderElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = SliderElement
+  override def debugName: String = "slider"
 
   /** Columns the slider's chrome takes off the draggable track: the two end caps and the knob itself. An area no wider
     * than this has no room for a movable knob, so a drag there changes nothing.
@@ -339,7 +347,8 @@ final case class PaginatorElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = PaginatorElement
-  def widget: Widget = w.Paginator(current, total, props.style, focusStyled(props).bold)
+  override def debugName: String = "paginator"
+  def widget: Widget             = w.Paginator(current, total, props.style, focusStyled(props).bold)
   private[dsl] def withProps(props: ElementProps): PaginatorElement      = copy(props = props)
   private[dsl] override def claim: SizeClaim                             = SizeClaim.OneRow
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler] =
@@ -359,6 +368,7 @@ final case class ButtonElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = ButtonElement
+  override def debugName: String                                             = "button"
   def widget: Widget                                                         = w.Button(label, focusStyled(props))
   private[dsl] def withProps(props: ElementProps): ButtonElement             = copy(props = props)
   private[dsl] override def claim: SizeClaim                                 = SizeClaim.OneRow
@@ -388,6 +398,7 @@ final case class ConfirmDialogElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = ConfirmDialogElement
+  override def debugName: String = "confirmDialog"
 
   def widget: Widget =
     w.Dialog(title, Text.raw(message), buttons, selected, props.style, props.focusStyle)
