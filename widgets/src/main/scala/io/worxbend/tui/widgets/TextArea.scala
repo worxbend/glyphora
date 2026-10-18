@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, Rect, StatefulWidget, Style, Text}
+import io.worxbend.tui.core.{Buffer, Position, Rect, StatefulWidget, Style, Text}
 
 import scala.collection.mutable
 
@@ -160,6 +160,27 @@ final case class TextArea(
         val lineIndex = state.scrollRow + row
         renderLine(buffer, area, clusters, area.y + row, state, lineIndex == cursorLine)
       }
+
+  /** The buffer cell the caret occupies when this editor is drawn into `area` for `state` — the counterpart of
+    * `TextInput.caretAt`, for a host that parks the terminal's own cursor on the insertion point.
+    *
+    * Both scroll offsets are re-solved from the state's current ones with the same rules [[render]] applies, so the
+    * answer is the painted cursor's cell whether this is asked before or after the frame was drawn; the state is not
+    * written. `None` when `area` is empty or the cell would fall outside it, which is when the painter draws no cursor
+    * either. Independent of `showCursor`, for the reason given on `TextInput.caretAt`.
+    */
+  def caretAt(area: Rect, state: TextAreaState): Option[Position] =
+    if area.isEmpty then None
+    else
+      val (cursorLine, cursorColumn) = state.cursor
+      val lines                      = state.clusterLines
+      val scrollRow            = ScrollWindow.offsetFor(state.scrollRow, Some(cursorLine), lines.size, area.height)
+      val scrollColumn         = scrolledHorizontally(state, cursorColumn, area.width)
+      val clusters             = lines(cursorLine)
+      val (firstCluster, from) = ClusterRow.clusterAtColumn(clusters, scrollColumn)
+      val x = area.x + (from - scrollColumn) + ClusterRow.visibleWidth(clusters, firstCluster, cursorColumn)
+      val y = area.y + cursorLine - scrollRow
+      Option.when(x >= area.x && x < area.right && y >= area.y && y < area.bottom)(Position(x, y))
 
   /** Paints one visible line. The blank one past the last cluster is left untouched unless the cursor sits on it, so an
     * editor does not paint its own background over whatever is behind the end of a short line — see [[ClusterRow.draw]]

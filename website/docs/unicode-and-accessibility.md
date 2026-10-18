@@ -86,12 +86,34 @@ invisible to everything else. A screen reader announces the insertion point from
 keystrokes into a Chinese, Japanese or Korean character) anchors its candidate popup
 to the same place. Those two follow the terminal, not the paint.
 
-`Backend.setCursorPosition(position)` moves that terminal cursor, and
+The DSL's text nodes drive both. While an `input`, `numberInput`, `templateInput`,
+`autocomplete`, `textArea` or the command palette's filter box has focus, it paints its
+cursor cell *and* reports that cell to the frame, which parks the terminal cursor on it
+after the paint — mapped through any `scrollView` the field sits in, so a field scrolled
+out of its viewport hides the cursor rather than leaving it on a stale cell. When focus
+is on something that is not a text field, the cursor is hidden. Nothing to wire up: the
+behaviour is on by default, and a `Pilot` test reads it back with `assertCursorAt(x, y)`
+and `assertNoCursor()`.
+
+`.caretStyle(...)` on a text node picks one of the two carets instead of both:
+
+```scala
+input(name).caretStyle(CaretStyle.Painted)   // the styled cell only; terminal cursor stays hidden
+input(name).caretStyle(CaretStyle.Hardware)  // the terminal cursor only; no cell is painted
+input(name)                                  // CaretStyle.Both — the default
+```
+
+`Painted` is what every release before 0.20.0 did, for an app that hid the terminal
+cursor on purpose. `Hardware` lets the terminal draw the caret in the user's own
+configured shape and colour rather than painting a block over the text.
+
+Underneath, `Backend.setCursorPosition(position)` moves that terminal cursor, and
 `showCursor()` / `hideCursor()` decide whether it is drawn. They are separate calls
 on purpose: a background repaint can move the caret without flashing one at a user
 who is not typing. A backend that has no real terminal — `HeadlessBackend`, or a
 custom one — inherits a no-op default and records the request instead, which is what
-a test asserts against.
+a test asserts against. A host that composes its own frames outside `TuiApp` calls
+`Frame.setCursorPosition` itself.
 
 `Backend.setCursorShape(shape)` picks what that terminal cursor looks like — DECSCUSR,
 `CSI n SP q`. The `CursorShape` cases are `Default`, `BlinkingBlock`, `SteadyBlock`,

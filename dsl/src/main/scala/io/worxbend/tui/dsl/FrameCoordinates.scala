@@ -37,6 +37,13 @@ private[dsl] object FrameCoordinates:
     finally
       if previous.isEmpty then clear() else current.set(previous)
 
+  /** The host's own boundary — the screen rectangle the frame root established — while a render is executing on this
+    * thread, and `None` outside one. What a node that floats content through a portal asks to learn how much room the
+    * frame has left below or above it; the viewports between it and the root are deliberately not consulted, because a
+    * portal escapes exactly those.
+    */
+  def frameBoundary: Option[Rect] = current.get().lastOption.map(_.viewport)
+
   /** Screen placement, deliberately not clipped to the windows the content escapes. */
   def translate(area: Rect): Rect = current.get().foldLeft(area)((rect, transform) => transform.translate(rect))
 
