@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{CharWidth, Constraint, MouseEventKind, Text}
+import io.worxbend.tui.core.{CharWidth, Constraint, MouseEvent, MouseEventKind, Text, Widget}
 import io.worxbend.tui.widgets as w
 
 /** The app-chrome presets: top bar, status bar, sidebar, scaffold, help overlay, and layout helpers. All of them are
@@ -116,33 +116,77 @@ def masterDetail(master: Element, detail: Element, masterWidth: Int = 30): Eleme
   * that covers the pointer and never offers it to the ones underneath, and it only considers elements that recorded an
   * area — that is, elements that are focusable or carry a mouse handler of their own. `content` is the later of the two
   * layers here, so a press that lands on any of its controls is resolved there and the backdrop never hears about it. A
-  * press that lands where the dialog has no control resolves to nothing inside `content`, falls through to the
-  * backdrop, and calls `onOutsidePress`.
+  * press that lands where the dialog has no control resolves to nothing inside `content` and falls through to the
+  * backdrop, which is this node itself.
   *
-  * The consequence worth knowing before using this: "outside" means "on no control of the dialog", which is not quite
-  * the same as "outside the dialog's frame". A press on a dialog's border or on a caption inside it lands on no control
-  * and so counts as outside. A dialog that wants its whole frame to be inert says so in one line, by consuming presses
-  * at its root:
+  * What the backdrop then does is decided by where the frame painted things. The host records the painted rect of every
+  * node (see `NodeBounds`), and a press that lands on a node of `content` that draws something — the dialog's border,
+  * its caption, a label inside it — is *inside* the dialog and is absorbed; a press that lands only on nodes that
+  * arrange space and draw nothing — the `row`, `column` and `spacer`s that `centered` places the dialog with — is
+  * outside it and calls `onOutsidePress`. So "outside" means "outside the dialog's frame", which is what the user sees:
+  * the frame of the thing being used is part of the thing, and used to count as outside it because a border carries no
+  * control.
+  *
+  * A dialog that wants to absorb presses on blank cells it owns but does not draw — a borderless `column` of labels,
+  * say — still says so at its root, exactly as before:
   *
   * {{{
-  * panel("Really?")(body).onMouseEvent(_ => true)
+  * column(text("Really?"), button("OK")(ok())).onMouseEvent(_ => true)
   * }}}
   *
-  * A geometric test is deliberately not attempted. Nothing in the tree records where a dialog was *placed* — placement
-  * is spacers around a sized node, and the placed node has no area of its own unless it is a control — so a rectangle
-  * to compare against would have to be guessed, and a guess that is wrong closes a dialog the user was using.
-  *
-  * `TuiApp` wires this for any modal `Screen` whose [[Dismissal]] includes a click outside; call it directly only for a
-  * dialog an application layers itself.
+  * Recording is switched on by this node's presence in the tree: a frame rendered before recording started (the first
+  * frame of a hand-layered overlay on a real terminal) falls back to treating every press that reaches the backdrop as
+  * outside, which is the old behaviour. `TuiApp` wires this for any modal `Screen` whose [[Dismissal]] includes a click
+  * outside and records from the frame that first shows it; call it directly only for a dialog an application layers
+  * itself.
   */
 def dismissibleOverlay(content: Element)(onOutsidePress: () => Unit): Element =
-  val backdrop = Element.spacer.onMouseEvent { event =>
-    if event.kind == MouseEventKind.Down then
-      onOutsidePress()
+  DismissibleOverlayElement(content, onOutsidePress)
+
+/** The node [[dismissibleOverlay]] builds: `content` painted over the whole area, with the outside-press behaviour as
+  * the node's own built-in rather than a sibling backdrop's, so it can read where its subtree was painted. Transparent
+  * to layout and measurement — it claims and measures as `content` does.
+  *
+  * Owned by the view that built it, like every node; the recorded bounds it reads belong to the host and are resolved
+  * when a press arrives, on the render thread.
+  */
+final case class DismissibleOverlayElement(
+    content: Element,
+    onOutsidePress: () => Unit,
+    props: ElementProps = ElementProps(),
+) extends Element
+    with BoundsAwareElement:
+  type Self = DismissibleOverlayElement
+
+  override def children: Seq[Element] = Seq(content)
+
+  def widget: Widget = (area, buffer) => content.widget.render(area, buffer)
+
+  private[dsl] def withProps(props: ElementProps): DismissibleOverlayElement = copy(props = props)
+
+  private[dsl] override def withChildren(children: Seq[Element]): DismissibleOverlayElement =
+    copy(content = children.headOption.getOrElse(content))
+
+  private[dsl] override def claim: SizeClaim = content.claim
+
+  private[dsl] override def intrinsicHeight(width: Int): Option[Int] =
+    constrainedHeight(content.intrinsicHeight(width))
+
+  /** With no bounds recorded there is nothing to compare the press against, so every press that reached this node —
+    * which only happens when no control of the dialog took it — is treated as outside, the pre-recording behaviour.
+    */
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
+    Some((event, _) => press(event, inside = false))
+
+  private[dsl] def builtinMouseHandlerWithBounds(subtree: NodeSubtreeBounds): BuiltinMouseHandler =
+    (event, _) => press(event, inside = subtree.paintedAt(event.position))
+
+  /** A press is consumed either way — the dialog took it, or it closed the dialog — and anything else bubbles on. */
+  private def press(event: MouseEvent, inside: => Boolean): Boolean =
+    event.kind == MouseEventKind.Down && {
+      if !inside then onOutsidePress()
       true
-    else false
-  }
-  Element.layers(backdrop, content)
+    }
 
 /** `content` at a fixed size, centered both ways in whatever space is available. */
 def centered(width: Int, height: Int)(content: Element): Element =

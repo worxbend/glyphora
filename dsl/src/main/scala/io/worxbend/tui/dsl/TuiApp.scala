@@ -608,6 +608,9 @@ trait TuiApp:
       // the demand is rebuilt from what *this* frame renders, so an animation that has just gone off screen stops
       // costing ticks as soon as the frame without it is composed
       AnimationClock.beginFrame()
+      // a modal that closes on a click outside reads where its dialog was painted, so the frame that first shows it
+      // already records — the host's own demand detection would only switch recording on for the frame after
+      if !run.host.recordBounds && modalClosesOnClickOutside then run.host.recordBounds = true
       run.host.renderComposed(frame, theme, effectiveView(using scope), () => syncFocusLayers(run))(using scope)
       effects.applyTo(frame)
     // asked after either branch: an intro is an animation like any other, and it is what a run with no configured
@@ -736,6 +739,14 @@ trait TuiApp:
     * subscribing here would attach a dependency to whatever view happened to be recomputing.
     */
   private def topScreenClosesOnEscape: Boolean = screenStack.closesOnEscape
+
+  /** Whether any modal on the stack asked to be closed by a click outside it — read with `peek`, from the render pass,
+    * for the reason [[topScreenClosesOnEscape]] gives.
+    */
+  private def modalClosesOnClickOutside: Boolean =
+    screenStack.entriesNow.exists((_, screen) =>
+      screen.presentation == Presentation.Modal && screen.dismissal.byClickOutside
+    )
 
   /** The composed view: base -> screens -> palette -> toasts.
     *

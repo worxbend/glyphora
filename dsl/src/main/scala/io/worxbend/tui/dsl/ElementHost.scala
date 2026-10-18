@@ -89,7 +89,8 @@ final class ElementHost:
   private[dsl] def renderTree(raw: Element, focusStyle: Style, paint: Element => Unit): Unit =
     tracker.reconcile(FocusPass.focusKeys(raw), FocusPass.autofocusRequest(raw))
     val recorder = Option.when(recordBounds)(bounds)
-    val tree     = FocusPass.decorate(raw, tracker, focusStyle, recorder)
+    // a tree with a consumer of bounds in it (a click-outside backdrop) turns recording on for the frames after this one
+    val tree     = FocusPass.decorate(raw, tracker, focusStyle, recorder, onBoundsDemand = () => recordBounds = true)
     lastTree = Some(tree)
     recorder.foreach(_.begin())
     try paint(tree)

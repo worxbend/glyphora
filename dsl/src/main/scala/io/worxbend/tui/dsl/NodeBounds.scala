@@ -99,7 +99,39 @@ private[dsl] final case class BoundsElement(inner: Element, id: Int, lastDescend
       recorder.record(id, lastDescendantId, inner.props.focusKey, inner.layoutOnly, area)
       inner.widget.render(area, buffer)
 
+  /** A [[BoundsAwareElement]] underneath gets the behaviour that reads where its subtree was painted; every other
+    * node's built-in passes through untouched. The frame is looked up when the event arrives, so the behaviour sees the
+    * paint that preceded the event and never the one in progress.
+    */
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
+    inner match
+      case aware: BoundsAwareElement =>
+        Some((event, area) =>
+          aware.builtinMouseHandlerWithBounds(NodeSubtreeBounds(recorder.current, id, lastDescendantId))(event, area)
+        )
+      case _                         => inner.builtinMouseHandler
+
   private[dsl] def withProps(props: ElementProps): BoundsElement = copy(inner = inner.withProps(props))
 
   private[dsl] override def withChildren(children: Seq[Element]): BoundsElement =
     copy(inner = inner.withChildren(children))
+
+/** The painted bounds of one node's descendants on the last published frame — what a [[BoundsAwareElement]]'s mouse
+  * behaviour is handed in place of a bare event.
+  */
+private[dsl] final case class NodeSubtreeBounds(frame: NodeBoundsFrame, id: Int, lastDescendantId: Int):
+
+  /** Whether some descendant that paints something of its own — not a `row`, `column` or `spacer` — covers `position`.
+    */
+  def paintedAt(position: Position): Boolean = frame.paintedWithin(id, lastDescendantId, position)
+
+/** A node whose framework mouse behaviour needs to know where its own subtree was painted — the click-outside backdrop,
+  * which has to tell a press on the dialog's border from a press beside it.
+  *
+  * While bounds are being recorded, [[BoundsElement]] runs [[builtinMouseHandlerWithBounds]] in place of the node's
+  * plain `builtinMouseHandler`. While they are not, the plain handler runs — and meeting one of these during the focus
+  * pass is what switches recording on for the frames that follow, so the plain handler is only ever the first-frame
+  * fallback on a terminal that was not recording yet.
+  */
+private[dsl] trait BoundsAwareElement extends Element:
+  private[dsl] def builtinMouseHandlerWithBounds(subtree: NodeSubtreeBounds): BuiltinMouseHandler

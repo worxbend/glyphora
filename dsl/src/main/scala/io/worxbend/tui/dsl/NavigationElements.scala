@@ -27,6 +27,7 @@ final case class ResponsiveElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = ResponsiveElement
+  private[dsl] override def layoutOnly: Boolean                                     = true
   override def children: Seq[Element]                                               = resolved.toSeq
   def widget: Widget                                                                =
     resolved match

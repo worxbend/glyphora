@@ -376,9 +376,16 @@ private[dsl] object FocusPass:
     * they still paint — is additionally wrapped in a [[BoundsElement]] carrying its pre-order id and the id of its last
     * descendant, placed *inside* any input wrapper so [[EventRouter]] still finds the `TrackedElement`/`PointerElement`
     * where it looks for them. With `None` no wrapper is built and the tree is exactly what it was before recording
-    * existed.
+    * existed — and `onBoundsDemand` is called for every [[BoundsAwareElement]] met on the way, which is how a host that
+    * is not recording learns that the tree it is about to paint has a consumer and records the next frame.
     */
-  def decorate(root: Element, tracker: FocusTracker, focusStyle: Style, bounds: Option[NodeBounds] = None): Element =
+  def decorate(
+      root: Element,
+      tracker: FocusTracker,
+      focusStyle: Style,
+      bounds: Option[NodeBounds] = None,
+      onBoundsDemand: () => Unit = () => (),
+  ): Element =
     var counter        = 0
     var pointerCounter = 0
     var nodeCounter    = 0
@@ -392,6 +399,10 @@ private[dsl] object FocusPass:
       val inert    = ancestorInert || element.props.inert
       val nodeId   = nodeCounter
       nodeCounter += 1
+      if bounds.isEmpty then
+        element match
+          case _: BoundsAwareElement => onBoundsDemand()
+          case _                     => ()
       val current  =
         if inert then themed(element, focused = false)
         else if element.props.focusable then
