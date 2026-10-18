@@ -152,7 +152,8 @@ private[terminal] final class FrameEncoder(colorDepth: ColorDepth):
     * right only when the grapheme is two columns wide, so `isContinuation(x + 1, y)` already implies a non-zero width.
     *
     * The width question is asked of the symbol only to separate "no advance" from "some advance"; the size of a
-    * non-zero advance still comes from the buffer, never from re-measuring, for the reason below.
+    * non-zero advance still comes from the buffer, never from re-measuring, for the reason below. An empty symbol is
+    * the one exception: [[guarded]] writes it as a blank, so the cursor is known to have moved one column for it.
     *
     * This used to be `math.max(1, CharWidth.of(cell.symbol))`, and the difference matters. A `Cell`'s symbol is meant
     * to hold one grapheme cluster, and the buffer reserves columns for it with a per-cluster measurement that can only
@@ -164,12 +165,18 @@ private[terminal] final class FrameEncoder(colorDepth: ColorDepth):
     * 400-byte escape sequence in a cell; asking the buffer instead of re-measuring makes it unreachable by
     * construction.
     */
-  private def advanceOf(next: Buffer, x: Int, y: Int, cell: Cell): Int =
+  private[terminal] def advanceOf(next: Buffer, x: Int, y: Int, cell: Cell): Int =
     if next.isContinuation(x + 1, y) then 2
+    else if cell.symbol.isEmpty then 1
     else if CharWidth.of(cell.symbol) == 0 then 0
     else 1
 
-  /** `symbol`, or a single blank if it contains a C0 or C1 control code (`ESC` included).
+  /** `symbol`, or a single blank if it is empty or contains a C0 or C1 control code (`ESC` included).
+    *
+    * An empty symbol is the blank `Cell.isBlank` says it is. `Buffer.set` already stores a `Cell("")` as a styled
+    * one-column space, so a frame written through the buffer never carries one here; this is the belt to that brace,
+    * because written verbatim an empty symbol claims no column at all and the terminal keeps showing whatever glyph was
+    * there before, in a column the buffer — and every assertion over it — calls blank.
     *
     * The paragraph above is the column-tracking half of what happens when a `Cell`'s symbol is not the one printable
     * grapheme cluster it is meant to be; this is the byte half. `Buffer.writeString` already refuses to write a
@@ -182,8 +189,9 @@ private[terminal] final class FrameEncoder(colorDepth: ColorDepth):
     * a control cluster reached honestly: the column is claimed and nothing recognizable is drawn in it, rather than
     * smuggled control bytes reaching a real terminal.
     */
-  private def guarded(symbol: String): String =
-    if CharWidth.isPrintableAscii(symbol) then symbol
+  private[terminal] def guarded(symbol: String): String =
+    if symbol.isEmpty then " "
+    else if CharWidth.isPrintableAscii(symbol) then symbol
     else if containsControl(symbol) then " "
     else symbol
 

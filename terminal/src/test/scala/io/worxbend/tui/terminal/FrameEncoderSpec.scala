@@ -244,3 +244,36 @@ final class FrameEncoderSpec extends AnyFunSuite:
     val next     = Buffer(Rect(0, 0, 3, 1))
     next.set(0, 0, Cell("🟦", Style.Default))
     assert(encoder.encode(previous, next).contains("🟦"))
+
+  // ---------------------------------------------------------------- empty symbols (R2-03)
+
+  /** `Cell("")` is the blank `Cell.isBlank` says it is. `Buffer.set` stores it as a styled one-column space, so a frame
+    * written through the buffer never carries one; the encoder is the last stage before the bytes reach the terminal
+    * and guards the same rule itself, so a cell that reaches it unnormalised still claims its column instead of leaving
+    * the previous glyph on screen in a column the buffer calls blank.
+    */
+  test("an empty-symbol cell is flushed as a blank"):
+    val red      = Style.Default.withBg(Color.Rgb(200, 0, 0))
+    val previous = frame(_.setString(0, 0, "abc", Style.Default))
+    val next     = frame { buffer =>
+      buffer.setString(0, 0, "abc", Style.Default)
+      buffer.set(1, 0, Cell("", red))
+    }
+    assert(encoder.encode(previous, next) == AnsiSequences.moveTo(1, 0) + sgr(red) + " ")
+
+  test("a buffer filled with an empty-symbol cell paints its background"):
+    val blue     = Style.Default.withBg(Color.Rgb(0, 0, 200))
+    val previous = frame(_ => ())
+    val next     = frame(buffer => buffer.fill(buffer.area, Cell("", blue)))
+    // every cell of both rows is written as a blank in the fill's style: one move per row, then ten spaces
+    assert(
+      encoder.encode(previous, next) ==
+        AnsiSequences.moveTo(0, 0) + sgr(blue) + " " * 10 + AnsiSequences.moveTo(0, 1) + " " * 10
+    )
+
+  test("the encoder's own guard spells an empty symbol as a blank that advances one column"):
+    // the seam the two tests above cannot reach through a `Buffer`, which normalises the cell first: a `Cell("")`
+    // handed straight to the encoder is written as a space, and the cursor is known to have moved one column for it
+    val empty = Cell("", Style.Default)
+    assert(encoder.guarded(empty.symbol) == " ")
+    assert(encoder.advanceOf(frame(_ => ()), 0, 0, empty) == 1)
