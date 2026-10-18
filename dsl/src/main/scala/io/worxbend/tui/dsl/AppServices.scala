@@ -49,6 +49,11 @@ trait AppServices extends Notifications:
   /** Starts a post-render [[Effect]] over the frames that follow. */
   def runEffect(effect: Effect): Unit
 
+  /** Starts a post-render [[Effect]] under `key`, replacing the effect already running under that key, if any — so a
+    * binding pressed twenty times plays one flash instead of stacking twenty. The replacement is timed from now.
+    */
+  def runEffect(key: String, effect: Effect): Unit
+
   /** Schedules one frame — for state the reactive layer cannot see, such as a mutable widget state. */
   def requestRedraw(): Unit
 
@@ -122,6 +127,7 @@ object AppServices:
     def openPalette(): Unit                                                         = ()
     def closePalette(): Unit                                                        = ()
     def runEffect(effect: Effect): Unit                                             = ()
+    def runEffect(key: String, effect: Effect): Unit                                = ()
     def requestRedraw(): Unit                                                       = ()
     def copyToClipboard(text: String): Unit                                         = ()
     def quit(): Unit                                                                = ()

@@ -289,6 +289,12 @@ trait TuiApp:
     */
   protected final def runEffect(effect: Effect): Unit = effects.start(effect)
 
+  /** Starts a post-render [[Effect]] over the whole frame under `key`, replacing the effect already running under that
+    * key — pressing a flash binding twenty times plays one flash, timed from the last press, rather than twenty
+    * stacked. Unkeyed effects and effects under other keys are left running.
+    */
+  protected final def runEffect(key: String, effect: Effect): Unit = effects.start(key, effect)
+
   /** Pushes a screen; modal screens layer over the current view, full screens replace it.
     *
     * During a run, the screen's `Screen.onEnter` runs immediately afterwards, on the render thread, before the frame
@@ -398,6 +404,7 @@ trait TuiApp:
     def openPalette(): Unit                                                         = TuiApp.this.openPalette()
     def closePalette(): Unit                                                        = TuiApp.this.closePalette()
     def runEffect(effect: Effect): Unit                                             = TuiApp.this.runEffect(effect)
+    def runEffect(key: String, effect: Effect): Unit                                = TuiApp.this.runEffect(key, effect)
     def requestRedraw(): Unit                                                       = TuiApp.this.requestRedraw()
     def copyToClipboard(text: String): Unit                                         = TuiApp.this.copyToClipboard(text)
     def quit(): Unit                                                                = TuiApp.this.quit()
