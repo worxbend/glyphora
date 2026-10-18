@@ -172,6 +172,14 @@ final case class PanelElement(
     */
   def padding(cells: Int): PanelElement = padded(w.Padding.proportional(cells))
 
+  /** Blank cells between the border and the children, per side — the same as [[padded]], under the name the
+    * `.padding(...)` decorator on every other element uses. On a panel the padding goes *inside* the border.
+    */
+  def padding(cells: w.Padding): PanelElement = padded(cells)
+
+  /** `vertical` blank rows and `horizontal` blank columns inside the border, the CSS two-value shorthand. */
+  def padding(vertical: Int, horizontal: Int): PanelElement = padded(w.Padding.symmetric(horizontal, vertical))
+
   private[dsl] def withProps(props: ElementProps): PanelElement                = copy(props = props)
   private[dsl] override def withChildren(children: Seq[Element]): PanelElement = copy(children = children)
   private[dsl] override def intrinsicHeight(width: Int): Option[Int]           =

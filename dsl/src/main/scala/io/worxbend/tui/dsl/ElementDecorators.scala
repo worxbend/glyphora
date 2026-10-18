@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Position, Rect, Widget}
+import io.worxbend.tui.core.{Buffer, Cell, Constraint, GlyphSupport, Position, Rect, Style, Widget}
 import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets as w
 
@@ -191,3 +191,202 @@ private[dsl] final case class RevealElement(inner: Element, id: String) extends 
   private[dsl] def withProps(props: ElementProps): RevealElement                = copy(inner = inner.withProps(props))
   private[dsl] override def withChildren(children: Seq[Element]): RevealElement =
     copy(inner = inner.withChildren(children))
+
+/** What a [[DecoratedElement]] does around the node it wraps — the five decorators any element can take. */
+enum Decoration:
+
+  /** A frame on all four sides in `glyphs`, drawn in `frameStyle`, degraded to what `support` can draw. */
+  case Border(glyphs: w.BorderType, frameStyle: Style, support: GlyphSupport)
+
+  /** Blank cells between the decorated box's edge and the node, per side. */
+  case Pad(cells: w.Padding)
+
+  /** Every cell of the box cleared to blanks in `fill` before the node paints, and `fill` layered under what it drew.
+    */
+  case Background(fill: Style)
+
+  /** A drop shadow cast inside the box: the node gives up the cells the shadow falls on. */
+  case Shadowed(cast: w.Shadow)
+
+  /** Nothing the node paints outside the box it was handed survives. */
+  case Clip
+
+/** A decorator any element can take: `.border(...)`, `.padding(...)`, `.background(...)`, `.shadow`, `.clip`.
+  *
+  * Built on [[DecoratingElement]], so the wrapped node is its one child — focused, hit-tested, recorded and routed as
+  * itself, with its own key and handlers — but unlike the transparent framework wrappers this one is a box of its own.
+  * It keeps its own props: the layout extensions the wrapped node carried when it was decorated (`.length`, `.fill`,
+  * `.alignSelf`, a grid spot) are lifted onto the decorator, because they were about where the node goes and the
+  * decorated box is now what goes there; builders written *after* the decorator — `.fill`, `.fg(...)`, `.onKeyEvent` —
+  * land on the box. Its `style` is the content style, layered under what the wrapped node drew inside the decoration,
+  * as on every container; a border's own colour is the `frameStyle` the border was given.
+  *
+  * The decoration's cells are added to the measurement (`text("hi").border()` is four columns by three rows), and the
+  * built-in handlers stay on the wrapped node, which is the one the router hands its own area to.
+  */
+final case class DecoratedElement(
+    inner: Element,
+    decoration: Decoration,
+    override val props: ElementProps = ElementProps(),
+) extends DecoratingElement:
+  type Self = DecoratedElement
+
+  override def debugName: String =
+    decoration match
+      case _: Decoration.Border     => "border"
+      case _: Decoration.Pad        => "padding"
+      case _: Decoration.Background => "background"
+      case _: Decoration.Shadowed   => "shadow"
+      case Decoration.Clip          => "clip"
+
+  override def accessibleName: String                                                            = inner.accessibleName
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]                         = None
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler]                     = None
+  private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler]                     = None
+  private[dsl] override def componentRole: Option[ComponentRole]                                 = None
+  override def pointerShape: Option[PointerShape]                                                = props.pointerShape
+  private[dsl] override def pointerShapeAt(position: Position, area: Rect): Option[PointerShape] =
+    val _ = (position, area)
+    pointerShape
+
+  /** Padding and clipping draw nothing of their own; a border, a background and a shadow do. */
+  private[dsl] override def layoutOnly: Boolean =
+    decoration match
+      case _: Decoration.Pad | Decoration.Clip => true
+      case _                                   => false
+
+  /** The columns and rows the decoration itself costs: `(horizontal, vertical)`. */
+  private def chromeCells: (Int, Int) =
+    decoration match
+      case _: Decoration.Border      => (2, 2)
+      case Decoration.Pad(cells)     => (cells.horizontalCells, cells.verticalCells)
+      case Decoration.Shadowed(cast) => (cast.reservedColumns, cast.reservedRows)
+      case _                         => (0, 0)
+
+  /** The wrapped node's default claim grown by the decoration, so a one-row control in a border claims three rows. */
+  private[dsl] override def claim: SizeClaim =
+    val (columns, rows)                                       = chromeCells
+    def grown(constraint: Constraint, cells: Int): Constraint =
+      constraint match
+        case Constraint.Length(length) => Constraint.Length(length + cells)
+        case other                     => other
+    val base                                                  = inner.claim
+    SizeClaim(grown(base.vertical, rows), grown(base.horizontal, columns))
+
+  private[dsl] override def intrinsicHeight(width: Int): Option[Int] =
+    val (columns, rows) = chromeCells
+    constrainedHeight(inner.intrinsicHeight(math.max(0, width - columns)).map(_ + rows))
+
+  private[dsl] override def intrinsicWidth(height: Int): Option[Int] =
+    val (columns, rows) = chromeCells
+    constrainedWidth(inner.intrinsicWidth(math.max(0, height - rows)).map(_ + columns))
+
+  def widget: Widget =
+    (area, buffer) =>
+      decoration match
+        case Decoration.Border(glyphs, frameStyle, support) =>
+          val block = w.Block(borderStyle = frameStyle, borderType = glyphs.degraded(support))
+          block.render(area, buffer)
+          paintInner(block.inner(area), buffer)
+        case Decoration.Pad(cells)                          =>
+          paintInner(DecoratedElement.inset(area, cells), buffer)
+        case Decoration.Background(fill)                    =>
+          buffer.fill(area, Cell(" ", fill))
+          paintInner(area, buffer)
+          buffer.mapStyle(area)(fill.patch)
+        case Decoration.Shadowed(cast)                      =>
+          val box = DecoratedElement.shadowBox(area, cast)
+          if box != area then cast.render(box, area, buffer)
+          paintInner(box, buffer)
+        case Decoration.Clip                                =>
+          if !area.isEmpty then
+            // the node paints into a buffer that *is* its area, seeded with what is already there, so whatever it
+            // writes outside falls off the edge; only the area is copied back
+            val offscreen = Buffer(area)
+            offscreen.blit(buffer, area.position, area)
+            paintInner(area, offscreen)
+            buffer.blit(offscreen, area.position, area)
+
+  /** The wrapped node in `area`, with this box's content style layered under whatever it drew. */
+  private def paintInner(area: Rect, buffer: Buffer): Unit =
+    if !area.isEmpty then
+      inner.widget.render(area, buffer)
+      if props.style != Style.Default then buffer.mapStyle(area)(props.style.patch)
+
+  private[dsl] def withProps(props: ElementProps): DecoratedElement                = copy(props = props)
+  private[dsl] override def withChildren(children: Seq[Element]): DecoratedElement =
+    copy(inner = children.headOption.getOrElse(inner))
+
+private[dsl] object DecoratedElement:
+
+  /** `element` wrapped in `decoration`, with the layout extensions it carried moved onto the wrapper. */
+  def around(element: Element, decoration: Decoration): DecoratedElement =
+    val props = element.props
+    DecoratedElement(
+      element.withProps(props.copy(constraint = None, alignSelf = None, gridSpot = GridSpot.Flowed)),
+      decoration,
+      ElementProps(constraint = props.constraint, alignSelf = props.alignSelf, gridSpot = props.gridSpot),
+    )
+
+  /** `area` less `cells` on each side, or an empty rect at the inner corner when nothing is left. */
+  def inset(area: Rect, cells: w.Padding): Rect =
+    val left   = math.max(0, cells.left)
+    val top    = math.max(0, cells.top)
+    val width  = area.width - cells.horizontalCells
+    val height = area.height - cells.verticalCells
+    if width <= 0 || height <= 0 then Rect(area.x + left, area.y + top, 0, 0)
+    else Rect(area.x + left, area.y + top, width, height)
+
+  /** The box a shadow leaves the node: `area` less the shadow's offset on the side it falls, or all of `area` when the
+    * area is too small to keep a cell for the node — a shadow with nothing left to cast it is dropped, as `w.Block`
+    * drops its own.
+    */
+  def shadowBox(area: Rect, cast: w.Shadow): Rect =
+    val width  = area.width - cast.reservedColumns
+    val height = area.height - cast.reservedRows
+    if width < 1 || height < 1 then area
+    else
+      val x = area.x + (if cast.offsetX < 0 then cast.reservedColumns else 0)
+      val y = area.y + (if cast.offsetY < 0 then cast.reservedRows else 0)
+      Rect(x, y, width, height)
+
+/** The decorators any element takes. Each wraps the element in a [[DecoratedElement]]; see there for what moves onto
+  * the wrapper and what stays on the element.
+  */
+extension [E <: Element](element: E)
+
+  /** A frame on all four sides in the theme's border style — `text("hi").border()`, `.border(BorderType.Rounded)`. The
+    * panel-free way to box a single node; a `panel` adds a title, captions and slots on top of this.
+    */
+  def border(glyphs: w.BorderType = w.BorderType.Plain)(using theme: Theme): DecoratedElement =
+    DecoratedElement.around(element, Decoration.Border(glyphs, theme.border, theme.glyphs))
+
+  /** A frame drawn in `frameStyle` — the border's own colour, not the content's (that is the element's `style`). */
+  def border(glyphs: w.BorderType, frameStyle: Style): DecoratedElement =
+    DecoratedElement.around(element, Decoration.Border(glyphs, frameStyle, GlyphSupport.Full))
+
+  /** Blank cells around the element, per side — what `panel(...).borderless.padded(...)` was written for. */
+  def padding(cells: w.Padding): DecoratedElement = DecoratedElement.around(element, Decoration.Pad(cells))
+
+  /** `vertical` blank rows above and below, `horizontal` blank columns left and right: the CSS two-value shorthand. */
+  def padding(vertical: Int, horizontal: Int): DecoratedElement =
+    padding(w.Padding.symmetric(horizontal, vertical))
+
+  /** The element's whole area cleared to `fill` first, with `fill` layered under whatever the element drew — a
+    * background that the element's own colours still win over.
+    */
+  def background(fill: Style): DecoratedElement = DecoratedElement.around(element, Decoration.Background(fill))
+
+  /** The default drop shadow, one cell down and to the right, dimming what is behind it. The element gives up that
+    * column and row of its area to the shadow, which never paints outside the area.
+    */
+  def shadow: DecoratedElement = shadow(w.Shadow.Default)
+
+  /** A shadow of your own: another offset, a shade glyph instead of dimming — see `Shadow.shade`. */
+  def shadow(cast: w.Shadow): DecoratedElement = DecoratedElement.around(element, Decoration.Shadowed(cast))
+
+  /** Keeps whatever the element paints inside the area it is handed: a hand-written `widget` that strays outside its
+    * rect is cut off at the edge rather than drawing over its neighbours. A `portal` inside escapes all the same — it
+    * paints at the frame root, which is what a portal is for.
+    */
+  def clip: DecoratedElement = DecoratedElement.around(element, Decoration.Clip)

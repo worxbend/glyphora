@@ -381,6 +381,8 @@ export io.worxbend.tui.widgets.{
   ScrollbarOptions,
   ScrollbarSide,
   ScrollViewState,
+  Shadow,
+  ShadowFill,
   Shape,
   SliderRange,
   SortDirection,
