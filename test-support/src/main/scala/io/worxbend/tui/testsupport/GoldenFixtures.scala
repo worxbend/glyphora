@@ -5,8 +5,9 @@ import java.util.regex.Pattern
 import scala.jdk.CollectionConverters.*
 import scala.util.Using
 
-/** Discipline check for the golden-frame fixtures a module keeps on disk: every `golden/<name>.txt` file under a
-  * module's test resources must be named by at least one `assertMatches("<name>", …)` or `assertGolden("<name>")` call
+/** Discipline check for the golden-frame fixtures a module keeps on disk: every `golden/<name>.txt` or
+  * `golden/<name>.ansi` file under a module's test resources must be named by at least one
+  * `assertMatches("<name>", …)`, `assertGolden("<name>")` or styled (`assertMatchesStyled`/`assertGoldenStyled`) call
   * in that module's test sources.
   *
   * Why this exists: [[GoldenFrames]] already fails a test that names a fixture which is not there. The opposite
@@ -30,11 +31,15 @@ object GoldenFixtures:
     * a fixture whose name is built at run time would be a failing build with no defect behind it, so this check only
     * ever recognises names a reader can also see.
     */
-  private val Reference: Pattern = Pattern.compile("""(?:assertMatches|assertGolden)\(\s*"([A-Za-z0-9._-]+)"""")
+  private val Reference: Pattern =
+    Pattern.compile("""(?:assertMatches|assertGolden)(?:Styled)?\(\s*"([A-Za-z0-9._-]+)"""")
 
-  /** The base names of the fixtures recorded under `<resourcesDirectory>/golden` — `app-shell.txt` becomes `app-shell`.
-    * A module with no `golden` directory at all has no fixtures, which is not an error; a `resourcesDirectory` that
-    * does not exist is, because it means the caller was handed the wrong path.
+  /** The two fixture extensions, text and styled; a file under `golden` with any other suffix is not a fixture. */
+  private val Extensions: Seq[String] = Seq(GoldenFrames.FixtureExtension, GoldenFrames.StyledFixtureExtension)
+
+  /** The base names of the fixtures recorded under `<resourcesDirectory>/golden` — `app-shell.txt` becomes `app-shell`,
+    * and so does `app-shell.ansi`. A module with no `golden` directory at all has no fixtures, which is not an error; a
+    * `resourcesDirectory` that does not exist is, because it means the caller was handed the wrong path.
     */
   def fixtureNames(resourcesDirectory: Path): Set[String] =
     assertDirectory(resourcesDirectory, "test-resources directory")
@@ -45,8 +50,7 @@ object GoldenFixtures:
         entries.iterator.asScala
           .filter(Files.isRegularFile(_))
           .map(_.getFileName.toString)
-          .filter(_.endsWith(GoldenFrames.FixtureExtension))
-          .map(_.stripSuffix(GoldenFrames.FixtureExtension))
+          .flatMap(file => Extensions.find(file.endsWith).map(file.stripSuffix))
           .toSet
       }
 

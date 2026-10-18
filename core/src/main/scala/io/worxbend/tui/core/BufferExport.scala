@@ -112,7 +112,7 @@ object BufferExport:
         y = run.y
       val painted = Painted(run.style, options)
       // blanks at the end of a run are padding the browser lays out on its own, unless a background has to cover them
-      val text    = if painted.background.isDefined then run.text.padTo(run.columns, ' ') else run.text
+      val text    = if painted.background.isDefined then padded(run) else run.text
       if text.nonEmpty then
         val css  = StringBuilder()
         css ++= s"color:${hex(painted.foreground)}"
@@ -144,7 +144,7 @@ object BufferExport:
         y = run.y
       out ++= sgr(run.style)
       run.style.link.foreach(url => out ++= s"$Esc]8;;${stripControls(url)}$Esc\\")
-      out ++= run.text.padTo(run.columns, ' ')
+      out ++= padded(run)
       if run.style.link.isDefined then out ++= s"$Esc]8;;$Esc\\"
     }
     out ++= AnsiReset
@@ -254,6 +254,12 @@ object BufferExport:
         runs += Segment(start, y, x - start, trimTrailingBlanks(text.result()), style)
       y += 1
     runs.result()
+
+  /** The run's text with its trailing blanks restored — by display width, not character count, so a two-column grapheme
+    * in a one-cell run gets no blank after it.
+    */
+  private def padded(run: Segment): String =
+    run.text + " " * math.max(0, run.columns - CharWidth.of(run.text))
 
   private def trimTrailingBlanks(text: String): String =
     var end = text.length
