@@ -42,6 +42,10 @@ object RenderThread:
     private val pending    = ConcurrentLinkedQueue[() => Unit]()
     private val taskScopes = ConcurrentHashMap.newKeySet[TaskScope]()
 
+    // A private monitor rather than `this`: the loop is handed out by `capture()`, so a caller may lock on it to
+    // serialise its own dispatch, and the loop's critical sections must not wait on — or deadlock behind — that.
+    private val monitor = new Object
+
     private[runtime] def isClosed: Boolean = closed
 
     private[runtime] def attach(scope: TaskScope): Unit =
@@ -59,7 +63,7 @@ object RenderThread:
     /** Reserves one continuation slot before background work starts. Reservations count against active-owner capacity
       * even before delivery; cancellation frees the slot and removes an already queued callback.
       */
-    private[runtime] def reserve(): Delivery = synchronized {
+    private[runtime] def reserve(): Delivery = monitor.synchronized {
       if !closed then acquire()
       new Delivery(!closed)
     }
@@ -78,10 +82,10 @@ object RenderThread:
       def enqueueRepeating(body: () => Unit): Unit = enqueue(body, repeat = true)
 
       private def enqueue(body: () => Unit, repeat: Boolean): Unit =
-        val enqueued = RenderLoop.this.synchronized {
+        val enqueued = monitor.synchronized {
           if active && !closed && callback.isEmpty then
             val task = () => {
-              val accepted = RenderLoop.this.synchronized {
+              val accepted = monitor.synchronized {
                 val wasActive = active && !closed
                 if !repeat then
                   callback = None
@@ -89,7 +93,7 @@ object RenderThread:
                 wasActive
               }
               try if accepted then body()
-              finally if repeat then RenderLoop.this.synchronized { callback = None }
+              finally if repeat then monitor.synchronized { callback = None }
             }
             callback = Some(task)
             val _    = pending.add(task)
@@ -99,11 +103,11 @@ object RenderThread:
         }
         if enqueued then wake()
 
-      def releaseIfUnused(): Unit = RenderLoop.this.synchronized {
+      def releaseIfUnused(): Unit = monitor.synchronized {
         if callback.isEmpty then cancel()
       }
 
-      def cancel(): Unit = RenderLoop.this.synchronized {
+      def cancel(): Unit = monitor.synchronized {
         if active then
           active = false
           admitted -= 1
@@ -145,12 +149,12 @@ object RenderThread:
       val _ = offer(body)
 
     private def offer(body: () => Unit): Boolean =
-      val accepted = synchronized {
+      val accepted = monitor.synchronized {
         if closed then false
         else
           acquire()
           val task = () => {
-            synchronized { admitted -= 1 }
+            monitor.synchronized { admitted -= 1 }
             body()
           }
           val _    = pending.add(task)
@@ -164,11 +168,12 @@ object RenderThread:
       *
       * Called by the runner that owns this loop, once, as it exits — after a bounded final [[drain]] and confined
       * cleanup. Work exceeding that final allowance is deliberately discarded. [[Async]]'s scheduler is a daemon
-      * singleton: an `Async.every(16.millis)` that was never cancelled holds a reference to this loop and, without
-      * this, would keep appending sixty closures a second to a queue nothing drains, for the life of the JVM.
+      * singleton: an `Async.every(16.millis)` that was never cancelled holds a reference to this loop, and `closed` is
+      * what its next firing reads to retire itself instead of appending sixty closures a second to a queue nothing
+      * drains for the life of the JVM — and what makes any enqueue that races that firing a no-op.
       */
     private[runtime] def close(): Unit =
-      synchronized {
+      monitor.synchronized {
         closed = true
         pending.clear()
         queued.set(0)
@@ -200,7 +205,7 @@ object RenderThread:
     private[runtime] def hasPending: Boolean = !pending.isEmpty
 
     /** Takes the next waiting body, or `null` when there is none, keeping the depth count in step. */
-    private def take(): () => Unit = synchronized {
+    private def take(): () => Unit = monitor.synchronized {
       val task = pending.poll()
       val _    = if task != null then queued.decrementAndGet() else 0 // scalafix:ok DisableSyntax; queue interop
       task

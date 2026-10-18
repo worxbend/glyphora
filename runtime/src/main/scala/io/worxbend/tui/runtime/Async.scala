@@ -1,7 +1,9 @@
 package io.worxbend.tui.runtime
 
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.{
   ArrayBlockingQueue,
+  Future,
   ScheduledExecutorService,
   ScheduledThreadPoolExecutor,
   ThreadFactory,
@@ -34,10 +36,12 @@ trait Cancelable:
   *   - Work queued *after* that is silently dropped — there is no longer a render thread to run it on, and keeping it
   *     would only grow memory.
   *   - A [[Cancelable]] from [[after]] or [[every]] is **not** cancelled by the app quitting. The scheduler is a
-  *     process-lifetime daemon singleton, so an uncancelled `every` keeps firing (into a queue that now discards its
-  *     bodies) until the JVM exits. Cancel it when the app quits — from `TuiApp.onStop`, which runs on every exit path
-  *     including Ctrl+C, or wherever a bare [[Runner]] app finishes — which matters most in the embedded and
-  *     multiple-runner cases this module is built for.
+  *     process-lifetime daemon singleton; an uncancelled `every` keeps its scheduler entry until its first firing after
+  *     the owner has closed, at which point it retires itself — the body never runs again and the entry is removed.
+  *     Cancel it anyway when the app quits — from `TuiApp.onStop`, which runs on every exit path including Ctrl+C, or
+  *     wherever a bare [[Runner]] app finishes: the timer's body may hold resources of its own, cancellation releases
+  *     the entry at once rather than one interval later, and both matter most in the embedded and multiple-runner cases
+  *     this module is built for.
   *
   * The mirror-image rule applies to *starting* repeating work. Every entry point here captures the render loop of the
   * thread that calls it, and a thread that belongs to no runner — a constructor running before any runner is registered
@@ -50,8 +54,9 @@ trait Cancelable:
   * a work failure delivered to an error handler or `Left`. Accepted work reserves its continuation slot before
   * starting, including the default error report, so completion cannot recursively overload the owner's queue. Timers
   * reserve one slot until one-shot delivery or cancellation (repeating timers retain it until cancellation). These are
-  * per-owner bounds, not a global limit on owners or scheduler registrations. Unscoped timers still require explicit
-  * cancellation on owner exit; cancelled scheduler entries are removed immediately.
+  * per-owner bounds, not a global limit on owners or scheduler registrations. An unscoped timer retires itself on its
+  * first firing after its owner exits; explicit cancellation is still what releases it at once. Cancelled scheduler
+  * entries are removed immediately.
   */
 object Async:
 
@@ -141,6 +146,10 @@ object Async:
   /** Runs `body` on the render thread every `interval` (first tick after one `interval`). Returns a handle to stop it.
     * The place to drive animation or polling without a global `config.tickRate`. Ticks while a callback is queued or
     * running are coalesced, not replayed. One callback slot is reserved until cancellation; overload throws at arming.
+    *
+    * A dispatch failure on a tick — the owner's `wake()` throwing — reaches the timer thread's uncaught-exception
+    * handler, the same destination as on the worker path, and the timer keeps firing; the tick already queued before
+    * the wake failed stays accepted. A tick that finds its owner closed retires the timer (see the class notes).
     */
   def every(interval: FiniteDuration)(body: => Unit): Cancelable =
     val millis = math.max(MinIntervalMillis, interval.toMillis)
@@ -162,23 +171,47 @@ object Async:
 
   /** Reserve on the caller's owner before scheduling, and gate cancellation at delivery, not just in the scheduler. A
     * repeating timer holds exactly one slot even while the owner is stalled.
+    *
+    * The scheduled runnable does two things the scheduler would otherwise get wrong. A throwing dispatch (the owner's
+    * `wake()`) is reported through [[reportDispatchFailure]] instead of being left inside the `ScheduledFuture`, where
+    * nothing reads it and where one throwable ends a periodic task for good. And a firing that finds its owner closed
+    * retires the timer itself: the body could never run again, so all an uncancelled `every` would do from then on is
+    * hold a scheduler entry for the life of the JVM. The future is kept in an `AtomicReference` because the first
+    * firing can precede `schedule` returning; a firing that finds it unset leaves the entry for the next one.
     */
-  private def scheduleCancelable(body: => Unit, repeat: Boolean)(
-      schedule: Runnable => java.util.concurrent.Future[?]
-  ): Cancelable =
-    val delivery = captureTarget().reserve()
+  private def scheduleCancelable(body: => Unit, repeat: Boolean)(schedule: Runnable => Future[?]): Cancelable =
+    val target         = captureTarget()
+    val delivery       = target.reserve()
+    val scheduled      = AtomicReference[Future[?]]()
+    def retire(): Unit =
+      delivery.cancel()
+      Option(scheduled.get()).foreach(future => { val _ = future.cancel(false) })
     try
-      val future = schedule(() =>
-        if repeat then delivery.enqueueRepeating(() => body)
-        else delivery.enqueue(() => body)
+      scheduled.set(
+        schedule(() =>
+          if target.isClosed then retire()
+          else
+            try
+              if repeat then delivery.enqueueRepeating(() => body)
+              else delivery.enqueue(() => body)
+            catch case NonFatal(error) => reportDispatchFailure(error)
+        )
       )
-      () =>
-        delivery.cancel()
-        val _ = future.cancel(false)
+      () => retire()
     catch
       case NonFatal(error) =>
         delivery.cancel()
         throw error
+
+  /** Hands a dispatch failure — a throwing owner `wake()`, typically — to the calling thread's uncaught-exception
+    * handler, which is where the worker path already sends one ([[onWorker]] uses `execute`, not `submit`, for exactly
+    * that reason). The timer path cannot get there by construction: a `ScheduledThreadPoolExecutor` keeps a runnable's
+    * throwable inside the `ScheduledFuture` and, for a periodic task, never runs it again — so the timer runnables
+    * report from inside and survive. Shared with [[TaskScope]], whose timers run on the same scheduler.
+    */
+  private[runtime] def reportDispatchFailure(error: Throwable): Unit =
+    val thread = Thread.currentThread()
+    thread.getUncaughtExceptionHandler.uncaughtException(thread, error)
 
   /** Process-lifetime daemon workers with 256 waiting submissions and nonblocking rejection, never CallerRuns on UI.
     */

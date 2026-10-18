@@ -23,8 +23,10 @@ import scala.util.control.NonFatal
   * entry still waits in the bounded worker queue until dequeued, where its work is skipped.
   */
 final class TaskScope private[runtime] (owner: RenderThread.RenderLoop) extends AutoCloseable:
-  private val closed = AtomicBoolean(false)
-  private val tasks  = mutable.Set.empty[Task]
+  private val closed  = AtomicBoolean(false)
+  private val tasks   = mutable.Set.empty[Task]
+  // guards `tasks`; a private monitor rather than `this`, which is public through `Async.scope()`
+  private val monitor = new Object
 
   /** Delivers success or non-fatal failure on this scope's owner; cancellation suppresses either outcome. Dispatch
     * failures escape to the worker's uncaught handler without revoking a result already accepted by the owner queue.
@@ -74,8 +76,15 @@ final class TaskScope private[runtime] (owner: RenderThread.RenderLoop) extends 
       task.installDelivery(delivery)
       task.install(
         submit(() =>
-          if repeat then delivery.enqueueRepeating(() => task.deliver(body, repeat))
-          else delivery.enqueue(() => task.deliver(body, repeat))
+          // a firing that finds the task inactive (owner retired, scope closed, or cancelled under a racing close)
+          // retires it rather than firing on; a throwing wake is reported instead of ending the periodic task inside
+          // its own future — see `Async.scheduleCancelable`, whose runnable makes the same two moves
+          if !task.active then task.cancel()
+          else
+            try
+              if repeat then delivery.enqueueRepeating(() => task.deliver(body, repeat))
+              else delivery.enqueue(() => task.deliver(body, repeat))
+            catch case NonFatal(error) => Async.reportDispatchFailure(error)
         )
       )
     catch
@@ -84,20 +93,20 @@ final class TaskScope private[runtime] (owner: RenderThread.RenderLoop) extends 
         throw error
     task
 
-  private def register(): Task = synchronized {
+  private def register(): Task = monitor.synchronized {
     if closed.get() || owner.isClosed then throw IllegalStateException("task scope is closed")
     val task = new Task
     tasks += task
     task
   }
 
-  private def remove(task: Task): Unit = synchronized {
+  private def remove(task: Task): Unit = monitor.synchronized {
     val _ = tasks.remove(task)
   }
 
   override def close(): Unit =
     if closed.compareAndSet(false, true) then
-      val pending = synchronized {
+      val pending = monitor.synchronized {
         val snapshot = tasks.toList
         tasks.clear()
         snapshot
@@ -107,17 +116,19 @@ final class TaskScope private[runtime] (owner: RenderThread.RenderLoop) extends 
 
   private final class Task extends Cancelable:
     private val cancelled                        = AtomicBoolean(false)
+    // the task's own monitor, for its own two slots; never held while taking the scope's
+    private val monitor                          = new Object
     private var scheduled: Option[Future[?]]     = None
     private var delivery: Option[owner.Delivery] = None
 
     def active: Boolean = !cancelled.get() && !closed.get() && !owner.isClosed
 
-    def installDelivery(reservation: owner.Delivery): Unit = synchronized {
+    def installDelivery(reservation: owner.Delivery): Unit = monitor.synchronized {
       if active then delivery = Some(reservation)
       else reservation.cancel()
     }
 
-    def install(future: Future[?]): Unit = synchronized {
+    def install(future: Future[?]): Unit = monitor.synchronized {
       if active then scheduled = Some(future)
       else
         val _ = future.cancel(false)
@@ -129,7 +140,7 @@ final class TaskScope private[runtime] (owner: RenderThread.RenderLoop) extends 
 
     def cancel(): Unit =
       cancelled.set(true)
-      synchronized {
+      monitor.synchronized {
         scheduled.foreach(future => { val _ = future.cancel(false) })
         scheduled = None
         delivery.foreach(_.cancel())

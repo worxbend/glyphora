@@ -2,6 +2,8 @@ package io.worxbend.tui.runtime
 
 import org.scalatest.funsuite.AnyFunSuite
 
+import java.util.concurrent.{CountDownLatch, TimeUnit}
+
 final class RenderThreadSpec extends AnyFunSuite:
 
   test("the guard is a no-op while no render thread is registered"):
@@ -208,3 +210,37 @@ final class RenderThreadSpec extends AnyFunSuite:
       assert(otherOk)
       RenderThread.checkRenderThread() // still registered here after the other unregistered itself
     finally RenderThread.unregister()
+
+  test("an enqueue completes while another thread holds the captured loop's monitor"):
+    // `RenderLoop` is handed out by `capture()`, so a caller may `synchronized` on it to serialise its own dispatch.
+    // The loop's own critical sections must not share that monitor, or every continuation and timer tick for the
+    // owner would wait on the caller — and a caller enqueueing from inside its block would deadlock.
+    val loop     = RenderThread.register(Thread.currentThread())
+    val held     = CountDownLatch(1)
+    val release  = CountDownLatch(1)
+    val enqueued = CountDownLatch(1)
+    val holder   = Thread(
+      () =>
+        loop.synchronized {
+          held.countDown()
+          val _ = release.await(5, TimeUnit.SECONDS)
+        },
+      "monitor-holder",
+    )
+    val producer = Thread(
+      () =>
+        loop.enqueue(() => ())
+        enqueued.countDown()
+      ,
+      "producer",
+    )
+    holder.setDaemon(true)
+    producer.setDaemon(true)
+    try
+      holder.start()
+      assert(held.await(3, TimeUnit.SECONDS))
+      producer.start()
+      assert(enqueued.await(1, TimeUnit.SECONDS), "enqueue blocked behind a caller holding the loop's monitor")
+    finally
+      release.countDown()
+      RenderThread.unregister()

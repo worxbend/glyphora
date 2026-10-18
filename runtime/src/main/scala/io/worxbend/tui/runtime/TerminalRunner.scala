@@ -100,10 +100,18 @@ final class TerminalRunner(
           RenderThread.drainPending(loop, RenderThread.FinalDrainBudget)
           result = report(outcome, recorder.collected)
     catch
-      case error: Throwable =>
+      // What reaches here is a throwing `onTaskError` (non-fatal: `runLoop` guards the app's own callbacks and the
+      // loop's handler absorbs a `NonFatal` from a queued body) or a fatal from a body run in the final drain. The
+      // former is filed under an earlier `Left` as a cleanup failure; the latter must leave `run` whatever the loop
+      // had already reported — the same distinction `recordCleanup` makes for a fatal teardown throwable — carrying
+      // the earlier primary's throwable as a suppressed exception so its provenance survives.
+      case error: Throwable if NonFatal(error) =>
         result match
           case Left(primary) => primary.addCleanupFailure(error)
           case Right(())     => thrown = Some(error)
+      case error: Throwable                    =>
+        result.left.foreach(primary => primary.primaryThrowable.foreach(Cleanup.suppress(error, _)))
+        thrown = Some(error)
     finally
       // Confined resources are disposed while their owner remains registered. Each release is attempted independently.
       release(onStop())

@@ -28,10 +28,11 @@ sealed trait Reactive[A]:
 
   /** A derived view of this value: `f` is applied on every read, and the result subscribes to nothing of its own.
     *
-    * Safe to create inside a repeatedly evaluated `view` body — reading the result through a scope subscribes that
-    * scope to *this* value, not to a per-generation intermediate, so nothing accumulates. `f` therefore re-runs per
-    * read: when the derivation is expensive enough to be worth caching, write `Computed { f(source.get) }` instead and
-    * dispose it when its owner goes away.
+    * This is the per-frame derivation: safe to create inside a repeatedly evaluated `view` body, because reading the
+    * result through a scope subscribes that scope to *this* value, not to a per-generation intermediate, so nothing
+    * accumulates and nothing needs disposing. `f` therefore re-runs per read. When the derivation is expensive enough
+    * to be worth caching, write `Computed { f(source.get) }` *outside* `view`, beside the signals it reads, and let its
+    * owner dispose it on the way out — see [[Computed.dispose]] for why that call never belongs in `view`.
     */
   def map[B](f: A => B): Derived[B] = Derived(f(get))
 
@@ -147,16 +148,22 @@ final class Computed[A] private (thunk: ReactiveScope ?=> A) extends Reactive[A]
     stale = true
     if wasFresh || recomputing then notifySubscribers()
 
-  /** Detaches this computed from its dependencies and dependents.
+  /** Detaches this computed from its dependencies and dependents — the owner's exit, for a long-lived computed.
     *
-    * A `Computed` created inside a repeatedly-evaluated context (a `view` body) re-subscribes on every evaluation and
-    * is otherwise never released — long-lived derived values belong outside `view`, and short-lived ones should be
-    * disposed. The app root scope prunes its own stale subscriptions automatically; this handles the computed's
-    * internal edges.
+    * A `Computed` is never created per evaluation. One created inside a `view` body re-subscribes on every frame and
+    * nothing releases it, and disposing it in that same body does not repair that: it makes two things go wrong
+    * instead. First, dependents are invalidated on the way out — they still hold an edge *to* this computed, so they
+    * must re-derive rather than keep a cache it no longer maintains — and the dependent here is the scope that is
+    * drawing this very frame, so every frame owes the next one and an idle app repaints at the poll rate for ever.
+    * Second, the disposing scope ends the frame subscribed to nothing: the computed was its only edge to the source, so
+    * a real `set` on that source reaches nobody, and the continuous redraw is what hides it. A per-frame derivation is
+    * [[Reactive.map]] (or an inline `source.get`); a cached one is a `Computed` created beside its signals, outside
+    * `view`.
     *
-    * Dependents are invalidated on the way out: they still hold an edge *to* this computed, so they must re-derive
-    * rather than keep a cache this computed no longer maintains. Reading a disposed computed re-attaches it — dispose
-    * detaches, it does not close.
+    * Call this where that owner goes away — `Screen.onLeave`, `TuiApp.onStop`, or wherever a bare [[Runner]] app
+    * finishes — on the render thread, once. The app root scope prunes its own stale subscriptions automatically; this
+    * handles the computed's internal edges. Reading a disposed computed re-attaches it — dispose detaches, it does not
+    * close.
     */
   def dispose(): Unit =
     ownership.check()

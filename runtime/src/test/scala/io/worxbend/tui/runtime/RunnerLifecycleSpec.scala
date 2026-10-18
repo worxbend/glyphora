@@ -559,3 +559,39 @@ final class RunnerLifecycleSpec extends AnyFunSuite:
     )
     assert(result.isRight, s"an installed handler owns reporting, so the run should succeed: $result")
     assert(seen.map(_.getMessage).toList == List("continuation boom"))
+
+  test("a fatal throwable from the final drain escapes run even after an earlier queued failure"):
+    // `recordCleanup` lets a fatal teardown throwable escape, but the final queued-work drain ran under a catch that
+    // filed *any* throwable under an earlier `Left` as a cleanup failure — so a `VirtualMachineError` thrown by a body
+    // queued in the quitting iteration came back as a secondary of an ordinary `QueuedTask` report, and `run`
+    // returned normally from a JVM that had just failed.
+    val ordinary = RuntimeException("ordinary queued failure")
+    val fatal    = FatalInFinalDrain()
+    val backend  = HeadlessBackend(Size(20, 3))
+    backend.postEvent(Event.Key(KeyEvent.of(KeyCode.Char('x'))))
+    backend.postEvent(Event.Key(KeyEvent.of(KeyCode.Char('q'))))
+    val thrown   = intercept[FatalInFinalDrain] {
+      TerminalRunner(backend).run(
+        _ => (),
+        (event, handle) =>
+          event match
+            case Event.Key(KeyEvent(KeyCode.Char('x'), _)) =>
+              RenderThread.runLater(throw ordinary)
+              EventOutcome.Ignored
+            case _                                         =>
+              handle.quit()
+              // queued in the quitting iteration, so it runs only in the final drain — after the loop's own outcome
+              // has already been reported as `Left(QueuedTask(ordinary))`
+              RenderThread.runLater(throw fatal)
+              EventOutcome.Ignored
+        ,
+        _ => (),
+      )
+    }
+    assert(thrown eq fatal)
+    assert(thrown.getSuppressed.toList.contains(ordinary), "the earlier queued failure's provenance was lost")
+    assert(!backend.isRawMode)
+    assert(!backend.isAlternateScreen)
+
+  /** `VirtualMachineError` is what `NonFatal` excludes; a subclass keeps the test from throwing a real one. */
+  private final class FatalInFinalDrain extends VirtualMachineError("fatal in the final drain")

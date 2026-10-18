@@ -150,7 +150,7 @@ final class AsyncTimerAdmissionSpec extends AnyFunSuite:
         RenderThread.unregister()
   }
 
-  test("cancelled scheduled entries are removed immediately without auto-cancelling unscoped timers at owner exit"):
+  test("cancelled scheduled entries are removed immediately, and owner exit alone does not remove an unscoped timer"):
     val scheduler = Async.scheduler match
       case executor: ScheduledThreadPoolExecutor => executor
       case _ => fail("scheduler must expose a remove-on-cancel executor rather than hide the retaining default")
@@ -168,7 +168,9 @@ final class AsyncTimerAdmissionSpec extends AnyFunSuite:
       scope.close()
       assert(scheduler.getQueue.size() == baseline + 1, "scope close retained cancelled scheduled entries")
       RenderThread.unregister()
-      assert(scheduler.getQueue.size() == baseline + 1, "unscoped repeating lifetime changed at owner exit")
+      // an unscoped timer retires itself on its next *firing* after the owner closes (one hour away here), not at the
+      // instant of owner exit — see "retires itself once its owner has closed" below for the firing half
+      assert(scheduler.getQueue.size() == baseline + 1, "unscoped repeating timer removed eagerly at owner exit")
       repeating.cancel()
       assert(scheduler.getQueue.size() == baseline, "cancelled repeating timer retained until its deadline")
     finally
@@ -195,3 +197,72 @@ final class AsyncTimerAdmissionSpec extends AnyFunSuite:
       timers.foreach(_.cancel())
       scope.close()
       RenderThread.unregister()
+
+  Seq(false, true).foreach { scoped =>
+    val kind = if scoped then "scoped" else "unscoped"
+    test(s"a $kind repeating timer survives a throwing wake and reports it to the uncaught handler"):
+      // A `ScheduledThreadPoolExecutor` keeps a runnable's throwable inside the `ScheduledFuture` and never runs a
+      // periodic task again after one. Nothing reads that future, so a `Backend.wake()` that threw once used to end the
+      // timer silently — the opposite of what the `Async` Scaladoc promises for dispatch failures.
+      val reported = CountDownLatch(1)
+      val uncaught = AtomicInteger(0)
+      val previous = Thread.getDefaultUncaughtExceptionHandler
+      Thread.setDefaultUncaughtExceptionHandler((_, _) => {
+        val _ = uncaught.incrementAndGet()
+        reported.countDown()
+      })
+      val queued   = new java.util.concurrent.LinkedBlockingQueue[Boolean]()
+      val wakes    = AtomicInteger(0)
+      val loop     = RenderThread.register(
+        Thread.currentThread(),
+        () =>
+          if wakes.incrementAndGet() == 1 then throw IllegalStateException("wake boom")
+          else { val _ = queued.add(true) },
+      )
+      val scope    = if scoped then Some(Async.scope()) else None
+      var calls    = 0
+      val timer    = scope match
+        case Some(group) => group.every(1.millis) { calls += 1 }
+        case None        => Async.every(1.millis) { calls += 1 }
+      try
+        assert(reported.await(3, TimeUnit.SECONDS), "the throwing wake never reached the uncaught-exception handler")
+        loop.drain(budget = 1)
+        assert(calls == 1, "the tick queued before its wake threw was lost")
+        assert(queued.poll(3, TimeUnit.SECONDS), "the timer did not fire again after its wake threw")
+        loop.drain(budget = 1)
+        assert(calls == 2)
+        assert(queued.poll(3, TimeUnit.SECONDS))
+        loop.drain(budget = 1)
+        assert(calls == 3)
+        assert(uncaught.get() == 1, "only the first wake threw, so the handler must have been told exactly once")
+      finally
+        timer.cancel()
+        scope.foreach(_.close())
+        RenderThread.unregister()
+        Thread.setDefaultUncaughtExceptionHandler(previous)
+  }
+
+  test("an unscoped repeating timer retires itself once its owner has closed"):
+    val scheduler  = Async.scheduler match
+      case executor: ScheduledThreadPoolExecutor => executor
+      case _                                     => fail("scheduler must expose its queue")
+    val queued     = CountDownLatch(1)
+    RenderThread.register(Thread.currentThread(), () => queued.countDown())
+    var registered = true
+    val baseline   = scheduler.getQueue.size()
+    val timer      = Async.every(1.millis)(())
+    try
+      assert(scheduler.getQueue.size() == baseline + 1)
+      assert(queued.await(3, TimeUnit.SECONDS))
+      RenderThread.unregister() // closes the owner; the timer is deliberately never cancelled
+      registered = false
+      // the scheduler is single-threaded and runs entries in time order, so once a marker armed *after* the close has
+      // run, the 1 ms timer has fired at least once against the closed owner — and must have removed itself
+      schedulerTurn()
+      assert(
+        scheduler.getQueue.size() == baseline,
+        "an uncancelled timer kept its scheduler entry after its owner closed",
+      )
+    finally
+      timer.cancel()
+      if registered then RenderThread.unregister()
