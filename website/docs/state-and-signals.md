@@ -139,6 +139,62 @@ scope.dispose()
 callbacks and app `onStop`, even when a callback fails. Do not dispose the scope
 passed to your `view`; only release scopes you created yourself.
 
+## Keep one state value in a Store
+
+`Store` is sugar over a `Signal` and its `Computed`s for the app whose state is one
+value with pure transitions — the Elm shape, without a second reactive system:
+
+```scala
+final case class Todo(items: Vector[String], filter: String)
+
+private val store = Store(Todo(Vector.empty, ""), history = 50)
+private val shown = store.select(s => s.items.filter(_.contains(s.filter)))
+
+def view(using ReactiveScope, Theme): Element =
+  column(
+    list(shown.get, listState),
+    row(button("add")(store.dispatch(s => s.copy(items = s.items :+ "write docs"))), button("undo")(store.undo())),
+  )
+```
+
+`dispatch(action)` applies the transition and publishes the result; a transition that
+produces an equal state notifies nobody and records nothing. `select(f)` is a long-lived
+`Computed` — create it once beside the store, as above, and dispose it with the
+store's owner. `history = n` keeps up to `n` previous states for `undo()`/`redo()`,
+each returning whether anything happened (`canUndo`/`canRedo` ask without moving); a
+`dispatch` after an `undo` discards the redo branch. `store.get`, `store.peek` and the
+read-only `store.state` are the signal's reads, under the same render-thread rules.
+
+## Persist a signal across restarts
+
+`persisted(path, initial)` is a `Signal` loaded from a file when it is created and
+written back, off the render thread, every time it changes:
+
+```scala
+final case class Prefs(theme: String, sidebar: Boolean, recent: List[String])
+
+private val prefs = persisted(configDir.resolve("prefs.txt"), Prefs("dark", sidebar = true, Nil))
+```
+
+The file format comes from the `Codec` for the value's type. One is derived for any
+case class, enum or sealed hierarchy built from `String`, `Int`, `Long`, `Double`,
+`Boolean`, `Option`, `Seq`, `List`, `Vector` and `Set`; a type the derivation cannot see
+through is taught with one line next to it — `given Codec[Email] = Codec.atom[Email](_.value, Email.parse)` —
+and a hand-written given always wins over the derivation. The text is a compact
+length-prefixed form made for round-tripping, not for editing by hand or for exchange:
+a type whose fields change simply decodes its old file as a failure, and a missing,
+unreadable or undecodable file yields `initial`, so a stale file is never a reason the
+app cannot start.
+
+Writes coalesce — a burst of changes leaves at most one write in flight and the newest
+value pending — and each one lands through an atomic rename, so the file always holds a
+complete state. Create the signal as a field or in `onStart`, never inside `view`, and
+treat the file as the signal's own: two signals on one path overwrite each other. A write
+failure is reported like a failing `Async.run`, as `RunnerError.QueuedTask` when the app
+exits; the in-memory value is unaffected. Under `tui-runtime` alone the same thing is
+`Persisted.signal(path, initial)(encode, decode)` with the two halves of any text
+format you like.
+
 ## Derive cheaply with map
 
 `signal.map(f)` returns a `Derived[B]`: a transparent view that applies `f` on every
