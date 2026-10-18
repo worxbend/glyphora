@@ -967,11 +967,30 @@ private[dsl] trait ElementFactories:
     * }}}
     *
     * The size is the whole terminal's, the same one [[TuiApp.terminalSize]] reports — nesting this inside a `panel` or
-    * a `splitPane` does not narrow what `build` sees. Branch on [[Breakpoint.of]] instead of raw columns when the named
-    * bands say what you mean.
+    * a `splitPane` does not narrow what `build` sees; `responsive.local` is the one that sees its own area. Branch on
+    * [[Breakpoint.of]] instead of raw columns when the named bands say what you mean.
     */
-  def responsive(build: Size => Element): ResponsiveElement =
-    ResponsiveElement(build)
+  object responsive:
+
+    /** Picks a subtree from the terminal's size — see [[responsive]]. */
+    def apply(build: Size => Element): ResponsiveElement = ResponsiveElement(build)
+
+    /** A container query: picks a subtree from *this node's own* area rather than the terminal's.
+      *
+      * {{{
+      * panel("Sidebar")(
+      *   responsive.local {
+      *     case size if size.width < 30 => column(icons*)
+      *     case _                       => column(labelledEntries*)
+      *   }
+      * ).length(28)
+      * }}}
+      *
+      * The area is found by a layout pre-pass before the focus pass, so the branch's focusables take Tab stops on the
+      * first frame. The node's size cannot depend on the branch it is about to pick, so it takes what its own
+      * constraint says — `.length(n)`, `.percent(p)` — or fills, and never sizes itself to its branch.
+      */
+    def local(build: Size => Element): ResponsiveElement = ResponsiveElement(build, local = true)
 
   /** A scrollable viewport over `content`, whose full height you state yourself as `contentHeight` rows.
     *

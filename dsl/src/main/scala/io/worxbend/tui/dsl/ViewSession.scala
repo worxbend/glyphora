@@ -25,7 +25,7 @@ private[dsl] final class ViewSession(areaOf: String => Option[Rect] = _ => None)
 
   def resolve(view: View, size: Size, theme: Theme)(using scope: ReactiveScope): Element =
     state.beginGeneration()
-    val tree = ViewState.during(state)(ResponsivePass.resolve(view(using scope, theme), size))
+    val tree = ViewState.during(state)(ResponsivePass.resolveFrame(view(using scope, theme), size, dryPaint(size)))
     state.sweep()
     val _    = changes.get
     tree
@@ -50,6 +50,11 @@ private[dsl] final class ViewSession(areaOf: String => Option[Rect] = _ => None)
 
   /** Disposes every hook this session holds — effects cancelled, tasks' scopes closed. */
   def dispose(): Unit = state.disposeAll()
+
+  /** The container-query pre-pass's paint: the whole tree into a scratch buffer of the frame's size, thrown away. */
+  private def dryPaint(size: Size)(tree: Element): Unit =
+    val area = Rect(0, 0, size.width, size.height)
+    paint(tree, area, Buffer(area))
 
   /** A host boundary clips both paint and input, including portals, without changing layout origins. */
   def paint(tree: Element, area: Rect, buffer: Buffer): Unit =
