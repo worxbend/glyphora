@@ -225,6 +225,44 @@ trait Backend:
     val _ = shape
     Right(())
 
+  /** Asks the terminal to draw the mouse pointer as `shape` while it is over the window (OSC 22) — see
+    * [[PointerShape]].
+    *
+    * Pointer shape is terminal state, not frame state: set it when the thing under the pointer changes, not on every
+    * draw, and hand it back to [[PointerShape.Default]] before the app exits — the JLine backend does so on `close()`
+    * and across a handover, as it does for the caret's shape. A terminal without OSC 22 ignores the request, and a
+    * backend whose capabilities deny it (`capabilities.pointerShapes`) writes nothing and still answers `Right(())`:
+    * success means "nothing went wrong", never "the pointer changed". Must run on the render thread. The default is a
+    * no-op for backends with no pointer to shape.
+    */
+  def setPointerShape(shape: PointerShape): Either[BackendError, Unit] =
+    val _ = shape
+    Right(())
+
+  /** Raises a desktop notification with `title` and `body` through whichever notification dialect the terminal speaks
+    * (OSC 9, OSC 777 or OSC 99 — see [[DesktopNotificationProtocol]]).
+    *
+    * For telling a user who has switched to another window that something finished. Best-effort in every direction: a
+    * terminal that speaks none of the dialects ignores it, one inside a multiplexer never sees it (the capability
+    * `desktopNotifications` is `No` there and nothing is written), and the operating system may suppress it. Success
+    * means the write went out. Must run on the render thread. The default is a no-op.
+    */
+  def notifyDesktop(title: String, body: String): Either[BackendError, Unit] =
+    val _ = (title, body)
+    Right(())
+
+  /** Shows `progress` on the terminal's tab or the taskbar (OSC 9;4): a determinate fraction in `0.0..1.0`, or `None`
+    * to clear it.
+    *
+    * Terminal state like [[setPointerShape]], so emit it when the fraction changes and clear it on the way out — the
+    * JLine backend clears it on `close()` when something was shown. A terminal without the indicator ignores it, a
+    * backend whose capabilities deny it (`capabilities.taskbarProgress`) writes nothing, and both answer `Right(())`.
+    * Must run on the render thread. The default is a no-op.
+    */
+  def setTaskbarProgress(progress: Option[Double]): Either[BackendError, Unit] =
+    val _ = progress
+    Right(())
+
   /** Reserves `rows` lines at the bottom of the *primary* screen for an app that is not taking the alternate screen.
     *
     * The complement of [[enterAlternateScreen]]. Instead of switching to a blank second screen, this scrolls whatever

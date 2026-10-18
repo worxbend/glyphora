@@ -46,6 +46,8 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
         backend.mouseCaptureActive,
         backend.cursorBlinkSuppressed,
         backend.keyEventTypesActive,
+        backend.pointerShape,
+        backend.taskbarProgress,
       )
     val failures = Seq.newBuilder[BackendError]
 
@@ -58,6 +60,8 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
 
     undress(state.mouse.isDefined, backend.disableMouseCapture())
     undress(state.cursorShape != CursorShape.Default, backend.setCursorShape(CursorShape.Default))
+    undress(state.pointerShape != PointerShape.Default, backend.setPointerShape(PointerShape.Default))
+    undress(state.taskbarProgress.isDefined, backend.setTaskbarProgress(None))
     undress(state.cursorBlinkSuppressed, backend.setCursorBlink(true))
     undress(state.cursorHidden, backend.showCursor())
     undress(state.alternateScreen, backend.leaveAlternateScreen())
@@ -93,6 +97,8 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
     if state.alternateScreen then bestEffort(backend.enterAlternateScreen())
     if state.cursorHidden then bestEffort(backend.hideCursor())
     if state.cursorShape != CursorShape.Default then bestEffort(backend.setCursorShape(state.cursorShape))
+    if state.pointerShape != PointerShape.Default then bestEffort(backend.setPointerShape(state.pointerShape))
+    if state.taskbarProgress.isDefined then bestEffort(backend.setTaskbarProgress(state.taskbarProgress))
     // DECSCUSR also selects blinking/steady: restore the app's explicit blink suppression after its shape.
     if state.cursorBlinkSuppressed then bestEffort(backend.setCursorBlink(false))
     state.mouse.foreach(mode => bestEffort(backend.enableMouseCapture(mode)))
@@ -119,11 +125,13 @@ private[terminal] object TerminalDressing:
       mouse: Option[MouseCaptureMode],
       cursorBlinkSuppressed: Boolean,
       keyEventTypes: Boolean,
+      pointerShape: PointerShape = PointerShape.Default,
+      taskbarProgress: Option[Double] = None,
   )
 
   object TerminalState:
     /** Nothing was dressed up: cooked mode, primary screen, visible, blinking cursor of the user's own shape, no mouse
-      * capture.
+      * capture, the user's own pointer, no progress shown.
       */
     val Undressed: TerminalState = TerminalState(false, false, false, CursorShape.Default, None, false, false)
 

@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Effect, Event, KeyCode, KeyEvent, KeyModifiers, Size, Widget}
+import io.worxbend.tui.core.{ColorScheme, Effect, Event, KeyCode, KeyEvent, KeyModifiers, Size, Widget}
 import io.worxbend.tui.runtime.{
   Cleanup,
   EventOutcome,
@@ -626,26 +626,31 @@ trait TuiApp:
   private def handleEvent(event: Event, run: RunState, handle: RunnerHandle): EventOutcome =
     activeHandle.set(Some(handle))
     val redraw = event match
-      case Event.Key(key)        => handleKey(key, run, handle) || run.invalidated
-      case Event.Mouse(mouse)    => run.host.dispatchMouse(mouse) || run.invalidated
+      case Event.Key(key)                   => handleKey(key, run, handle) || run.invalidated
+      case Event.Mouse(mouse)               => run.host.dispatchMouse(mouse) || run.invalidated
       // Releases reach the focused element's own `.onKeyRelease` and stop there. They deliberately do not bubble on
       // to `bindings`: a binding names a press, so firing it again on the way up would run every chord twice.
-      case Event.KeyRelease(key) => run.host.dispatchKeyRelease(key) || run.invalidated
-      case Event.Paste(text)     =>
+      case Event.KeyRelease(key)            => run.host.dispatchKeyRelease(key) || run.invalidated
+      case Event.Paste(text)                =>
         val consumed = run.host.dispatchPaste(text)
         consumed || run.invalidated
-      case Event.FocusGained     =>
+      case Event.FocusGained                =>
         onTerminalFocus(true)
         run.invalidated
-      case Event.FocusLost       =>
+      case Event.FocusLost                  =>
         onTerminalFocus(false)
         run.invalidated
-      case Event.Interrupt       => onInterrupt()
+      // a mode 2031 report: the terminal flipped between light and dark under the app. The signal write is what owes
+      // the frame — a `Theme.auto` view read it and recomputes; a view that never looked is left alone.
+      case Event.ColorSchemeChanged(scheme) =>
+        colorSchemeSignal.set(scheme)
+        run.invalidated
+      case Event.Interrupt                  => onInterrupt()
       // Deliberately routed nowhere. The runner is stopping the loop whatever this answers, so handing the end of the
       // stream to the focused element would only invite a handler to redraw a frame nobody will see; an app that wants
       // to act on it overrides `handleEvent` itself. `false`: no repaint is owed.
-      case Event.EndOfInput      => false
-      case Event.Resize(size)    =>
+      case Event.EndOfInput                 => false
+      case Event.Resize(size)               =>
         // the render pass sets this too, from the frame it is about to draw; doing it here as well means an
         // `onResize` override — and anything it calls — already peeks the new size rather than the previous frame's.
         // What is published is the app's own area, not the terminal's: an inline app owns the bottom few rows, so the
@@ -656,7 +661,7 @@ trait TuiApp:
         terminalSizeSignal.set(Size(area.width, area.height))
         onResize(size)
         true
-      case Event.Tick            => handleTick(run)
+      case Event.Tick                       => handleTick(run)
     if redraw then EventOutcome.Redraw else EventOutcome.Ignored
 
   private def handleTick(run: RunState): Boolean =
@@ -758,6 +763,11 @@ trait TuiApp:
     * that gap through [[terminalSize]], which is only readable from `view`.
     */
   private val terminalSizeSignal: Signal[Size] = Signal(Size(0, 0))
+
+  /** The terminal's colour scheme: what the capability probe established at start-up, then whatever mode 2031 reports
+    * afterwards. `Unknown` until a run publishes the probe's answer, which every reader takes as dark.
+    */
+  private val colorSchemeSignal: Signal[ColorScheme] = Signal(ColorScheme.Unknown)
 
   // Everything below is per-instance state written only from the render thread (event handlers, the render lambda, and
   // the app's own callbacks all run there). None of it is reset by `runWith`, so running the same instance a second

@@ -30,9 +30,11 @@ private[terminal] final class ReplyQueries(
 
   /** Writes the capability queries and reads what comes back, or skips the round trip entirely.
     *
-    * DA1 goes last because it is the fence: terminals answer in the order the queries arrived, so its reply means
-    * everything that was going to be answered has been. A terminal that answers nothing at all costs the timeout once,
-    * at start-up, and leaves every field unknown — which is exactly today's behaviour, since unknown means "use it".
+    * Six DECRQM mode queries, the kitty keyboard query, the OSC 11 background-colour query, the DSR 996 colour-scheme
+    * query and DA1. DA1 goes last because it is the fence: terminals answer in the order the queries arrived, so its
+    * reply means everything that was going to be answered has been. A terminal that answers nothing at all costs the
+    * timeout once, at start-up, and leaves every field unknown — which is exactly today's behaviour, since unknown
+    * means "use it".
     *
     * `GLYPHORA_NO_CAPABILITY_PROBE` set to any non-empty value skips the round trip, for a CI harness or a terminal
     * where even a short start-up read is unwanted. Skipping is safe by construction: it produces the same unknown value
@@ -41,13 +43,19 @@ private[terminal] final class ReplyQueries(
   def probeCapabilities(timeout: FiniteDuration): TerminalCapabilities =
     if sys.env.get("GLYPHORA_NO_CAPABILITY_PROBE").exists(_.nonEmpty) then TerminalCapabilities.unknown
     else
-      // the five queries are one critical section, so a Ctrl+Z handover cannot land between the question and the
-      // fence; `emit` re-enters the reentrant monitor per query
+      // the queries are one critical section, so a Ctrl+Z handover cannot land between the question and the fence;
+      // `emit` re-enters the reentrant monitor per query
       screenOwnership.synchronized {
         emit(AnsiSequences.queryPrivateMode(CapabilityReplies.SynchronizedOutputMode))
         emit(AnsiSequences.queryPrivateMode(CapabilityReplies.BracketedPasteMode))
         emit(AnsiSequences.queryPrivateMode(CapabilityReplies.FocusReportingMode))
+        emit(AnsiSequences.queryPrivateMode(CapabilityReplies.ColorSchemeUpdatesMode))
+        emit(AnsiSequences.queryPrivateMode(CapabilityReplies.InBandResizeMode))
+        emit(AnsiSequences.queryPrivateMode(CapabilityReplies.UnicodeWidthMode))
         emit(AnsiSequences.QueryKittyKeyboard)
+        // the two colour questions: the colour itself, and — on a terminal that can say — the terminal's own verdict
+        emit(AnsiSequences.QueryBackgroundColor)
+        emit(AnsiSequences.QueryColorScheme)
         emit(AnsiSequences.QueryPrimaryDeviceAttributes)
       }
       decoder.readCapabilityReport(timeout)
