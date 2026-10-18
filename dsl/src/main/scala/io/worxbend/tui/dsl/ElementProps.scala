@@ -1,6 +1,7 @@
 package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Constraint, GlyphSupport, KeyEvent, MouseEvent, Style}
+import io.worxbend.tui.terminal.PointerShape
 
 /** The focus bookkeeping the framework writes and an application only reads.
   *
@@ -41,6 +42,10 @@ final case class FocusState private[dsl] (
   * `caretStyle` is read only by the text-entry nodes: whether, while focused, they paint their cursor cell, report it
   * for the terminal's own cursor to follow, or both — see [[CaretStyle]]. It rides on the props so one
   * `.caretStyle(...)` builder serves every text node rather than each carrying a field of its own.
+  *
+  * `pointerShape` is the mouse pointer `.pointer(shape)` asked for over this element — an *explicit* request, which
+  * wins over the default an interactive node declares through `Element.pointerShape` and, unlike that default, also
+  * covers the node's children. `None` means "whatever the node itself says".
   */
 final case class ElementProps(
     style: Style = Style.Default,
@@ -55,6 +60,7 @@ final case class ElementProps(
     focusState: FocusState = FocusState(),
     glyphs: GlyphSupport = GlyphSupport.Full,
     caretStyle: CaretStyle = CaretStyle.Both,
+    pointerShape: Option[PointerShape] = None,
 ):
 
   /** Whether this element is the one the focus pass marked — where keystrokes go this frame. */

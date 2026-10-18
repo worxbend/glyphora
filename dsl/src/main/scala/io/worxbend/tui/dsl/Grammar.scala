@@ -1,6 +1,7 @@
 package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind, Position, Style}
+import io.worxbend.tui.terminal.PointerShape
 
 /** Named key constants and constructors, so handlers read `onKey(Key.Up){ … }` instead of matching raw
   * `KeyEvent(KeyCode.Up, _)`. Mirrors terminus's `Key.up` / `Key.controlQ` vocabulary.
@@ -153,6 +154,17 @@ extension [E <: Element](element: E)
 
   /** The pointer moved with a button held down (`MouseEventKind.Drag`). */
   def onDrag(handler: Position => Unit): element.Self = bindMouse(element)(Set(MouseEventKind.Drag))(handler)
+
+  /** The mouse pointer to show over this element and everything inside it — OSC 22, a hand over something clickable, an
+    * I-beam over something that takes typing. `button`, `link`, the text inputs and `splitPane`'s divider already ask
+    * for theirs; this is for a custom clickable (`.onClick` on a `text`) or to overrule a default.
+    *
+    * Decoration only: a terminal without the protocol, or one the backend knows will swallow it, shows the ordinary
+    * pointer and nothing else changes. The app updates the shape on every mouse event it receives, so under the default
+    * button-only mouse capture it changes on a click or a drag; under all-motion tracking it follows the hover.
+    */
+  def pointer(shape: PointerShape): element.Self =
+    element.withProps(element.props.copy(pointerShape = Some(shape)))
 
   /** The button came back up (`MouseEventKind.Up`) — the end of a drag, and where a drag gesture is committed. */
   def onDragEnd(handler: Position => Unit): element.Self = bindMouse(element)(Set(MouseEventKind.Up))(handler)

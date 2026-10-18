@@ -362,9 +362,10 @@ private[dsl] object FocusPass:
 
   /** Rebuilds the tree with the theme's focus cue stamped on every node, the focused element marked (`props.focused =
     * true`), and every focusable wrapped in a [[TrackedElement]] that records its rendered area; a non-focusable
-    * element with user or built-in mouse behavior is wrapped in a [[PointerElement]] instead, which records its area
-    * for pointer-filtered mouse delivery. Focus indices are assigned in depth-first pre-order — the tab order; pointer
-    * ids are a separate numbering that no other pass reads.
+    * element with user or built-in mouse behavior, or with a pointer shape of its own, is wrapped in a
+    * [[PointerElement]] instead, which records its area for pointer-filtered mouse delivery and pointer-shape lookup.
+    * Focus indices are assigned in depth-first pre-order — the tab order; pointer ids are a separate numbering that no
+    * other pass reads.
     *
     * `focusStyle` goes onto *every* node, not only the focused one, because it is the app's theme cue and not a
     * per-element flag: a collection element paints its selected row in it whether or not it currently holds focus (see
@@ -409,7 +410,10 @@ private[dsl] object FocusPass:
           val index = counter
           counter += 1
           TrackedElement(themed(element, focused = index == tracker.focusedIndex), index, tracker)
-        else if element.props.onMouse.isDefined || element.builtinMouseHandler.isDefined then
+        // a node that only asks for a pointer shape is a pointer target too: the shape is resolved by hit-testing, so a
+        // `link` with no handler still has to record where it painted
+        else if element.props.onMouse.isDefined || element.builtinMouseHandler.isDefined || element.pointerShape.isDefined
+        then
           val id = pointerCounter
           pointerCounter += 1
           PointerElement(themed(element, focused = false), id, tracker)

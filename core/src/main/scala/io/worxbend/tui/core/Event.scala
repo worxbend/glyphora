@@ -30,6 +30,19 @@ enum Event:
   /** The terminal window gained or lost focus (mode 1004 reporting). */
   case FocusGained, FocusLost
 
+  /** The terminal switched between a light and a dark colour scheme while the app was running (mode 2031 reporting).
+    *
+    * A notification, not a reply: the terminal sends it on its own whenever the user's system theme flips, which is why
+    * — unlike a cursor-position report or a background-colour answer, which are read inside the backend and never
+    * surface — it is an event the application gets to see. The scheme the terminal had *at start-up* does not arrive
+    * this way; it is established by the capability probe and read from `Backend.capabilities`.
+    *
+    * Only ever delivered by a terminal that implements mode 2031 and was asked to report. Everywhere else the scheme
+    * stays whatever start-up established, so an application must treat this as an enrichment: a theme that follows it
+    * is nicer, and a theme that never hears it is still correct.
+    */
+  case ColorSchemeChanged(scheme: ColorScheme)
+
   /** An interrupt signal (SIGINT/SIGQUIT — typically `Ctrl+C`) reached the process.
     *
     * Delivered as an ordinary event rather than killing the JVM, so the runner unwinds through its normal teardown and

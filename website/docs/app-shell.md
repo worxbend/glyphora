@@ -691,12 +691,32 @@ the default duration; `notify(message, level, duration)` and `dismissToasts()` a
 there for anything else. Everything on it runs on the render thread, exactly like the
 app methods it delegates to.
 
+### Reach the user who looked away
+
+A toast only tells someone who is watching the terminal. `desktop(title, body)` on the
+same `Notifications` value raises the toast *and*, while the terminal window is
+unfocused, a desktop notification through whichever protocol the terminal speaks
+(OSC 9 for iTerm2, OSC 99 for kitty, OSC 777 everywhere else):
+
+```scala
+def announce(result: BuildResult)(using notifications: Notifications): Unit =
+  notifications.desktop("build", s"${result.passed} tests passed")
+```
+
+"Unfocused" is what the terminal reported through focus events — `FocusLost` with no
+`FocusGained` since — so a terminal without focus reporting is always treated as
+focused and only ever shows the toast. The desktop half is best-effort in every
+direction: a terminal without a notification protocol ignores it, one inside tmux or
+screen never sees it (the backend knows and writes nothing), and the operating system
+may suppress it. Keep the toast as the thing the user comes back to.
+
 ### Every service outside the app class
 
 Toasts are not the only capability locked inside the app's body. `pushScreen`,
 `popScreen`, `openPalette`, `closePalette`, `runEffect`, `requestRedraw`,
-`copyToClipboard` and `quit` are all `protected` methods for the same reason, and a
-helper that needs one of them faces the same plumbing.
+`copyToClipboard`, `quit`, `taskbarProgress`/`clearTaskbarProgress` and the reactive
+`colorScheme` read are all `protected` methods for the same reason, and a helper that
+needs one of them faces the same plumbing.
 
 `AppServices` is all of them as one value, and it extends `Notifications` — so ask for
 the narrow type when a helper only notifies, and for this one when it navigates:
@@ -822,6 +842,40 @@ For live switching, keep a theme index in a `Signal`, return the selected value 
 `theme`, and read the index in `view` so the tree is invalidated. A complete snippet
 lives in [State & signals](./state-and-signals#runtime-theme-switching).
 
+### Follow the terminal's light or dark scheme
+
+The default `theme` is `Theme.auto`, and `Theme.auto` is not a palette: it is a
+placeholder the app resolves on every frame to `Theme.Light` or `Theme.Dark` according
+to what the terminal said about itself. At start-up the capability probe asks the
+terminal for its background colour (OSC 11) and, where the terminal can say, for its
+own light/dark verdict (`CSI ? 996 n`); afterwards a terminal that implements mode 2031
+reports every switch of the user's system theme, and the next frame follows. A terminal
+that answers nothing resolves to `Theme.Dark` — exactly what every app got before the
+terminal could be asked.
+
+An app that returns any other theme pins it and sees none of this. To pick between two
+palettes of your own, read the scheme yourself:
+
+```scala
+override def theme: Theme =
+  if colorSchemeNow == ColorScheme.Light then corporateLight else corporateDark
+```
+
+— or branch on it inside `view` with the reactive `colorScheme` read, and pick a single
+colour with `lightDark(light, dark)`, which takes the light colour on a light terminal
+and the dark one on a dark or unknown one:
+
+```scala
+def view(using ReactiveScope, Theme): Element =
+  text("warning").fg(lightDark(Color.Rgb(0x80, 0x40, 0x00), Color.Yellow))
+```
+
+`lightDark` resolves through `AppServices`, so inside the app it needs nothing at the
+call site and a helper elsewhere takes `(using AppServices)`. Outside any run,
+`AppServices.NoOp` reports `ColorScheme.Unknown` and the dark colour wins. The
+one-import surface carries `ColorScheme` (`Light | Dark | Unknown`); the terminal tier's
+`TerminalCapabilities.colorScheme` and `backgroundColor` are where the answer is kept.
+
 ## Add a splash or frame effect
 
 ```scala
@@ -870,7 +924,21 @@ printAbove("deployment finished", s"id: ${deployment.id}")
 - `copyToClipboard` uses OSC 52 where supported;
 - `suspend` restores cooked mode and the normal screen while an external program
   runs, then re-enters the TUI and forces a full repaint;
-- `printAbove` writes durable lines into scrollback above the live interface.
+- `printAbove` writes durable lines into scrollback above the live interface;
+- `taskbarProgress(signal)` mirrors a `Reactive[Option[Double]]` on the terminal's tab
+  or the taskbar (OSC 9;4 — Windows Terminal, Ghostty, WezTerm and others show it) for
+  as long as it is bound, and `clearTaskbarProgress()` unbinds and clears it:
+
+  ```scala
+  private val downloaded = Signal(Option.empty[Double])
+  override def onStart(): Unit = taskbarProgress(downloaded)
+  // later, from an Async continuation: downloaded.set(Some(bytes.toDouble / total))
+  ```
+
+  `Some(fraction)` is a determinate bar, `None` clears it, the value is read on every
+  frame so a change schedules the frame that pushes it, and the indicator is cleared
+  when the app exits or the terminal is handed over. The same binding is available to
+  helpers as `AppServices.taskbarProgress`.
 
 These are no-ops or unavailable before a runner is active, so invoke them from event
 handlers or from `onStart()` — never from a constructor.

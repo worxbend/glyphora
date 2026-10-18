@@ -1,6 +1,7 @@
 package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Buffer, KeyCode, KeyEvent, MouseEvent, MouseEventKind, Rect, Text, Widget}
+import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets as w
 
 /** A labelled checkbox. Space/Enter (or a click) flips it while focused.
@@ -370,6 +371,8 @@ final case class ButtonElement(
   type Self = ButtonElement
   override def debugName: String                                             = "button"
   def widget: Widget                                                         = w.Button(label, focusStyled(props))
+  override def pointerShape: Option[PointerShape]                            =
+    props.pointerShape.orElse(Some(PointerShape.Pointer))
   private[dsl] def withProps(props: ElementProps): ButtonElement             = copy(props = props)
   private[dsl] override def claim: SizeClaim                                 = SizeClaim.OneRow
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     = Some(toggleOnActivate(action))

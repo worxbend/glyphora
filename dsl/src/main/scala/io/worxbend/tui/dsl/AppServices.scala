@@ -1,6 +1,7 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.Effect
+import io.worxbend.tui.core.{ColorScheme, Effect}
+import io.worxbend.tui.runtime.{Reactive, Signal}
 import io.worxbend.tui.widgets.NoticeLevel
 
 import scala.concurrent.duration.FiniteDuration
@@ -56,6 +57,22 @@ trait AppServices extends Notifications:
   /** Asks the app to exit cleanly. */
   def quit(): Unit
 
+  /** Whether the terminal is light or dark, as a reactive value: what the capability probe established at start-up (OSC
+    * 11) and whatever mode 2031 reports afterwards. `Unknown` when the terminal could not say — read that as dark.
+    * `Theme.auto` and `lightDark` are built on this read.
+    */
+  def colorScheme: Reactive[ColorScheme]
+
+  /** Mirrors `progress` on the terminal's tab or the taskbar (OSC 9;4) for as long as it is bound: `Some(fraction)` is
+    * a determinate bar, `None` clears it. The value is read on every frame, so a change schedules the frame that pushes
+    * it, and the indicator is cleared when the app exits. Binding a second source replaces the first;
+    * [[clearTaskbarProgress]] unbinds. Best-effort — a terminal without the indicator ignores it.
+    */
+  def taskbarProgress(progress: Reactive[Option[Double]]): Unit
+
+  /** Stops mirroring a progress source and clears whatever the taskbar was showing. */
+  def clearTaskbarProgress(): Unit
+
 object AppServices:
 
   /** Services that do nothing, for building elements outside a running application.
@@ -67,8 +84,13 @@ object AppServices:
     * out that an action would have had nowhere to go.
     */
   val NoOp: AppServices = new AppServices:
+    private val unknownScheme: Signal[ColorScheme]                                  = Signal(ColorScheme.Unknown)
     def notify(message: String, level: NoticeLevel, duration: FiniteDuration): Unit = ()
     def dismissToasts(): Unit                                                       = ()
+    def desktop(title: String, body: String): Unit                                  = ()
+    def colorScheme: Reactive[ColorScheme]                                          = unknownScheme
+    def taskbarProgress(progress: Reactive[Option[Double]]): Unit                   = ()
+    def clearTaskbarProgress(): Unit                                                = ()
     def pushScreen(screen: Screen): Unit                                            = ()
     def popScreen(): Unit                                                           = ()
     def openPalette(): Unit                                                         = ()

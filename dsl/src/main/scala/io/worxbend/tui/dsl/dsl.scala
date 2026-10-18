@@ -126,6 +126,7 @@ export io.worxbend.tui.core.{
   Buffer,
   Cell,
   Color,
+  ColorScheme,
   Constraint,
   Direction,
   Easing,
@@ -256,7 +257,23 @@ export io.worxbend.tui.runtime.{
 // import. `JLine3Backend` and `HeadlessBackend` are deliberately left out: neither is named by a signature this
 // package exposes, and the code that constructs one (a `main` wiring a custom terminal, a test wiring `Pilot`) is
 // already reaching into `tui-terminal` or `tui-test` on purpose.
-export io.worxbend.tui.terminal.{Backend, BackendError, ColorDepth, TerminalGlyphs}
+export io.worxbend.tui.terminal.{Backend, BackendError, ColorDepth, PointerShape, TerminalGlyphs}
+
+/** `light` on a light terminal, `dark` on a dark one — and on one that could not say, because dark is what every
+  * terminal was assumed to be before any of them could be asked.
+  *
+  * The scheme is read reactively through the app's [[AppServices.colorScheme]], so a view that calls this recomputes
+  * when the terminal flips its theme under the app (mode 2031). Inside a `TuiApp` the services resolve on their own; a
+  * helper written elsewhere takes `(using AppServices)` as it would to raise a toast. Outside any run
+  * [[AppServices.NoOp]] reports `Unknown`, so the dark colour wins.
+  *
+  * This picks a colour by the *terminal's* scheme, not by the app's theme: an app that pinned `Theme.HighContrast`
+  * still gets the colour that reads on the background the user actually has.
+  */
+def lightDark(light: Color, dark: Color)(using scope: ReactiveScope, services: AppServices): Color =
+  services.colorScheme.get match
+    case ColorScheme.Light => light
+    case _                 => dark
 // The widget-level vocabulary an application names directly, in three groups:
 //   * the enums and presets a call site passes by name (severities, animation presets, badge variants),
 //   * every caller-owned `*State` and content value a DSL factory *requires* — `list(items, state)` cannot be called

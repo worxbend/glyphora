@@ -1,7 +1,11 @@
 package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{CharWidth, KeyCode, KeyEvent, KeyModifiers, Position, Rect, Widget}
+import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets as w
+
+/** The I-beam every text-entry node shows unless `.pointer(shape)` said otherwise. */
+private def textPointer(props: ElementProps): Option[PointerShape] = props.pointerShape.orElse(Some(PointerShape.Text))
 
 /** Which characters a [[NumberInputElement]] accepts: whole numbers only, or a single decimal point as well. */
 enum NumberFormat:
@@ -39,6 +43,7 @@ final case class InputElement(
 ) extends Element:
   type Self = InputElement
   override def debugName: String                                             = "input"
+  override def pointerShape: Option[PointerShape]                            = textPointer(props)
   def widget: Widget                                                         =
     val input = focusedInput(props, placeholder)
     (area, buffer) =>
@@ -153,7 +158,8 @@ final case class NumberInputElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = NumberInputElement
-  override def debugName: String = "numberInput"
+  override def debugName: String                  = "numberInput"
+  override def pointerShape: Option[PointerShape] = textPointer(props)
 
   /** Also accepts a single decimal point. */
   def decimal: NumberInputElement = copy(format = NumberFormat.Decimal)
@@ -204,6 +210,7 @@ final case class TemplateInputElement(
 ) extends Element:
   type Self = TemplateInputElement
   override def debugName: String                                             = "templateInput"
+  override def pointerShape: Option[PointerShape]                            = textPointer(props)
   def widget: Widget                                                         =
     val input = focusedInput(props, placeholder = template)
     (area, buffer) =>
@@ -270,6 +277,7 @@ final case class TextAreaElement(
 ) extends Element:
   type Self = TextAreaElement
   override def debugName: String                                             = "textArea"
+  override def pointerShape: Option[PointerShape]                            = textPointer(props)
   private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler] = Some { text =>
     if props.focused then
       state.insert(text.replace("\r", ""))
