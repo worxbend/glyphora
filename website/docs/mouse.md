@@ -329,6 +329,28 @@ underneath it. Focusable elements are resolved differently — by smallest cover
 which has no notion of z-order — so give an overlay's controls their own layer rather
 than relying on paint order to shadow a focusable beneath them.
 
+### A click outside a dialog
+
+A modal pushed with `Dismissal.ClickOutside` (or a `dismissibleOverlay` layered by hand)
+closes on a press that lands outside the dialog. Two rules decide what "outside" is:
+
+1. A press that resolves to one of the dialog's controls — a button, an input, anything
+   focusable or carrying a handler — is delivered there, as above, and the dialog stays
+   open whatever the control does with it.
+2. A press that resolves to no control is compared against the **painted bounds** of the
+   dialog's nodes. If it lies within a node that draws something — a `panel` border, a
+   `text`, a `rule`, a `badge` — it is inside the dialog and is absorbed. If it lies only
+   within nodes that arrange space and draw nothing — `row`, `column`, `spacer`, `layers`,
+   `positioned`, `portal`, `responsive`, and the `backdrop` fill of `place` — it is
+   outside, and the dialog closes.
+
+So the border of a dialog is part of the dialog, which it was not before 0.20.0, when a
+border carried no control and so counted as outside. The bounds the second rule reads are
+the same per-node record that `boundsOf(key)` and the element-tree snapshot use (see
+[Testing](testing.md#find-elements-by-key)); an app on a real terminal starts recording
+them on the frame that first shows a click-outside modal and keeps recording for the rest
+of the run, while a headless run records from its first frame.
+
 ## Hover and all-motion tracking
 
 `Moved` — the pointer moving with **no** button held — is the one kind you do not get
@@ -349,6 +371,33 @@ It is opt-in because it is not free: the terminal sends a report for every cell 
 pointer crosses, which costs nothing locally and is noticeable over a slow ssh link.
 `MouseCaptureMode.Buttons` is the default and is what the no-argument
 `enableMouseCapture()` requests.
+
+## Pointer shapes
+
+On a terminal that speaks OSC 22 (kitty, foot, WezTerm, Ghostty, recent xterm) the
+mouse pointer itself changes over what it is pointing at, the way it does in a
+browser: `button` and `link` show the hand, the text inputs (`input`, `numberInput`,
+`templateInput`, `textArea`) the I-beam, and a `splitPane` the resize arrow over its
+divider — a horizontal split's one-column gap, or the first row of a vertical split's
+second pane. Anything else hands the user's own pointer back.
+
+`.pointer(shape)` asks for one on any element, for a custom clickable or to overrule a
+default, and covers the element's children:
+
+```scala
+text("open in browser").onClick(open(url)).pointer(PointerShape.Pointer)
+panel(busyBody).pointer(PointerShape.Wait)
+```
+
+`PointerShape` offers `Default`, `Text`, `Pointer`, `ResizeHorizontal`, `ResizeVertical`,
+`Wait` and `NotAllowed`, the CSS cursor keywords the protocol takes.
+
+Two things to know. The app updates the shape on every mouse event it receives, so
+under the default button-only capture it changes on a click or a drag and under
+all-motion tracking it follows the hover — and the backend is told only when the shape
+changes, not once per cell. And it is decoration: a terminal without OSC 22 ignores
+the request, one inside tmux or screen is never asked (`capabilities.pointerShapes` is
+`Support.No` there), and nothing an app does may depend on it.
 
 ## Backend support
 

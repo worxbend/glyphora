@@ -104,6 +104,13 @@ build through `DataTable.fromStrings(columns, rows, widths)`, which keys each by
 its original position; their state keeps the plain `DataTableState()` spelling,
 because that key type is `Int`.
 
+Rows that should not be held in memory at all — a million records behind a query —
+come through a `TableRows[K]` provider instead of a sequence: implement `count` and
+`apply(index)` and pass it as `rows`. A provider *is* a `Seq[KeyedRow[K]]`, so the
+constructor is the same one; the table reads only the rows it paints. What that costs
+and what it does not is in [Lists and tables over large
+data](./performance#lists-and-tables-over-large-data).
+
 A fresh `DataTable` per frame is cheap: it holds the rows and nothing derived
 from them. `DataTableState` is the half that must not be rebuilt — constructing
 it inside `view` resets the sort column, filter, selection and scroll offset on

@@ -11,6 +11,7 @@ import io.worxbend.tui.core.{
   MouseEvent,
   MouseEventKind,
   Position,
+  Rect,
   Size,
 }
 import io.worxbend.tui.runtime.{RenderThread, RunnerError}
@@ -116,6 +117,25 @@ final class Pilot private (
   def click(position: Position): Pilot =
     mouseDown(position)
     mouseUp(position)
+
+  /** [[click]] at the centre of `rect` — the shape a test holds after asking the app where an element landed, such as a
+    * DSL app's `boundsOf(key)`, so the test aims at the element and survives the layout moving it:
+    *
+    * {{{
+    * pilot.click(app.boundsOf("save").get).waitForIdle()
+    * }}}
+    *
+    * The pilot knows nothing about keys or elements — `tui-test` sits below `tui-dsl` — which is why the rect is
+    * resolved on the app's side and only its geometry crosses over. An empty rect has no cell to click and fails the
+    * test rather than pressing at its origin.
+    */
+  def click(rect: Rect): Pilot = click(Pilot.centreOf(rect))
+
+  /** A pointer move, with no button held, to the centre of `rect` — [[mouseMove]] aimed the way
+    * [[click(rect:io\.worxbend\.tui\.core\.Rect)*]] is. What a terminal reports under mouse-motion tracking when the
+    * pointer comes to rest over an element. Fails the test for an empty rect, for the same reason.
+    */
+  def hover(rect: Rect): Pilot = mouseMove(Pilot.centreOf(rect))
 
   /** [[click]] with a button other than the left one — a right-click for a context menu, a middle-click for a paste.
     *
@@ -612,6 +632,14 @@ object Pilot:
 
   /** The ESC control code that opens every escape sequence sent through [[Pilot.sendEscape]]. */
   private val Esc: Int = 0x1b
+
+  /** The cell at the middle of `rect` (rounding toward the top-left on even sizes), or a test failure for an empty
+    * rect: an element that was not painted has nowhere to be clicked, and pressing at its origin would hit whatever
+    * happens to be drawn there instead.
+    */
+  private def centreOf(rect: Rect): Position =
+    if rect.isEmpty then CallSite.fail(s"cannot aim at an empty rect $rect")
+    else Position(rect.x + rect.width / 2, rect.y + rect.height / 2)
 
   /** How long the test thread sleeps between checks while waiting for the app to go idle. Small enough that a settled
     * app is noticed almost at once, large enough not to spin a core.

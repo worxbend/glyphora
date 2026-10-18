@@ -43,6 +43,14 @@ exception: the alternate screen is gated on terminfo's `smcup`, so a terminal wi
 one (the Linux console) fails loudly at startup instead of painting over your
 scrollback.
 
+Everything past that minimum is asked for and does no harm where it is missing: the
+start-up probe queries OSC 11 (background colour, behind `Theme.auto`) and the modes
+`2031` (colour-scheme change reports), `2048` (in-band resize reports) and `2027`
+(grapheme-cluster widths), and the app writes OSC 22 (pointer shapes), OSC 9/777/99
+(desktop notifications) and OSC 9;4 (tab or taskbar progress) only where nothing says
+they would be swallowed. See
+[What the terminal supports](./troubleshooting#what-the-terminal-supports).
+
 Output is always written as UTF-8, regardless of the process locale. Every border and
 glyph in `tui-widgets` is non-ASCII, and there is no ASCII fallback border set.
 

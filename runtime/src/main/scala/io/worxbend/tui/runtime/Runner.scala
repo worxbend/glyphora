@@ -1,7 +1,7 @@
 package io.worxbend.tui.runtime
 
 import io.worxbend.tui.core.{Event, Widget}
-import io.worxbend.tui.terminal.BackendError
+import io.worxbend.tui.terminal.{BackendError, PointerShape}
 
 import java.nio.file.Path
 import scala.concurrent.duration.FiniteDuration
@@ -45,6 +45,11 @@ import scala.concurrent.duration.FiniteDuration
   * `viewport` decides how much of the terminal the run owns — the whole alternate screen (the default), or a strip of
   * rows at the bottom of the primary screen that leaves the shell's own output visible above it. See [[Viewport]].
   *
+  * `captureStdio` decides what happens to `System.out`/`System.err` while the run owns the terminal — see
+  * [[CaptureStdio]]. `None`, the default, leaves the decision to whoever owns the runner: a bare [[TerminalRunner]]
+  * captures nothing, while `TuiApp` captures into `printAbove`. Set it explicitly —
+  * `withCaptureStdio(CaptureStdio.Off)` — to overrule that host default.
+  *
   * `recording`, when set, writes every flushed frame of the run to that file as an asciicast v2 recording — see
   * [[AsciicastRecorder]]. The runner opens the file before it touches the terminal (a path that cannot be opened ends
   * `run` with [[RunnerError.Handler]] and the terminal untouched), records synchronously after each flush alongside any
@@ -69,6 +74,7 @@ final class RunnerConfig private (
     val viewport: Viewport,
     val keyEventTypes: Boolean,
     val onFrameTiming: Option[FrameTiming => Unit],
+    val captureStdio: Option[CaptureStdio],
     val recording: Option[Path],
 ):
 
@@ -119,6 +125,12 @@ final class RunnerConfig private (
   /** No phase timing, and no profiling clock reads. The default. */
   def withoutOnFrameTiming: RunnerConfig = updated(onFrameTiming = None)
 
+  /** What to do with `System.out`/`System.err` during the run — see [[CaptureStdio]] and the class notes. */
+  def withCaptureStdio(mode: CaptureStdio): RunnerConfig = updated(captureStdio = Some(mode))
+
+  /** Back to the host's default: nothing for a bare runner, `printAbove` under `TuiApp`. The default. */
+  def withoutCaptureStdio: RunnerConfig = updated(captureStdio = None)
+
   /** Records every flushed frame of the run to `path` as asciicast v2 — see the class notes and [[AsciicastRecorder]].
     */
   def withRecording(path: Path): RunnerConfig = updated(recording = Some(path))
@@ -134,9 +146,20 @@ final class RunnerConfig private (
       viewport: Viewport = viewport,
       keyEventTypes: Boolean = keyEventTypes,
       onFrameTiming: Option[FrameTiming => Unit] = onFrameTiming,
+      captureStdio: Option[CaptureStdio] = captureStdio,
       recording: Option[Path] = recording,
   ): RunnerConfig =
-    new RunnerConfig(tickRate, mouseCapture, onTaskError, onFrame, viewport, keyEventTypes, onFrameTiming, recording)
+    new RunnerConfig(
+      tickRate,
+      mouseCapture,
+      onTaskError,
+      onFrame,
+      viewport,
+      keyEventTypes,
+      onFrameTiming,
+      captureStdio,
+      recording,
+    )
 
   /** Structural over every field; the three function-valued fields compare by reference (see the class notes). */
   override def equals(other: Any): Boolean =
@@ -145,7 +168,7 @@ final class RunnerConfig private (
         (this eq that) ||
         (mouseCapture == that.mouseCapture && keyEventTypes == that.keyEventTypes && tickRate == that.tickRate &&
           viewport == that.viewport && onTaskError == that.onTaskError && onFrame == that.onFrame &&
-          onFrameTiming == that.onFrameTiming && recording == that.recording)
+          onFrameTiming == that.onFrameTiming && captureStdio == that.captureStdio && recording == that.recording)
       case _                  => false
 
   override def hashCode(): Int =
@@ -156,6 +179,7 @@ final class RunnerConfig private (
     hash = 31 * hash + viewport.hashCode()
     hash = 31 * hash + keyEventTypes.hashCode()
     hash = 31 * hash + onFrameTiming.hashCode()
+    hash = 31 * hash + captureStdio.hashCode()
     31 * hash + recording.hashCode()
 
   /** Only the fields that differ from [[RunnerConfig.Default]], so the common configuration prints as one short line; a
@@ -170,6 +194,7 @@ final class RunnerConfig private (
       Option.when(viewport != Viewport.Fullscreen)(s"viewport=$viewport"),
       Option.when(keyEventTypes)("keyEventTypes=true"),
       Option.when(onFrameTiming.nonEmpty)("onFrameTiming=<installed>"),
+      captureStdio.map(mode => s"captureStdio=$mode"),
       recording.map(path => s"recording=$path"),
     ).flatten
     if fields.isEmpty then "RunnerConfig.Default" else fields.mkString("RunnerConfig(", ", ", ")")
@@ -193,9 +218,34 @@ object RunnerConfig:
       viewport: Viewport = Viewport.Fullscreen,
       keyEventTypes: Boolean = false,
       onFrameTiming: Option[FrameTiming => Unit] = None,
+      captureStdio: Option[CaptureStdio] = None,
       recording: Option[Path] = None,
   ): RunnerConfig =
-    new RunnerConfig(tickRate, mouseCapture, onTaskError, onFrame, viewport, keyEventTypes, onFrameTiming, recording)
+    new RunnerConfig(
+      tickRate,
+      mouseCapture,
+      onTaskError,
+      onFrame,
+      viewport,
+      keyEventTypes,
+      onFrameTiming,
+      captureStdio,
+      recording,
+    )
+
+  /** The seven-field arity `apply` had before `captureStdio` and `recording` were added, kept default-free so code
+    * compiled against it keeps working — the policy the nine-field `apply` above documents.
+    */
+  def apply(
+      tickRate: Option[FiniteDuration],
+      mouseCapture: Boolean,
+      onTaskError: Option[RenderTaskErrorHandler],
+      onFrame: Option[CompletedFrame => Unit],
+      viewport: Viewport,
+      keyEventTypes: Boolean,
+      onFrameTiming: Option[FrameTiming => Unit],
+  ): RunnerConfig =
+    new RunnerConfig(tickRate, mouseCapture, onTaskError, onFrame, viewport, keyEventTypes, onFrameTiming, None, None)
 
   /** Full screen, no ticks, no mouse or key-release reporting, no observers: what `RunnerConfig()` builds and where
     * every `with*` chain starts.
@@ -255,9 +305,9 @@ trait Runner:
   * **adding a method here is a source-breaking change.** An existing implementation stops compiling until it supplies
   * the new method — which is the intended outcome, since the alternative is an implementation that compiles and then
   * does nothing — but it means a release that adds one is not a drop-in replacement for the release before it.
-  * [[insertBefore]] was added on those terms in 0.13.0. The trait is written to be *called*, not implemented, so the
-  * population this affects is test doubles; a double that wants the old behaviour can implement the new method as `()`
-  * in one line.
+  * [[insertBefore]] was added on those terms in 0.13.0, and [[setPointerShape]], [[notifyDesktop]] and
+  * [[setTaskbarProgress]] in 0.20.0. The trait is written to be *called*, not implemented, so the population this
+  * affects is test doubles; a double that wants the old behaviour can implement the new method as `()` in one line.
   */
 trait RunnerHandle:
   def quit(): Unit
@@ -294,6 +344,24 @@ trait RunnerHandle:
     * and `height` rows tall, and whatever it paints becomes durable output. A `height` of zero or less inserts nothing.
     */
   def insertBefore(height: Int, widget: Widget): Unit
+
+  /** Asks the terminal to draw the mouse pointer as `shape` (OSC 22) — see
+    * [[io.worxbend.tui.terminal.Backend.setPointerShape]]. Best-effort: a terminal without the protocol, or one the
+    * backend knows will swallow it, changes nothing. Terminal state, so call it when what is under the pointer changes,
+    * not on every frame.
+    */
+  def setPointerShape(shape: PointerShape): Unit
+
+  /** Raises a desktop notification (OSC 9, 777 or 99, whichever the terminal speaks) — see
+    * [[io.worxbend.tui.terminal.Backend.notifyDesktop]]. Best-effort; for telling a user who has looked away.
+    */
+  def notifyDesktop(title: String, body: String): Unit
+
+  /** Shows `progress` on the terminal's tab or the taskbar (OSC 9;4), or clears it with `None` — see
+    * [[io.worxbend.tui.terminal.Backend.setTaskbarProgress]]. Best-effort, and terminal state: emit it when the
+    * fraction changes.
+    */
+  def setTaskbarProgress(progress: Option[Double]): Unit
 
 /** Every queued-body failure one run absorbed, collapsed into a single report.
   *

@@ -12,12 +12,41 @@ import io.worxbend.tui.core.{Buffer, CharWidth, Line, Measured, Rect, StatefulWi
   * scrolling under the highlight two rows before the highlight would reach the edge. See [[ScrollWindow.offsetFor]] for
   * the exact rule, including how it degrades at the two ends of the list.
   *
+  * The state also remembers how the last item sequence it rendered lays out in rows — whether every item is one row
+  * high, and each item's height when not — keyed by the sequence's *identity*, the way [[TreeState]] and
+  * [[DataTableState]] remember their flattened rows and filtered views. That is what lets a frame over an unchanged
+  * `items` reference cost the viewport rather than the list: the widget value is rebuilt every frame by the DSL, so the
+  * state is the only thing that outlives a frame. Retain the sequence between frames to reuse the measurement; replace
+  * it to refresh. A sequence whose contents change under the same reference is still drawn correctly — the widget
+  * re-measures when the item count moves or when a drawn item's height disagrees with what it remembered — but a height
+  * change on an item that is off screen is not seen until it scrolls into view.
+  *
   * Render-thread-only, and mutating it does not by itself schedule a frame. This is a plain mutable object, invisible
   * to the reactive layer: a background result written straight into it stays off screen until something unrelated
   * happens to repaint. Pair the mutation with a `Signal` write, or call `TuiApp.requestRedraw()` from the same
   * render-thread callback that made it.
   */
 final class ListState(var selected: Option[Int] = None, var offset: Int = 0, var scrollPadding: Int = 0):
+
+  private var layoutCache: Option[(AnyRef, ListLayout)] = None
+
+  /** The remembered [[ListLayout]] of `items` when it is the sequence last measured and still holds `count` items,
+    * otherwise `compute`, remembered for the next frame. Identity, not equality: a 100 000-item sequence is never
+    * compared or hashed to find out it is the one from the last frame.
+    */
+  private[widgets] def layoutFor(items: Seq[String | Line | Text], count: Int)(compute: => ListLayout): ListLayout =
+    layoutCache match
+      case Some((source, layout)) if (source eq items) && layout.count == count => layout
+      case _                                                                    =>
+        val fresh = compute
+        layoutCache = Some((items, fresh))
+        fresh
+
+  /** Replaces the remembered layout of `items` — what the widget does when a drawn item turns out to be a different
+    * height from the one it remembered.
+    */
+  private[widgets] def rememberLayout(items: Seq[String | Line | Text], layout: ListLayout): Unit =
+    layoutCache = Some((items, layout))
 
   def selectNext(itemCount: Int): Unit =
     if itemCount > 0 then selected = Selection.next(selected, itemCount)
@@ -114,13 +143,26 @@ final case class ListView(
         if text.lines.isEmpty then Seq(Line.raw("").withStyle(text.style))
         else text.lines.map(line => line.withStyle(text.style.patch(line.style)))
 
-  /** How many rows `item` occupies, without building any of them — the counterpart of [[linesOf]] used by the scroll
-    * arithmetic, which needs every item's height and draws none of them.
+  /** The row layout of `items`, measured once per widget value: one walk over the items answers both [[heightAt]] and
+    * the scroll arithmetic in [[render]], and a second call to either costs nothing. The DSL builds a fresh `ListView`
+    * every frame, so across frames the measurement lives in [[ListState]] instead, keyed by the item sequence; this
+    * `lazy val` is what seeds that cache on the first frame over a new sequence.
     */
-  private def heightOf(item: String | Line | Text): Int =
-    item match
-      case text: Text => math.max(1, text.lines.size)
-      case _          => 1
+  private lazy val measured: ListLayout = ListLayout.of(items)
+
+  /** At most `limit` items starting at `offset`, each with its index and its rows — the items the viewport can show,
+    * since every item is at least one row high. An indexed sequence is read by position, so a window deep inside a
+    * `Vector` of 100 000 items costs the window and not the offset; anything else is walked from the front, which is
+    * the cost its own `iterator.drop` carries.
+    */
+  private def window(offset: Int, count: Int, limit: Int): Vector[(String | Line | Text, Int)] =
+    val end = math.min(count, offset + limit)
+    if end <= offset then Vector.empty
+    else
+      items match
+        case _: IndexedSeq[?] => (offset until end).iterator.map(i => (items(i), i)).toVector
+        case other            =>
+          other.iterator.drop(offset).take(end - offset).zipWithIndex.map((item, i) => (item, offset + i)).toVector
 
   def render(area: Rect, buffer: Buffer, state: ListState): Unit =
     if !area.isEmpty && items.isEmpty then
@@ -129,17 +171,30 @@ final case class ListView(
       // index. Nothing can be selected in an empty list, so repair the state rather than leaving it to the app.
       state.clearSelection()
     else if !area.isEmpty then
-      val selected    = Selection.clamped(state.selected, items.size)
+      val count                               = items.size
+      val selected                            = Selection.clamped(state.selected, count)
       state.selected = selected
       // Uniform lists take the padding-aware rule they always did; a list with a multi-row item takes the row-counting
-      // one, which has no padding to offer because "two more items" is not a fixed number of rows there. The uniformity
-      // probe runs over `items` directly and the per-item heights are built only on the row-counting branch: a uniform
-      // list pays for what it draws, not a boxed height per item on every repaint — the viewport-cost rule the class
-      // Scaladoc states.
-      state.offset =
-        if items.forall(heightOf(_) == 1) then
-          ScrollWindow.offsetFor(state.offset, selected, items.size, area.height, state.scrollPadding)
-        else ScrollWindow.offsetForItems(state.offset, selected, items.map(heightOf), area.height)
+      // one, which has no padding to offer because "two more items" is not a fixed number of rows there. Which rule
+      // applies, and the per-item heights the second one needs, come from the layout the state remembers for this
+      // item sequence — measured once when the sequence is first seen, not on every repaint — so a frame over an
+      // unchanged list pays for what it draws: the viewport-cost rule the class Scaladoc states.
+      var layout                              = state.layoutFor(items, count)(measured)
+      def offsetWith(layout: ListLayout): Int =
+        layout.heights match
+          case None          => ScrollWindow.offsetFor(state.offset, selected, count, area.height, state.scrollPadding)
+          case Some(heights) => ScrollWindow.offsetForItems(state.offset, selected, heights, area.height)
+      var offset                              = offsetWith(layout)
+      var visible     = window(offset, count, area.height).map((item, index) => (linesOf(item), index))
+      // the one place a remembered layout is checked against the items themselves: a sequence whose contents changed
+      // under the same reference shows up here as a drawn item whose rows disagree with its remembered height. Measure
+      // again, once, and redo the window — the cost of a drift is one extra walk, not a wrong offset every frame.
+      if visible.exists((lines, index) => lines.size != layout.heightAt(index)) then
+        layout = ListLayout.of(items)
+        state.rememberLayout(items, layout)
+        offset = offsetWith(layout)
+        visible = window(offset, count, area.height).map((item, index) => (linesOf(item), index))
+      state.offset = offset
       // how many columns the marker gutter takes off the text on *every* row. Nothing is drawn in it on an unselected
       // row, but the columns still have to be subtracted so the text of the selected row and the text of the others
       // start in the same place.
@@ -152,11 +207,9 @@ final case class ListView(
       // own height rather than by one. It counts rows away from the anchored edge, so only the edge changes between
       // the two directions and the scroll arithmetic above cannot drift apart from what is drawn.
       var row         = 0
-      items.iterator.drop(state.offset).zipWithIndex.takeWhile(_ => row < area.height).foreach { (item, ordinal) =>
-        val index      = state.offset + ordinal
+      visible.iterator.takeWhile(_ => row < area.height).foreach { (lines, index) =>
         val isSelected = selected.contains(index)
         val rowStyle   = if isSelected then style.patch(highlightStyle) else style
-        val lines      = linesOf(item)
         // An item is placed as a block, not line by line: `blockTop` is the row its first line lands on, and every
         // further line goes one row below it, so the lines keep their reading order whichever edge the list grows
         // from. Top-to-bottom the block starts `row` rows under the ceiling; bottom-to-top its *last* line sits `row`
@@ -196,6 +249,43 @@ final case class ListView(
 
   /** The rows every item together occupies — the sum of the items' own heights, which is one row each until a [[Text]]
     * item brings more. Always an answer: a list knows its items without a layout pass. The `width` is ignored because a
-    * list clips rather than wraps, so no width changes how many rows an item takes.
+    * list clips rather than wraps, so no width changes how many rows an item takes. Measured once per widget value, so
+    * asking twice costs one walk.
     */
-  override def heightAt(width: Int): Option[Int] = Some(items.map(heightOf).sum)
+  override def heightAt(width: Int): Option[Int] = Some(measured.totalRows)
+
+/** How a [[ListView]]'s items lay out in rows: how many there are, each one's height when they are not all one row
+  * high, and the rows they take together. One walk over the items produces it, and both the scroll arithmetic and
+  * [[ListView.heightAt]] read from it rather than walking again.
+  *
+  * `heights` is `None` for a uniform list — every item one row — which is the common case and the one where keeping a
+  * boxed height per item would be the only cost. It is an indexed sequence otherwise, so the scroll arithmetic can read
+  * the height of an item without stepping to it.
+  */
+private[widgets] final class ListLayout(val count: Int, val heights: Option[IndexedSeq[Int]], val totalRows: Int):
+
+  /** The rows item `index` takes according to this measurement. */
+  def heightAt(index: Int): Int = heights.fold(1)(_(index))
+
+private[widgets] object ListLayout:
+
+  /** Measures `items` in one pass; an empty `Text` counts as one row, as [[ListView]] draws it. */
+  def of(items: Seq[String | Line | Text]): ListLayout =
+    val heights = new Array[Int](items.size)
+    var uniform = true
+    var total   = 0
+    var index   = 0
+    items.foreach { item =>
+      val height = item match
+        case text: Text => math.max(1, text.lines.size)
+        case _          => 1
+      heights(index) = height
+      if height != 1 then uniform = false
+      total += height
+      index += 1
+    }
+    new ListLayout(
+      heights.length,
+      if uniform then None else Some(scala.collection.immutable.ArraySeq.unsafeWrapArray(heights)),
+      total,
+    )

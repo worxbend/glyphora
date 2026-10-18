@@ -123,6 +123,20 @@ object Text:
   def raw(content: String): Text =
     styled(content, Style.Default)
 
+  /** Reads terminal output — text carrying SGR colour and attribute sequences and OSC 8 hyperlinks — into the styled
+    * text it describes, so the coloured output of a compiler, a test runner or `git` can be shown inside a widget.
+    *
+    * `Text.fromAnsi("\u001b[1;31mred\u001b[0m plain")` is a one-line text of two spans: `red` in bold red, then
+    * ` plain` in [[Style.Default]]. Every escape sequence that is not a style — cursor movement, screen clearing, other
+    * OSC strings — is dropped whole, as are control characters other than `\n`, so CRLF output splits into clean rows.
+    * Plain text with no escape in it comes out exactly as [[raw]] reads it. The full list of what is recognised, and
+    * the chunk-at-a-time form for a stream that is still arriving, is [[AnsiParser]]; this is that parser run once over
+    * the whole string.
+    */
+  def fromAnsi(content: String): Text =
+    val parser = AnsiParser()
+    Text(parser.feed(content) :+ parser.finish())
+
   /** A block of already-built lines sitting on `style` as their shared base layer — the companion spelling of
     * [[Text.withStyle]], for a caller that has the lines and the base style in hand at the same moment.
     *

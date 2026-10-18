@@ -1,7 +1,8 @@
 package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Constraint, Direction, Line, Size, Span, Style, Text, Widget}
-import io.worxbend.tui.runtime.{ReactiveScope, Signal}
+import io.worxbend.tui.runtime.{LogRing, ReactiveScope, Signal}
+import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets.TableRow
 import io.worxbend.tui.widgets as w
 
@@ -30,6 +31,16 @@ private[dsl] trait ElementFactories:
     * given, put it in a [[scrollView]]: this node paints what fits and nothing more.
     */
   def text(content: String): TextElement = TextElement(content)
+
+  /** A block of text that already carries its own styles — a `markup"…"` literal, the output of `Text.fromAnsi`, or a
+    * [[Text]] assembled from spans — laid out exactly as [[text]] lays out a plain string: one row per line, clipped at
+    * the area's edges unless `.wrapped`, positioned with `.centered` / `.rightAligned`, and claiming the box its rows
+    * measure so it sits in a `column` beside plain text without taking the leftover rows.
+    *
+    * The element's own style (`.dim`, `.fg(...)`) goes *underneath* the text's: a span that chose a colour keeps it and
+    * picks up only what it left unset, which is the direction a theme colour travels. See [[RichTextElement]].
+    */
+  def text(content: Text): RichTextElement = RichTextElement(content)
 
   /** One terminal row assembled from differently-styled runs:
     *
@@ -96,18 +107,55 @@ private[dsl] trait ElementFactories:
     * It returns a `Seq[Element]`, not a container, so it splices into whichever container the call site wants:
     * `column(each(…)*)`, `row(each(…)*)`, `panel("Processes")(each(…)*)`.
     *
+    * The same key is also the identity of the hooks `render` calls: `render` runs inside `keyed(key)`, so a row that
+    * declares `useSignal`/`useState` keeps its own state across insertions and reorders without a second `keyed` of its
+    * own. One key, one identity, for focus and for state alike — the two used to be separate mechanisms that could
+    * disagree. (Before 0.20.0 the hooks under `each` were positional; see the 0.20.0 migration notes.)
+    *
     * Keys must be unique within one frame — use something that identifies the item (a database id, a process id, a file
     * path), not its index, which is the positional identity this exists to replace. Two children sharing a key
     * re-anchor focus to the first of them.
     */
   def each[A](items: Seq[A])(keyOf: A => String)(render: A => Element): Seq[Element] =
-    items.map(item => render(item).key(keyOf(item)))
+    items.map { item =>
+      val itemKey: String = keyOf(item)
+      ViewState.scopeIfActive(itemKey)(render(item)).key(itemKey)
+    }
 
   /** [[each]] with a `prefix` on every key, for two keyed lists in one view whose key functions would otherwise collide
-    * — two panes both keyed by a row number, say. The prefix and the key are joined with a colon.
+    * — two panes both keyed by a row number, say. The prefix and the key are joined with a colon, for the focus key and
+    * the hook scope alike.
     */
   def each[A](items: Seq[A], prefix: String)(keyOf: A => String)(render: A => Element): Seq[Element] =
-    items.map(item => render(item).key(s"$prefix:${keyOf(item)}"))
+    items.map { item =>
+      val itemKey: String = s"$prefix:${keyOf(item)}"
+      ViewState.scopeIfActive(itemKey)(render(item)).key(itemKey)
+    }
+
+  /** A subtree built once and handed back unchanged on every later frame whose `deps` are `==` to the ones it was built
+    * with — for a part of the view that is expensive to *compose* (a large table, a tree with thousands of nodes, a
+    * markdown document) and changes less often than the frames around it.
+    *
+    * {{{
+    * memo(rows.get, sortColumn.get)(dataTable(columns, rows.peek, widths))
+    * }}}
+    *
+    * The deps are the whole contract. The cached subtree is not re-evaluated on a frame whose deps are unchanged, so a
+    * `Signal` read *inside* `subtree` does not subscribe that frame to the signal: read every signal the subtree
+    * depends on in the deps list, where the comparison sees it, and `peek` it inside. For the same reason the subtree
+    * must not own hooks — a `useSignal` or `useState` inside it is reached only on frames that rebuild, and a slot not
+    * reached is swept at the end of the frame — so state the subtree needs lives beside the `memo` call and is passed
+    * in as a dep. Children of the cached subtree keep their focus keys and handlers exactly as built, which is what
+    * makes the cache transparent to focus and events.
+    *
+    * Deps compare with `==`: an immutable collection or a case class compares structurally and a mutable object
+    * compares by identity, so a mutable `ListState` as a dep never triggers a rebuild on its own. The cache is a hook
+    * slot and follows the hook rules on [[ViewState]]: it belongs to its call site (scope it with `each` or `keyed` in
+    * a loop) and is released one frame after the call stops being reached. Outside a view evaluation `memo` simply
+    * builds the subtree.
+    */
+  def memo(deps: Any*)(subtree: => Element): Element =
+    ViewState.memoIfActive(deps)(() => subtree)
 
   /** Flexible blank space (fills what siblings leave over). */
   def spacer: SpacerElement = SpacerElement()
@@ -241,7 +289,7 @@ private[dsl] trait ElementFactories:
     ListElement(items, state)
 
   /** A collapsible tree over caller-owned [[w.TreeState]] — same state ownership rules as [[list]]. */
-  def tree(nodes: Seq[w.TreeNode], state: w.TreeState): TreeElement =
+  def tree(nodes: Seq[w.TreeNode], state: w.TreeState[?]): TreeElement =
     TreeElement(nodes, state)
 
   /** Vertical bars, one per `(label, value)`, each `barWidth` columns wide with the label underneath.
@@ -674,7 +722,7 @@ private[dsl] trait ElementFactories:
     * show the styled text and nothing is lost.
     */
   def link(label: String, url: String): WidgetElement =
-    WidgetElement(w.Link(label, url), rows = Some(1))
+    WidgetElement(w.Link(label, url), rows = Some(1)).pointer(PointerShape.Pointer)
 
   /** Renders a pragmatic Markdown subset — headings, bullets, quotes, fenced (and syntax-highlighted) code, inline
     * emphasis and links. Prose always wraps at the available width; the node reports its own wrapped height, so it
@@ -814,6 +862,38 @@ private[dsl] trait ElementFactories:
     */
   def log(state: w.LogState): LogElement =
     LogElement(state)
+
+  /** The tail of a [[LogRing]] — records from `JulBridge.attach(ring)`, a `CaptureStdio.Console(ring)` or the app's own
+    * `ring.log(...)` — one per row, newest at the bottom; see [[LogConsoleElement]] for the row format.
+    *
+    * Filter with `.minLevel(LogLevel.Warning)` and `.loggerPrefix("app.net")`. There is no state to own and no scroll:
+    * the console follows the tail, so it is built in the view like any other node, typically behind a `Signal[Boolean]`
+    * the app flips from a key binding. Themed at construction: the level column takes the ambient [[Theme]]'s `warning`
+    * and `error`, the timestamp and logger its `muted`.
+    */
+  def logConsole(ring: LogRing)(using theme: Theme): LogConsoleElement =
+    LogConsoleElement(
+      ring,
+      minimumLevel = io.worxbend.tui.runtime.LogLevel.Trace,
+      prefix = "",
+      zone = java.time.ZoneId.systemDefault(),
+      warningStyle = theme.warning,
+      errorStyle = theme.error,
+      mutedStyle = theme.muted,
+    )
+
+  /** Keeps a failing `subtree` from ending the run: a non-fatal throwable while it is built or painted paints
+    * `fallback(error)` in its area instead, logs the failure, and the next frame tries the subtree again. See
+    * [[ErrorBoundaryElement]].
+    *
+    * {{{
+    * errorBoundary(error => text(s"chart unavailable: ${error.getMessage}").dim) {
+    *   chart(datasets, xBounds, yBounds)
+    * }
+    * }}}
+    */
+  def errorBoundary(fallback: Throwable => Element)(subtree: => Element): ErrorBoundaryElement =
+    ErrorBoundaryElement(() => subtree, fallback)
 
   /** A one-row horizontal divider, optionally captioned. Drawn in the ambient [[Theme]]'s `border` style, with the
     * caption in `muted`, so it matches the frames around it.

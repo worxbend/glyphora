@@ -1,6 +1,21 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Constraint, Direction, KeyCode, KeyEvent, Line, MouseEventKind, Size, Style, Widget}
+import io.worxbend.tui.core.{
+  Constraint,
+  Direction,
+  Flex,
+  KeyCode,
+  KeyEvent,
+  Layout,
+  Line,
+  MouseEventKind,
+  Position,
+  Rect,
+  Size,
+  Style,
+  Widget,
+}
+import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets as w
 
 /** A subtree chosen by the terminal's size — a media query, not a container query.
@@ -27,6 +42,8 @@ final case class ResponsiveElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = ResponsiveElement
+  override def debugName: String                                                    = "responsive"
+  private[dsl] override def layoutOnly: Boolean                                     = true
   override def children: Seq[Element]                                               = resolved.toSeq
   def widget: Widget                                                                =
     resolved match
@@ -68,6 +85,7 @@ final case class ScrollViewElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = ScrollViewElement
+  override def debugName: String                                                    = "scrollView"
   override def children: Seq[Element]                                               = Seq(content)
   def widget: Widget                                                                =
     (area, buffer) =>
@@ -109,6 +127,7 @@ final case class TabbedContentElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = TabbedContentElement
+  override def debugName: String                                                       = "tabbedContent"
   override def children: Seq[Element]                                                  = Seq(activePage)
   def widget: Widget                                                                   =
     val tabs = w.Tabs(titles.map(Line.raw), selected, focusStyled(props))
@@ -136,6 +155,7 @@ final case class CollapsibleElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = CollapsibleElement
+  override def debugName: String                                      = "collapsible"
   override def children: Seq[Element]                                 = if expanded then Seq(body) else Seq.empty
   def widget: Widget                                                  =
     val marker         = if expanded then "▾ " else "▸ "
@@ -164,7 +184,8 @@ final case class SplitPaneElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = SplitPaneElement
-  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler]       =
+  override def debugName: String                                             = "splitPane"
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some { (event, area) =>
       if event.kind == MouseEventKind.Drag then
         val fraction = axis match
@@ -174,7 +195,34 @@ final case class SplitPaneElement(
         true
       else false
     }
-  override def children: Seq[Element]                                              = Seq(first, second)
+  override def children: Seq[Element]                                        = Seq(first, second)
+
+  /** The resize arrow over the divider, and nothing elsewhere — the panes' own content keeps the pointer it had.
+    *
+    * The divider is computed with the same `Layout` the widget splits with, so the two cannot disagree about where it
+    * is. A horizontal split has a one-column gap between the panes and the arrow shows over it; a vertical split has no
+    * gap, so the arrow shows over the first row of the second pane, which is where the boundary is dragged from.
+    */
+  private[dsl] override def pointerShapeAt(position: Position, area: Rect): Option[PointerShape] =
+    props.pointerShape.orElse {
+      val Seq(top, bottom) =
+        Layout(axis, Seq(Constraint.Percentage(clampSplit(splitPercent)), Constraint.Fill(1)), spacing, Flex.Start)
+          .split(area)
+      axis match
+        case Direction.Horizontal =>
+          Option.when(area.contains(position) && !top.contains(position) && !bottom.contains(position))(
+            PointerShape.ResizeHorizontal
+          )
+        case Direction.Vertical   =>
+          Option.when(bottom.contains(position) && position.y == bottom.y)(PointerShape.ResizeVertical)
+    }
+
+  /** One column between the panes of a horizontal split, none for a vertical one. */
+  private def spacing: Int =
+    axis match
+      case Direction.Horizontal => 1
+      case Direction.Vertical   => 0
+
   def widget: Widget                                                               =
     val percent = clampSplit(splitPercent)
     val items   = Seq(
@@ -182,8 +230,8 @@ final case class SplitPaneElement(
       second.layoutItem(axis).copy(constraint = Constraint.Fill(1)),
     )
     axis match
-      case Direction.Horizontal => w.Row(items, spacing = 1)
-      case Direction.Vertical   => w.Column(items, spacing = 0)
+      case Direction.Horizontal => w.Row(items, spacing = spacing)
+      case Direction.Vertical   => w.Column(items, spacing = spacing)
   private[dsl] def withProps(props: ElementProps): SplitPaneElement                = copy(props = props)
   private[dsl] override def withChildren(children: Seq[Element]): SplitPaneElement =
     children match
@@ -220,6 +268,7 @@ final case class ScrollbarElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = ScrollbarElement
+  override def debugName: String = "scrollbar"
 
   def widget: Widget =
     w.Scrollbar(

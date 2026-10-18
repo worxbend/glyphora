@@ -1,10 +1,12 @@
 package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Alignment, CharWidth, Constraint, Flex, Line, Span, Style, Text, Widget}
+import io.worxbend.tui.runtime.{LogLevel, LogRecord, LogRing}
 import io.worxbend.tui.widgets.{TableCell, TableRow}
 import io.worxbend.tui.widgets as w
 
-import java.time.LocalTime
+import java.time.{LocalTime, ZoneId}
+import java.time.format.DateTimeFormatter
 
 /** A block of plain text; one row per newline-separated line.
   *
@@ -30,8 +32,9 @@ final case class TextElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = TextElement
+  override def debugName: String = "text"
   // Layout and painting share this immutable description and its bounded measurement cache. Node copies start fresh.
-  lazy val widget: Widget = w.Paragraph(Text.styled(content, props.style), alignment, overflow)
+  lazy val widget: Widget        = w.Paragraph(Text.styled(content, props.style), alignment, overflow)
 
   /** Breaks lines that do not fit onto further rows instead of cutting them off at the right edge.
     *
@@ -82,6 +85,7 @@ final case class TextElement(
 final case class LineElement(spans: Seq[Span], align: Option[Alignment] = None, props: ElementProps = ElementProps())
     extends Element:
   type Self = LineElement
+  override def debugName: String                               = "line"
   lazy val widget: Widget                                      =
     w.Paragraph(Text(Seq(Line(spans, align, props.style))))
   private[dsl] def withProps(props: ElementProps): LineElement = copy(props = props)
@@ -123,6 +127,7 @@ final case class GaugeElement(
 ) extends Element,
       ProgressMeterBuilders[GaugeElement]:
   type Self = GaugeElement
+  override def debugName: String = "gauge"
   def widget: Widget = w.Gauge(ratio, label, trackStyle.patch(props.style), fillStyle.patch(props.style), fillRamp)
 
   protected def progressLabel: w.ProgressLabel                                                = label
@@ -145,7 +150,8 @@ final case class NoticeElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = NoticeElement
-  def widget: Widget =
+  override def debugName: String = "notice"
+  def widget: Widget             =
     w.Notice(
       message,
       level,
@@ -174,7 +180,8 @@ final case class BadgeElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = BadgeElement
-  def widget: Widget = w.Badge(label, variant, badgeStyle.patch(props.style))
+  override def debugName: String = "badge"
+  def widget: Widget             = w.Badge(label, variant, badgeStyle.patch(props.style))
 
   /** Bracketed text with no block of colour behind it — for a badge sitting inside prose. */
   def outline: BadgeElement = copy(variant = w.BadgeVariant.Outline)
@@ -199,7 +206,8 @@ final case class SparklineElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = SparklineElement
-  def widget: Widget = w.Sparkline(data, max, direction, style = props.style, styleFor = styleFor)
+  override def debugName: String = "sparkline"
+  def widget: Widget             = w.Sparkline(data, max, direction, style = props.style, styleFor = styleFor)
 
   /** Pins the top of the scale instead of letting it float to the largest value present.
     *
@@ -243,6 +251,7 @@ final case class TabsElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = TabsElement
+  override def debugName: String                               = "tabs"
   def widget: Widget                                           = w.Tabs(titles.map(Line.raw), selected, props.style)
   private[dsl] def withProps(props: ElementProps): TabsElement = copy(props = props)
   private[dsl] override def claim: SizeClaim                   = SizeClaim.OneRow
@@ -264,7 +273,8 @@ final case class TableElement(
     props: ElementProps = ElementProps(),
 ) extends FlexContainer:
   type Self = TableElement
-  def widget: Widget =
+  override def debugName: String = "table"
+  def widget: Widget             =
     // every argument by name, so that this call deliberately stopping at `style` — leaving `headerStyle` and
     // `footerStyle` at their defaults — is visible, and a new `ofStrings` parameter cannot slide into the wrong slot
     w.Table.ofStrings(
@@ -333,7 +343,8 @@ final case class StyledTableElement(
     props: ElementProps = ElementProps(),
 ) extends FlexContainer:
   type Self = StyledTableElement
-  def widget: Widget =
+  override def debugName: String = "styledTable"
+  def widget: Widget             =
     w.Table(rows, widths, header, footer, columnSpacing, flex, props.style)
 
   /** This table rebuilt with the leftover width placed differently — see [[TableElement.withFlex]]. */
@@ -371,7 +382,8 @@ final case class WidgetElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = WidgetElement
-  def widget: Widget = wrapped
+  override def debugName: String = "widget"
+  def widget: Widget             = wrapped
 
   /** This widget rebuilt to claim exactly `count` rows of height, taking the container's full width.
     *
@@ -407,7 +419,8 @@ final case class CanvasElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = CanvasElement
-  def widget: Widget = w.Canvas(xBounds, yBounds, shapes, marker = marker, resolution = resolution)
+  override def debugName: String = "canvas"
+  def widget: Widget             = w.Canvas(xBounds, yBounds, shapes, marker = marker, resolution = resolution)
 
   /** One `glyph` per hit cell — the coarsest mode, and the one that needs no special font. */
   def markers(glyph: String): CanvasElement = copy(marker = glyph, resolution = w.CanvasResolution.Cell)
@@ -421,3 +434,122 @@ final case class CanvasElement(
   def braille: CanvasElement = copy(resolution = w.CanvasResolution.Braille)
 
   private[dsl] def withProps(props: ElementProps): CanvasElement = copy(props = props)
+
+/** The tail of a [[LogRing]], one record per row, filtered by level and logger prefix and drawn through the `Log`
+  * widget — the console an app shows when the user presses the key it bound for it.
+  *
+  * Each row is `HH:mm:ss LEVEL logger message`, the time and logger in the theme's `muted`, the level in `warning` or
+  * `error` for those two severities, and a record's throwable appended as ` (Class: message)` — the class and message,
+  * never the stack trace, which belongs in a file. The console always follows the tail: it shows the newest records
+  * that fit, and there is no scroll state to own, so a view may build one per frame. The ring is read once per render,
+  * as a snapshot, and it is thread-safe, so records appended from a worker thread show up on the next frame without any
+  * marshalling — a frame that must happen *because* a record arrived is still the app's to request.
+  *
+  * `.minLevel(level)` hides everything below `level`; `.loggerPrefix("app.net")` keeps records from that logger and its
+  * children (the prefix is matched at a `.` boundary, so `app` does not match `apple`); `.zone(zone)` chooses the zone
+  * the timestamp is rendered in, the system default unless said otherwise.
+  */
+final case class LogConsoleElement(
+    ring: LogRing,
+    minimumLevel: LogLevel,
+    prefix: String,
+    zone: ZoneId,
+    warningStyle: Style,
+    errorStyle: Style,
+    mutedStyle: Style,
+    props: ElementProps = ElementProps(),
+) extends Element:
+  type Self = LogConsoleElement
+  override def debugName: String = "logConsole"
+
+  /** Hides records below `level`. */
+  def minLevel(level: LogLevel): LogConsoleElement = copy(minimumLevel = level)
+
+  /** Keeps records from logger `prefix` and its children only; the empty string keeps every logger. */
+  def loggerPrefix(prefix: String): LogConsoleElement = copy(prefix = prefix)
+
+  /** The zone timestamps are rendered in. */
+  def zone(zone: ZoneId): LogConsoleElement = copy(zone = zone)
+
+  def widget: Widget =
+    (area, buffer) =>
+      val rows = ring.snapshot.filter(matches)
+      if !area.isEmpty && rows.nonEmpty then
+        val state = w.LogState(rows.size)
+        rows.foreach(record => state.append(row(record)))
+        w.Log(props.style).render(area, buffer, state)
+
+  private def matches(record: LogRecord): Boolean =
+    record.level.atLeast(minimumLevel) &&
+      (prefix.isEmpty || record.logger == prefix || record.logger.startsWith(prefix + "."))
+
+  private def row(record: LogRecord): Line =
+    val level    = record.level match
+      case LogLevel.Trace   => Span("TRACE", mutedStyle)
+      case LogLevel.Debug   => Span("DEBUG", mutedStyle)
+      case LogLevel.Info    => Span("INFO ", Style.Default)
+      case LogLevel.Warning => Span("WARN ", warningStyle)
+      case LogLevel.Error   => Span("ERROR", errorStyle)
+    val time     = LogConsoleElement.TimeFormat.format(record.instant.atZone(zone))
+    val failure  = record.throwable.map(error => Span(s" ($error)", mutedStyle)).toSeq
+    val message  = Span(record.message, Style.Default)
+    val logger   = Span(record.logger, mutedStyle)
+    val separate = Span.raw(" ")
+    Line(Seq(Span(time, mutedStyle), separate, level, separate, logger, separate, message) ++ failure)
+
+  private[dsl] def withProps(props: ElementProps): LogConsoleElement = copy(props = props)
+
+object LogConsoleElement:
+  private val TimeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
+
+/** A block of text that already carries its own styles, laid out the way [[TextElement]] lays out a plain string.
+  *
+  * [[TextElement]] holds a `String` and paints the whole block in the element's one style, which is the right shape for
+  * a caption but cannot show a `markup"…"` literal or the coloured output `Text.fromAnsi` reads back from a subprocess:
+  * both arrive as a [[io.worxbend.tui.core.Text]] whose spans have already chosen their colours. Before this node the
+  * only way to show one was `widget(Paragraph(text))`, which needs a second import and claims every row the container
+  * has left, so a styled message under a plain one pushed the plain one off the screen.
+  *
+  * The overflow and alignment knobs are the same two [[TextElement]] offers and mean the same thing. The element's own
+  * style is laid *underneath* the text's own base style, so a span that set a colour keeps it and `.dim` on the element
+  * dims only what the spans left unset — the direction a theme colour travels, as `Span.under` documents.
+  */
+final case class RichTextElement(
+    content: Text,
+    overflow: w.Overflow = w.Overflow.Clip,
+    alignment: Alignment = Alignment.Left,
+    props: ElementProps = ElementProps(),
+) extends Element:
+  type Self = RichTextElement
+  // the same factory name as TextElement: both are what `text(...)` builds, and a snapshot reader should see one kind
+  override def debugName: String = "text"
+  // Layout and painting share this immutable description and its bounded measurement cache. Node copies start fresh.
+  lazy val widget: Widget        = w.Paragraph(content.withStyleOf(own => props.style.patch(own)), alignment, overflow)
+
+  /** Breaks lines that do not fit onto further rows instead of cutting them off — see [[TextElement.wrapped]]. */
+  def wrapped: RichTextElement = copy(overflow = w.Overflow.Wrap)
+
+  /** Cuts each line at the right edge of the area, the default. Undoes a `.wrapped` on an element built elsewhere. */
+  def clipped: RichTextElement = copy(overflow = w.Overflow.Clip)
+
+  /** Positions each line within the area's width: left (the default), centre, or right. A line or the text itself
+    * carrying an alignment of its own still wins for that row, as it does inside any paragraph.
+    */
+  def aligned(alignment: Alignment): RichTextElement = copy(alignment = alignment)
+
+  /** Centres every line in the area. */
+  def centered: RichTextElement = aligned(Alignment.Center)
+
+  /** Pushes every line against the right edge. */
+  def rightAligned: RichTextElement = aligned(Alignment.Right)
+
+  /** Every line pinned to the left edge — the default, spelled out. */
+  def leftAligned: RichTextElement = aligned(Alignment.Left)
+
+  private[dsl] def withProps(props: ElementProps): RichTextElement = copy(props = props)
+
+  /** The same claim [[TextElement]] makes — the exact box of the unwrapped rows, measured in display columns through
+    * the text's own `width`, or the container's width when wrapping leaves the height to `intrinsicHeight`.
+    */
+  private[dsl] override def claim: SizeClaim =
+    if overflow.wraps then SizeClaim.Fill else SizeClaim.box(content.width, content.height)

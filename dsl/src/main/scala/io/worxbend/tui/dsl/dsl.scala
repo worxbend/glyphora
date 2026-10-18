@@ -26,6 +26,7 @@ export Element.{
   dropdown,
   dualSparkline,
   each,
+  errorBoundary,
   filePicker,
   gauge,
   heatmap,
@@ -42,9 +43,11 @@ export Element.{
   link,
   list,
   log,
+  logConsole,
   markdown,
   marquee,
   marqueeAt,
+  memo,
   menu,
   notice,
   numberInput,
@@ -87,8 +90,11 @@ export Element.{
   tree,
   widget,
 }
-// Form signatures are part of the one-import application surface too.
-export io.worxbend.tui.macros.{DerivedField, FieldValidation, FormSpec}
+// Form signatures are part of the one-import application surface too. `Codec` is the context bound of `persisted`, and
+// an app teaching the derivation about its own type writes `given Codec[Mine] = Codec.atom(...)`, so it is named here;
+// `deriveCodec` stays behind the macros import with `deriveForm`, because `Codec.derived` already summons it for every
+// mirrored type and the explicit form is only ever written beside a type definition.
+export io.worxbend.tui.macros.{Codec, DerivedField, FieldValidation, FormSpec}
 
 // Every core type the exported API's own signatures mention, so a view never needs a second import.
 //
@@ -118,9 +124,11 @@ export io.worxbend.tui.macros.{DerivedField, FieldValidation, FormSpec}
 // writes a widget, not to whoever writes a view. Widget authors already import `io.worxbend.tui.core`.
 export io.worxbend.tui.core.{
   Alignment,
+  AnsiParser,
   Buffer,
   Cell,
   Color,
+  ColorScheme,
   Constraint,
   Direction,
   Easing,
@@ -202,6 +210,18 @@ val Borders: io.worxbend.tui.widgets.Borders.type = io.worxbend.tui.widgets.Bord
 extension (inline sc: StringContext)
   inline def key(inline args: Any*): KeyEvent = ${ io.worxbend.tui.core.KeySpecLiteral.expand('sc, 'args) }
 
+/** `markup"[bold red]error[/] in [link=$url]$file[/]"` — a [[Text]] written as a literal with inline style tags, the
+  * tag names and their nesting checked by the compiler.
+  *
+  * Forwarded here for the same mechanical reason as [[key]]: an extension method on `StringContext` cannot be
+  * re-exported, and a styled message is written in every app's views. The body is the same macro call `tui-core`
+  * declares, so there is one implementation and not two. Show the result with `text(markup"…")`. The tag vocabulary is
+  * documented on the `markup` interpolator in `io.worxbend.tui.core`; an interpolated value is always text, never
+  * markup.
+  */
+extension (inline sc: StringContext)
+  inline def markup(inline args: Any*): Text = ${ io.worxbend.tui.core.MarkupLiteral.expand('sc, 'args) }
+
 // `AsyncErrorHandler` and `QueuedTaskFailures` are here for the same reason as everything else in this block: they are
 // named by signatures this package already exports. `Async.run`'s `onError` parameter takes an `AsyncErrorHandler`, and
 // installing a `given` one is the documented way to decide where a background failure is reported;
@@ -213,11 +233,17 @@ export io.worxbend.tui.runtime.{
   Async,
   AsyncErrorHandler,
   Cancelable,
+  CaptureStdio,
   CompletedFrame,
   Computed,
   Derived,
   FrameTiming,
+  JulBridge,
   LatestFrameObserver,
+  LogLevel,
+  LogRecord,
+  LogRing,
+  Persisted,
   QueuedTaskFailures,
   Reactive,
   ReactiveScope,
@@ -227,6 +253,7 @@ export io.worxbend.tui.runtime.{
   RunnerError,
   Signal,
   SignalEquality,
+  Store,
   TaskScope,
   Viewport,
 }
@@ -237,7 +264,23 @@ export io.worxbend.tui.runtime.{
 // import. `JLine3Backend` and `HeadlessBackend` are deliberately left out: neither is named by a signature this
 // package exposes, and the code that constructs one (a `main` wiring a custom terminal, a test wiring `Pilot`) is
 // already reaching into `tui-terminal` or `tui-test` on purpose.
-export io.worxbend.tui.terminal.{Backend, BackendError, ColorDepth, TerminalGlyphs}
+export io.worxbend.tui.terminal.{Backend, BackendError, ColorDepth, PointerShape, TerminalGlyphs}
+
+/** `light` on a light terminal, `dark` on a dark one — and on one that could not say, because dark is what every
+  * terminal was assumed to be before any of them could be asked.
+  *
+  * The scheme is read reactively through the app's [[AppServices.colorScheme]], so a view that calls this recomputes
+  * when the terminal flips its theme under the app (mode 2031). Inside a `TuiApp` the services resolve on their own; a
+  * helper written elsewhere takes `(using AppServices)` as it would to raise a toast. Outside any run
+  * [[AppServices.NoOp]] reports `Unknown`, so the dark colour wins.
+  *
+  * This picks a colour by the *terminal's* scheme, not by the app's theme: an app that pinned `Theme.HighContrast`
+  * still gets the colour that reads on the background the user actually has.
+  */
+def lightDark(light: Color, dark: Color)(using scope: ReactiveScope, services: AppServices): Color =
+  services.colorScheme.get match
+    case ColorScheme.Light => light
+    case _                 => dark
 // The widget-level vocabulary an application names directly, in three groups:
 //   * the enums and presets a call site passes by name (severities, animation presets, badge variants),
 //   * every caller-owned `*State` and content value a DSL factory *requires* — `list(items, state)` cannot be called
@@ -308,6 +351,7 @@ export io.worxbend.tui.widgets.{
   SyntaxTheme,
   TableCell,
   TableRow,
+  TableRows,
   TextAreaState,
   TextEffect,
   TextInputState,

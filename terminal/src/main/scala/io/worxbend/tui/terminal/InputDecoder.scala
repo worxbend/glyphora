@@ -24,7 +24,10 @@ import scala.concurrent.duration.Duration
   *
   * A sequence the decoder does not recognize — a device-attributes reply, a cursor-position report, a torn sequence
   * that timed out mid-flight — decodes to `None` and is dropped. It must never be reported as a key: synthesizing an
-  * `Escape` from unparsed bytes means a capability probe silently closes the user's dialog.
+  * `Escape` from unparsed bytes means a capability probe silently closes the user's dialog. Two terminal messages are
+  * the exception and surface as events, because they describe something that *happened* rather than answer something
+  * this library asked: a mode 2048 in-band resize report is an `Event.Resize`, and a mode 2031 colour-scheme report is
+  * an `Event.ColorSchemeChanged`.
   *
   * An instance is **not** thread-safe: it owns a shared read cursor and a buffer of pending characters, so exactly one
   * reading thread may call `decode`. Two threads calling it at once interleave their reads into sequences neither of
@@ -339,16 +342,21 @@ private[terminal] final class InputDecoder(
       case ']' | 'P' | '_' => skipControlString()
       case c               => decodeControl(c, KeyModifiers.Alt)
 
-  /** Consumes an OSC (`ESC ]`), DCS (`ESC P`) or APC (`ESC _`) control string up to its terminator and drops it.
+  /** Consumes an OSC (`ESC ]`), DCS (`ESC P`) or APC (`ESC _`) control string up to its terminator and drops it — or,
+    * during a capability probe, reads it first.
     *
     * These carry terminal *replies* — an OSC 11 background-colour answer, a DECRQSS status report, a kitty graphics
-    * acknowledgement. glyphora never asks for one, but anything sharing the tty (tmux, a shell prompt, a program run
-    * under [[Backend.suspend]]) can leave one in the buffer, and without this the introducer surfaces as Alt+`]` and
-    * every byte of the payload is dispatched as a keystroke — where a `q` quits and an Enter submits.
+    * acknowledgement. The only one glyphora asks for is OSC 11, and only inside [[readCapabilityReport]]; anything
+    * sharing the tty (tmux, a shell prompt, a program run under [[Backend.suspend]]) can leave any of them in the
+    * buffer, and without this the introducer surfaces as Alt+`]` and every byte of the payload is dispatched as a
+    * keystroke — where a `q` quits and an Enter submits.
     *
     * The price is that Alt+`]`, Alt+Shift+P and Alt+`_` can no longer be bound: their legacy encoding is byte-identical
     * to a control-string introducer, and one byte of lookahead cannot tell the two apart. That trade is deliberate — a
-    * dead rare key beats a reply typing itself into the focused widget.
+    * dead rare key beats a reply typing itself into the focused widget — and routing the OSC 11 answer to the probe
+    * changes nothing about it: the string is consumed exactly as before, and only its *payload* is now also read while
+    * a probe is listening. Outside a probe the payload is still dropped unread, so a stray reply cannot rewrite what
+    * start-up established.
     *
     * A truncated reply — one whose `ESC` opens a new sequence instead of the `ESC \` terminator — is *not* dropped: the
     * character after that `ESC` is re-dispatched through [[decodeEscapeBody]] and whatever it decodes to is returned
@@ -366,6 +374,12 @@ private[terminal] final class InputDecoder(
     controlString = Some(skip)
     resumeControlString(skip)
 
+  /** Hands a completed control string's payload to the probe, when one is listening. Only a string that reached its
+    * terminator gets here: a truncated one has no trustworthy payload and is dropped whole.
+    */
+  private def captureControlString(skip: ControlStringSkip): Unit =
+    if probing then probed = CapabilityReplies.foldOsc(probed, skip.payload.result())
+
   /** Continues `skip` until the terminator, the length cap, a timeout, or the next wake — see [[skipControlString]]. */
   private def resumeControlString(skip: ControlStringSkip): Option[Event] =
     var result: Option[Event] = None
@@ -379,7 +393,8 @@ private[terminal] final class InputDecoder(
           // invented keypress this class promises never to report. A wake inside *that* sequence has re-queued what it
           // consumed by the time it reaches here; the `ESC` that opened it goes back in front, and the next decode
           // re-parses it whole.
-          if terminator >= 0 && terminator != '\\' then
+          if terminator == '\\' then captureControlString(skip)
+          else if terminator >= 0 then
             result =
               try decodeEscapeBody(terminator)
               catch
@@ -389,8 +404,12 @@ private[terminal] final class InputDecoder(
         else
           val c = nextInSequence()
           skip.consumed += 1
-          if c < 0 || c == Bel then controlString = None
+          if c == Bel then
+            controlString = None
+            captureControlString(skip)
+          else if c < 0 then controlString = None
           else if c == Esc then skip.afterEsc = true
+          else if skip.payload.length < MaxCapturedControlString then skip.payload.append(c.toChar)
       if skip.consumed >= MaxControlStringLength then controlString = None
       result
     catch
@@ -400,10 +419,13 @@ private[terminal] final class InputDecoder(
 
   /** Mutable progress of a control-string skip, confined to the decoder's one reading thread and retained only until
     * the string ends. `consumed` is the budget behind [[MaxControlStringLength]]; a wake leaves it where it was.
+    * `payload` keeps the first [[MaxCapturedControlString]] characters of the string for [[captureControlString]] — a
+    * colour reply is a few dozen characters, and anything longer is not a reply this library reads.
     */
   private final class ControlStringSkip:
     var consumed = 0
     var afterEsc = false
+    val payload  = StringBuilder()
 
   /** CSI sequences: parameters (digits, `;`, `:` and the private `<`/`>`/`=`/`?` prefixes) then a final byte in
     * 0x40-0x7E. [[scanCsi]] reads the sequence off the wire and says how it ended; only a complete one becomes an
@@ -511,7 +533,7 @@ private[terminal] final class InputDecoder(
     else decodeUrxvtMouse(params)
 
   /** Whether a sequence is a reply from the terminal rather than user input: a private-parameter reply (DA, DECRPM,
-    * XTVERSION), a cursor-position report, or an XTWINOPS answer.
+    * XTVERSION, a colour-scheme report), a cursor-position report, or an XTWINOPS answer.
     */
   private def isTerminalReply(params: String, finalByte: Int): Boolean =
     isPrivateReply(params) || (awaitingCursorReport && finalByte == 'R') || finalByte == 't'
@@ -520,7 +542,8 @@ private[terminal] final class InputDecoder(
     * never delivered.
     */
   private def decodeTerminalReply(params: String, finalByte: Int): Option[Event] =
-    if isPrivateReply(params) then captureProbeReply(params, finalByte)
+    if isPrivateReply(params) && finalByte == 'n' then decodeColorSchemeReport(params)
+    else if isPrivateReply(params) then captureProbeReply(params, finalByte)
     // A cursor-position report is caught here rather than down in `decodeCsiKey`, because its second parameter is a
     // *column*, and the modifier extraction below rejects any second parameter above 16 — so a report from anywhere
     // right of column 16 would never have reached a case at all.
@@ -622,6 +645,23 @@ private[terminal] final class InputDecoder(
       if CapabilityReplies.endsProbe(finalByte) then probeFenceReached = true
     None
 
+  /** A `CSI ? 997 ; state n` colour-scheme report: folded into the probe while one is listening, and an event
+    * otherwise.
+    *
+    * The one private-parameter reply that *does* become an event, and deliberately so. During the probe it is the
+    * answer to the `CSI ? 996 n` query and is read like any other answer. After the probe it is a mode 2031
+    * notification — the user flipped their system theme — which is something that happened, not something this library
+    * asked, and the application has to hear about it to follow. Any other DSR with private parameters is dropped as it
+    * always was.
+    */
+  private def decodeColorSchemeReport(params: String): Option[Event] =
+    CapabilityReplies.colorSchemeReport(params) match
+      case Some(scheme) if probing =>
+        probed = probed.copy(reportedColorScheme = Some(scheme))
+        None
+      case Some(scheme)            => Some(Event.ColorSchemeChanged(scheme))
+      case None                    => None
+
   /** Records a cursor-position report and reports no event for it.
     *
     * Deliberately not an [[Event]]. A cursor report is a reply to something this library asked, not something the user
@@ -638,21 +678,27 @@ private[terminal] final class InputDecoder(
         None
       case _                                           => None
 
-  /** Records the terminal's text-area size in pixels and reports no event for it.
+  /** Records the terminal's text-area size in pixels and reports no event for it — or, for a mode 2048 in-band resize
+    * report, reports the resize.
     *
-    * Deliberately not an [[Event]], for the reason [[captureCursorReport]] gives: a reply to something this library
-    * asked is not something the user did, and a case for it in the event ADT would put a branch no application ever
-    * writes into every exhaustive `match` over `Event`.
+    * The pixel answer is deliberately not an [[Event]], for the reason [[captureCursorReport]] gives: a reply to
+    * something this library asked is not something the user did, and a case for it in the event ADT would put a branch
+    * no application ever writes into every exhaustive `match` over `Event`. The in-band resize report *is* one, because
+    * it is the same fact `SIGWINCH` carries — the window changed — arriving on the input stream instead, which is what
+    * makes it reliable over a multiplexer or an SSH hop that loses the signal.
     *
-    * The wire order is `4 ; height ; width`, height first; [[Size]] is width first. The swap happens here, once. A
-    * reply with a different leading parameter is some other XTWINOPS answer and is dropped rather than misread.
+    * The wire order is `4 ; height ; width` for pixels and `48 ; rows ; columns ; height-px ; width-px` for a resize,
+    * rows first in both; [[Size]] is width first. The swap happens here, once. A reply with a different leading
+    * parameter is some other XTWINOPS answer and is dropped rather than misread.
     */
   private def captureTextAreaReport(numbers: Seq[Int]): Option[Event] =
     numbers match
-      case Seq(TextAreaReport, height, width) if height >= 0 && width >= 0 =>
+      case Seq(TextAreaReport, height, width) if height >= 0 && width >= 0       =>
         reportedTextArea = Some(Size(width, height))
         None
-      case _                                                               => None
+      case InBandResizeReport +: rows +: columns +: _ if rows > 0 && columns > 0 =>
+        Some(Event.Resize(Size(columns, rows)))
+      case _                                                                     => None
 
   /** Whether a `CSI … R` is F3 rather than a cursor-position report.
     *
@@ -1053,6 +1099,9 @@ private[terminal] object InputDecoder:
     */
   private val TextAreaReport = 4
 
+  /** The leading parameter of a mode 2048 in-band resize report (`CSI 48 ; rows ; columns ; h ; w t`). */
+  private val InBandResizeReport = 48
+
   /** The kitty keyboard protocol's event-type sub-parameter values. Only the release is acted on: a repeat is reported
     * as an ordinary press, which is what every legacy terminal already produces for a held key.
     */
@@ -1080,6 +1129,11 @@ private[terminal] object InputDecoder:
 
   /** The same bound for a control string, whose payload (a colour, a title, a graphics acknowledgement) is short. */
   private val MaxControlStringLength = 4096
+
+  /** How much of a control string's payload is kept for the probe to read. An OSC 11 reply is under thirty characters;
+    * the rest of the string is still consumed, only not remembered.
+    */
+  private val MaxCapturedControlString = 128
 
   /** The most characters the pending buffer may hold: the longest prefix a wake can re-queue is `[` plus
     * [[MaxParamLength]] parameter characters behind the `ESC`, and the pushback of a single torn-off `ESC` on top of

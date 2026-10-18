@@ -273,6 +273,9 @@ final class JLineContractSpec extends AnyFunSuite:
           AnsiSequences.PopKittyKeyboard,
           AnsiSequences.DisableFocusReporting,
           AnsiSequences.DisableBracketedPaste,
+          AnsiSequences.DisableColorSchemeUpdates,
+          AnsiSequences.DisableUnicodeWidth,
+          AnsiSequences.DisableInBandResize,
           AnsiSequences.RestoreCursor,
         )
       )

@@ -459,25 +459,31 @@ the key bindings, so an element that wants `Esc` for itself still gets it and th
 stays open.
 
 A click is resolved against the topmost thing under the pointer, so a press on any of the
-dialog's own controls goes to that control and the dialog stays open. "Outside" here means
-"on no control of the dialog", which is not quite the same as "outside its frame": a press
-on a plain border or on a caption lands on no control, so it counts as outside. A dialog
-that wants its whole frame to be inert says so in one line, by consuming presses at its
-root:
+dialog's own controls goes to that control and the dialog stays open. A press that lands
+on no control is then judged by where the frame painted things: the app records the
+painted rect of every node while a click-outside modal is up, and a press on any node of
+the dialog that *draws* something — its panel border, its title, a label inside it — is
+inside the dialog and is absorbed, while a press that lands only on nodes that arrange
+space and draw nothing — the `row`, `column` and `spacer`s `centered(...)` places the
+dialog with, a dimmed `backdrop` — is outside it and closes it. "Outside" therefore means
+what the user sees: outside the dialog's frame, border included.
+
+A dialog made of nodes that own blank cells without drawing them — a borderless `column`
+of labels — can still absorb every press that lands on it by consuming presses at its
+root, exactly as before:
 
 ```scala
-panel("Really?")(body).onMouseEvent(_ => true)
+column(text("Really?"), button("OK")(ok())).onMouseEvent(_ => true)
 ```
-
-A geometric test is deliberately not attempted, because nothing in the tree records where
-a dialog was *placed* — placement is spacers around a sized node — so the rectangle would
-have to be guessed, and a wrong guess closes a dialog the user is still using.
 
 The layer underneath a modal stays inert throughout, as it always has: it receives no
 key and no mouse event, so nothing down there reacts to the click that dismissed the
 dialog on top of it. `dismissibleOverlay(content)(onOutsidePress)` is the same backdrop as
 a plain element builder, for a dialog an application layers itself rather than pushing as
-a screen.
+a screen; its presence in the tree is what switches bounds recording on, so the very first
+frame of a hand-layered overlay on a real terminal still judges by "on no control" until
+the next frame is painted. See [Mouse](mouse.md#a-click-outside-a-dialog) for the delivery
+rules this rests on.
 
 ### Keys that belong to one screen
 
@@ -685,12 +691,33 @@ the default duration; `notify(message, level, duration)` and `dismissToasts()` a
 there for anything else. Everything on it runs on the render thread, exactly like the
 app methods it delegates to.
 
+### Reach the user who looked away
+
+A toast only tells someone who is watching the terminal. `desktop(title, body)` on the
+same `Notifications` value raises the toast *and*, while the terminal window is
+unfocused, a desktop notification through whichever protocol the terminal speaks
+(OSC 9 for iTerm2, OSC 99 for kitty, OSC 777 everywhere else):
+
+```scala
+def announce(result: BuildResult)(using notifications: Notifications): Unit =
+  notifications.desktop("build", s"${result.passed} tests passed")
+```
+
+"Unfocused" is what the terminal reported through focus events — `FocusLost` with no
+`FocusGained` since — so a terminal without focus reporting is always treated as
+focused and only ever shows the toast. The desktop half is best-effort in every
+direction: a terminal without a notification protocol ignores it, one inside tmux or
+screen never sees it (the backend knows and writes nothing), and the operating system
+may suppress it. Keep the toast as the thing the user comes back to.
+
 ### Every service outside the app class
 
 Toasts are not the only capability locked inside the app's body. `pushScreen`,
 `popScreen`, `openPalette`, `closePalette`, `runEffect`, `requestRedraw`,
-`copyToClipboard` and `quit` are all `protected` methods for the same reason, and a
-helper that needs one of them faces the same plumbing.
+`copyToClipboard`, `quit`, `editExternally`, `openInEditor`,
+`taskbarProgress`/`clearTaskbarProgress` and the reactive `colorScheme` read are all
+reachable only from inside the app for the same reason, and a helper that needs one of
+them faces the same plumbing.
 
 `AppServices` is all of them as one value, and it extends `Notifications` — so ask for
 the narrow type when a helper only notifies, and for this one when it navigates:
@@ -816,6 +843,40 @@ For live switching, keep a theme index in a `Signal`, return the selected value 
 `theme`, and read the index in `view` so the tree is invalidated. A complete snippet
 lives in [State & signals](./state-and-signals#runtime-theme-switching).
 
+### Follow the terminal's light or dark scheme
+
+The default `theme` is `Theme.auto`, and `Theme.auto` is not a palette: it is a
+placeholder the app resolves on every frame to `Theme.Light` or `Theme.Dark` according
+to what the terminal said about itself. At start-up the capability probe asks the
+terminal for its background colour (OSC 11) and, where the terminal can say, for its
+own light/dark verdict (`CSI ? 996 n`); afterwards a terminal that implements mode 2031
+reports every switch of the user's system theme, and the next frame follows. A terminal
+that answers nothing resolves to `Theme.Dark` — exactly what every app got before the
+terminal could be asked.
+
+An app that returns any other theme pins it and sees none of this. To pick between two
+palettes of your own, read the scheme yourself:
+
+```scala
+override def theme: Theme =
+  if colorSchemeNow == ColorScheme.Light then corporateLight else corporateDark
+```
+
+— or branch on it inside `view` with the reactive `colorScheme` read, and pick a single
+colour with `lightDark(light, dark)`, which takes the light colour on a light terminal
+and the dark one on a dark or unknown one:
+
+```scala
+def view(using ReactiveScope, Theme): Element =
+  text("warning").fg(lightDark(Color.Rgb(0x80, 0x40, 0x00), Color.Yellow))
+```
+
+`lightDark` resolves through `AppServices`, so inside the app it needs nothing at the
+call site and a helper elsewhere takes `(using AppServices)`. Outside any run,
+`AppServices.NoOp` reports `ColorScheme.Unknown` and the dark colour wins. The
+one-import surface carries `ColorScheme` (`Light | Dark | Unknown`); the terminal tier's
+`TerminalCapabilities.colorScheme` and `backgroundColor` are where the answer is kept.
+
 ## Add a splash or frame effect
 
 ```scala
@@ -864,10 +925,99 @@ printAbove("deployment finished", s"id: ${deployment.id}")
 - `copyToClipboard` uses OSC 52 where supported;
 - `suspend` restores cooked mode and the normal screen while an external program
   runs, then re-enters the TUI and forces a full repaint;
-- `printAbove` writes durable lines into scrollback above the live interface.
+- `printAbove` writes durable lines into scrollback above the live interface;
+- `taskbarProgress(signal)` mirrors a `Reactive[Option[Double]]` on the terminal's tab
+  or the taskbar (OSC 9;4 — Windows Terminal, Ghostty, WezTerm and others show it) for
+  as long as it is bound, and `clearTaskbarProgress()` unbinds and clears it:
+
+  ```scala
+  private val downloaded = Signal(Option.empty[Double])
+  override def onStart(): Unit = taskbarProgress(downloaded)
+  // later, from an Async continuation: downloaded.set(Some(bytes.toDouble / total))
+  ```
+
+  `Some(fraction)` is a determinate bar, `None` clears it, the value is read on every
+  frame so a change schedules the frame that pushes it, and the indicator is cleared
+  when the app exits or the terminal is handed over. The same binding is available to
+  helpers as `AppServices.taskbarProgress`.
 
 These are no-ops or unavailable before a runner is active, so invoke them from event
 handlers or from `onStart()` — never from a constructor.
+
+### Where `println` goes
+
+While a `TuiApp` runs, `System.out` and `System.err` — and Scala's `println` with them —
+are captured: each completed line is written into the scrollback above the live UI
+through `printAbove`, so a stray debug print or a library that logs to `System.err` no
+longer paints over the frame. Whatever is still buffered without a newline is flushed to
+the real streams when the run ends, under the restored prompt, and `suspend` passes the
+streams straight through to the terminal for the duration of its body.
+
+The policy is the `captureStdio` field of `RunnerConfig`, a `CaptureStdio`:
+
+```scala
+override def config: RunnerConfig = RunnerConfig()
+  .withTickRate(100.millis)
+  .withCaptureStdio(CaptureStdio.Off)            // leave the streams alone
+  // .withCaptureStdio(CaptureStdio.Console(ring)) // or collect them in a LogRing
+```
+
+The field is left unset by `RunnerConfig()` and by `RunnerConfig(tickRate = …)`, which is
+how a config that only sets other fields keeps the app's `PrintAbove` default; a bare
+`TerminalRunner` reads the same unset field as `Off`. `CaptureStdio.Console(ring)` turns
+each line into a `LogRecord` under the `stdout` (Info) or `stderr` (Warning) logger, for
+the console below.
+
+### A log console on a key
+
+`logConsole(ring)` draws the tail of a `LogRing`; a `JulBridge.attach(ring)` in the
+constructor feeds it everything `java.util.logging` sees. Bind a key to a `Signal[Boolean]`
+and let the view decide whether the console is on screen:
+
+```scala
+object Monitor extends TuiApp:
+  private val ring        = LogRing(2000)
+  private val showConsole = Signal(false)
+  private val bridge      = JulBridge.attach(ring)
+
+  override def config: RunnerConfig = RunnerConfig().withCaptureStdio(CaptureStdio.Console(ring))
+
+  override def bindings: KeyBindings = KeyBindings(
+    binding("f12", "toggle log console")(showConsole.set(!showConsole.peek)),
+    binding("ctrl+q", "quit")(quit()),
+  )
+
+  override def onStop(): Unit = bridge.cancel()
+
+  def view(using ReactiveScope, Theme): Element =
+    val console = Option.when(showConsole.get)(
+      panel("Log")(logConsole(ring).minLevel(LogLevel.Debug)).length(8)
+    )
+    column(body +: console.toSeq*)
+```
+
+A record appended from a worker thread is on screen at the next frame; a frame that must
+happen *because* a record arrived is the app's to request, with `requestRedraw()` from a
+timer or the `Async` continuation that produced it.
+
+### Edit text in `$EDITOR`
+
+`editExternally(initial, suffix)` writes `initial` to a temporary file, runs the user's
+editor on it through `suspend`, and answers the new content — `None` when the file came
+back unchanged or the editor could not be started. `openInEditor(path, line)` opens an
+existing file the same way, at `+line` when one is given. Both are `AppServices` members
+rather than `protected` methods, so a helper outside the app class can call them:
+
+```scala
+binding("e", "edit description") {
+  editExternally(description.peek, suffix = ".md").foreach(description.set)
+}
+binding("o", "open config")(openInEditor(configPath, line = Some(12)))
+```
+
+The editor is `VISUAL`, then `EDITOR`, split on blanks so `code --wait` works, and `vi`
+when neither is set; a launch that fails is logged at `WARNING` on `io.worxbend.tui.dsl`
+and treated as "nothing edited" rather than ending the app from inside a key handler.
 
 ### Styled scrollback with `insertBefore`
 

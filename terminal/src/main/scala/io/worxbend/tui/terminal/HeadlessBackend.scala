@@ -46,7 +46,13 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
   // blinking is the terminal's own default, so that is where a freshly built backend starts
   @volatile private var cursorBlinking                         = true
 
-  @volatile private var cursorShape: CursorShape      = CursorShape.Default
+  @volatile private var cursorShape: CursorShape             = CursorShape.Default
+  // what a test said this terminal supports; nothing, until it says — see `capabilitiesTo`
+  @volatile private var reported: TerminalCapabilities       = TerminalCapabilities.unknown
+  @volatile private var pointerShape: PointerShape           = PointerShape.Default
+  @volatile private var taskbarProgressShown: Option[Double] = None
+  private val notifications                           = scala.collection.mutable.ArrayBuffer.empty[(String, String)]
+  private val taskbarRequests                         = scala.collection.mutable.ArrayBuffer.empty[Option[Double]]
   @volatile private var lastClipboard: Option[String] = None
   @volatile private var lastTitle: Option[String]     = None
   @volatile private var caret: Option[Position]       = None
@@ -81,6 +87,9 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
     Option(armedFailures.remove(op)).toLeft(effect)
 
   def size: Either[BackendError, Size] = attempt(Op.Size)(terminalSize)
+
+  /** What [[capabilitiesTo]] last said, or [[TerminalCapabilities.unknown]] — there is no device here to ask. */
+  override def capabilities: TerminalCapabilities = reported
 
   /** The cell size, plus whatever [[pixelsTo]] was last told. `pixels` is empty until a test sets one, which is what a
     * real terminal that does not answer `CSI 14 t` also reports.
@@ -142,6 +151,25 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
 
   override def reserveInlineRows(rows: Int): Either[BackendError, Unit] =
     attempt(Op.ReserveInlineRows) { inlineRows = math.max(0, rows) }
+
+  /** Records the requested pointer shape, unless the capabilities a test installed deny pointer shapes — the same gate
+    * the JLine backend applies before writing OSC 22, so a test can see that a denied terminal is never asked.
+    */
+  override def setPointerShape(shape: PointerShape): Either[BackendError, Unit] =
+    if reported.pointerShapes.usable then pointerShape = shape
+    Right(())
+
+  /** Records the notification, unless the installed capabilities deny desktop notifications. */
+  override def notifyDesktop(title: String, body: String): Either[BackendError, Unit] =
+    if reported.desktopNotifications.usable then notifications.synchronized { val _ = notifications += ((title, body)) }
+    Right(())
+
+  /** Records the progress request, unless the installed capabilities deny taskbar progress. */
+  override def setTaskbarProgress(progress: Option[Double]): Either[BackendError, Unit] =
+    if reported.taskbarProgress.usable then
+      taskbarRequests.synchronized { val _ = taskbarRequests += progress }
+      taskbarProgressShown = progress
+    Right(())
 
   /** Records where the hardware caret was asked to go, so a test can assert on it exactly as it asserts on a drawn
     * cell. Nothing is validated here: the real terminal clamps an out-of-range position and a test that expects
@@ -309,6 +337,8 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
       cursorBlinking = true
 
       cursorShape = CursorShape.Default
+      pointerShape = PointerShape.Default
+      taskbarProgressShown = None
       alternateScreen = false
       rawMode = false
       caret = None
@@ -388,6 +418,31 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
       // event too, or a decoder that keeps answering once the script has run dry would spin forever. The read function
       // above never throws `InterruptedIOException`, so none of the decoder's wake-resumable states is reachable here.
       draining = remaining.hasNext || decoder.hasPending
+
+  /** Installs what this terminal claims to support, which [[capabilities]] then reports.
+    *
+    * The seam for everything that depends on a probe: a test states that the terminal reported a light background, or
+    * denied pointer shapes, and the layers above react exactly as they would to a real terminal that said so. Posts no
+    * event — a real probe runs inside `enableRawMode`, before the app's first frame, so install it before the app
+    * starts. Safe from any thread; the value is read on the render thread through a volatile field.
+    */
+  def capabilitiesTo(capabilities: TerminalCapabilities): Unit = reported = capabilities
+
+  /** The pointer shape last asked for through [[setPointerShape]] and not refused by the installed capabilities;
+    * [[PointerShape.Default]] until something asks, and again after [[close]].
+    */
+  def currentPointerShape: PointerShape = pointerShape
+
+  /** Every desktop notification raised through [[notifyDesktop]] and not refused by the installed capabilities, in
+    * order, as `(title, body)`.
+    */
+  def desktopNotifications: Seq[(String, String)] = notifications.synchronized(notifications.toSeq)
+
+  /** Every progress value handed to [[setTaskbarProgress]] and not refused, in order — `None` entries are clears. */
+  def taskbarProgressRequests: Seq[Option[Double]] = taskbarRequests.synchronized(taskbarRequests.toSeq)
+
+  /** The progress currently shown on the simulated taskbar: the last request, or `None` once cleared or closed. */
+  def currentTaskbarProgress: Option[Double] = taskbarProgressShown
 
   /** Sets the pixel size [[windowSize]] reports, or clears it with `None`.
     *

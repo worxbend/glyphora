@@ -8,7 +8,7 @@ import java.nio.file.Path
 final class TreeEmptyStateSpec extends AnyFunSuite:
   private val nodes = Vector.tabulate(8)(index => TreeNode(s"node$index"))
 
-  private def populatedTree(): TreeState =
+  private def populatedTree(): TreeState[Seq[Int]] =
     val state = TreeState()
     state.selected = Some(Seq(7))
     val _     = rendered(Tree(nodes), state, 20, 2)
@@ -22,15 +22,15 @@ final class TreeEmptyStateSpec extends AnyFunSuite:
     assert(state.offset == 0)
 
   test("empty source navigation repairs populated tree selection and scroll"):
-    Seq[TreeState => Unit](_.selectNext(Vector.empty), _.selectPrevious(Vector.empty), _.toggle(Vector.empty)).foreach {
-      action =>
+    Seq[TreeState[Seq[Int]] => Unit](_.selectNext(Vector.empty), _.selectPrevious(Vector.empty), _.toggle(Vector.empty))
+      .foreach { action =>
         val state = populatedTree()
         action(state)
         assert(state.selected.isEmpty)
         assert(state.offset == 0)
         state.selectNext(nodes)
         assert(state.selected.contains(Seq(0)))
-    }
+      }
 
   private val root    = Path.of("/virtual-glyphora-empty")
   private val entries = Vector.tabulate(8) { index =>

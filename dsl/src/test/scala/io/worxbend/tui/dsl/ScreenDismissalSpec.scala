@@ -14,8 +14,9 @@ import org.scalatest.funsuite.AnyFunSuite
   */
 final class ScreenDismissalSpec extends AnyFunSuite with PilotFixture:
 
-  /** 40x12, with the dialog placed at a fixed 20x5 in the middle: columns 10-29, rows 3-7. So (1, 1) is provably
-    * outside it, (10, 3) is its top-left corner, and (15, 5) is inside its body.
+  /** 40x12, with the dialog placed at a fixed 20x5 in the middle: columns 10-29, rows 4-8 (the seven spare rows split
+    * four above and three below). So (1, 1) is provably outside it, (10, 4) is its top-left corner, and (15, 5) is
+    * inside its body.
     */
   private val terminalSize = Size(40, 12)
 
@@ -59,9 +60,25 @@ final class ScreenDismissalSpec extends AnyFunSuite with PilotFixture:
     assert(pilot.screenLines.mkString("\n").contains("the page underneath"))
     quitApp(pilot)
 
+  test("a click on the dialog's own border leaves it open; one cell outside the border closes it"):
+    // The dialog is a bordered panel at columns 10-29, rows 4-8. Its border carries no control, so before the painted
+    // bounds of every node were recorded a press there resolved to nothing inside the dialog and fell through to the
+    // backdrop — the frame of the thing being used counted as "outside" it.
+    val (_, pilot) = start(Dismissal.ClickOutside)
+    assert(pilot.cellAt(10, 4).symbol == "┌", "the test's corner coordinate is not the dialog's corner")
+    assert(pilot.cellAt(10, 6).symbol == "│", "the test's border coordinate is not on the border")
+    pilot.click(10, 6).waitForIdle() // the left border, halfway down
+    assert(dialogShowing(pilot), "a press on the dialog's border closed it")
+    pilot.click(10, 4).waitForIdle() // the top-left corner
+    assert(dialogShowing(pilot), "a press on the dialog's corner closed it")
+    pilot.click(9, 6).waitForIdle()  // the cell immediately left of the border
+    assert(!dialogShowing(pilot), "a press one cell outside the dialog left it open")
+    quitApp(pilot)
+
   test("a dialog that consumes presses at its root is not closed by a click on its own frame"):
-    // "Outside" means "on no control of the dialog", so a press on a plain border counts as outside. A dialog that
-    // wants its whole frame inert says so in one line, and this is that line working.
+    // A press on the dialog's border already stays inside it (the test above). Consuming presses at the root is the
+    // stronger statement — every press anywhere in the panel's area resolves to the panel and never reaches the
+    // backdrop — and this is that line still working.
     final class ShieldedApp extends TuiApp:
       private val dialog: Screen                    = Screen(
         centered(20, 5)(panel("Really?")(text("BODY")).onMouseEvent(_ => true)),
@@ -157,18 +174,14 @@ final class ScreenDismissalSpec extends AnyFunSuite with PilotFixture:
     assert(dialogShowing(pilot))
     quitApp(pilot)
 
-  test("dismissibleOverlay layers the content over a backdrop and leaves the content untouched"):
-    // The tree is plain sealed data, so the construction can be checked without rendering anything. The content must
-    // come second: a press is resolved against the topmost covering subtree, and the dialog has to be that one.
+  test("dismissibleOverlay wraps the content in the node that owns the outside-press behaviour, unwrapped"):
+    // The tree is plain data, so the construction can be checked without rendering anything. The behaviour is the
+    // node's own built-in rather than a sibling backdrop's, because it has to read where *its* subtree was painted.
     var outside = 0
     val dialog  = text("dialog")
     val overlay = dismissibleOverlay(dialog)(() => outside += 1)
-    overlay match
-      case LayersElement(children, _) =>
-        assert(children.size == 2)
-        assert(children.head.props.onMouse.isDefined) // the backdrop, underneath, reports what reaches it
-        assert(children(1) == dialog) // and the dialog is passed through unwrapped
-      case other                      => fail(s"expected two layers, got $other")
+    assert(overlay.children == Seq(dialog)) // the dialog is passed through unwrapped
+    assert(overlay.builtinMouseHandler.isDefined)
     assert(outside == 0) // building the overlay must not run the callback
 
   test("the two dismissal predicates agree with the case names"):

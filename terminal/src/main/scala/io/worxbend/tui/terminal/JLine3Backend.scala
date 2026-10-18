@@ -27,7 +27,11 @@ import scala.util.control.NonFatal
   * for the dress/undress choreography, [[ScrollRegions]] for hardware scroll regions and [[TitleStack]] for the window
   * title. This class wires them to the JLine terminal and carries the public contract.
   */
-final class JLine3Backend private (private[terminal] val terminal: Terminal, colorDepth: ColorDepth) extends Backend:
+final class JLine3Backend private (
+    private[terminal] val terminal: Terminal,
+    colorDepth: ColorDepth,
+    env: Map[String, String],
+) extends Backend:
 
   // written on the render thread, read by JLine's signal-dispatch thread and by the shutdown hook
   // holds the *cooked*-mode attributes captured when raw mode was entered, so it doubles as "are we in raw mode?"
@@ -48,9 +52,17 @@ final class JLine3Backend private (private[terminal] val terminal: Terminal, col
 
   /** Last successfully requested shape. Non-default shapes owe a reset and are restored exactly after a handover. */
   @volatile private[terminal] var cursorShape = CursorShape.Default
+
+  /** Last successfully requested mouse pointer shape, on the same terms as [[cursorShape]]: a non-default one owes a
+    * reset on the way out and is restored after a handover.
+    */
+  @volatile private[terminal] var pointerShape = PointerShape.Default
+
+  /** The taskbar progress last shown, so a handover can clear it and the reacquire put it back; `None` once cleared. */
+  @volatile private[terminal] var taskbarProgress: Option[Double] = None
   // how many rows an inline run reserved on the primary screen, so the dressing choreography can park the cursor below
   // the frame such a run leaves behind
-  @volatile private[terminal] var inlineRows  = 0
+  @volatile private[terminal] var inlineRows                      = 0
 
   /** The terminal modes [[TerminalDressing]] found active when SIGTSTP handed the terminal back, so SIGCONT can put
     * them back. Written and read on JLine's signal-dispatch thread alone.
@@ -61,6 +73,11 @@ final class JLine3Backend private (private[terminal] val terminal: Terminal, col
     * thread, and read from `draw` and from the probe-free re-dress after a handover — hence `@volatile`.
     */
   @volatile private var probed: TerminalCapabilities = TerminalCapabilities.unknown
+
+  /** Which notification dialect this terminal is believed to speak, decided from the environment once. `None` means a
+    * notification would reach nobody — see [[DesktopNotificationProtocol.detect]].
+    */
+  private val notificationProtocol: Option[DesktopNotificationProtocol] = DesktopNotificationProtocol.detect(env)
 
   /** The terminal's last reported text-area size in pixels, and whether it has been asked at all.
     *
@@ -240,13 +257,19 @@ final class JLine3Backend private (private[terminal] val terminal: Terminal, col
       cookedAttributes = Some(terminal.enterRawMode())
       // Ask before telling. The probe has to come after raw mode — there is no reader for a reply before it — and
       // before the modes below, so a terminal that denies one is never sent it at all.
-      if probe then probed = queries.probeCapabilities(JLine3Backend.CapabilityProbeTimeout)
+      if probe then
+        probed = JLine3Backend.gatedByEnvironment(queries.probeCapabilities(JLine3Backend.CapabilityProbeTimeout), env)
       // modern input modes; a terminal that answered nothing still gets them, because an unsupported private mode is
       // ignored by an overwhelming majority of terminals and switching the feature off on silence would disable it
       // almost everywhere. Only an explicit denial skips one.
       if probed.bracketedPaste.usable then write(AnsiSequences.EnableBracketedPaste)
       if probed.focusReporting.usable then write(AnsiSequences.EnableFocusReporting)
       if probed.kittyKeyboard.usable then write(AnsiSequences.PushKittyKeyboard)
+      if probed.colorSchemeUpdates.usable then write(AnsiSequences.EnableColorSchemeUpdates)
+      if probed.unicodeWidth.usable then write(AnsiSequences.EnableUnicodeWidth)
+      // the one mode gated on an explicit yes: the signal-driven resize it supplements already works everywhere, so
+      // there is nothing to gain from asking a terminal that never said it understands the report
+      if probed.inBandResize == Support.Yes then write(AnsiSequences.EnableInBandResize)
     }
 
   /** Re-pushes the kitty keyboard flags with "report event types" added.
@@ -277,6 +300,9 @@ final class JLine3Backend private (private[terminal] val terminal: Terminal, col
         release(write(AnsiSequences.PopKittyKeyboard))
         release(write(AnsiSequences.DisableFocusReporting))
         release(write(AnsiSequences.DisableBracketedPaste))
+        release(write(AnsiSequences.DisableColorSchemeUpdates))
+        release(write(AnsiSequences.DisableUnicodeWidth))
+        release(write(AnsiSequences.DisableInBandResize))
         release(terminal.setAttributes(attributes))
         // Last, paired with the save in enableRawMode, so the shell resumes where its prompt started.
         release(write(AnsiSequences.RestoreCursor))
@@ -360,6 +386,36 @@ final class JLine3Backend private (private[terminal] val terminal: Terminal, col
     Backend.attempt {
       write(AnsiSequences.cursorShape(shape))
       cursorShape = shape
+    }
+
+  /** Writes OSC 22 to pick the mouse pointer's shape, unless the environment ruled pointer shapes out.
+    *
+    * Remembered like the caret's shape, so a handover resets it and the reacquire restores it. The write is skipped —
+    * not failed — when `capabilities.pointerShapes` is `No`: a multiplexer swallows the string, and an app has nothing
+    * to do about that.
+    */
+  override def setPointerShape(shape: PointerShape): Either[BackendError, Unit] =
+    Backend.attempt {
+      if probed.pointerShapes.usable then write(AnsiSequences.pointerShape(shape))
+      pointerShape = shape
+    }
+
+  /** Writes the notification in the dialect [[DesktopNotificationProtocol.detect]] chose, or nothing when the
+    * environment says nobody would see it.
+    */
+  override def notifyDesktop(title: String, body: String): Either[BackendError, Unit] =
+    Backend.attempt {
+      if probed.desktopNotifications.usable then
+        notificationProtocol.foreach(protocol => write(AnsiSequences.desktopNotification(protocol, title, body)))
+    }
+
+  /** Writes OSC 9;4, unless the environment ruled the indicator out. Remembered so a handover can clear it and the
+    * reacquire put it back, and so `close()` knows whether there is anything to clear.
+    */
+  override def setTaskbarProgress(progress: Option[Double]): Either[BackendError, Unit] =
+    Backend.attempt {
+      if probed.taskbarProgress.usable then write(AnsiSequences.taskbarProgress(progress))
+      taskbarProgress = progress
     }
 
   /** Writes CUP (`CSI row ; column H`) to park the terminal's own caret on `position`.
@@ -619,8 +675,25 @@ object JLine3Backend:
     * [[create]] is the production entry point; this exists so tests can drive a real backend over a pair of streams,
     * because `create` needs the controlling TTY that CI does not have.
     */
-  private[terminal] def wrapping(terminal: Terminal, colorDepth: ColorDepth): JLine3Backend =
-    JLine3Backend(terminal, colorDepth)
+  private[terminal] def wrapping(
+      terminal: Terminal,
+      colorDepth: ColorDepth,
+      env: Map[String, String] = sys.env,
+  ): JLine3Backend =
+    JLine3Backend(terminal, colorDepth, env)
+
+  /** `probed` with the three OSC features no terminal can be asked about ruled out where the environment rules them
+    * out: inside tmux or screen the multiplexer swallows an OSC string it does not know, so a pointer shape, a desktop
+    * notification or a taskbar progress written there reaches nobody. Everywhere else they stay as the probe left them
+    * — `Unknown`, which means "send it".
+    */
+  private[terminal] def gatedByEnvironment(
+      probed: TerminalCapabilities,
+      env: Map[String, String],
+  ): TerminalCapabilities =
+    if DesktopNotificationProtocol.insideMultiplexer(env) then
+      probed.copy(pointerShapes = Support.No, desktopNotifications = Support.No, taskbarProgress = Support.No)
+    else probed
 
   /** Opens the process's controlling terminal. Fails with `UnsupportedTerminal` when there is no usable TTY.
     *

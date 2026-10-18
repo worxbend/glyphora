@@ -362,19 +362,34 @@ private[dsl] object FocusPass:
 
   /** Rebuilds the tree with the theme's focus cue stamped on every node, the focused element marked (`props.focused =
     * true`), and every focusable wrapped in a [[TrackedElement]] that records its rendered area; a non-focusable
-    * element with user or built-in mouse behavior is wrapped in a [[PointerElement]] instead, which records its area
-    * for pointer-filtered mouse delivery. Focus indices are assigned in depth-first pre-order — the tab order; pointer
-    * ids are a separate numbering that no other pass reads.
+    * element with user or built-in mouse behavior, or with a pointer shape of its own, is wrapped in a
+    * [[PointerElement]] instead, which records its area for pointer-filtered mouse delivery and pointer-shape lookup.
+    * Focus indices are assigned in depth-first pre-order — the tab order; pointer ids are a separate numbering that no
+    * other pass reads.
     *
     * `focusStyle` goes onto *every* node, not only the focused one, because it is the app's theme cue and not a
     * per-element flag: a collection element paints its selected row in it whether or not it currently holds focus (see
     * [[ListElement]]), so a list sitting beside the focused one — or one in a subtree [[suppressFocus]] cleared for a
     * modal — still has to draw the app's highlight rather than the plain reverse-video default. `props.focused` is what
     * distinguishes the one element keystrokes go to, and it is set here on exactly one node.
+    *
+    * `bounds` is the host's node-bounds recorder when recording is on. Then *every* node — inert ones included, since
+    * they still paint — is additionally wrapped in a [[BoundsElement]] carrying its pre-order id and the id of its last
+    * descendant, placed *inside* any input wrapper so [[EventRouter]] still finds the `TrackedElement`/`PointerElement`
+    * where it looks for them. With `None` no wrapper is built and the tree is exactly what it was before recording
+    * existed — and `onBoundsDemand` is called for every [[BoundsAwareElement]] met on the way, which is how a host that
+    * is not recording learns that the tree it is about to paint has a consumer and records the next frame.
     */
-  def decorate(root: Element, tracker: FocusTracker, focusStyle: Style): Element =
+  def decorate(
+      root: Element,
+      tracker: FocusTracker,
+      focusStyle: Style,
+      bounds: Option[NodeBounds] = None,
+      onBoundsDemand: () => Unit = () => (),
+  ): Element =
     var counter        = 0
     var pointerCounter = 0
+    var nodeCounter    = 0
 
     def themed(element: Element, focused: Boolean): Element =
       element.withProps(
@@ -382,22 +397,42 @@ private[dsl] object FocusPass:
       )
 
     def transform(element: Element, ancestorInert: Boolean): Element =
-      val inert   = ancestorInert || element.props.inert
-      val current =
+      val inert    = ancestorInert || element.props.inert
+      val nodeId   = nodeCounter
+      nodeCounter += 1
+      if bounds.isEmpty then
+        element match
+          case _: BoundsAwareElement => onBoundsDemand()
+          case _                     => ()
+      val current  =
         if inert then themed(element, focused = false)
         else if element.props.focusable then
           val index = counter
           counter += 1
           TrackedElement(themed(element, focused = index == tracker.focusedIndex), index, tracker)
-        else if element.props.onMouse.isDefined || element.builtinMouseHandler.isDefined then
+        // a node that only asks for a pointer shape is a pointer target too: the shape is resolved by hit-testing, so a
+        // `link` with no handler still has to record where it painted
+        else if element.props.onMouse.isDefined || element.builtinMouseHandler.isDefined || element.pointerShape.isDefined
+        then
           val id = pointerCounter
           pointerCounter += 1
           PointerElement(themed(element, focused = false), id, tracker)
         else themed(element, focused = false)
       // Inert trees still paint, including deferred portals: keep theme and coordinate wrappers, but no input records.
-      current.withChildren(viewportWrapped(element, current.children.map(child => transform(child, inert))))
+      val children = viewportWrapped(element, current.children.map(child => transform(child, inert)))
+      val recorded = bounds.fold(current)(recorder => boundsWrapped(current, nodeId, nodeCounter - 1, recorder))
+      recorded.withChildren(children)
 
     transform(root, ancestorInert = false)
+
+  /** `current` with a [[BoundsElement]] around the themed node — *under* an input wrapper, never over it, so the walks
+    * in [[EventRouter]] that match on `TrackedElement`/`PointerElement` keep finding them at the node's own level.
+    */
+  private def boundsWrapped(current: Element, id: Int, lastDescendantId: Int, recorder: NodeBounds): Element =
+    current match
+      case tracked: TrackedElement => tracked.copy(inner = BoundsElement(tracked.inner, id, lastDescendantId, recorder))
+      case pointer: PointerElement => pointer.copy(inner = BoundsElement(pointer.inner, id, lastDescendantId, recorder))
+      case other                   => BoundsElement(other, id, lastDescendantId, recorder)
 
   /** A scroll view renders its content into an offscreen buffer, so every rect the content subtree is handed — and
     * hence every area recorded underneath it — is in content coordinates. Wrapping the content re-anchors those records

@@ -89,9 +89,18 @@ final class DisciplineSpec extends AnyFunSuite:
     * when `GLYPHORA_GOLDEN_UPDATE` is set, which the last test in this suite forbids for a verification run. What it
     * prints is "no comparison was made", which is precisely the fact a green run must not hide; `info(…)` would bury it
     * in a report nobody reads when they are regenerating a fixture by hand.
+    *
+    * `StdioCaptureSpec` and `StdioCaptureAppSpec` print *as the thing under test*: they cover `CaptureStdio`, whose
+    * whole job is to intercept a `println` made while a runner owns the terminal, and the assertions are about where
+    * that line ended up — above the UI, in a ring, or on the real stream, which each test has pointed at a buffer of
+    * its own before printing. `info(…)` would test nothing.
     */
   private val MayPrint: Set[String] =
-    Set("core/src/test/scala/io/worxbend/tui/core/LayoutCharacterisationSpec.scala")
+    Set(
+      "core/src/test/scala/io/worxbend/tui/core/LayoutCharacterisationSpec.scala",
+      "runtime/src/test/scala/io/worxbend/tui/runtime/StdioCaptureSpec.scala",
+      "dsl/src/test/scala/io/worxbend/tui/dsl/StdioCaptureAppSpec.scala",
+    )
 
   /** Main sources allowed a locale-sensitive call.
     *
