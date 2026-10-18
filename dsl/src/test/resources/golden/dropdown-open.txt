@@ -1,0 +1,8 @@
+▾ eu-west   R0
+╭──────────╮R1
+│ eu-west  │R2
+│ us-east  │R3
+│ ap-south │R4
+╰──────────╯R5
+            R6
+            R7

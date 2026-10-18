@@ -61,8 +61,8 @@ and only the current one is ever visible. That is right for three options and wr
 forty — choosing the thirtieth takes thirty keystrokes, and the user cannot see what they
 are choosing between.
 
-`dropdown(...)` shows the list. It draws one row while closed and, when opened, the whole
-option list beneath that row as a bordered, scrolling popup:
+`dropdown(...)` shows the list. It draws one row while closed and, when opened, floats the
+whole option list beneath that row as a bordered, scrolling popup:
 
 ```scala
 import io.worxbend.tui.dsl.*
@@ -81,7 +81,10 @@ Enter, Space or Down opens the list, and so does a click on the row. While it is
 Up and Down move the highlight, the wheel moves it too, and Enter or a click on an option
 commits that option through the callback. Escape closes the list and changes nothing — the
 highlight is not the chosen value until it is committed, which is what makes "open it,
-look around, back out" safe.
+look around, back out" safe. A click anywhere *outside* the list closes it too, and is
+spent on that: the control under the pointer does not also receive it, the way a click
+outside a menu dismisses the menu and nothing more. Tab closes the list on its way to the
+next control.
 
 The state carries the navigation those keys drive, for an app that wants its own
 bindings: `regionState.openAt(selected)` opens the list with the highlight parked on the
@@ -91,12 +94,12 @@ optionCount)` turns a clicked popup row into the option it shows.
 
 Two things are worth knowing before reaching for it. An open dropdown **consumes Escape**,
 so an app that binds Escape globally will not see it while a list is showing. And the popup
-is drawn inside the node's own area rather than floated over the screen, so while the list
-is open the node claims `1 + maxVisibleRows + 2` rows and whatever sits below it moves down.
-That is what lets it work inside any panel or column with no overlay machinery; the cost is
-that a dropdown near the bottom of a short area gets a clipped list rather than one that
-opens upwards. `maxVisibleRows` (8 by default) caps the popup, and a longer list scrolls
-inside it.
+floats over the frame the way a `portal` does rather than being drawn inside the node's
+own area: the node claims one row whether the list is open or not, nothing beside or below
+it moves when the list opens, and the list spills past the border of the panel or pane the
+row sits in. It opens beneath the row when the frame has room for it there and above the
+row when it does not, clipped to the frame either way. `maxVisibleRows` (8 by default)
+caps the popup, and a longer list scrolls inside it.
 
 ## One name for the chosen thing
 
@@ -662,7 +665,33 @@ def chatPane(using ReactiveScope, Theme): Element =
 ```
 
 Use `tree(nodes, TreeState)` for in-memory hierarchy and
-`directoryTree(state)` for filesystem snapshots. `DirectoryTreeState(root)` starts
+`directoryTree(state)` for filesystem snapshots.
+
+`TreeState()` is *positional*: it names a node by its path, the child index at each
+level, so `state.expanded += Seq(0)` expands the first root. That is right for a tree
+whose shape is fixed and wrong for one you refresh — reorder the nodes and the same
+path points at a different node, so the reader's expansion and highlight land on
+strangers. A keyed state names a node by something the node carries, mirroring
+`DataTableState.keyed`, and keeps the reader's place across a refresh:
+
+```scala
+// labels unique across the whole tree: key by label
+private val services = TreeState.keyed(_.label)
+// labels repeat across branches (README.md under src and under docs): key by the label path
+private val files    = TreeState.byLabelPath
+
+def view(using ReactiveScope, Theme): Element =
+  tree(nodesFrom(snapshot.get), services)   // "api" stays expanded and selected after every refresh
+```
+
+`expanded` and `selected` are then sets and options of *keys* — `services.selected`
+is `Some("api")`, `files.selected` is `Some(Seq("src", "README.md"))` — so an app reads
+which record is selected without mapping a path back through the nodes. Keys are
+compared with `==` and must be unique within the tree. The state's type names the key:
+`TreeState[Seq[Int]]` for the positional one, `TreeState[String]` for a tree keyed by
+label.
+
+`DirectoryTreeState(root)` starts
 **unloaded**. Construction, navigation and painting never touch the filesystem;
 `childrenOf` and `visiblePaths` read only installed snapshots. Create and retain the
 state outside `view`.
