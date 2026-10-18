@@ -63,7 +63,7 @@ trait FlexContainer extends Element:
   */
 final case class PanelElement(
     title: Option[String],
-    override val children: Seq[Element],
+    content: Seq[Element],
     borderType: w.BorderType = w.BorderType.Plain,
     titleBottom: Option[String] = None,
     titleStyle: Option[Style] = None,
@@ -77,9 +77,18 @@ final case class PanelElement(
     titleBottomAlignment: Alignment = Alignment.Right,
     extraTitles: Seq[w.BlockTitle] = Seq.empty,
     props: ElementProps = ElementProps(),
+    header: Option[Element] = None,
+    footer: Option[Element] = None,
+    headerAlignment: Alignment = Alignment.Right,
+    footerAlignment: Alignment = Alignment.Right,
 ) extends FlexContainer:
   type Self = PanelElement
   override def debugName: String = "panel"
+
+  /** The stacked content first, then the header and footer slots: the slots are ordinary children for focus order,
+    * hit-testing and theming, they are only painted somewhere else — into the border rows.
+    */
+  override def children: Seq[Element] = content ++ header ++ footer
 
   /** The block this panel frames itself with — one value, so `render` and the height measurement below cannot disagree
     * about how many cells the chrome costs.
@@ -99,11 +108,14 @@ final case class PanelElement(
       val framed  = block
       framed.render(area, buffer)
       val inner   = framed.inner(area)
-      w.Column(columnItems(children), spacing, flex).render(inner, buffer)
+      w.Column(columnItems(this.content), spacing, flex).render(inner, buffer)
       // the content style goes *under* whatever the children drew, as `withStyle` does: a child's own colour wins,
       // and a cell nobody styled — a gap between children, the background — takes the panel's
       val content = props.style
       if content != Style.Default then buffer.mapStyle(inner)(content.patch)
+      header.foreach(slot => PanelSlots.paintSlot(slot, area, area.y, headerAlignment, borders, buffer))
+      if area.height > 1 then
+        footer.foreach(slot => PanelSlots.paintSlot(slot, area, area.bottom - 1, footerAlignment, borders, buffer))
 
   def withFlex(mode: Flex): PanelElement    = copy(flex = mode)
   def withSpacing(cells: Int): PanelElement = copy(spacing = math.max(0, cells))
@@ -181,8 +193,23 @@ final case class PanelElement(
   def padding(vertical: Int, horizontal: Int): PanelElement = padded(w.Padding.symmetric(horizontal, vertical))
 
   private[dsl] def withProps(props: ElementProps): PanelElement                = copy(props = props)
-  private[dsl] override def withChildren(children: Seq[Element]): PanelElement = copy(children = children)
-  private[dsl] override def intrinsicHeight(width: Int): Option[Int]           =
+  private[dsl] override def withChildren(children: Seq[Element]): PanelElement =
+    val (body, slots) = children.splitAt(content.size)
+    val (top, bottom) = slots.splitAt(header.size)
+    copy(content = body, header = header.flatMap(_ => top.headOption), footer = footer.flatMap(_ => bottom.headOption))
+
+  /** An element written into the top border row, right-aligned unless `alignment` says otherwise — a count, a badge, a
+    * spinner beside the title. It costs no content row and never widens the box; it is cut to the border's width.
+    */
+  def header(slot: Element, alignment: Alignment = Alignment.Right): PanelElement =
+    copy(header = Some(slot), headerAlignment = alignment)
+
+  /** An element written into the bottom border row, right-aligned unless `alignment` says otherwise — the elements
+    * counterpart of `titleBottom`: a `badge("3")`, a `spinner`, a keybinding hint in its own colours.
+    */
+  def footer(slot: Element, alignment: Alignment = Alignment.Right): PanelElement =
+    copy(footer = Some(slot), footerAlignment = alignment)
+  private[dsl] override def intrinsicHeight(width: Int): Option[Int]              =
     constrainedHeight(framedHeight(width))
 
   /** The columns the widest child needs plus the frame's left and right cells and padding. Captions are not counted:
@@ -192,8 +219,8 @@ final case class PanelElement(
     val chrome = borderCells(w.Borders.Left) + borderCells(w.Borders.Right) + padding.horizontalCells
     constrainedWidth(
       Option
-        .when(children.nonEmpty)(
-          children.map(child => child.withProps(child.props.copy(constraint = None)).intrinsicWidth(height))
+        .when(content.nonEmpty)(
+          content.map(child => child.withProps(child.props.copy(constraint = None)).intrinsicWidth(height))
         )
         .fold(Option(0))(widths => Option.when(widths.forall(_.nonEmpty))(widths.flatten.max))
         .map(_ + chrome)
@@ -212,8 +239,8 @@ final case class PanelElement(
     val topInset    = rowsAbove(w.Borders.Top, w.TitlePosition.Top)
     val bottomInset = rowsAbove(w.Borders.Bottom, w.TitlePosition.Bottom)
     val rows        = topInset + bottomInset + padding.verticalCells
-    val gaps        = spacing * math.max(0, children.size - 1)
-    measuredHeights(children, math.max(0, width - chrome)).map(_.sum + gaps + rows)
+    val gaps        = spacing * math.max(0, content.size - 1)
+    measuredHeights(content, math.max(0, width - chrome)).map(_.sum + gaps + rows)
 
   /** One cell if that side of the frame is drawn, none if it is not — the column rule `w.Block.inner` applies. */
   private def borderCells(side: w.Borders): Int = if borders.hasAny(side) then 1 else 0
@@ -225,6 +252,22 @@ final case class PanelElement(
     */
   private def rowsAbove(side: w.Borders, position: w.TitlePosition): Int =
     if borders.hasAny(side) || blockTitles.exists(_.position == position) then 1 else 0
+
+private[dsl] object PanelSlots:
+
+  /** Paints a header or footer `slot` on row `y` of a panel's `area`: as wide as it measures (in display columns, so a
+    * CJK label counts two per character), cut to the run between the side borders when it is wider, and placed along
+    * that run by `alignment` — the rule the captions on the same row follow. A slot that cannot say how wide it is
+    * takes the whole run.
+    */
+  def paintSlot(slot: Element, area: Rect, y: Int, alignment: Alignment, borders: w.Borders, buffer: Buffer): Unit =
+    val insetLeft = if borders.hasAny(w.Borders.Left) then 1 else 0
+    val available = area.width - insetLeft - (if borders.hasAny(w.Borders.Right) && area.width > 1 then 1 else 0)
+    if available > 0 then
+      val wanted = slot.withProps(slot.props.copy(constraint = None)).intrinsicWidth(1).getOrElse(available)
+      val width  = math.max(0, math.min(wanted, available))
+      if width > 0 then
+        slot.widget.render(Rect(alignment.originAt(area.x + insetLeft, available, width), y, width, 1), buffer)
 
 /** Border glyph sets, on the one node type where a border exists at all.
   *

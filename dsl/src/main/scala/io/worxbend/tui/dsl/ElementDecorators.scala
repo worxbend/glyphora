@@ -368,6 +368,11 @@ extension [E <: Element](element: E)
   /** Blank cells around the element, per side — what `panel(...).borderless.padded(...)` was written for. */
   def padding(cells: w.Padding): DecoratedElement = DecoratedElement.around(element, Decoration.Pad(cells))
 
+  /** Padding that reads as `cells` even all the way round — `cells` rows above and below, twice that many columns
+    * either side — the same `Padding.proportional` a panel's `.padding(cells)` reserves.
+    */
+  def padding(cells: Int): DecoratedElement = padding(w.Padding.proportional(cells))
+
   /** `vertical` blank rows above and below, `horizontal` blank columns left and right: the CSS two-value shorthand. */
   def padding(vertical: Int, horizontal: Int): DecoratedElement =
     padding(w.Padding.symmetric(horizontal, vertical))

@@ -328,6 +328,39 @@ write for the wrong side.
 Padding is charged to the panel's measured height too, so a padded panel inside a
 `scrollView` still reports the rows it really occupies.
 
+## Decorate any element
+
+Five decorators work on every element, not only on `panel`:
+
+```scala
+text("ready").border()                                   // a frame in the theme's border style
+text("ready").border(BorderType.Rounded, Style.fg(Color.Green)) // glyphs and frame style
+column(fields*).padding(1)                               // 1 row above/below, 2 columns either side
+column(fields*).padding(Padding.symmetric(2, 1))         // per side, as on a panel
+column(fields*).padding(1, 2)                            // rows, then columns — the CSS shorthand
+statusLine.background(Style.bg(Color.Blue))              // a solid surface under the content
+dialogBody.border().shadow                               // a dimmed drop shadow, down and right
+widget(handDrawn).clip                                   // nothing it paints leaves its area
+```
+
+Each wraps the element in one decorator node whose child is the element itself, so the
+element keeps its focus, its key, its click handling and its place in the Tab order. The
+decorator's cells are added to the measurement (`text("hi").border()` is four columns by
+three rows), and a `.shadow` is paid for *inside* the area, like `Block`'s — the element
+gives up one column and one row to it. `.shadow(Shadow.shade(ShadowFill.LightShade))`
+picks another fill for terminals that ignore dim.
+
+Layout extensions written before a decorator move onto it, because they were about where
+the element goes and the decorated box now goes there: `text("ab").length(4).border()`
+is a four-column box. The fluent style builders follow the 0.20.0 split — `.fg(...)`,
+`.bg(...)`, `.styled(...)` after a decorator are the *content* style, layered under what
+the element drew, and a border's own colour is the style passed to `.border(...)`.
+Decorators compose in the order written, innermost first:
+`text("x").padding(0, 1).border().shadow` pads, then frames, then casts.
+
+On a `panel`, `.padding(...)` pads *inside* its border, as it always has, and takes the
+same three forms.
+
 ## Choose which sides have a border, and where the captions sit
 
 A `panel` frames all four sides by default. `.borders(sides)` picks which ones are
@@ -337,8 +370,12 @@ layout and the children:
 ```scala
 panel("Filters")(filterList).borders(Borders.Right)      // a column separator
 panel(header).borders(Borders.Top | Borders.Bottom)      // a horizontal band
-panel("Group")(members).padding(1).borderless            // grouping, no frame
+panel("Group")(members).borderless                       // a captioned group, no frame
 ```
+
+A `.borderless` panel that was only there for its padding is better written as the
+padding itself: `column(members*).padding(1)` — see
+[Decorate any element](#decorate-any-element).
 
 `Borders.Top`, `.Right`, `.Bottom`, `.Left`, `.All` and `.None` combine with `|`. Corner
 glyphs appear only where two drawn sides meet, so a half-framed panel has no dangling
@@ -366,6 +403,25 @@ panel("build")(body).titles(
 
 Captions sharing a border *and* an alignment are drawn as one run separated by a single
 space, in the order given, with `title`/`titleBottom` first.
+
+### Put an element in the border: `.header` and `.footer`
+
+A caption is a string. When the thing in the border is an element — a `badge` with a
+count, a `spinner` while the pane loads, a `button` — put it in a slot:
+
+```scala
+panel("Logs")(logLines).footer(badge("3"))                       // bottom border, right
+panel("Jobs")(jobRows).header(spinner("loading"))           // top border, right
+panel("Queue")(rows).footer(button("retry")(retry()), Alignment.Left)
+```
+
+A slot is written into its border row like a caption: it costs no content row, never
+widens the box, and is cut to the run between the corners — by display width, so a CJK
+label is cut on a whole character and the corners are never overwritten. It is as wide
+as it measures, and placed along the row by its alignment (right unless told otherwise).
+A slot is still a child of the panel, so a `button` in the footer takes focus and clicks
+like any other control. A slot on a side with no border drawn (`.borders(...)`) is not
+painted.
 
 ## Wrap and align text
 
