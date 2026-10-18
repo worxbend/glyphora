@@ -44,13 +44,47 @@ extension (handler: BuiltinKeyHandler)
   * hovered or pressed in any way the user should see — and otherwise the focus cue goes on first, the hover cue over it
   * and the pressed cue over that, each only when the node asked for one and the state holds. Pressed wins over hover
   * because a press is the stronger, briefer signal.
+  *
+  * A theme component for the node's role ([[StateStyles]], stamped by the focus pass) slots into the same order: its
+  * `base` goes *under* the node's own style, and each of its states that says something replaces the cue that state
+  * would otherwise take — the theme's `focus`/`disabled` styles, or the node's `.hoverStyle`/`.pressedStyle`. An
+  * explicit `.hoverStyle(...)` on the node still wins over the theme's hovered style, because it is the more specific
+  * of the two.
   */
 private def focusStyled(props: ElementProps): Style =
-  if props.isDisabled then props.style.patch(props.focusState.disabledStyle)
+  val states = props.focusState.component
+  val own    = states.base.patch(props.style)
+  if props.isDisabled then own.patch(StateStyles.stated(states.disabled).getOrElse(props.focusState.disabledStyle))
   else
-    val focused = if props.focused then props.style.patch(props.focusStyle) else props.style
-    val hovered = props.hoverStyle.filter(_ => props.hovered).fold(focused)(focused.patch)
-    props.pressedStyle.filter(_ => props.pressed).fold(hovered)(hovered.patch)
+    val focused  =
+      if props.focused then own.patch(StateStyles.stated(states.focused).getOrElse(props.focusStyle)) else own
+    val hoverCue = props.hoverStyle.orElse(StateStyles.stated(states.hovered))
+    val pressCue = props.pressedStyle.orElse(StateStyles.stated(states.pressed))
+    val hovered  = hoverCue.filter(_ => props.hovered).fold(focused)(focused.patch)
+    pressCue.filter(_ => props.pressed).fold(hovered)(hovered.patch)
+
+/** The node's own style with only its theme component's states layered on — no fallback to the theme's focus cue. For
+  * the nodes whose focus cue is something other than a restyled body (a text field's caret, a list's selected row), so
+  * a theme can still give them a resting, focused, hovered or disabled look of their own.
+  */
+private def componentStyled(props: ElementProps): Style =
+  val states = props.focusState.component
+  if states.isEmpty then props.style
+  else
+    val own = states.base.patch(props.style)
+    if props.isDisabled then own.patch(states.disabled)
+    else
+      val focused = if props.focused then own.patch(states.focused) else own
+      if props.hovered then focused.patch(states.hovered) else focused
+
+/** The selected row's highlight in a "pick a row" collection: the theme's `"list.selected"` component when it has one —
+  * merged over `"list"`, as every hierarchical lookup is — and the theme's focus cue otherwise, which is what these
+  * collections always drew their selection in.
+  */
+private def selectedRowStyle(props: ElementProps): Style =
+  val theme = props.focusState.theme
+  if theme.components.contains(ListRole.Selected.styleName) then theme.style(ListRole.Selected.styleName)
+  else props.focusStyle
 
 /** The theme colour a severity draws in — the mapping shared by the `notice`/`badge` factories and the toast stack,
   * which reverses it into a padded badge at its own call site.

@@ -373,6 +373,7 @@ final case class ButtonElement(
   type Self = ButtonElement
   override def debugName: String                                             = "button"
   override def accessibleName: String                                        = s"button $label"
+  private[dsl] override def componentRole: Option[ComponentRole]             = Some(ButtonRole.Default)
   def widget: Widget                                                         = w.Button(label, focusStyled(props))
   override def pointerShape: Option[PointerShape]                            =
     props.pointerShape.orElse(Some(PointerShape.Pointer))

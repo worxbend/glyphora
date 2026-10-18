@@ -94,6 +94,11 @@ trait Element:
     */
   def accessibleName: String = debugName
 
+  /** The component role this node type draws as when no `.variant(...)` says otherwise — `ButtonRole.Default` for a
+    * `button`, `InputRole` for the text fields. `None`, the default, takes no component styles from the theme.
+    */
+  private[dsl] def componentRole: Option[ComponentRole] = None
+
   /** The space this element claims inside a container when the user set nothing explicit — one-row widgets claim one
     * row vertically but their natural width (or a fill) horizontally.
     */

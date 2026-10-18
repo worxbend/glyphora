@@ -75,6 +75,7 @@ final class Theme private (
     val markdown: MarkdownTheme,
     val syntax: SyntaxTheme,
     val glyphs: GlyphSupport,
+    val components: Map[StyleName, StateStyles],
 ):
 
   /** This theme with the named fields replaced — the one place the builders below spell out the constructor. */
@@ -93,6 +94,7 @@ final class Theme private (
       markdown: MarkdownTheme = markdown,
       syntax: SyntaxTheme = syntax,
       glyphs: GlyphSupport = glyphs,
+      components: Map[StyleName, StateStyles] = components,
   ): Theme =
     new Theme(
       name,
@@ -109,6 +111,7 @@ final class Theme private (
       markdown,
       syntax,
       glyphs,
+      components,
     )
 
   /** The name [[toString]] prints and a theme switcher shows; the presets are `"dark"`, `"light"`, `"high-contrast"`.
@@ -155,6 +158,30 @@ final class Theme private (
     */
   def withGlyphs(ceiling: GlyphSupport): Theme = updated(glyphs = ceiling)
 
+  /** The styles every element of `role` draws in, per interaction state — see [[StateStyles]]. Replaces whatever this
+    * theme held under exactly that name; a parent or child name is untouched, and still merges with this one when it is
+    * looked up.
+    */
+  def withComponent(role: ComponentRole, styles: StateStyles): Theme = withComponent(role.styleName, styles)
+
+  /** [[withComponent]] by name, for a role the application spells as text. */
+  def withComponent(name: StyleName, styles: StateStyles): Theme =
+    updated(components = components.updated(name, styles))
+
+  /** The [[StateStyles]] for `role`, merged down its name's lineage: `"button.primary"` is `"button"` with
+    * `"button.primary"` layered over it, field by field, so a child only says what makes it different. A name nothing
+    * in the lineage mentions resolves to [[StateStyles.Empty]], which draws exactly as an unthemed element does.
+    */
+  def component(role: ComponentRole): StateStyles = component(role.styleName)
+
+  /** [[component]] by name. */
+  def component(name: StyleName): StateStyles =
+    if components.isEmpty then StateStyles.Empty
+    else name.lineage.foldLeft(StateStyles.Empty)((merged, step) => components.get(step).fold(merged)(merged.patch))
+
+  /** The resting style `name` resolves to — the `base` of [[component]], for a lookup that has no states. */
+  def style(name: StyleName): Style = component(name).base
+
   /** Structural equality over every field, reference equality tried first; the two cheap fields are compared before the
     * twelve styles and palettes.
     */
@@ -165,7 +192,7 @@ final class Theme private (
         (name == that.name && glyphs == that.glyphs && primary == that.primary && accent == that.accent &&
           muted == that.muted && error == that.error && warning == that.warning && success == that.success &&
           surface == that.surface && border == that.border && focus == that.focus && loading == that.loading &&
-          markdown == that.markdown && syntax == that.syntax)
+          markdown == that.markdown && syntax == that.syntax && components == that.components)
       case _           => false
 
   /** Hashes every field [[equals]] compares, so a `Set[Theme]` or a memo keyed by theme cannot conflate two that differ
@@ -185,7 +212,8 @@ final class Theme private (
     hash = 31 * hash + loading.hashCode
     hash = 31 * hash + markdown.hashCode
     hash = 31 * hash + syntax.hashCode
-    31 * hash + glyphs.hashCode
+    hash = 31 * hash + glyphs.hashCode
+    31 * hash + components.hashCode
 
   /** `Theme(dark)` — the name alone. Fourteen styles and palettes printed in full were unreadable in exactly the place
     * a theme is printed most, a failed assertion, and the name is what distinguishes one theme from another to a
@@ -219,6 +247,7 @@ object Theme:
       markdown: MarkdownTheme,
       syntax: SyntaxTheme,
       glyphs: GlyphSupport = GlyphSupport.Full,
+      components: Map[StyleName, StateStyles] = Map.empty,
   ): Theme =
     new Theme(
       name,
@@ -235,6 +264,7 @@ object Theme:
       markdown,
       syntax,
       glyphs,
+      components,
     )
 
   // The three shared code palettes are declared before the themes that name them: `object` members initialise top to
