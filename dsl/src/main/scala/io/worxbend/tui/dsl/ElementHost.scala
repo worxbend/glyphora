@@ -63,7 +63,7 @@ final class ElementHost:
     */
   def render(area: Rect, buffer: Buffer, theme: Theme, view: View)(using scope: ReactiveScope): Unit =
     val raw = session.resolve(view, Size(area.width, area.height), theme)
-    renderTree(raw, theme.focus, tree => session.paint(tree, area, buffer))
+    renderTree(raw, theme.focus, tree => session.paint(tree, area, buffer), theme.disabled)
 
   /** [[render]] against a runner's `Frame`, for a host inside a `TerminalRunner`. */
   def render(frame: Frame, theme: Theme, view: View)(using scope: ReactiveScope): Unit =
@@ -74,7 +74,7 @@ final class ElementHost:
   ): Unit =
     val raw = session.resolve(view, Size(frame.area.width, frame.area.height), theme)
     beforeFocus()
-    renderTree(raw, theme.focus, tree => paintWithCaret(frame, tree))
+    renderTree(raw, theme.focus, tree => paintWithCaret(frame, tree), theme.disabled)
 
   /** Paints `tree` into `frame`, then parks the frame's caret where the focused text node said its insertion point is.
     *
@@ -96,11 +96,23 @@ final class ElementHost:
     * that decides *where focus is* lives here, so the app and an embedding host cannot answer that question
     * differently.
     */
-  private[dsl] def renderTree(raw: Element, focusStyle: Style, paint: Element => Unit): Unit =
+  private[dsl] def renderTree(
+      raw: Element,
+      focusStyle: Style,
+      paint: Element => Unit,
+      disabledStyle: Style = Style.Default.dim,
+  ): Unit =
     tracker.reconcile(FocusPass.focusKeys(raw), FocusPass.autofocusRequest(raw))
     val recorder = Option.when(recordBounds)(bounds)
     // a tree with a consumer of bounds in it (a click-outside backdrop) turns recording on for the frames after this one
-    val tree     = FocusPass.decorate(raw, tracker, focusStyle, recorder, onBoundsDemand = () => recordBounds = true)
+    val tree     = FocusPass.decorate(
+      raw,
+      tracker,
+      focusStyle,
+      recorder,
+      onBoundsDemand = () => recordBounds = true,
+      disabledStyle = disabledStyle,
+    )
     lastTree = Some(tree)
     recorder.foreach(_.begin())
     try paint(tree)
@@ -118,6 +130,24 @@ final class ElementHost:
   def boundsOf(key: String): Option[Rect] =
     recordBounds = true
     bounds.current.boundsOf(key)
+
+  /** How the element declared with `.key(key)` is announced on the last frame: its [[Element.accessibleName]] followed
+    * by the interaction states that hold — `button Save, disabled`, `input, focused`. This is the text a status line,
+    * an announcement region or a test reads to tell a screen-reader user what the cursor is on; colour alone (the
+    * dimmed disabled style, the reversed focus cue) announces nothing. `None` when no node on the last frame carried
+    * the key. Render-thread only.
+    */
+  def accessibleLabel(key: String): Option[String] =
+    lastTree.flatMap(find(_, key)).map { node =>
+      val props  = node.props
+      val states =
+        Option.when(props.isDisabled)("disabled") ++ Option.when(props.focused)("focused") ++
+          Option.when(props.pressed)("pressed")
+      (node.accessibleName +: states.toSeq).mkString(", ")
+    }
+
+  private def find(node: Element, key: String): Option[Element] =
+    if node.props.focusKey.contains(key) then Some(node) else node.children.iterator.flatMap(find(_, key)).nextOption()
 
   /** The focus-decorated tree the last [[render]] painted — what events are routed against and what
     * [[ElementTreeSnapshot]] prints. `None` before the first frame. Render-thread only, like the tree itself.

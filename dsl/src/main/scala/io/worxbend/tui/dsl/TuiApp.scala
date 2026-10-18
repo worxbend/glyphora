@@ -464,6 +464,12 @@ trait TuiApp:
     * Readable from the test thread once the frame has been observed as drawn (`pilot.waitForIdle()` first): the answer
     * is the last *published* frame's record, never the paint in progress.
     */
+  /** How the element declared with `.key(key)` is announced — see [[ElementHost.accessibleLabel]]: `button Save,
+    * disabled`. `None` when no element on the last frame carried the key or the app is not running. Render-thread only.
+    */
+  final def accessibleLabel(key: String): Option[String] =
+    activeHost.get().flatMap(_.accessibleLabel(key))
+
   final def boundsOf(key: String): Option[Rect] =
     boundsRequested = true
     activeHost.get().flatMap(_.boundsOf(key))

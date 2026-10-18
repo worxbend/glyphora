@@ -529,6 +529,29 @@ extension [E <: Element](element: E)
   def focusable: element.Self =
     element.withProps(element.props.copy(focusable = true))
 
+  /** Disables this element and everything inside it while `condition` holds: the subtree leaves the tab order (`Tab`
+    * skips it, `focusTo` refuses it), none of its handlers or built-in behaviours run — a click on a disabled button
+    * neither activates it nor moves focus, though it still lands there rather than falling through to what is drawn
+    * underneath — and every interactive node in it draws in the theme's `disabled` style. The pointer over it is
+    * `PointerShape.NotAllowed`. A disabled node stays in the tree and keeps painting, so the layout does not shift; the
+    * element-tree snapshot marks it `disabled`.
+    *
+    * `condition` is the usual shape: `button("Save")(save()).disabled(!form.isValid)`.
+    */
+  def disabled(condition: Boolean = true): element.Self =
+    element.withProps(element.props.copy(disabled = condition))
+
+  /** The style layered over this element while the pointer rests on it. Needs mouse-motion tracking, which a `TuiApp`
+    * turns on by itself once a frame asks for a hover cue — see `RunnerConfig.withMouseMotion` for an embedding host.
+    * Only the innermost target under the pointer is hovered, so a container's cue shows where none of its children is.
+    */
+  def hoverStyle(style: Style): element.Self =
+    element.withProps(element.props.copy(hoverStyle = Some(style)))
+
+  /** The style layered over this element from a button going down on it to the release, wherever that lands. */
+  def pressedStyle(style: Style): element.Self =
+    element.withProps(element.props.copy(pressedStyle = Some(style)))
+
   /** Asks for the keyboard when this element first appears — a search box on a screen that opens, the first field of a
     * form, the default button of a dialog. Without it, focus starts on whichever focusable happens to come first in the
     * tab order, and an app that wanted otherwise had to reach into the framework's own focus bookkeeping, which is not
