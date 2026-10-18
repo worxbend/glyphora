@@ -2289,6 +2289,51 @@ scrolls, the selected row is highlighted across every column, and each cell is c
 its column's display width through `CharWidth`, so a CJK cell never spills half a
 character into its neighbour. `cells` is only called for rows on screen.
 
+### Inspecting a value
+
+`inspect(value)` draws any value as a tree — the debugging view Rich's `inspect` and
+Term.jl give you:
+
+```scala
+enum Mode:
+  case Dev, Prod
+final case class Database(host: String, port: Int, replicas: List[String])
+final case class Config(name: String, mode: Mode, database: Database, flags: Map[String, Boolean], timeout: Option[Int])
+
+inspect(config)
+```
+
+```text
+Config
+├─ name: "glyphora"
+├─ mode: Prod
+├─ database: Database
+│  ├─ host: "db.internal"
+│  ├─ port: 5432
+│  └─ replicas: List("replica-a", "replica-b")
+├─ flags: Map("beta" -> true)
+└─ timeout: None
+```
+
+The description comes from a `Pretty[A]` typeclass in `tui-macros`, derived at compile
+time through the type's `Mirror` for any case class, enum or sealed hierarchy — no
+reflection, so it works in a native image. Primitives, `String`, `Option` and the
+standard immutable collections have instances already; declare a given beside a type
+to change how it is shown, which is also how a field is kept off the screen:
+
+```scala
+final case class Token(value: String)
+object Token:
+  given Pretty[Token] = Pretty.atom(_ => "<redacted>")
+```
+
+`derivePretty[A]` is the explicit form, for a `given` written beside a type. A node
+whose children are all atoms stays on one row while that row is at most
+`inlineWidth` columns (60 by default); everything else is expanded. The widget,
+`Inspect(value: PrettyValue, …)`, takes the `PrettyValue` description directly —
+`Atom`, `Seq`, `Map`, `Product(name, fields)` — for values described by hand, and is
+`Measured`, so the node claims exactly its rows.
+
 ## Drop to a raw Widget
 
 The DSL is not a separate renderer. Any core `Widget` can become a leaf:

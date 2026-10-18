@@ -1033,3 +1033,11 @@ private[dsl] trait ElementFactories:
     * expansion follow a node across a refresh.
     */
   def treeTable[K](table: w.TreeTable[K], state: w.TreeState[K]): TreeTableElement[K] = TreeTableElement(table, state)
+
+  /** A tree view of any value, for debugging: `inspect(config)` draws a case class, enum, collection or map with
+    * `├─`/`└─` guides, field names in the theme's accent, short all-atom nodes on one row. The description comes from a
+    * `Pretty[A]`, which any case class, enum or sealed hierarchy derives through its `Mirror` — declare a `given
+    * Pretty[A]` beside a type to change (or redact) how it is shown. See [[w.Inspect]].
+    */
+  def inspect[A](value: A)(using pretty: io.worxbend.tui.macros.Pretty[A], theme: Theme): InspectElement =
+    InspectElement(pretty.describe(value, PrettyValueShape), theme.accent, theme.muted)

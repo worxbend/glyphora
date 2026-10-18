@@ -39,6 +39,7 @@ export Element.{
   indeterminateBar,
   indeterminateBarAt,
   input,
+  inspect,
   interactiveWidget,
   layers,
   line,
@@ -104,6 +105,8 @@ export Element.{
 // `deriveCodec` stays behind the macros import with `deriveForm`, because `Codec.derived` already summons it for every
 // mirrored type and the explicit form is only ever written beside a type definition.
 export io.worxbend.tui.macros.{Codec, DerivedField, FieldValidation, FormSpec}
+// `inspect(value)` takes a `Pretty[A]`, and an app redacting a field writes `given Pretty[Secret] = Pretty.atom(...)`.
+export io.worxbend.tui.macros.{Pretty, PrettyShape}
 
 // Every core type the exported API's own signatures mention, so a view never needs a second import.
 //
@@ -356,6 +359,7 @@ export io.worxbend.tui.widgets.{
   Paging,
   Painter,
   ProgressLabel,
+  PrettyValue,
   ProgressPreset,
   RangeSliderState,
   RangeThumb,

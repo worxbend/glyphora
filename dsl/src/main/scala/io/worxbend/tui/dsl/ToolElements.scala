@@ -1,6 +1,7 @@
 package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Color, KeyCode, KeyEvent, KeyModifiers, MouseEventKind, Style, Widget}
+import io.worxbend.tui.macros.PrettyShape
 import io.worxbend.tui.widgets as w
 
 /** A prototyping stand-in: a dashed box with `label` centred in it and the size the layout actually gave it written
@@ -239,3 +240,29 @@ final case class TreeTableElement[K](
         case KeyEvent(KeyCode.Left, _) if state.selected.exists(state.expanded.contains)   => state.toggle(nodes)
       }.orElse(selectionKeys(() => state.selectNext(nodes), () => state.selectPrevious(nodes)))
     )
+
+/** A read-only tree view of a described value — see [[w.Inspect]]. Claims exactly the rows its tree measures, so it
+  * stacks in a `column` like text; put it in a [[scrollView]] when the value is taller than the screen.
+  */
+final case class InspectElement(
+    value: w.PrettyValue,
+    labelStyle: Style,
+    guideStyle: Style,
+    props: ElementProps = ElementProps(),
+) extends Element:
+  type Self = InspectElement
+  override def debugName: String                                  = "inspect"
+  private def inspector: w.Inspect                                =
+    w.Inspect(value, style = props.style, labelStyle = labelStyle, guideStyle = guideStyle)
+  def widget: Widget                                              = inspector
+  private[dsl] def withProps(props: ElementProps): InspectElement = copy(props = props)
+  private[dsl] override def claim: SizeClaim = inspector.heightAt(0).fold(SizeClaim.Fill)(SizeClaim.rows)
+
+/** The [[PrettyShape]] that builds `tui-widgets`' [[w.PrettyValue]] — the glue between the derivation in `tui-macros`
+  * and the widget, neither of which can name the other.
+  */
+private[dsl] object PrettyValueShape extends PrettyShape[w.PrettyValue]:
+  def atom(text: String): w.PrettyValue                                              = w.PrettyValue.Atom(text)
+  def sequence(name: String, items: Seq[w.PrettyValue]): w.PrettyValue               = w.PrettyValue.Seq(name, items)
+  def map(name: String, entries: Seq[(w.PrettyValue, w.PrettyValue)]): w.PrettyValue = w.PrettyValue.Map(name, entries)
+  def product(name: String, fields: Seq[(String, w.PrettyValue)]): w.PrettyValue = w.PrettyValue.Product(name, fields)
