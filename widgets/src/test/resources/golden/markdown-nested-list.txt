@@ -1,0 +1,8 @@
+• fruit
+  ◦ apple
+    ▪ braeburn
+    ▪ gala
+  ◦ pear
+• veg
+1. first
+  1. nested ordinal
