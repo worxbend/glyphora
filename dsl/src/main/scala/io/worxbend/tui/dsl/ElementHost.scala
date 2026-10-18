@@ -43,7 +43,7 @@ final class ElementHost:
     * snapshot and the click-outside backdrop read. Off by default because it costs a wrapper per node per frame; a call
     * to [[boundsOf]] switches it on, as does `TuiApp` for a headless run and for a click-outside modal.
     */
-  var recordBounds: Boolean = false
+  @volatile var recordBounds: Boolean = false
 
   /** Retires this mount's hooks, focus history and dispatch tree. The next render starts a fresh mount. Call only
     * between frames on the owning thread. Caller-owned state, subscriptions and resources are not closed: the embedding
