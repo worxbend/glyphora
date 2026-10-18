@@ -38,9 +38,15 @@ trait Element:
   type Self >: this.type <: Element
 
   def props: ElementProps
-  def style: Style           = props.style
+  def style: Style = props.style
+
+  /** This element with `style` as its own — the *content* style on every node: a text's text, a list's body, a panel's
+    * children and inner area. A container's border is `frameStyle` instead. The fluent builders (`.fg`, `.bold`,
+    * `.styled(...)`) edit the same style rather than replacing it.
+    */
+  def style(style: Style): Self = withProps(props.copy(style = style))
   def widget: Widget
-  def children: Seq[Element] = Seq.empty
+  def children: Seq[Element]    = Seq.empty
 
   /** This node rebuilt with different props — the single write path behind every styling and layout extension. */
   private[dsl] def withProps(props: ElementProps): Self
@@ -93,6 +99,11 @@ trait Element:
     * [[ElementHost.accessibleLabel]] appends. Defaults to [[debugName]]; a node with a label of its own says it.
     */
   def accessibleName: String = debugName
+
+  /** The component role this node type draws as when no `.variant(...)` says otherwise — `ButtonRole.Default` for a
+    * `button`, `InputRole` for the text fields. `None`, the default, takes no component styles from the theme.
+    */
+  private[dsl] def componentRole: Option[ComponentRole] = None
 
   /** The space this element claims inside a container when the user set nothing explicit — one-row widgets claim one
     * row vertically but their natural width (or a fill) horizontally.

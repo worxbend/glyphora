@@ -26,6 +26,7 @@ final case class ListElement(
 ) extends Element:
   type Self = ListElement
   override def debugName: String                                             = "list"
+  private[dsl] override def componentRole: Option[ComponentRole]             = Some(ListRole)
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some(wheelScrolls(() => state.selectPrevious(items.size), () => state.selectNext(items.size)))
 
@@ -52,8 +53,8 @@ final case class ListElement(
       items,
       direction = direction,
       highlightSpacing = highlightSpacing,
-      style = props.style,
-      highlightStyle = props.focusStyle,
+      style = componentStyled(props),
+      highlightStyle = selectedRowStyle(props),
       highlightSymbol = highlightSymbolOverride.getOrElse("> "),
     )
     (area, buffer) => view.render(area, buffer, state)
@@ -81,11 +82,12 @@ final case class TreeElement(
 ) extends Element:
   type Self = TreeElement
   override def debugName: String                                             = "tree"
+  private[dsl] override def componentRole: Option[ComponentRole]             = Some(ListRole)
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some(wheelScrolls(() => state.selectPrevious(nodes), () => state.selectNext(nodes)))
   def widget: Widget                                                         =
     // no whole-body focus styling: the selection highlight is the focus cue for scrollable widgets
-    val tree = w.Tree(nodes, style = props.style, highlightStyle = props.focusStyle)
+    val tree = w.Tree(nodes, style = componentStyled(props), highlightStyle = selectedRowStyle(props))
     (area, buffer) => tree.render(area, buffer, state)
   private[dsl] def withProps(props: ElementProps): TreeElement               = copy(props = props)
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
@@ -106,8 +108,9 @@ final case class MenuElement(
 ) extends Element:
   type Self = MenuElement
   override def debugName: String                                             = "menu"
+  private[dsl] override def componentRole: Option[ComponentRole]             = Some(ListRole)
   def widget: Widget                                                         =
-    val menu = w.Menu(items, style = props.style, highlightStyle = props.focusStyle)
+    val menu = w.Menu(items, style = componentStyled(props), highlightStyle = selectedRowStyle(props))
     (area, buffer) => menu.render(area, buffer, state)
   private[dsl] def withProps(props: ElementProps): MenuElement               = copy(props = props)
   private[dsl] override def claim: SizeClaim                                 =
@@ -158,6 +161,7 @@ final case class SelectionListElement(
 ) extends Element:
   type Self = SelectionListElement
   override def debugName: String                                             = "selectionList"
+  private[dsl] override def componentRole: Option[ComponentRole]             = Some(ListRole)
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some(wheelScrolls(() => state.selectPrevious(items.size), () => state.selectNext(items.size)))
   def widget: Widget                                                         =
@@ -165,7 +169,7 @@ final case class SelectionListElement(
       val marker = if selected.contains(index) then "[x] " else "[ ] "
       Line.raw(marker + item)
     }
-    val view     = w.ListView(rendered, style = props.style, highlightStyle = props.focusStyle)
+    val view     = w.ListView(rendered, style = componentStyled(props), highlightStyle = selectedRowStyle(props))
     (area, buffer) => view.render(area, buffer, state)
   private[dsl] def withProps(props: ElementProps): SelectionListElement      = copy(props = props)
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
@@ -192,10 +196,11 @@ final case class FilePickerElement(
 ) extends Element:
   type Self = FilePickerElement
   override def debugName: String                                             = "filePicker"
+  private[dsl] override def componentRole: Option[ComponentRole]             = Some(ListRole)
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some(wheelScrolls(() => state.tree.selectPrevious(), () => state.tree.selectNext()))
   def widget: Widget                                                         =
-    val tree = w.DirectoryTree(style = props.style, highlightStyle = props.focusStyle)
+    val tree = w.DirectoryTree(style = componentStyled(props), highlightStyle = selectedRowStyle(props))
     (area, buffer) =>
       val treeArea   = Rect(area.x, area.y, area.width, math.max(0, area.height - 1))
       tree.render(treeArea, buffer, state.tree)
@@ -229,10 +234,11 @@ final case class DirectoryTreeElement(
 ) extends Element:
   type Self = DirectoryTreeElement
   override def debugName: String                                             = "directoryTree"
+  private[dsl] override def componentRole: Option[ComponentRole]             = Some(ListRole)
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some(wheelScrolls(() => state.selectPrevious(), () => state.selectNext()))
   def widget: Widget                                                         =
-    val tree = w.DirectoryTree(style = props.style, highlightStyle = props.focusStyle)
+    val tree = w.DirectoryTree(style = componentStyled(props), highlightStyle = selectedRowStyle(props))
     (area, buffer) => tree.render(area, buffer, state)
   private[dsl] def withProps(props: ElementProps): DirectoryTreeElement      = copy(props = props)
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =

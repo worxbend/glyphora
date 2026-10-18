@@ -185,7 +185,7 @@ class AirSensorApp(
       ).length(1),
       progressBar(metric.ratio(reading)).bare.ramp(ColorRamp.Traffic).length(1),
       text(s"of ${metric.scaleText}").dim.length(1),
-    ).styled(_.patch(band.style))
+    ).frameStyle(_.patch(band.style))
 
   private def historyPane(reading: Reading)(using ReactiveScope, Theme): Element =
     val readings = history.get

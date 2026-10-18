@@ -513,10 +513,30 @@ text("production")
   .bg(Color.Red)
 
 panel("Audit log")(logView).rounded
-panel("Danger zone")(dangerView).doubleBorder.fg(Color.Red)
+panel("Danger zone")(dangerView).doubleBorder.frameStyle(_.withFg(Color.Red))
 panel("Now playing")(nowPlaying).thick
 panel("Preference")(body).borderType(userChoice)
 ```
+
+### Content style and frame style
+
+`style` means the same thing on every node: the style its *content* is drawn in. On a
+`text` that is the text, on a `list` the body, and on a `panel` the children and the
+blank cells around them, layered *under* whatever the children set so a child's own
+colour still wins. A container's border is a separate style, `frameStyle`:
+
+```scala
+panel("Disk")(usage)
+  .frameStyle(_.withFg(Color.Red))   // the border and, without a titleStyle, the caption
+  .titleStyle(_.bold)                // the caption on its own
+  .style(Style.fg(Color.Green))      // the content: children and the inner area
+```
+
+`.frameStyle(style)` replaces the theme's `border`; `.frameStyle(_.bold)` edits it.
+`.style(s)` replaces an element's own style, and `.fg`, `.bold`, `.styled(...)` edit
+it, on a panel exactly as on a text. Before 0.20.0 the style builders on a panel
+recoloured its border; a call written that way now recolours the content, so move it to
+`.frameStyle(...)`.
 
 Four border glyph sets exist: the square default, `.rounded` (`╭─╮`), `.doubleBorder`
 (`╔═╗`), and `.thick` (`┏━┓`), which gives the same emphasis as a double border in one
@@ -613,9 +633,14 @@ withStyle(_.withFg(Color.Cyan)) {
 }
 ```
 
-Descendants can still add or override their own style. Raw `widget(...)` leaves and
-images intentionally ignore the element style because their renderer owns its
-cells directly.
+Descendants can still add or override their own style, and nested `withStyle` calls
+layer inner over outer. Raw `widget(...)` leaves and images intentionally ignore the
+element style because their renderer owns its cells directly.
+
+`withStyle` is a cascade rather than a rewrite: it wraps the subtree in one node and the
+style reaches each descendant when the frame is painted, on the pass the host already
+makes over every node. Wrapping a thousand-node subtree costs one node, not a thousand
+rebuilt ones, so it is fine to call inside `view` on every frame.
 
 ## Work with text values directly
 
@@ -1108,7 +1133,10 @@ signature is `def view(using ReactiveScope, Theme)`), and the compiler passes it
 to helpers that ask for it. A helper that does *not* ask falls back to the library
 default and silently renders dark-theme colors in a light-theme app.
 
-`Theme.Dark`, `Theme.Light`, and `Theme.HighContrast` are built in. A custom theme is a
+`Theme.Dark`, `Theme.Light`, `Theme.HighContrast` and six palette presets
+(`Theme.Dracula`, `Theme.Catppuccin`, `Theme.Nord`, `Theme.Gruvbox`, `Theme.Solarized`,
+`Theme.Ansi16`) are built in; [The app shell](./app-shell#theme-presets) lists them,
+and covers component styles and theme files. A custom theme is a
 value of semantic styles — `primary`, `accent`, `muted`, `error`, `warning`, `success`,
 `surface`, `border`, `focus` — plus the three grouped sub-palettes `loading`,
 `markdown`, and `syntax`. Several factories read them for you already: `panel` and
@@ -1118,6 +1146,26 @@ progress-and-spinner family reads `loading`, and `markdown` renders through
 `selectionList`, `filePicker`, `directoryTree` — draws it in `focus`, focused or not,
 because the focus pass stamps the theme's cue onto the whole tree rather than onto the
 one element holding the keyboard. See [The app shell](./app-shell) for live switching.
+
+## Styles from text, and back again
+
+`Style.parse` reads a whole style in one line — the spelling theme files use — and
+`Style.render` writes it back:
+
+```scala
+Style.parse("bold #ff0000 on black")      // Right(bold, fg #ff0000, bg Black)
+Style.parse("italic bright cyan on 236")  // two-word colour names keep their space
+Style.parse("not-bold curly-underline underline-color red link https://example.com")
+Style.parse("bold chartreuse")            // Left("'chartreuse' is not a style word or a colour")
+Style.render(Style.Default.dim.withFg(Color.Cyan)) // "dim Cyan"
+```
+
+The words come in any order: attributes (`bold`, `dim`, `italic`, `underline`,
+`blink`, `rapid-blink`, `reverse`, `hidden`, `crossed-out`) and their `not-` forms,
+the underline variants (`double-underline`, `curly-underline`, …), a colour on its own
+for the foreground, `on <colour>` for the background, `underline-color <colour>`, and
+`link <url>`. `default` or an empty string is `Style.Default`. Every style `render`
+writes parses back to an equal style.
 
 ## Colors from text, and back again
 

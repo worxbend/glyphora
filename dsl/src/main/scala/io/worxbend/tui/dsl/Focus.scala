@@ -492,27 +492,46 @@ private[dsl] object FocusPass:
       disabledStyle: Style = Style.Default.dim,
       onMotionDemand: () => Unit = () => (),
       onCueDemand: () => Unit = () => (),
+      theme: Theme = Theme.default,
   ): Element =
     var counter        = 0
     var pointerCounter = 0
     var nodeCounter    = 0
 
-    def themed(element: Element, focused: Boolean, disabled: Boolean, target: Option[InputTarget]): Element =
+    def themed(
+        element: Element,
+        focused: Boolean,
+        disabled: Boolean,
+        target: Option[InputTarget],
+        component: StateStyles,
+        inherited: Style,
+    ): Element =
       val live = !disabled && target.isDefined
       element.withProps(
-        element.props.copy(focusState =
-          element.props.focusState.copy(
+        element.props.copy(
+          style = if inherited eq Style.Default then element.props.style else inherited.patch(element.props.style),
+          focusState = element.props.focusState.copy(
             focused = focused,
             focusStyle = focusStyle,
             disabled = disabled,
             disabledStyle = disabledStyle,
             hovered = live && tracker.hoveredTarget == target,
             pressed = live && tracker.pressedTarget == target,
-          )
+            component = component,
+            theme = theme,
+          ),
         )
       )
 
-    def transform(element: Element, ancestorInert: Boolean, ancestorDisabled: Boolean): Element =
+    def transform(built: Element, ancestorInert: Boolean, ancestorDisabled: Boolean, inherited: Style): Element =
+      // a node a themed factory built against the ambient default theme takes this frame's theme instead; a `withStyle`
+      // scope is marked applied, because the cascade it asks for happens right here, on the way down
+      val element  = LateBinding.resolve(built, theme) match
+        case scope: StyleScopeElement => scope.copy(applied = true)
+        case other                    => other
+      val cascade  = element match
+        case scope: StyleScopeElement => inherited.patch(scope.cascade)
+        case _                        => inherited
       val inert    = ancestorInert || element.props.inert
       val disabled = ancestorDisabled || element.props.disabled
       val nodeId   = nodeCounter
@@ -521,17 +540,25 @@ private[dsl] object FocusPass:
         element match
           case _: BoundsAwareElement => onBoundsDemand()
           case _                     => ()
-      // a hover cue, or a pointer shape asked for by name, only shows under all-motion tracking
-      if element.props.hoverStyle.isDefined || element.props.pointerShape.isDefined then onMotionDemand()
+      // a hover cue, or a pointer shape asked for by name, only shows under all-motion tracking; a theme component
+      // with a hovered or pressed style asks for the same as an explicit `.hoverStyle`/`.pressedStyle` does
+      val states   = componentOf(element, theme)
+      val hoverCue = element.props.hoverStyle.isDefined || states.hovered != Style.Default
+      val pressCue = element.props.pressedStyle.isDefined || states.pressed != Style.Default
+      if hoverCue || element.props.pointerShape.isDefined then onMotionDemand()
       // a hover or pressed cue is what makes a change of hovered/pressed target change the next frame
-      if element.props.hoverStyle.isDefined || element.props.pressedStyle.isDefined then onCueDemand()
+      if hoverCue || pressCue then onCueDemand()
       val current  =
-        if inert then themed(element, focused = false, disabled, None)
+        if inert then themed(element, focused = false, disabled, None, states, inherited)
         else if element.props.focusable && !disabled then
           val index  = counter
           counter += 1
           val target = Some(InputTarget.Focus(index))
-          TrackedElement(themed(element, focused = index == tracker.focusedIndex, disabled, target), index, tracker)
+          TrackedElement(
+            themed(element, focused = index == tracker.focusedIndex, disabled, target, states, inherited),
+            index,
+            tracker,
+          )
         // a node that only asks for a pointer shape is a pointer target too: the shape is resolved by hit-testing, so a
         // `link` with no handler still has to record where it painted. A disabled control is one as well — it is out of
         // the tab order, but a press on it must land on it (and do nothing) rather than on whatever is drawn beneath.
@@ -540,10 +567,15 @@ private[dsl] object FocusPass:
         then
           val id = pointerCounter
           pointerCounter += 1
-          PointerElement(themed(element, focused = false, disabled, Some(InputTarget.Pointer(id))), id, tracker)
-        else themed(element, focused = false, disabled, None)
+          PointerElement(
+            themed(element, focused = false, disabled, Some(InputTarget.Pointer(id)), states, inherited),
+            id,
+            tracker,
+          )
+        else themed(element, focused = false, disabled, None, states, inherited)
       // Inert trees still paint, including deferred portals: keep theme and coordinate wrappers, but no input records.
-      val children = viewportWrapped(element, current.children.map(child => transform(child, inert, disabled)))
+      val children =
+        viewportWrapped(element, current.children.map(child => transform(child, inert, disabled, cascade)))
       val recorded = bounds.fold(current)(recorder => boundsWrapped(current, nodeId, nodeCounter - 1, recorder))
       val revealed =
         if element.props.ensureVisible && !inert then
@@ -551,7 +583,11 @@ private[dsl] object FocusPass:
         else recorded
       revealed.withChildren(children)
 
-    transform(root, ancestorInert = false, ancestorDisabled = false)
+    transform(root, ancestorInert = false, ancestorDisabled = false, inherited = Style.Default)
+
+  /** The theme's component styles for `element`'s role: its `.variant(...)`, else the role its node type declares. */
+  private def componentOf(element: Element, theme: Theme): StateStyles =
+    element.props.variant.orElse(element.componentRole).fold(StateStyles.Empty)(theme.component)
 
   /** `current` with a [[BoundsElement]] around the themed node — *under* an input wrapper, never over it, so the walks
     * in [[EventRouter]] that match on `TrackedElement`/`PointerElement` keep finding them at the node's own level.

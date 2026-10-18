@@ -25,7 +25,7 @@ class ShowcaseApp extends TuiApp:
     )
   )
 
-  private val themes          = Vector(Theme.Dark, Theme.Light, Theme.HighContrast)
+  private val themes          = Theme.presets.toVector
   val themeIndex: Signal[Int] = Signal(0)
   override def theme: Theme   = themes(themeIndex.peek)
 

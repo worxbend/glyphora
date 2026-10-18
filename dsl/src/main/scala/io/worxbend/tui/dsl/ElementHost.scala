@@ -81,7 +81,7 @@ final class ElementHost:
     */
   def render(area: Rect, buffer: Buffer, theme: Theme, view: View)(using scope: ReactiveScope): Unit =
     val raw = session.resolve(view, Size(area.width, area.height), theme)
-    renderTree(raw, theme.focus, tree => session.paint(tree, area, buffer), theme.disabled)
+    renderTree(raw, theme.focus, tree => session.paint(tree, area, buffer), theme.disabled, theme)
 
   /** [[render]] against a runner's `Frame`, for a host inside a `TerminalRunner`. */
   def render(frame: Frame, theme: Theme, view: View)(using scope: ReactiveScope): Unit =
@@ -92,7 +92,7 @@ final class ElementHost:
   ): Unit =
     val raw = session.resolve(view, Size(frame.area.width, frame.area.height), theme)
     beforeFocus()
-    renderTree(raw, theme.focus, tree => paintWithCaret(frame, tree), theme.disabled)
+    renderTree(raw, theme.focus, tree => paintWithCaret(frame, tree), theme.disabled, theme)
 
   /** Paints `tree` into `frame`, then parks the frame's caret where the focused text node said its insertion point is.
     *
@@ -119,6 +119,7 @@ final class ElementHost:
       focusStyle: Style,
       paint: Element => Unit,
       disabledStyle: Style = Style.Default.dim,
+      theme: Theme = Theme.default,
   ): Unit =
     tracker.reconcile(FocusPass.focusKeys(raw), FocusPass.autofocusRequest(raw), FocusScope.of(raw))
     val recorder = Option.when(recordBounds)(bounds)
@@ -134,6 +135,7 @@ final class ElementHost:
       disabledStyle = disabledStyle,
       onMotionDemand = () => motionDemanded = true,
       onCueDemand = () => cuesDemanded = true,
+      theme = theme,
     )
     lastTree = Some(tree)
     recorder.foreach(_.begin())
