@@ -60,6 +60,13 @@ trait Element:
   /** Framework paste behavior: how a bracketed paste lands in this element while focused. */
   private[dsl] def builtinPasteHandler: Option[BuiltinPasteHandler] = None
 
+  /** Whether this node paints nothing of its own and only arranges, spaces or stacks its children — a `row`, a
+    * `column`, a `spacer`, a `layers`. The click-outside backdrop uses it to tell a press on a dialog's border or
+    * caption (drawn by something) from a press on the blank cells a placement row leaves around the dialog (drawn by
+    * nothing): see `dismissibleOverlay`. Every node that draws a glyph, a border or a fill keeps the default.
+    */
+  private[dsl] def layoutOnly: Boolean = false
+
   /** The space this element claims inside a container when the user set nothing explicit — one-row widgets claim one
     * row vertically but their natural width (or a fill) horizontally.
     */

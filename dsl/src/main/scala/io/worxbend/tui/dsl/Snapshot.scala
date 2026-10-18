@@ -46,4 +46,5 @@ object Snapshot:
     val tracker                = FocusTracker()
     tracker.focusedKey = focusedKey
     tracker.reconcile(FocusPass.focusKeys(resolved), FocusPass.autofocusRequest(resolved))
-    FocusPass.decorate(resolved, tracker, theme.focus).widget.render(area, buffer)
+    // no bounds recorder: a snapshot is a picture, and nothing is left behind to ask where a node landed in it
+    FocusPass.decorate(resolved, tracker, theme.focus, bounds = None).widget.render(area, buffer)
