@@ -26,7 +26,9 @@ terminal is far harder to recover from than a refusal. Run the app in a terminal
 ./mill examples.showcase.run
 ```
 
-For CI, inject `HeadlessBackend`; see [Testing](./testing).
+For CI, inject `HeadlessBackend`; see [Testing](./testing). To make the app print its
+first screen and exit 0 instead of refusing, opt into a `NonInteractivePolicy`; see
+[Print mode and no-TTY runs](./print-mode).
 
 ## The view does not update
 

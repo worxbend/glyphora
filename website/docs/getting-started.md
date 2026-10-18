@@ -216,6 +216,12 @@ exits 1, because the process has no controlling TTY (the error is
 `BackendError.UnsupportedTerminal` in the API). Run it from a normal terminal window;
 for CI or unit tests, inject `HeadlessBackend` instead. See [Testing](./testing).
 
+That refusal is the default, not the only option. An app with something useful to
+show without a terminal sets `RunnerConfig().withNonInteractive(...)` — for example
+`NonInteractivePolicy.PrintFinalFrame` prints the first screen and exits 0 — and a
+plain CLI that only wants to print a styled table once uses `Console.print`. See
+[Print mode and no-TTY runs](./print-mode).
+
 ### Signal write rejected off the render thread
 
 Key handlers, mouse handlers, `onStart`, `onStop` and `onTick` already run on the
