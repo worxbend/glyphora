@@ -1,6 +1,7 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{KeyEvent, MouseEvent, MouseEventKind, Rect}
+import io.worxbend.tui.core.{KeyEvent, MouseEvent, MouseEventKind, Position, Rect}
+import io.worxbend.tui.terminal.PointerShape
 
 /** Event routing.
   *
@@ -54,6 +55,20 @@ private[dsl] object EventRouter:
     */
   def dispatchMouse(root: Element, event: MouseEvent, hit: Option[MouseHit]): Boolean =
     hit.flatMap(found => pathToTarget(root, found.target)).getOrElse(Nil).exists(handlesMouse(_, event, hit))
+
+  /** The mouse pointer to show at `position`, given the input target under it.
+    *
+    * Resolved along the same path a mouse event travels, innermost first: an explicit `.pointer(shape)` anywhere on the
+    * path wins — it is the author's word and covers the subtree — and failing that the hit node itself is asked through
+    * `pointerShapeAt`, with its own painted area so a node such as a split pane can answer differently for its divider
+    * than for its panes. Nothing under the pointer, or a node with no opinion, is [[PointerShape.Default]].
+    */
+  def pointerShapeAt(root: Element, position: Position, hit: Option[MouseHit]): PointerShape =
+    val path     = hit.flatMap(found => pathToTarget(root, found.target)).getOrElse(Nil)
+    val explicit = path.iterator.flatMap(_.props.pointerShape).nextOption()
+    explicit
+      .orElse(hit.flatMap(found => path.headOption.flatMap(_.pointerShapeAt(position, found.layoutArea))))
+      .getOrElse(PointerShape.Default)
 
   /** Identity of a decorated input node. Focus and pointer numbering occupy distinct typed namespaces. */
   private def targetOf(element: Element): Option[InputTarget] =

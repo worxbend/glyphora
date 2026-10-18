@@ -1,7 +1,8 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Buffer, KeyEvent, MouseEvent, MouseEventKind, Rect, Size, Style}
+import io.worxbend.tui.core.{Buffer, KeyEvent, MouseEvent, MouseEventKind, Position, Rect, Size, Style}
 import io.worxbend.tui.runtime.{Frame, ReactiveScope}
+import io.worxbend.tui.terminal.PointerShape
 
 /** The DSL's render-and-dispatch engine, with no loop and no key policy of its own.
   *
@@ -106,6 +107,12 @@ final class ElementHost:
 
     val consumed = lastTree.exists(EventRouter.dispatchMouse(_, mouse, target))
     consumed || focusMoved
+
+  /** The mouse pointer the last frame wants shown at `position` — see [[EventRouter.pointerShapeAt]]. A host that owns
+    * its own loop hands the answer to `Backend.setPointerShape` when it changes; `TuiApp` does so on every mouse event.
+    */
+  def pointerShapeAt(position: Position): PointerShape =
+    lastTree.fold(PointerShape.Default)(EventRouter.pointerShapeAt(_, position, tracker.mouseHit(position)))
 
   /** Offers a key release to the focused element and its ancestors — see [[EventRouter.dispatchKeyRelease]]. */
   def dispatchKeyRelease(key: KeyEvent): Boolean = lastTree.exists(EventRouter.dispatchKeyRelease(_, key))

@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{GlyphSupport, Style}
+import io.worxbend.tui.core.{ColorScheme, GlyphSupport, Style}
 import io.worxbend.tui.core.Color
 import io.worxbend.tui.terminal.TerminalGlyphs
 import io.worxbend.tui.widgets.{ColorRamp, MarkdownTheme, SyntaxTheme}
@@ -355,6 +355,27 @@ object Theme:
     ),
     syntax = HighContrastSyntax,
   )
+
+  /** "Whichever of [[Light]] and [[Dark]] matches the terminal" — the default `TuiApp.theme` since 0.20.0.
+    *
+    * A placeholder rather than a palette of its own: `TuiApp` recognises this exact value (by identity) and resolves it
+    * on every frame through [[forScheme]] against the colour scheme the terminal reported — OSC 11 at start-up, mode
+    * 2031 afterwards — so an app that never set a theme gets `Light` on a light terminal and follows a live switch. A
+    * terminal that could not say resolves to `Dark`, which is what every app got before the terminal could be asked.
+    *
+    * Outside a `TuiApp` it *is* `Dark` under another name, so a widget-level test or a helper handed it renders exactly
+    * as it would under `Dark`. Building on it with a `with*` method produces an ordinary theme that is no longer
+    * resolved: start from [[Light]] or [[Dark]] for a custom palette, and read `TuiApp.colorScheme` or `lightDark` to
+    * pick between two of your own.
+    */
+  val auto: Theme = Dark.withName("auto")
+
+  /** The preset for `scheme`: [[Light]] for a light terminal, [[Dark]] for a dark one and for one that could not say.
+    */
+  def forScheme(scheme: ColorScheme): Theme =
+    scheme match
+      case ColorScheme.Light => Light
+      case _                 => Dark
 
   /** The ambient default, for element construction that happens outside a `view`: a widget-level test, a helper object
     * that builds a panel once, a REPL session.

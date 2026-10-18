@@ -1,6 +1,7 @@
 package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Constraint, GlyphSupport, KeyEvent, MouseEvent, Style}
+import io.worxbend.tui.terminal.PointerShape
 
 /** The focus bookkeeping the framework writes and an application only reads.
   *
@@ -37,6 +38,10 @@ final case class FocusState private[dsl] (
   * as `panel(...).borderType(BorderType.Thick)` keeps it: the ceiling belongs to the terminal the app is running on,
   * not to the border the author picked, so an explicit choice still degrades on a terminal that cannot draw it. An
   * element built outside a themed factory keeps the permissive default and degrades nothing.
+  *
+  * `pointerShape` is the mouse pointer `.pointer(shape)` asked for over this element — an *explicit* request, which
+  * wins over the default an interactive node declares through `Element.pointerShape` and, unlike that default, also
+  * covers the node's children. `None` means "whatever the node itself says".
   */
 final case class ElementProps(
     style: Style = Style.Default,
@@ -50,6 +55,7 @@ final case class ElementProps(
     focusKey: Option[String] = None,
     focusState: FocusState = FocusState(),
     glyphs: GlyphSupport = GlyphSupport.Full,
+    pointerShape: Option[PointerShape] = None,
 ):
 
   /** Whether this element is the one the focus pass marked — where keystrokes go this frame. */
