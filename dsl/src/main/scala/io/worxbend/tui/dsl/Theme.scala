@@ -165,6 +165,11 @@ final class Theme private (
     */
   def withComponent(role: ComponentRole, styles: StateStyles): Theme = withComponent(role.styleName, styles)
 
+  /** This theme with no component styles at all, so every element draws as it would with none — the start for a custom
+    * component set that should not inherit a preset's.
+    */
+  def withoutComponents: Theme = updated(components = Map.empty)
+
   /** [[withComponent]] by name, for a role the application spells as text. */
   def withComponent(name: StyleName, styles: StateStyles): Theme =
     updated(components = components.updated(name, styles))
@@ -289,6 +294,8 @@ object Theme:
     function = Style.Default.withFg(Color.Indexed(25)),
     variable = Style.Default.withFg(Color.Indexed(30)),
     default = Style.Default.withFg(Color.Black),
+    inserted = Style.Default.withFg(Color.Indexed(28)),
+    deleted = Style.Default.withFg(Color.Indexed(124)),
   )
 
   /** Shared by `HighContrast`'s Markdown fences and its standalone highlighter. */
@@ -300,6 +307,8 @@ object Theme:
     function = Style.Default.withFg(Color.White).bold,
     variable = Style.Default.withFg(Color.White),
     default = Style.Default.withFg(Color.White),
+    inserted = Style.Default.withFg(Color.Green).bold,
+    deleted = Style.Default.withFg(Color.Red).bold,
   )
 
   val Dark: Theme = Theme(
@@ -322,6 +331,7 @@ object Theme:
     ),
     markdown = MarkdownTheme(syntax = DarkSyntax),
     syntax = DarkSyntax,
+    components = ThemePresets.standardComponents(Color.Cyan, Color.Black, Color.Red),
   )
 
   val Light: Theme = Theme(
@@ -355,8 +365,12 @@ object Theme:
       bullet = Style.Default.withFg(Color.Blue),
       link = Style.Default.withFg(Color.Blue).underline,
       syntax = LightSyntax,
+      tableHeader = Style.Default.bold.withFg(Color.Black),
+      tableBorder = Style.Default.withFg(Color.Indexed(248)),
+      taskDone = Style.Default.withFg(Color.Indexed(28)),
     ),
     syntax = LightSyntax,
+    components = ThemePresets.standardComponents(Color.Blue, Color.White, Color.Red),
   )
 
   val HighContrast: Theme = Theme(
@@ -390,9 +404,38 @@ object Theme:
       bullet = Style.Default.withFg(Color.Yellow).bold,
       link = Style.Default.withFg(Color.White).underline.bold,
       syntax = HighContrastSyntax,
+      tableHeader = Style.Default.withFg(Color.Yellow).bold,
+      tableBorder = Style.Default.withFg(Color.White),
+      taskDone = Style.Default.withFg(Color.Green).bold,
     ),
     syntax = HighContrastSyntax,
+    components = ThemePresets.standardComponents(Color.Yellow, Color.Black, Color.Red),
   )
+
+  /** [Dracula](https://draculatheme.com): purple accent, pink keywords. See [[ThemePresets]] for what the palette
+    * presets share — foregrounds only, best on a terminal set to the scheme's own background.
+    */
+  val Dracula: Theme = ThemePresets.Dracula
+
+  /** [Catppuccin](https://catppuccin.com) in its darkest flavour, Mocha: mauve accent over soft pastels. */
+  val Catppuccin: Theme = ThemePresets.Catppuccin
+
+  /** [Nord](https://www.nordtheme.com): frost-blue accent over the polar-night greys. */
+  val Nord: Theme = ThemePresets.Nord
+
+  /** [Gruvbox](https://github.com/morhetz/gruvbox) dark, medium contrast: warm yellow accent. */
+  val Gruvbox: Theme = ThemePresets.Gruvbox
+
+  /** [Solarized](https://ethanschoonover.com/solarized) dark: blue accent over the base03 family. */
+  val Solarized: Theme = ThemePresets.Solarized
+
+  /** Only the terminal's own sixteen colours, so the app follows whatever palette the user gave their terminal — the
+    * one preset that reads right on any background, light or dark.
+    */
+  val Ansi16: Theme = ThemePresets.Ansi16
+
+  /** Every built-in theme, in the order a theme switcher would offer them; `Theme.parse`'s `extends` names these. */
+  val presets: Seq[Theme] = Seq(Dark, Light, HighContrast, Dracula, Catppuccin, Nord, Gruvbox, Solarized, Ansi16)
 
   /** "Whichever of [[Light]] and [[Dark]] matches the terminal" — the default `TuiApp.theme` since 0.20.0.
     *
