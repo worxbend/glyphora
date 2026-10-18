@@ -241,7 +241,7 @@ private[dsl] trait ElementFactories:
     ListElement(items, state)
 
   /** A collapsible tree over caller-owned [[w.TreeState]] — same state ownership rules as [[list]]. */
-  def tree(nodes: Seq[w.TreeNode], state: w.TreeState): TreeElement =
+  def tree(nodes: Seq[w.TreeNode], state: w.TreeState[?]): TreeElement =
     TreeElement(nodes, state)
 
   /** Vertical bars, one per `(label, value)`, each `barWidth` columns wide with the label underneath.

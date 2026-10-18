@@ -308,6 +308,7 @@ export io.worxbend.tui.widgets.{
   SyntaxTheme,
   TableCell,
   TableRow,
+  TableRows,
   TextAreaState,
   TextEffect,
   TextInputState,
