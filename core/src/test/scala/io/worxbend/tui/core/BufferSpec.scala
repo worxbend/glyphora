@@ -577,3 +577,18 @@ final class BufferSpec extends AnyFunSuite:
     assert(written == 1)
     assert(buf.get(0, 0).symbol == "a")
     assert(buf.get(1, 0) == Cell.Empty)
+
+  test("set stores an empty symbol as a one-column blank in the cell's style"):
+    // `Cell.isBlank` already says an empty symbol means blank. Stored verbatim it would be a zero-width cell the
+    // encoder never paints — the terminal keeps the old glyph while the buffer claims the column is blank
+    val buf = buffer(3, 1)
+    buf.setString(0, 0, "abc", Style.Default)
+    val red = Style.Default.withBg(Color.Red)
+    buf.set(1, 0, Cell("", red))
+    assert(buf.get(1, 0) == Cell(" ", red))
+
+  test("fill with an empty symbol paints the region as styled blanks"):
+    val buf = buffer(3, 1)
+    val red = Style.Default.withBg(Color.Red)
+    buf.fill(Rect(0, 0, 3, 1), Cell("", red))
+    assert((0 until 3).forall(x => buf.get(x, 0) == Cell(" ", red)))

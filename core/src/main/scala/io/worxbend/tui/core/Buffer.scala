@@ -90,6 +90,10 @@ final class Buffer(val area: Rect):
     * A wide cell aimed at the last column of a row is stored as a blank in `cell`'s style rather than as itself: there
     * is no column left to reserve, and a terminal handed a two-column glyph in a one-column slot wraps the row. The
     * style is kept so a background fill stays continuous to the edge.
+    *
+    * A cell whose symbol is the empty string is stored as the same styled blank. [[Cell.isBlank]] already says that is
+    * what it means; stored verbatim it would be a zero-width cell no backend ever paints, so the terminal kept the
+    * previous glyph in a column the buffer — and every assertion over it — called blank.
     */
   def set(x: Int, y: Int, cell: Cell): Unit =
     setMeasured(x, y, cell, CharWidth.ofCluster(cell.symbol))
@@ -102,7 +106,9 @@ final class Buffer(val area: Rect):
       val index = indexOf(x, y)
       // the column was the right half of a wide grapheme, which can no longer draw across a column this write claims
       if continuations(index) then cells(index - 1) = Cell.Empty
-      write(index, x, cell, width)
+      // an empty symbol is the blank `Cell.isBlank` says it is, spelled as the one-column space a terminal can be handed
+      if cell.symbol.isEmpty then write(index, x, Cell(" ", cell.style), 1)
+      else write(index, x, cell, width)
 
   /** [[set]]'s tail, once the addressed cell is known not to be a wide grapheme's continuation: stores `cell` and
     * re-derives the continuation to its right. `x` is passed only to test the row's right edge — `index + 1` would
@@ -337,6 +343,12 @@ final class Buffer(val area: Rect):
     * A cell's [[DiffDirective]] travels with it, so a fragment that reserved columns for an out-of-band painter keeps
     * that reservation once it is composited into the frame.
     *
+    * A two-column grapheme that the window or the destination edge cuts in half follows the rule [[set]] and [[fill]]
+    * use for a glyph with no second column, not the one [[setString]] uses: the half is written as a blank in the
+    * glyph's own style, never skipped and never blanked in [[Style.Default]]. A text writer owns no background, so it
+    * can leave a half-fitting cluster's column alone; a blit carries whole cells, and dropping the style would punch a
+    * default-coloured hole into the edge of whatever coloured panel is being scrolled.
+    *
     * Blitting a buffer onto itself works on a snapshot: without it, overlapping rows would read cells this call has
     * already overwritten and smear them across the region.
     *
@@ -382,16 +394,18 @@ final class Buffer(val area: Rect):
   private def ownedByPreviousColumn(source: Buffer, clipped: Rect, dx: Int, y: Int): Boolean =
     dx > 0 && source.isContinuation(clipped.x + dx, y)
 
-  /** The cell [[blit]] writes for one source position, with the two window-edge cases blanked.
+  /** The cell [[blit]] writes for one source position, with the two window-edge cases blanked in the glyph's style.
     *
     * A wide grapheme cut in half by the *window* edge would render torn — the half is blanked instead. This is a
     * different edge from the destination's own: [[set]] blanks a wide cell that does not fit the destination row, but a
     * window narrower than the destination would otherwise let the glyph spill one column past the region the caller
-    * asked to copy.
+    * asked to copy. The blank keeps the owner's style, exactly as [[set]]'s and [[fill]]'s edge blanks do. For a cut at
+    * the window's start the owner is the left half, one column left of the window by construction.
     */
   private def cellToCopy(source: Buffer, clipped: Rect, dx: Int, y: Int): Cell =
     val cell = source.get(clipped.x + dx, y)
-    if cutByWindowStart(source, clipped, dx, y) || cutByWindowEnd(clipped, dx, cell) then Cell.Empty
+    if cutByWindowStart(source, clipped, dx, y) then Cell(" ", source.get(clipped.x - 1, y).style)
+    else if cutByWindowEnd(clipped, dx, cell) then Cell(" ", cell.style)
     else cell
 
   /** Whether the window's first column lands on the second half of a wide grapheme whose left half lies outside the

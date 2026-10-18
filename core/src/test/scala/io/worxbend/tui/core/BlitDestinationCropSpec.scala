@@ -36,3 +36,40 @@ final class BlitDestinationCropSpec extends AnyFunSuite:
     assert(target.get(1, 0).symbol == "x")
     assert(target.get(2, 0).symbol == "y")
   }
+
+  // A cut wide glyph is blanked, but the blank must keep its owner's style: `set` and `fill` both keep a styled blank
+  // where a two-column glyph has no second column, and a scrolled coloured panel would otherwise show a
+  // default-coloured hole at the edge where its last CJK character was cut. The destination is prefilled in a
+  // different colour so the assertion can tell "kept the owner's style" from "kept whatever was there".
+  private val red  = Style.Default.withBg(Color.Red)
+  private val blue = Style.Default.withBg(Color.Blue)
+
+  /** A red-backed `a漢b` in four columns — cells `a`, `漢`, its continuation, `b`. */
+  private def redSource(): Buffer = {
+    val source = Buffer.filled(Rect(0, 0, 4, 1), Cell(" ", red))
+    source.setString(0, 0, "a漢b", red)
+    source
+  }
+
+  test("a wide glyph cut by the window end keeps its style") {
+    val target = Buffer.filled(Rect(0, 0, 4, 1), Cell(" ", blue))
+    target.blit(redSource(), Position(0, 0), Rect(0, 0, 2, 1))
+    assert(target.get(0, 0) == Cell("a", red))
+    assert(target.get(1, 0) == Cell(" ", red))
+    assert(target.get(2, 0) == Cell(" ", blue)) // outside the window: untouched
+  }
+
+  test("a wide glyph cut by the destination edge keeps its style") {
+    val target = Buffer.filled(Rect(0, 0, 2, 1), Cell(" ", blue))
+    target.blit(redSource(), Position(0, 0))
+    assert(target.get(0, 0) == Cell("a", red))
+    assert(target.get(1, 0) == Cell(" ", red))
+  }
+
+  test("a wide glyph cut by a negative placement keeps the owner's style") {
+    val target = Buffer.filled(Rect(0, 0, 2, 1), Cell(" ", blue))
+    // the window opens on the continuation half of 漢, whose owner sits one column left of it
+    target.blit(redSource(), Position(-2, 0))
+    assert(target.get(0, 0) == Cell(" ", red))
+    assert(target.get(1, 0) == Cell("b", red))
+  }

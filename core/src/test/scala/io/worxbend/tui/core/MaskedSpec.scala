@@ -43,3 +43,11 @@ final class MaskedSpec extends AnyFunSuite:
     assert(masked.toString == "*******")
     assert(!masked.toString.contains("hunter2"))
     assert(masked.content == "hunter2") // the plaintext is still reachable when explicitly asked for
+
+  test("a zero-width mask glyph falls back to the default mask"):
+    // a lone combining mark, a zero-width space, a tab and a zero-width joiner are each one cluster of width zero: as
+    // the mask they would draw a zero-width secret, which is exactly what the empty-string guard exists to prevent
+    for mask <- Seq("́", "​", "\t", "‍") do
+      val masked = Masked("secret", mask)
+      assert(masked.value == Masked.DefaultMaskChar * 6, s"mask U+${mask.codePointAt(0).toHexString}")
+      assert(masked.width == 6)
