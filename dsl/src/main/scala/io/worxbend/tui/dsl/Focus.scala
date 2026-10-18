@@ -504,11 +504,13 @@ private[dsl] object FocusPass:
         disabled: Boolean,
         target: Option[InputTarget],
         component: StateStyles,
+        inherited: Style,
     ): Element =
       val live = !disabled && target.isDefined
       element.withProps(
-        element.props.copy(focusState =
-          element.props.focusState.copy(
+        element.props.copy(
+          style = if inherited eq Style.Default then element.props.style else inherited.patch(element.props.style),
+          focusState = element.props.focusState.copy(
             focused = focused,
             focusStyle = focusStyle,
             disabled = disabled,
@@ -517,13 +519,19 @@ private[dsl] object FocusPass:
             pressed = live && tracker.pressedTarget == target,
             component = component,
             theme = theme,
-          )
+          ),
         )
       )
 
-    def transform(built: Element, ancestorInert: Boolean, ancestorDisabled: Boolean): Element =
-      // a node a themed factory built against the ambient default theme takes this frame's theme instead
-      val element  = LateBinding.resolve(built, theme)
+    def transform(built: Element, ancestorInert: Boolean, ancestorDisabled: Boolean, inherited: Style): Element =
+      // a node a themed factory built against the ambient default theme takes this frame's theme instead; a `withStyle`
+      // scope is marked applied, because the cascade it asks for happens right here, on the way down
+      val element  = LateBinding.resolve(built, theme) match
+        case scope: StyleScopeElement => scope.copy(applied = true)
+        case other                    => other
+      val cascade  = element match
+        case scope: StyleScopeElement => inherited.patch(scope.cascade)
+        case _                        => inherited
       val inert    = ancestorInert || element.props.inert
       val disabled = ancestorDisabled || element.props.disabled
       val nodeId   = nodeCounter
@@ -541,13 +549,13 @@ private[dsl] object FocusPass:
       // a hover or pressed cue is what makes a change of hovered/pressed target change the next frame
       if hoverCue || pressCue then onCueDemand()
       val current  =
-        if inert then themed(element, focused = false, disabled, None, states)
+        if inert then themed(element, focused = false, disabled, None, states, inherited)
         else if element.props.focusable && !disabled then
           val index  = counter
           counter += 1
           val target = Some(InputTarget.Focus(index))
           TrackedElement(
-            themed(element, focused = index == tracker.focusedIndex, disabled, target, states),
+            themed(element, focused = index == tracker.focusedIndex, disabled, target, states, inherited),
             index,
             tracker,
           )
@@ -559,10 +567,15 @@ private[dsl] object FocusPass:
         then
           val id = pointerCounter
           pointerCounter += 1
-          PointerElement(themed(element, focused = false, disabled, Some(InputTarget.Pointer(id)), states), id, tracker)
-        else themed(element, focused = false, disabled, None, states)
+          PointerElement(
+            themed(element, focused = false, disabled, Some(InputTarget.Pointer(id)), states, inherited),
+            id,
+            tracker,
+          )
+        else themed(element, focused = false, disabled, None, states, inherited)
       // Inert trees still paint, including deferred portals: keep theme and coordinate wrappers, but no input records.
-      val children = viewportWrapped(element, current.children.map(child => transform(child, inert, disabled)))
+      val children =
+        viewportWrapped(element, current.children.map(child => transform(child, inert, disabled, cascade)))
       val recorded = bounds.fold(current)(recorder => boundsWrapped(current, nodeId, nodeCounter - 1, recorder))
       val revealed =
         if element.props.ensureVisible && !inert then
@@ -570,7 +583,7 @@ private[dsl] object FocusPass:
         else recorded
       revealed.withChildren(children)
 
-    transform(root, ancestorInert = false, ancestorDisabled = false)
+    transform(root, ancestorInert = false, ancestorDisabled = false, inherited = Style.Default)
 
   /** The theme's component styles for `element`'s role: its `.variant(...)`, else the role its node type declares. */
   private def componentOf(element: Element, theme: Theme): StateStyles =
