@@ -1,0 +1,8 @@
+[0;35mdiff --git a/a.txt b/a.txt[0m                                  [0m
+[0;35m--- a/a.txt[0m                                                 [0m
+[0;35m+++ b/a.txt[0m                                                 [0m
+[0;36m@@ -1,2 +1,2 @@[0m                                             [0m
+[0m context                                                    [0m
+[0;31m-old line[0m                                                   [0m
+[0;32m+new line[0m                                                   [0m
+[0;2;3m\ No newline at end of file[0m                                 [0m

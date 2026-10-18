@@ -1,0 +1,10 @@
+[0;35m---[0m                                                         [0m
+[0;2;3m# deployment[0m                                                [0m
+[0;34mname[0m: [0;32m"glyphora"[0m                                            [0m
+[0;34mreplicas[0m: [0;33m3[0m                                                 [0m
+[0;34menabled[0m: [0;35mtrue[0m                                               [0m
+[0;34mtags[0m:                                                       [0m
+[0m  - [0;36m&base[0m tui                                               [0m
+[0m  - [0;36m*base[0m                                                   [0m
+[0;34mscript[0m: [0;35m|[0m                                                   [0m
+[0m  echo hi [0;2;3m# not a key[0m                                       [0m

@@ -776,6 +776,20 @@ private[dsl] trait ElementFactories:
   def markdown(source: String)(using theme: Theme): WidgetElement =
     WidgetElement(w.Markdown(source, theme.markdown))
 
+  /** Markdown that is still arriving, read from a caller-owned [[w.MarkdownStream]] — `stream.append(chunk)` as tokens
+    * come in. Half-written syntax (`**bold`, a link, an open fence) renders as it will once complete. A measured leaf,
+    * like [[markdown]]; see [[MarkdownStreamElement]].
+    */
+  def markdownStream(stream: w.MarkdownStream)(using theme: Theme): MarkdownStreamElement =
+    MarkdownStreamElement(stream, theme.markdown, w.MarkdownOptions(), follow = None)
+
+  /** The same stream as its own scroll view, pinned to the newest row while content arrives until the user scrolls up;
+    * End rejoins the tail. `scroll` is caller-owned like any [[w.ScrollViewState]]: create it once outside `view`.
+    * Focusable; Up/Down/PageUp/PageDown/Home/End and the wheel scroll it.
+    */
+  def markdownStream(stream: w.MarkdownStream, scroll: w.ScrollViewState)(using theme: Theme): MarkdownStreamElement =
+    MarkdownStreamElement(stream, theme.markdown, w.MarkdownOptions(), Some(scroll), ElementProps(focusable = true))
+
   /** A sortable, filterable, pageable table: `table` is the data and column definitions, `state` is the view over it.
     *
     * The state must be created once outside `view` — it holds the sort, the substring filter, the selection and the
