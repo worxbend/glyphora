@@ -36,7 +36,7 @@ final case class Flow(items: Seq[Widget], spacing: Int = 1, rowSpacing: Int = 0)
       .map(widths => widths.sum + gap * math.max(0, widths.size - 1))
 
   /** Each item with the rectangle it is drawn into, relative to the area's top-left corner, at `width` columns. */
-  private def placements(width: Int): Seq[(Widget, Rect)] =
+  private[widgets] def placements(width: Int): Seq[(Widget, Rect)] =
     val placed     = Vector.newBuilder[(Widget, Rect)]
     var x          = 0
     var y          = 0

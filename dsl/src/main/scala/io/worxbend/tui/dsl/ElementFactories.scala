@@ -1221,3 +1221,15 @@ private[dsl] trait ElementFactories:
   /** [[toolbar]] drawn as one segmented control — `[ Left ]│[ Center ]│[ Right ]` — for a set of related actions. */
   def buttonGroup(buttons: Element*): FocusGroupElement =
     FocusGroupElement(ToolbarElement(buttons, gap = 0, divider = Some("│")))
+
+  /** A tag (chip) field over caller-owned [[w.TagInputState]]: committed tags draw as chips that wrap onto more rows,
+    * followed by the text being typed. Enter or a comma commits the text as a tag, Backspace on an empty field removes
+    * the last tag, Tab accepts the dim suggestion from `state.suggestions`. `onChange` hears the tags after each commit
+    * or removal; `state.tags` holds them. See [[w.TagInput]].
+    */
+  def tagInput(
+      state: w.TagInputState,
+      onChange: Seq[String] => Unit = _ => (),
+      placeholder: String = "",
+  ): TagInputElement =
+    TagInputElement(state, onChange, placeholder)

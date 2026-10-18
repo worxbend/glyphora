@@ -1,6 +1,16 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{CharWidth, MouseButton, MouseEventKind, Style, Widget}
+import io.worxbend.tui.core.{
+  CharWidth,
+  Constraint,
+  KeyCode,
+  KeyEvent,
+  MouseButton,
+  MouseEventKind,
+  Style,
+  Versioned,
+  Widget,
+}
 import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets as w
 
@@ -42,8 +52,10 @@ final case class BreadcrumbElement(
   * toggles; a folded body leaves the tab order, exactly as a lone `collapsible`'s does. The open section fills the rows
   * the headers leave.
   */
-final case class AccordionElement(content: Element, props: ElementProps = ElementProps()) extends Element:
+final case class AccordionElement(content: Element, state: w.AccordionState, props: ElementProps = ElementProps())
+    extends Element:
   type Self = AccordionElement
+  override private[dsl] def watchedStates: Seq[Versioned]                          = Seq(state)
   override def debugName: String                                                   = "accordion"
   override def children: Seq[Element]                                              = Seq(content)
   def widget: Widget                                                               = content.widget
@@ -60,7 +72,7 @@ private[dsl] object AccordionElement:
     val headers = sections.zipWithIndex.map { case ((title, body), index) =>
       CollapsibleElement(title, body, state.open.contains(index), _ => state.toggle(index))
     }
-    AccordionElement(ColumnElement(headers))
+    AccordionElement(ColumnElement(headers), state)
 
 /** One screen of a [[Element.wizard]]: its title in the progress header, its content, and the check `Next` runs before
   * leaving it — `Some(message)` refuses and shows the message, `None` lets the user on. The check runs on the render
@@ -74,8 +86,10 @@ final case class WizardStep(title: String, content: Element, validate: () => Opt
   * first step. The two buttons carry the focus keys `wizard-back` and `wizard-next`, so focus stays on `Next` while the
   * user walks forward.
   */
-final case class WizardElement(content: Element, props: ElementProps = ElementProps()) extends Element:
+final case class WizardElement(content: Element, state: w.WizardState, props: ElementProps = ElementProps())
+    extends Element:
   type Self = WizardElement
+  override private[dsl] def watchedStates: Seq[Versioned]                       = Seq(state)
   override def debugName: String                                                = "wizard"
   override def children: Seq[Element]                                           = Seq(content)
   def widget: Widget                                                            = content.widget
@@ -105,7 +119,7 @@ private[dsl] object WizardElement:
     val buttons  = RowElement(
       Seq(back.length(CharWidth.of("Back") + 4), SpacerElement(), next.length(CharWidth.of(nextText) + 4))
     ).length(1)
-    WizardElement(ColumnElement(Seq(header) ++ error.toSeq ++ Seq(body, buttons)))
+    WizardElement(ColumnElement(Seq(header) ++ error.toSeq ++ Seq(body, buttons)), state)
 
 /** The strip inside a [[Element.toolbar]] or [[Element.buttonGroup]]: its controls left to right at their natural
   * widths over [[w.Toolbar]], `gap` columns apart with an optional `divider`. When they do not all fit, the strip shows
@@ -139,3 +153,65 @@ private[dsl] object ToolbarElement:
 
   /** Whether focus sits on `element` or anywhere under it. */
   def holdsFocus(element: Element): Boolean = element.props.focused || element.children.exists(holdsFocus)
+
+/** A tag (chip) field over a caller-owned [[w.TagInputState]]: committed tags draw as chips that wrap onto further rows
+  * through [[w.Flow]], followed by the text being typed. While focused, typing edits the text with every key a text
+  * field knows; Enter or a comma commits it as a tag, Backspace on an empty field removes the last tag, and Tab (or
+  * Right at the end of the text) accepts the dim suggestion when there is one. `onChange` hears the tags after every
+  * commit or removal. An Enter on a blank field, and a Tab with nothing to accept, keep bubbling.
+  *
+  * Measures as many rows as its chips wrap onto at the width it is given, and reports its caret like every text node.
+  */
+final case class TagInputElement(
+    state: w.TagInputState,
+    onChange: Seq[String] => Unit,
+    placeholder: String = "",
+    props: ElementProps = ElementProps(focusable = true),
+) extends Element:
+  type Self = TagInputElement
+  override private[dsl] def watchedStates: Seq[Versioned]            = Seq(state)
+  override def debugName: String                                     = "tagInput"
+  private[dsl] override def componentRole: Option[ComponentRole]     = Some(InputRole)
+  override def pointerShape: Option[PointerShape]                    = textPointer(props)
+  private def field: w.TagInput                                      =
+    w.TagInput(placeholder, showCursor = props.focused && props.caretStyle.paints, style = componentStyled(props))
+  def widget: Widget                                                 =
+    val current = field
+    (area, buffer) =>
+      current.render(area, buffer, state)
+      reportCaret(props, current.caretAt(area, state))
+  private[dsl] def withProps(props: ElementProps): TagInputElement   = copy(props = props)
+  private[dsl] override def claim: SizeClaim                         = SizeClaim(Constraint.Auto, Constraint.Fill(1))
+  private[dsl] override def intrinsicHeight(width: Int): Option[Int] =
+    constrainedHeight(Some(field.heightAt(width, state)))
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     = Some(handleKey)
+  private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler] = Some { text =>
+    if props.focused then
+      state.input.insert(singleLineText(text))
+      true
+    else false
+  }
+
+  private def changed(): Unit = onChange(state.tags)
+
+  private def handleKey(event: KeyEvent): Boolean =
+    val empty = state.input.value.isEmpty
+    event.code match
+      case KeyCode.Char(',') if isPlainTyping(event)                                    =>
+        if state.commit() then changed()
+        true
+      case KeyCode.Enter if event.modifiers.isEmpty && state.input.value.trim.nonEmpty  =>
+        if state.commit() then changed()
+        true
+      case KeyCode.Backspace if event.modifiers.isEmpty && empty && state.tags.nonEmpty =>
+        state.removeLast()
+        changed()
+        true
+      case KeyCode.Tab if event.modifiers.isEmpty                                       => state.acceptSuggestion()
+      case KeyCode.Right if event.modifiers.isEmpty && state.input.cursor == clusters   => state.acceptSuggestion()
+      case KeyCode.Char(c) if isPlainTyping(event)                                      =>
+        state.input.insert(Character.toString(c))
+        true
+      case _ => editingChords(state.input)(event) || cursorKeys(state.input)(event)
+
+  private def clusters: Int = CharWidth.clusterCount(state.input.value)

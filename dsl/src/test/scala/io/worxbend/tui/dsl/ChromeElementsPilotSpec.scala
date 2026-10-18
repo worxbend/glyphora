@@ -91,3 +91,18 @@ final class ChromeElementsPilotSpec extends AnyFunSuite with PilotFixture:
     val pilot = startApp(Size(30, 2))(buttonGroup(button("B")(()), button("I")(()), button("U")(())))
     assert(pilot.screenLines.head.stripTrailing == "[ B ]│[ I ]│[ U ]")
     quitApp(pilot)
+
+  test("tagInput: comma and Enter commit chips that wrap onto a second row; Backspace removes the last"):
+    val state   = TagInputState(suggestions = Seq("native"))
+    var changes = Vector.empty[Seq[String]]
+    val pilot   = startApp(Size(20, 4))(column(tagInput(state, tags => changes :+= tags), text("below")))
+    pilot.typeText("scala,jvm").press("enter").typeText("nat").press("tab", "enter").typeText("tui,")
+    pilot.waitForIdle()
+    assert(state.tags == Vector("scala", "jvm", "native", "tui"))
+    assert(pilot.screenLines.take(3).map(_.stripTrailing) == Seq(" scala   jvm", " native   tui", "below"))
+    pilot.press("backspace").waitForIdle()
+    assert(state.tags == Vector("scala", "jvm", "native"))
+    assert(changes.last == Seq("scala", "jvm", "native"))
+    pilot.typeText("x").press("backspace").waitForIdle() // erases the typed x, not a tag
+    assert(state.tags.size == 3)
+    quitApp(pilot)

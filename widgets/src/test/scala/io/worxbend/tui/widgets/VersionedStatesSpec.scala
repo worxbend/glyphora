@@ -209,6 +209,13 @@ final class VersionedStatesSpec extends AnyFunSuite:
       "fail"                 -> (_.fail("no")),
       "clearError"           -> (_.clearError()),
     ),
+    row("TagInputState", TagInputState(Seq("a")))(
+      "tags ="               -> (_.tags = Seq("b")),
+      "commit"               -> (state => { state.input.setValue("c"); val _ = state.commit() }),
+      "removeLast"           -> (_.removeLast()),
+      "remove"               -> (_.remove(0)),
+      "input.insert"         -> (_.input.insert("x")),
+    ),
   )
 
   private def register[S <: Versioned](entry: Row[S]): Unit =

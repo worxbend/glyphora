@@ -2536,6 +2536,27 @@ and slides to keep the focused control on screen, so the arrows still reach ever
 divider)` widget; a `Button` now measures its own width (`[ label ]`), which is what the
 strip — and a `flow` — lays it out by.
 
+### Tag input
+
+`tagInput(state, onChange)` is a field of chips. Committed tags draw as ` tag ` chips
+laid out like a `flow`, wrapping onto another row when one fills, followed by the text
+being typed:
+
+```scala
+private val topics = TagInputState(suggestions = Seq("scala", "native-image", "terminal"))
+
+tagInput(topics, tags => saveTopics(tags), placeholder = "add a topic")
+```
+
+While focused, typing edits the text with every key a text field knows. Enter or a
+comma commits it as a tag (blank text and duplicates are refused), Backspace on an empty
+field removes the last tag, and when the text begins a suggestion the rest of it shows
+dim after the caret — Tab, or Right at the end of the text, accepts it. `onChange`
+hears the tags after each commit or removal and `state.tags` holds them. An Enter on a
+blank field and a Tab with nothing to accept keep bubbling, so a form's submit and
+focus traversal still work. The node measures as many rows as its chips wrap onto; the
+widget is `TagInput(placeholder, showCursor, style, chipStyle, suggestionStyle)`.
+
 ## Drop to a raw Widget
 
 The DSL is not a separate renderer. Any core `Widget` can become a leaf:
