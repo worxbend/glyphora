@@ -19,7 +19,8 @@ final case class SpinnerElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = SpinnerElement
-  def widget: Widget =
+  override def debugName: String = "spinner"
+  def widget: Widget             =
     w.Spinner(elapsed, label, preset.degraded(props.glyphs), glyphStyle.patch(props.style), Some(labelStyle))
 
   /** Swaps the animation — see [[io.worxbend.tui.widgets.SpinnerPreset]] for the catalogue. */
@@ -59,7 +60,8 @@ final case class ProgressBarElement(
 ) extends Element,
       ProgressMeterBuilders[ProgressBarElement]:
   type Self = ProgressBarElement
-  def widget: Widget =
+  override def debugName: String = "progressBar"
+  def widget: Widget             =
     w.LineGauge(
       ratio,
       label,
@@ -91,7 +93,8 @@ final case class IndeterminateElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = IndeterminateElement
-  def widget: Widget =
+  override def debugName: String = "indeterminateBar"
+  def widget: Widget             =
     w.IndeterminateBar(
       elapsed,
       trackStyle.patch(props.style),
@@ -123,6 +126,7 @@ final case class AnimatedTextElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = AnimatedTextElement
+  override def debugName: String = "animatedText"
   def widget: Widget = w.AnimatedText(content, elapsed, effect, baseStyle.patch(props.style), highlightStyle)
 
   /** Swaps the effect — see [[io.worxbend.tui.widgets.TextEffect]] for the catalogue. */
@@ -153,7 +157,8 @@ final case class MarqueeElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = MarqueeElement
-  def widget: Widget = w.Marquee(content, elapsed, props.style, gap, cellsPerSecond)
+  override def debugName: String = "marquee"
+  def widget: Widget             = w.Marquee(content, elapsed, props.style, gap, cellsPerSecond)
 
   /** Sets the reading rate in cells per second. */
   def speed(cells: Double): MarqueeElement = copy(cellsPerSecond = cells)
@@ -192,6 +197,7 @@ final case class OrbitSpinnerElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = OrbitSpinnerElement
+  override def debugName: String = "orbitSpinner"
 
   def widget: Widget =
     w.OrbitSpinner(elapsed, options.copy(arcStyle = options.arcStyle.patch(props.style)))
@@ -263,6 +269,7 @@ final case class LinearSpinnerElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = LinearSpinnerElement
+  override def debugName: String = "linearSpinner"
 
   def widget: Widget =
     w.LinearSpinner(
@@ -309,6 +316,7 @@ final case class SpinnerGridElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = SpinnerGridElement
+  override def debugName: String = "spinnerGrid"
 
   def widget: Widget =
     w.SpinnerGrid(elapsed, preset.degraded(props.glyphs), phase, glyphStyle.patch(props.style), ramp)
@@ -343,7 +351,8 @@ final case class SkeletonElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = SkeletonElement
-  def widget: Widget =
+  override def debugName: String = "skeleton"
+  def widget: Widget             =
     w.Skeleton(elapsed, baseStyle.patch(props.style), bandStyle, bandWidth = bandWidth, period = period)
 
   /** Pins the sweeping band's width, so skeletons of different sizes pulse in step. */

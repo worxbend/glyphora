@@ -42,6 +42,8 @@ final case class ResponsiveElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = ResponsiveElement
+  override def debugName: String                                                    = "responsive"
+  private[dsl] override def layoutOnly: Boolean                                     = true
   override def children: Seq[Element]                                               = resolved.toSeq
   def widget: Widget                                                                =
     resolved match
@@ -83,6 +85,7 @@ final case class ScrollViewElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = ScrollViewElement
+  override def debugName: String                                                    = "scrollView"
   override def children: Seq[Element]                                               = Seq(content)
   def widget: Widget                                                                =
     (area, buffer) =>
@@ -124,6 +127,7 @@ final case class TabbedContentElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = TabbedContentElement
+  override def debugName: String                                                       = "tabbedContent"
   override def children: Seq[Element]                                                  = Seq(activePage)
   def widget: Widget                                                                   =
     val tabs = w.Tabs(titles.map(Line.raw), selected, focusStyled(props))
@@ -151,6 +155,7 @@ final case class CollapsibleElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = CollapsibleElement
+  override def debugName: String                                      = "collapsible"
   override def children: Seq[Element]                                 = if expanded then Seq(body) else Seq.empty
   def widget: Widget                                                  =
     val marker         = if expanded then "▾ " else "▸ "
@@ -179,6 +184,7 @@ final case class SplitPaneElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = SplitPaneElement
+  override def debugName: String                                             = "splitPane"
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some { (event, area) =>
       if event.kind == MouseEventKind.Drag then
@@ -262,6 +268,7 @@ final case class ScrollbarElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = ScrollbarElement
+  override def debugName: String = "scrollbar"
 
   def widget: Widget =
     w.Scrollbar(

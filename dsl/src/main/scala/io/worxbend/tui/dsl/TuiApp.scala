@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{ColorScheme, Effect, Event, KeyCode, KeyEvent, KeyModifiers, Position, Size, Widget}
+import io.worxbend.tui.core.{ColorScheme, Effect, Event, KeyCode, KeyEvent, KeyModifiers, Position, Rect, Size, Widget}
 import io.worxbend.tui.runtime.{
   Cleanup,
   EventOutcome,
@@ -14,7 +14,7 @@ import io.worxbend.tui.runtime.{
   Signal,
   TerminalRunner,
 }
-import io.worxbend.tui.terminal.{Backend, BackendError, ColorDepth, JLine3Backend, PointerShape}
+import io.worxbend.tui.terminal.{Backend, BackendError, ColorDepth, HeadlessBackend, JLine3Backend, PointerShape}
 import io.worxbend.tui.widgets.NoticeLevel
 
 import java.util.concurrent.atomic.AtomicReference
@@ -452,6 +452,22 @@ trait TuiApp:
   protected final def focusedKey: Option[String] =
     activeFocus.get().flatMap(_.focusedKey)
 
+  /** Where the element declared with `.key(key)` was painted on the last frame: its rect in the frame's coordinates,
+    * mapped out of any `scrollView` it sits in, so a test clicks it without knowing the layout —
+    * `pilot.click(app.boundsOf("save").get)`. `None` when no element on the last frame carried the key, when it was
+    * scrolled entirely out of view, or when the app is not running.
+    *
+    * Public rather than `protected` like [[focusTo]], because its caller is the test *outside* the app. It is also the
+    * opt-in: bounds are recorded on every frame of a headless run already, and the first call from an app on a real
+    * terminal switches recording on for the frames that follow, so the second call answers.
+    *
+    * Readable from the test thread once the frame has been observed as drawn (`pilot.waitForIdle()` first): the answer
+    * is the last *published* frame's record, never the paint in progress.
+    */
+  final def boundsOf(key: String): Option[Rect] =
+    boundsRequested = true
+    activeHost.get().flatMap(_.boundsOf(key))
+
   /** Copies `text` to the system clipboard via OSC 52. Best-effort — terminals without OSC 52 support ignore it, and it
     * is a no-op when the app is not running.
     */
@@ -576,6 +592,11 @@ trait TuiApp:
         // published for the same reason and with the same lifetime as the handle: `focusTo`/`clearFocus` are called
         // from app code that cannot see this run's `RunState`, and must be inert once the run is over
         activeFocus.set(Some(run.tracker))
+        activeHost.set(Some(run.host))
+        // per-node bounds cost a wrapper per node per frame, so they are recorded only where something reads them: a
+        // headless run (a test, which is what `boundsOf` exists for), an app that has asked once, and — switched on
+        // frame by frame in `effectiveView` — a modal that closes on a click outside it
+        run.host.recordBounds = boundsRequested || recordsBoundsByDefault(backend)
         // on the render thread, and while this run is still registered on it: the clock this app's animations read
         // is the one belonging to this loop, and the exit path below can no longer resolve it for itself
         run.renderLoop = Some(AnimationClock.attachToCurrentLoop())
@@ -600,6 +621,7 @@ trait TuiApp:
   private def stopRun(run: RunState, scope: GenerationalScope): Unit =
     activeHandle.set(None)
     activeFocus.set(None)
+    activeHost.set(None)
     Cleanup.all(
       () => ambientTicker.cancel(run),
       () => leaveRemainingScreens(),
@@ -633,6 +655,9 @@ trait TuiApp:
       // the demand is rebuilt from what *this* frame renders, so an animation that has just gone off screen stops
       // costing ticks as soon as the frame without it is composed
       AnimationClock.beginFrame()
+      // a modal that closes on a click outside reads where its dialog was painted, so the frame that first shows it
+      // already records — the host's own demand detection would only switch recording on for the frame after
+      if !run.host.recordBounds && modalClosesOnClickOutside then run.host.recordBounds = true
       // inside the generation, so a `Theme.auto` frame subscribes to the colour scheme and a mode 2031 report repaints
       val resolved = resolvedTheme(using scope)
       run.host.renderComposed(frame, resolved, effectiveView(resolved)(using scope), () => syncFocusLayers(run))(using
@@ -778,6 +803,14 @@ trait TuiApp:
     */
   private def topScreenClosesOnEscape: Boolean = screenStack.closesOnEscape
 
+  /** Whether any modal on the stack asked to be closed by a click outside it — read with `peek`, from the render pass,
+    * for the reason [[topScreenClosesOnEscape]] gives.
+    */
+  private def modalClosesOnClickOutside: Boolean =
+    screenStack.entriesNow.exists((_, screen) =>
+      screen.presentation == Presentation.Modal && screen.dismissal.byClickOutside
+    )
+
   /** The composed view: base -> screens -> palette -> toasts.
     *
     * The theme is resolved once here and passed *into* `view` and every screen's `view` as a `using` argument, not
@@ -885,3 +918,23 @@ trait TuiApp:
     * which is what makes both of them no-ops rather than failures when the app is not running.
     */
   private val activeFocus = AtomicReference[Option[FocusTracker]](None)
+
+  /** The running invocation's host, so [[boundsOf]] can reach its bounds recorder; `None` outside a run. */
+  private val activeHost = AtomicReference[Option[ElementHost]](None)
+
+  /** The running invocation's host for [[ElementTreeSnapshot]], which prints its decorated tree; `None` outside a run.
+    */
+  private[dsl] def currentHost: Option[ElementHost] = activeHost.get()
+
+  /** Whether [[boundsOf]] has ever been called on this app — the sticky half of the opt-in, so a run started after the
+    * call records from its first frame. Written from whichever thread asked, read on the render thread at run start.
+    */
+  @volatile private var boundsRequested: Boolean = false
+
+  /** A headless backend is a test, and a test is what `boundsOf` is for; a terminal pays for the wrappers only once
+    * something asks.
+    */
+  private def recordsBoundsByDefault(backend: Backend): Boolean =
+    backend match
+      case _: HeadlessBackend => true
+      case _                  => false

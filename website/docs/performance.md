@@ -24,9 +24,10 @@ output has the same shape and two runs diff cleanly in a terminal.
 ```bash
 ./mill widgets.test.runMain io.worxbend.tui.widgets.RenderLoopBench
 ./mill terminal.test.runMain io.worxbend.tui.terminal.FramePipelineBench
+./mill dsl.test.runMain io.worxbend.tui.dsl.ElementHostBench
 ```
 
-Neither prints anything but a table. Neither asserts anything, and neither is run by any
+None prints anything but a table. None asserts anything, and none is run by any
 suite — the last section says why.
 
 ## What each row means
@@ -52,6 +53,18 @@ diff and the encode over each:
 The encode rows are measured at two color depths, because `ColorDepth.TrueColor` and
 `ColorDepth.Ansi16` emit different sequences for the same style, and the per-run style
 handling is exactly where that shows.
+
+`ElementHostBench` renders one frame of a hundred-node element tree — chrome bars, a keyed
+form, meters, a forty-row `scrollView` — through an `ElementHost` (resolve, focus pass,
+paint) at two sizes, with per-node **bounds recording** off and on. The gap between the
+two rows is what `boundsOf(key)`, the element-tree snapshot and the click-outside backdrop
+cost per frame: a wrapper per node plus one bounds entry each. On a loaded 16-core x86-64
+machine under glyphora 0.20.0 the gap at 80x24 was indistinguishable from the run-to-run
+noise (which was itself about 2x), and at 200x50 it read between +13% and +56% of the
+frame with the configurations timed in the order least favourable to recording. That is
+why recording is off by default on a real terminal and switched on only by something that
+reads it — a headless run, the first `boundsOf` call, a click-outside modal — and why the
+number is worth re-measuring on a quiet machine before deciding it is too dear to leave on.
 
 ## Reference numbers
 

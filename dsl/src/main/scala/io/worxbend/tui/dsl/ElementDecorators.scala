@@ -21,6 +21,8 @@ private[dsl] trait DecoratingElement extends Element:
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] = inner.builtinMouseHandler
   private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler] = inner.builtinPasteHandler
   private[dsl] override def claim: SizeClaim                                 = inner.claim
+  private[dsl] override def layoutOnly: Boolean                              = inner.layoutOnly
+  override def debugName: String                                             = inner.debugName
   override def pointerShape: Option[PointerShape]                            = inner.pointerShape
   private[dsl] override def pointerShapeAt(position: Position, area: Rect): Option[PointerShape] =
     inner.pointerShapeAt(position, area)
