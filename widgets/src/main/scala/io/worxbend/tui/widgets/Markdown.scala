@@ -294,6 +294,11 @@ private[widgets] object MarkdownParser:
     flushPlain()
     spans.result()
 
+  /** How many chars the complete styled run at `index` spans, or `None` when there is none — the parser's own answer,
+    * which is what [[MarkdownSanitizer]] needs to tell an unclosed marker from one the parser already accepts.
+    */
+  def runLengthAt(text: String, index: Int): Option[Int] = styledRun(text, index, MarkdownTheme()).map(_._2)
+
   /** A styled run starting exactly at `index`, with how many chars it consumed, or `None`. */
   private def styledRun(text: String, index: Int, theme: MarkdownTheme): Option[(Span, Int)] =
     linkRun(text, index, theme)
