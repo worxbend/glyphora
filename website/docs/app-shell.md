@@ -689,8 +689,9 @@ app methods it delegates to.
 
 Toasts are not the only capability locked inside the app's body. `pushScreen`,
 `popScreen`, `openPalette`, `closePalette`, `runEffect`, `requestRedraw`,
-`copyToClipboard` and `quit` are all `protected` methods for the same reason, and a
-helper that needs one of them faces the same plumbing.
+`copyToClipboard`, `quit`, `editExternally` and `openInEditor` are all reachable only
+from inside the app for the same reason, and a helper that needs one of them faces the
+same plumbing.
 
 `AppServices` is all of them as one value, and it extends `Notifications` — so ask for
 the narrow type when a helper only notifies, and for this one when it navigates:
@@ -868,6 +869,81 @@ printAbove("deployment finished", s"id: ${deployment.id}")
 
 These are no-ops or unavailable before a runner is active, so invoke them from event
 handlers or from `onStart()` — never from a constructor.
+
+### Where `println` goes
+
+While a `TuiApp` runs, `System.out` and `System.err` — and Scala's `println` with them —
+are captured: each completed line is written into the scrollback above the live UI
+through `printAbove`, so a stray debug print or a library that logs to `System.err` no
+longer paints over the frame. Whatever is still buffered without a newline is flushed to
+the real streams when the run ends, under the restored prompt, and `suspend` passes the
+streams straight through to the terminal for the duration of its body.
+
+The policy is the `captureStdio` field of `RunnerConfig`, a `CaptureStdio`:
+
+```scala
+override def config: RunnerConfig = RunnerConfig()
+  .withTickRate(100.millis)
+  .withCaptureStdio(CaptureStdio.Off)            // leave the streams alone
+  // .withCaptureStdio(CaptureStdio.Console(ring)) // or collect them in a LogRing
+```
+
+The field is left unset by `RunnerConfig()` and by `RunnerConfig(tickRate = …)`, which is
+how a config that only sets other fields keeps the app's `PrintAbove` default; a bare
+`TerminalRunner` reads the same unset field as `Off`. `CaptureStdio.Console(ring)` turns
+each line into a `LogRecord` under the `stdout` (Info) or `stderr` (Warning) logger, for
+the console below.
+
+### A log console on a key
+
+`logConsole(ring)` draws the tail of a `LogRing`; a `JulBridge.attach(ring)` in the
+constructor feeds it everything `java.util.logging` sees. Bind a key to a `Signal[Boolean]`
+and let the view decide whether the console is on screen:
+
+```scala
+object Monitor extends TuiApp:
+  private val ring        = LogRing(2000)
+  private val showConsole = Signal(false)
+  private val bridge      = JulBridge.attach(ring)
+
+  override def config: RunnerConfig = RunnerConfig().withCaptureStdio(CaptureStdio.Console(ring))
+
+  override def bindings: KeyBindings = KeyBindings(
+    binding("f12", "toggle log console")(showConsole.set(!showConsole.peek)),
+    binding("ctrl+q", "quit")(quit()),
+  )
+
+  override def onStop(): Unit = bridge.cancel()
+
+  def view(using ReactiveScope, Theme): Element =
+    val console = Option.when(showConsole.get)(
+      panel("Log")(logConsole(ring).minLevel(LogLevel.Debug)).length(8)
+    )
+    column(body +: console.toSeq*)
+```
+
+A record appended from a worker thread is on screen at the next frame; a frame that must
+happen *because* a record arrived is the app's to request, with `requestRedraw()` from a
+timer or the `Async` continuation that produced it.
+
+### Edit text in `$EDITOR`
+
+`editExternally(initial, suffix)` writes `initial` to a temporary file, runs the user's
+editor on it through `suspend`, and answers the new content — `None` when the file came
+back unchanged or the editor could not be started. `openInEditor(path, line)` opens an
+existing file the same way, at `+line` when one is given. Both are `AppServices` members
+rather than `protected` methods, so a helper outside the app class can call them:
+
+```scala
+binding("e", "edit description") {
+  editExternally(description.peek, suffix = ".md").foreach(description.set)
+}
+binding("o", "open config")(openInEditor(configPath, line = Some(12)))
+```
+
+The editor is `VISUAL`, then `EDITOR`, split on blanks so `code --wait` works, and `vi`
+when neither is set; a launch that fails is logged at `WARNING` on `io.worxbend.tui.dsl`
+and treated as "nothing edited" rather than ending the app from inside a key handler.
 
 ### Styled scrollback with `insertBefore`
 

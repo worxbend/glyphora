@@ -439,8 +439,58 @@ column(
 - `markdown` supports headings, lists, quotes, fenced code, inline styles, and OSC 8
   links. Its DSL element reports width-dependent height to scroll containers.
 - `log(LogState)` supports append-heavy output and follow-tail behavior.
+- `logConsole(ring)` shows the tail of a `LogRing` — captured `println`s, `java.util.logging`
+  records, the app's own — filtered by level and logger; see below.
+- `errorBoundary(fallback)(subtree)` confines a subtree that throws to its own area; see below.
 - `link(label, url)` emits a clickable OSC 8 hyperlink when the terminal supports it.
 - `bigText` renders banners; `image` renders raster data with half-block cells.
+
+### A console over the log ring
+
+`LogRing` is a thread-safe bounded ring of `LogRecord(instant, level, logger, message,
+throwable)`; appending past its capacity drops the oldest record. Three things fill it:
+`JulBridge.attach(ring)`, which puts a plain `java.util.logging.Handler` on the root
+logger (no `ServiceLoader`, so nothing to configure for native-image); a
+`CaptureStdio.Console(ring)` in the app's `config`, which turns every `println` into a
+record under the `stdout` or `stderr` logger; and `ring.log(level, logger, message)` from
+the app itself.
+
+`logConsole(ring)` draws the newest records that fit, one per row as
+`HH:mm:ss LEVEL logger message`, with the level in the theme's `warning` or `error`
+style and a record's throwable appended as ` (Class: message)` — never the stack trace:
+
+```scala
+val ring = LogRing(capacity = 2000)
+JulBridge.attach(ring)
+
+logConsole(ring)
+  .minLevel(LogLevel.Warning)   // hide Trace, Debug and Info
+  .loggerPrefix("app.net")      // this logger and its children only
+```
+
+It owns no scroll state and always follows the tail, so it is built in the view like any
+other node; [the app shell guide](./app-shell#a-log-console-on-a-key) shows it behind a
+key the app binds. SLF4J users route through `jul-to-slf4j` — there is no SLF4J artifact.
+
+### Confining a failing subtree
+
+A throwable out of `view` ends the run, as it should: an app that cannot draw a frame has
+no defined next frame. `errorBoundary(fallback)(subtree)` is for the one widget fed a bad
+value that should not take the screen down with it. A non-fatal throwable while the
+subtree is built or painted paints `fallback(error)` in the subtree's area — over a
+cleared area, so a half-drawn widget leaves nothing behind — and logs the failure at
+`SEVERE` on the `io.worxbend.tui.dsl` logger, where a `JulBridge` ring and a `logConsole`
+can show it. Nothing is remembered between frames: the next redraw rebuilds the view and
+the subtree gets to try again.
+
+```scala
+errorBoundary(error => text(s"chart unavailable: ${error.getMessage}").dim) {
+  chart(datasets, xBounds, yBounds)
+}
+```
+
+A healthy subtree is unaffected: it measures, focuses and routes events exactly as it
+would without the boundary.
 
 ### How wrapping breaks a line
 
@@ -2040,8 +2090,8 @@ The internal tiers document dependency order, not quality:
 3. **Rich content** — spinner and its presets, spinner grid, orbit spinner, linear
    spinner, animated text, marquee, skeleton, indeterminate bar, big text, notice,
    badge, tooltip, dialog, markdown, syntax highlighter.
-4. **Application-scale state** — data table, directory tree, text area, log, menu,
-   paginator, scroll view, image, and links.
+4. **Application-scale state** — data table, directory tree, text area, log, log
+   console, error boundary, menu, paginator, scroll view, image, and links.
 
 Every built-in has render-to-`Buffer` tests. Interactive DSL wrappers additionally
 have focus and event-routing tests.

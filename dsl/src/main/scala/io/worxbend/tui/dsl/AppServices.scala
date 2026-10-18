@@ -3,6 +3,7 @@ package io.worxbend.tui.dsl
 import io.worxbend.tui.core.Effect
 import io.worxbend.tui.widgets.NoticeLevel
 
+import java.nio.file.Path
 import scala.concurrent.duration.FiniteDuration
 
 /** The running application's cross-cutting services, as a value a helper written outside the app object can be handed.
@@ -56,6 +57,16 @@ trait AppServices extends Notifications:
   /** Asks the app to exit cleanly. */
   def quit(): Unit
 
+  /** Opens the user's editor (`VISUAL`, then `EDITOR`, then `vi`) on a temporary file holding `initial`, with the
+    * terminal handed back for the duration, and answers the file's new content — `None` when the editor left it
+    * unchanged or could not be started. `suffix` is the file's extension, which is what tells the editor which syntax
+    * to highlight. Call from an event handler, like `suspend`.
+    */
+  def editExternally(initial: String, suffix: String = ".md"): Option[String]
+
+  /** Opens `path` in the user's editor, at `line` when given, with the terminal handed back for the duration. */
+  def openInEditor(path: Path, line: Option[Int] = None): Unit
+
 object AppServices:
 
   /** Services that do nothing, for building elements outside a running application.
@@ -77,3 +88,5 @@ object AppServices:
     def requestRedraw(): Unit                                                       = ()
     def copyToClipboard(text: String): Unit                                         = ()
     def quit(): Unit                                                                = ()
+    def editExternally(initial: String, suffix: String): Option[String]             = None
+    def openInEditor(path: Path, line: Option[Int]): Unit                           = ()
