@@ -126,6 +126,8 @@ private[widgets] object ClusterRow:
     * `paintEndCell` decides what happens to the blank one past the end of the row. A single-line input paints it, so
     * the field's own background runs to the end of its text; a multi-line editor does not, leaving the cell untouched
     * for whatever is behind it, and paints it only when the cursor is there.
+    *
+    * `tokenStyles`, when given, holds one syntax style per cluster, patched over `style` (and under `cursorStyle`).
     */
   def draw(
       buffer: Buffer,
@@ -139,6 +141,7 @@ private[widgets] object ClusterRow:
       style: Style,
       cursorStyle: Style,
       paintEndCell: Boolean,
+      tokenStyles: IndexedSeq[Style] = IndexedSeq.empty,
   ): Unit =
     var x     = x0
     var index = scroll
@@ -146,7 +149,8 @@ private[widgets] object ClusterRow:
       val atEnd     = index == clusters.size
       val symbol    = if atEnd then " " else clusters(index)
       val isCursor  = showCursor && index == cursorAt
-      val cellStyle = if isCursor then style.patch(cursorStyle) else style
+      val baseStyle = if index < tokenStyles.size then style.patch(tokenStyles(index)) else style
+      val cellStyle = if isCursor then baseStyle.patch(cursorStyle) else baseStyle
       // the blank past the end is skipped rather than painted when the caller wants whatever is behind it to show
       x =
         if !atEnd || isCursor || paintEndCell then put(buffer, x, y, symbol, cellStyle, right)
