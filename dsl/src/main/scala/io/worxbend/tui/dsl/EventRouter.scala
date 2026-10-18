@@ -54,7 +54,10 @@ private[dsl] object EventRouter:
     * fallback: a declining overlay bubbles outward, not through to the control it hides. No hit means no delivery.
     */
   def dispatchMouse(root: Element, event: MouseEvent, hit: Option[MouseHit]): Boolean =
-    hit.flatMap(found => pathToTarget(root, found.target)).getOrElse(Nil).exists(handlesMouse(_, event, hit))
+    hit.flatMap(found => pathToTarget(root, found.target)).getOrElse(Nil) match
+      // a press on a disabled control lands on it and stops there: nothing under it, and nothing around it, hears it
+      case target :: _ if target.props.isDisabled => false
+      case path                                   => path.exists(handlesMouse(_, event, hit))
 
   /** The mouse pointer to show at `position`, given the input target under it.
     *
@@ -65,8 +68,10 @@ private[dsl] object EventRouter:
     */
   def pointerShapeAt(root: Element, position: Position, hit: Option[MouseHit]): PointerShape =
     val path     = hit.flatMap(found => pathToTarget(root, found.target)).getOrElse(Nil)
+    val disabled = path.headOption.filter(_.props.isDisabled).map(_ => PointerShape.NotAllowed)
     val explicit = path.iterator.flatMap(_.props.pointerShape).nextOption()
-    explicit
+    disabled
+      .orElse(explicit)
       .orElse(hit.flatMap(found => path.headOption.flatMap(_.pointerShapeAt(position, found.layoutArea))))
       .getOrElse(PointerShape.Default)
 
@@ -76,6 +81,19 @@ private[dsl] object EventRouter:
       case tracked: TrackedElement => Some(InputTarget.Focus(tracked.index))
       case pointer: PointerElement => Some(InputTarget.Pointer(pointer.pointerId))
       case _                       => None
+
+  /** The translated layout area of an input target on the path — the hit's own area for the hit target (which, under
+    * pointer capture, is the area it had when it was pressed), the recorded one for an enclosing target.
+    */
+  private def layoutArea(element: Element, hit: Option[MouseHit]): Option[Rect] =
+    targetOf(element).flatMap { target =>
+      hit.collect { case MouseHit(`target`, area) => area }.orElse {
+        element match
+          case tracked: TrackedElement => tracked.tracker.layoutAreaOf(target)
+          case pointer: PointerElement => pointer.tracker.layoutAreaOf(target)
+          case _                       => scala.None
+      }
+    }
 
   /** Original layout bounds, only while the pointer is inside the control's visible portion. */
   private def coveredArea(element: TrackedElement, event: MouseEvent): Option[Rect] =
@@ -87,6 +105,9 @@ private[dsl] object EventRouter:
   /** The user's `onMouseEvent` first, then the framework's own behavior for this element. */
   private def handlesMouse(element: Element, event: MouseEvent, hit: Option[MouseHit]): Boolean =
     element.props.onMouse.exists(_(event)) ||
+      element.props.onMouseContext.exists(handler =>
+        layoutArea(element, hit).exists(area => handler(MouseContext.of(event, area)))
+      ) ||
       builtinArea(element, event, hit).exists(area => element.builtinMouseHandler.exists(_(event, area)))
 
   /** The area a built-in behavior runs against, and the gate on whether it runs at all.
@@ -171,8 +192,8 @@ private[dsl] object EventRouter:
     * keys that no focused descendant wanted.
     */
   private def handlesKey(element: Element, event: KeyEvent): Boolean =
-    element.props.onKey.exists(_(event)) ||
-      (element.props.focused && element.builtinKeyHandler.exists(_(event)))
+    !element.props.isDisabled &&
+      (element.props.onKey.exists(_(event)) || (element.props.focused && element.builtinKeyHandler.exists(_(event))))
 
   private def dispatchKeyDepthFirst(element: Element, event: KeyEvent): Boolean =
     !element.props.inert &&

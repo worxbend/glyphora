@@ -82,6 +82,15 @@ Colour depth, hyperlink (OSC 8), clipboard (OSC 52), focus reporting and emoji w
 all remain emulator- and font-dependent. glyphora detects a missing controlling TTY —
 piped output, `TERM=dumb`, a backgrounded process group — and exits with a message
 rather than writing escape sequences into your log file.
+An app can opt into printing instead — its first frame, every frame, or plain text
+rows — through `NonInteractivePolicy`; see [Print mode and no-TTY runs](./print-mode).
+
+## Can I print a widget without writing a full-screen app?
+
+Yes. `Console.print(view)` renders any element — a table, a tree, a chart, a panel —
+once to standard output at the terminal's width, styled, and returns. It honours
+`NO_COLOR`, `FORCE_COLOR` and `TERM=dumb`, and writes no colour into a pipe unless
+forced. See [Print mode and no-TTY runs](./print-mode).
 
 ## Does it work on Windows?
 

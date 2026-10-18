@@ -1,7 +1,7 @@
 package io.worxbend.tui.runtime
 
 import io.worxbend.tui.core.{Event, Widget}
-import io.worxbend.tui.terminal.{BackendError, PointerShape}
+import io.worxbend.tui.terminal.{BackendError, MouseCaptureMode, PointerShape}
 
 import java.nio.file.Path
 import scala.concurrent.duration.FiniteDuration
@@ -57,6 +57,10 @@ import scala.concurrent.duration.FiniteDuration
   * with `-Dglyphora.record=<file>`, which names the file for a run whose configuration did not; the configuration wins
   * when both are set.
   *
+  * `nonInteractive` says what a run does when the process has no terminal to be interactive on — standard output is not
+  * a TTY, or `CI` is set. See [[NonInteractivePolicy]]; the default, [[NonInteractivePolicy.Fail]], is the behaviour
+  * every release before 0.20.0 had, and the one the CI smoke test of every example relies on.
+  *
   * An immutable value with a private constructor: build one from [[RunnerConfig.Default]] (or the companion `apply`)
   * and the `with*` methods, each of which returns a new configuration. The two Booleans and every `Option` come as a
   * pair — `withMouseCapture`/`withoutMouseCapture`, `withTickRate(d)`/`withoutTickRate` — so a call site reads as a
@@ -76,6 +80,8 @@ final class RunnerConfig private (
     val onFrameTiming: Option[FrameTiming => Unit],
     val captureStdio: Option[CaptureStdio],
     val recording: Option[Path],
+    val nonInteractive: NonInteractivePolicy,
+    val mouseMotion: Boolean,
 ):
 
   /** Synthetic [[Event.Tick]]s every `rate` — the whole-app clock for animation; see the class notes on why the type is
@@ -138,6 +144,24 @@ final class RunnerConfig private (
   /** No recording from the configuration (`-Dglyphora.record` may still name one). The default. */
   def withoutRecording: RunnerConfig = updated(recording = None)
 
+  /** What a run does without a terminal to be interactive on — see [[NonInteractivePolicy]]. */
+  def withNonInteractive(policy: NonInteractivePolicy): RunnerConfig = updated(nonInteractive = policy)
+
+  /** Asks for every pointer movement, not only presses, releases and drags — `MouseCaptureMode.AllMotion`, which is
+    * what delivers [[io.worxbend.tui.core.MouseEventKind.Moved]] and so hover. Implies [[withMouseCapture]]. Off by
+    * default because the terminal then sends a report per cell crossed; a DSL `TuiApp` running with mouse capture turns
+    * it on by itself the first time a frame asks for a hover cue, so this is for an app that wants hover from the very
+    * first frame or drives its own loop.
+    */
+  def withMouseMotion: RunnerConfig = updated(mouseCapture = true, mouseMotion = true)
+
+  /** Button-only mouse reporting, when mouse capture is on at all. The default. */
+  def withoutMouseMotion: RunnerConfig = updated(mouseMotion = false)
+
+  /** The capture mode setup asks the backend for when [[mouseCapture]] is on. */
+  def mouseCaptureMode: MouseCaptureMode =
+    if mouseMotion then MouseCaptureMode.AllMotion else MouseCaptureMode.Buttons
+
   private def updated(
       tickRate: Option[FiniteDuration] = tickRate,
       mouseCapture: Boolean = mouseCapture,
@@ -148,6 +172,8 @@ final class RunnerConfig private (
       onFrameTiming: Option[FrameTiming => Unit] = onFrameTiming,
       captureStdio: Option[CaptureStdio] = captureStdio,
       recording: Option[Path] = recording,
+      nonInteractive: NonInteractivePolicy = nonInteractive,
+      mouseMotion: Boolean = mouseMotion,
   ): RunnerConfig =
     new RunnerConfig(
       tickRate,
@@ -159,6 +185,8 @@ final class RunnerConfig private (
       onFrameTiming,
       captureStdio,
       recording,
+      nonInteractive,
+      mouseMotion,
     )
 
   /** Structural over every field; the three function-valued fields compare by reference (see the class notes). */
@@ -168,7 +196,8 @@ final class RunnerConfig private (
         (this eq that) ||
         (mouseCapture == that.mouseCapture && keyEventTypes == that.keyEventTypes && tickRate == that.tickRate &&
           viewport == that.viewport && onTaskError == that.onTaskError && onFrame == that.onFrame &&
-          onFrameTiming == that.onFrameTiming && captureStdio == that.captureStdio && recording == that.recording)
+          onFrameTiming == that.onFrameTiming && captureStdio == that.captureStdio && recording == that.recording &&
+          nonInteractive == that.nonInteractive && mouseMotion == that.mouseMotion)
       case _                  => false
 
   override def hashCode(): Int =
@@ -180,7 +209,9 @@ final class RunnerConfig private (
     hash = 31 * hash + keyEventTypes.hashCode()
     hash = 31 * hash + onFrameTiming.hashCode()
     hash = 31 * hash + captureStdio.hashCode()
-    31 * hash + recording.hashCode()
+    hash = 31 * hash + recording.hashCode()
+    hash = 31 * hash + nonInteractive.hashCode()
+    31 * hash + mouseMotion.hashCode()
 
   /** Only the fields that differ from [[RunnerConfig.Default]], so the common configuration prints as one short line; a
     * function field prints as `<installed>`, a lambda having no readable text of its own.
@@ -196,6 +227,8 @@ final class RunnerConfig private (
       Option.when(onFrameTiming.nonEmpty)("onFrameTiming=<installed>"),
       captureStdio.map(mode => s"captureStdio=$mode"),
       recording.map(path => s"recording=$path"),
+      Option.when(nonInteractive != NonInteractivePolicy.Fail)(s"nonInteractive=$nonInteractive"),
+      Option.when(mouseMotion)("mouseMotion=true"),
     ).flatten
     if fields.isEmpty then "RunnerConfig.Default" else fields.mkString("RunnerConfig(", ", ", ")")
 
@@ -220,6 +253,8 @@ object RunnerConfig:
       onFrameTiming: Option[FrameTiming => Unit] = None,
       captureStdio: Option[CaptureStdio] = None,
       recording: Option[Path] = None,
+      nonInteractive: NonInteractivePolicy = NonInteractivePolicy.Fail,
+      mouseMotion: Boolean = false,
   ): RunnerConfig =
     new RunnerConfig(
       tickRate,
@@ -231,10 +266,96 @@ object RunnerConfig:
       onFrameTiming,
       captureStdio,
       recording,
+      nonInteractive,
+      mouseMotion,
     )
 
-  /** The seven-field arity `apply` had before `captureStdio` and `recording` were added, kept default-free so code
-    * compiled against it keeps working — the policy the nine-field `apply` above documents.
+  /** The ten-field arity `apply` had before `mouseMotion` was added, kept default-free so code compiled against it
+    * keeps working — the policy the eleven-field `apply` above documents.
+    */
+  def apply(
+      tickRate: Option[FiniteDuration],
+      mouseCapture: Boolean,
+      onTaskError: Option[RenderTaskErrorHandler],
+      onFrame: Option[CompletedFrame => Unit],
+      viewport: Viewport,
+      keyEventTypes: Boolean,
+      onFrameTiming: Option[FrameTiming => Unit],
+      captureStdio: Option[CaptureStdio],
+      recording: Option[Path],
+      nonInteractive: NonInteractivePolicy,
+  ): RunnerConfig =
+    new RunnerConfig(
+      tickRate,
+      mouseCapture,
+      onTaskError,
+      onFrame,
+      viewport,
+      keyEventTypes,
+      onFrameTiming,
+      captureStdio,
+      recording,
+      nonInteractive,
+      false,
+    )
+
+  /** The nine-field arity `apply` had before `nonInteractive` was added, kept default-free so code compiled against it
+    * keeps working — the policy the eleven-field `apply` above documents.
+    */
+  def apply(
+      tickRate: Option[FiniteDuration],
+      mouseCapture: Boolean,
+      onTaskError: Option[RenderTaskErrorHandler],
+      onFrame: Option[CompletedFrame => Unit],
+      viewport: Viewport,
+      keyEventTypes: Boolean,
+      onFrameTiming: Option[FrameTiming => Unit],
+      captureStdio: Option[CaptureStdio],
+      recording: Option[Path],
+  ): RunnerConfig =
+    new RunnerConfig(
+      tickRate,
+      mouseCapture,
+      onTaskError,
+      onFrame,
+      viewport,
+      keyEventTypes,
+      onFrameTiming,
+      captureStdio,
+      recording,
+      NonInteractivePolicy.Fail,
+      false,
+    )
+
+  /** The eight-field arity `apply` had before `recording` and `nonInteractive` were added, kept default-free so code
+    * compiled against it keeps working — the policy the eleven-field `apply` above documents.
+    */
+  def apply(
+      tickRate: Option[FiniteDuration],
+      mouseCapture: Boolean,
+      onTaskError: Option[RenderTaskErrorHandler],
+      onFrame: Option[CompletedFrame => Unit],
+      viewport: Viewport,
+      keyEventTypes: Boolean,
+      onFrameTiming: Option[FrameTiming => Unit],
+      captureStdio: Option[CaptureStdio],
+  ): RunnerConfig =
+    new RunnerConfig(
+      tickRate,
+      mouseCapture,
+      onTaskError,
+      onFrame,
+      viewport,
+      keyEventTypes,
+      onFrameTiming,
+      captureStdio,
+      None,
+      NonInteractivePolicy.Fail,
+      false,
+    )
+
+  /** The seven-field arity `apply` had before `captureStdio`, `recording` and `nonInteractive` were added, kept
+    * default-free so code compiled against it keeps working — the policy the eleven-field `apply` above documents.
     */
   def apply(
       tickRate: Option[FiniteDuration],
@@ -245,12 +366,47 @@ object RunnerConfig:
       keyEventTypes: Boolean,
       onFrameTiming: Option[FrameTiming => Unit],
   ): RunnerConfig =
-    new RunnerConfig(tickRate, mouseCapture, onTaskError, onFrame, viewport, keyEventTypes, onFrameTiming, None, None)
+    new RunnerConfig(
+      tickRate,
+      mouseCapture,
+      onTaskError,
+      onFrame,
+      viewport,
+      keyEventTypes,
+      onFrameTiming,
+      None,
+      None,
+      NonInteractivePolicy.Fail,
+      false,
+    )
 
   /** Full screen, no ticks, no mouse or key-release reporting, no observers: what `RunnerConfig()` builds and where
     * every `with*` chain starts.
     */
   val Default: RunnerConfig = RunnerConfig()
+
+/** What a run does when the process has no terminal to be interactive on.
+  *
+  * "No terminal" is decided by the host of the run — in the DSL, `TuiApp.printTarget`: standard output is not a TTY
+  * (redirected into a file, piped into another program, an IDE's output panel), or the `CI` environment variable is
+  * set. Every policy but [[Fail]] drives the app without a terminal: `onStart` runs, the first frame is composed at the
+  * detected size (`COLUMNS`×`LINES`, else 80×24), and the run ends the first time the loop would wait for input — no
+  * keystroke is ever going to arrive — so an app that only exits on `q` still exits, and exits `0`. Background work and
+  * ticks are not waited for: the frame printed is the one the app composes from its initial state and whatever
+  * `onStart` set synchronously.
+  *
+  *   - [[Fail]] — the behaviour every release before 0.20.0 had: the backend reports `terminal not supported` and the
+  *     app exits non-zero. The default, because it is what a user who piped a full-screen app by mistake needs to see,
+  *     and what the CI smoke test of every example asserts.
+  *   - [[PrintFinalFrame]] — the last frame the run composed is written to standard output as styled text (colour per
+  *     the detected depth, `NO_COLOR`/`FORCE_COLOR` honoured, no escape sequence at all when colour is off), one row
+  *     per line.
+  *   - [[PrintEveryFrame]] — every frame the run composed, in order, each in the same encoding.
+  *   - [[Plain]] — the text rows of every frame with no styling whatsoever, consecutive identical frames written once:
+  *     the form for a screen reader, a log file, or a `grep`.
+  */
+enum NonInteractivePolicy:
+  case Fail, PrintFinalFrame, PrintEveryFrame, Plain
 
 /** An event handler's answer to one question: does this event change what is on screen?
   *
@@ -362,6 +518,13 @@ trait RunnerHandle:
     * fraction changes.
     */
   def setTaskbarProgress(progress: Option[Double]): Unit
+
+  /** Switches how much mouse traffic the terminal sends, mid-run — `MouseCaptureMode.AllMotion` for hover. Only
+    * meaningful while mouse capture is on; the DSL calls it the first time a frame asks for a hover cue. The default
+    * does nothing, so a handle written before the method existed keeps compiling.
+    */
+  def setMouseCaptureMode(mode: MouseCaptureMode): Unit =
+    val _ = mode
 
 /** Every queued-body failure one run absorbed, collapsed into a single report.
   *

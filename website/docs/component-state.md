@@ -132,6 +132,25 @@ as a dep. Mutable widget states compare by identity, so a `ListState` as a dep n
 triggers a rebuild by itself; put the value that changed in the list instead. In a loop,
 `each` (or `keyed`) gives each row its own cache.
 
+## State the framework keeps for you
+
+Some state is not yours to hold at all. Whether an element is focused, hovered, pressed or
+disabled is written by the framework on every frame, so a component never needs a
+`useSignal` for "is the mouse over me". Ask for the look instead and let the framework
+decide when it applies:
+
+```scala
+def toolButton(label: String, enabled: Boolean)(action: => Unit): Element =
+  button(label)(action)
+    .hoverStyle(Style.Default.bold)
+    .pressedStyle(Style.Default.underline)
+    .disabled(!enabled)
+```
+
+A component whose own look depends on where the pointer is inside it reads `ctx.local`
+in `.onMouse(ctx => …)` — coordinates relative to the component, whatever layout did to it.
+See [Mouse & focus](mouse.md#disable-a-control).
+
 ## Lifetime
 
 A slot is created on the first frame that reaches its call and released at the end of

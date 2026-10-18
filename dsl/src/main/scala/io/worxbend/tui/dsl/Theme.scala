@@ -115,6 +115,13 @@ final class Theme private (
     */
   def withName(name: String): Theme = updated(name = name)
 
+  /** The style the focus pass stamps on a `.disabled` control: [[muted]] with `dim` added, so a disabled button reads
+    * as greyed out in every preset without a role of its own. Derived rather than stored — a theme that changes `muted`
+    * changes this too — because the three presets express "de-emphasised" through `muted` already and a second knob for
+    * the same idea would drift from the first. A later theme shape may promote it to a role; the read stays `disabled`.
+    */
+  def disabled: Style = muted.dim
+
   def withPrimary(style: Style): Theme = updated(primary = style)
   def withAccent(style: Style): Theme  = updated(accent = style)
   def withMuted(style: Style): Theme   = updated(muted = style)

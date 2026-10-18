@@ -1064,6 +1064,23 @@ recording backend, a remote one — and everything else about the app is unchang
 because the loop lives in `runWith(backend)` and runs over whatever it is handed.
 That is the same seam headless tests use; see [Testing](./testing).
 
+## Spatial focus and mouse motion
+
+Two `TuiApp` options change how focus and the mouse behave across the whole app:
+
+```scala
+object Board extends TuiApp:
+  override def spatialNavigation: Boolean = true                                // Alt+arrows move focus by direction
+  override def config: RunnerConfig       = RunnerConfig.Default.withMouseMotion // hover from the first frame
+  def view(using ReactiveScope, Theme): Element = tiles
+```
+
+`spatialNavigation` binds `Alt+Left/Right/Up/Down` to "nearest focusable in that
+direction", after the tree and the bindings have had their chance at the key.
+`withMouseMotion` asks the terminal for every pointer movement; with plain
+`withMouseCapture` the app switches to it by itself the first time a frame draws a
+`.hoverStyle`. Both are covered on [Mouse & focus](mouse.md#move-focus-by-direction).
+
 ## Lifecycle hooks
 
 | Hook | When to use it |

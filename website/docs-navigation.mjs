@@ -37,6 +37,7 @@ export const docsNavigation = [
       'async-and-timers',
       'motion',
       'cookbook',
+      'print-mode',
     ],
   },
   {

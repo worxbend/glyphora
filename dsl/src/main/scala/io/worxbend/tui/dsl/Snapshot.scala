@@ -47,4 +47,7 @@ object Snapshot:
     tracker.focusedKey = focusedKey
     tracker.reconcile(FocusPass.focusKeys(resolved), FocusPass.autofocusRequest(resolved))
     // no bounds recorder: a snapshot is a picture, and nothing is left behind to ask where a node landed in it
-    FocusPass.decorate(resolved, tracker, theme.focus, bounds = None).widget.render(area, buffer)
+    FocusPass
+      .decorate(resolved, tracker, theme.focus, bounds = None, disabledStyle = theme.disabled)
+      .widget
+      .render(area, buffer)

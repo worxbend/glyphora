@@ -26,9 +26,11 @@ object ColorDepth:
   /** Resolves the effective color depth from the environment.
     *
     * Precedence follows the widely-adopted conventions (https://no-color.org and https://bixense.com/clicolors/):
-    *   1. `NO_COLOR` set to any non-empty value, or `CLICOLOR` set to exactly `0`, disables color entirely — unless
-    *   2. `CLICOLOR_FORCE` is set to a non-zero value, which forces color on even when the two above ask for none or
-    *      the output is not a TTY.
+    *   1. `NO_COLOR` set to any non-empty value, `CLICOLOR` set to exactly `0`, or `FORCE_COLOR=0` disables color
+    *      entirely — unless
+    *   2. `CLICOLOR_FORCE` is set to a non-zero value, or `FORCE_COLOR` to anything but `0`, which forces color on even
+    *      when the line above asks for none or the output is not a TTY. A `FORCE_COLOR` of `1`, `2` or `3` also picks
+    *      the depth — sixteen colours, the 256 palette, true colour — the way Node's `supports-color` reads it.
     *   3. `TERM=dumb` resolves to [[NoColor]]: by convention such a terminal understands no escape sequences at all, so
     *      a `COLORTERM` inherited from an outer terminal must not resurrect color.
     *   4. Otherwise `COLORTERM=truecolor|24bit` wins (subject to the corrections in [[capability]]), a `256color`
@@ -40,14 +42,30 @@ object ColorDepth:
     * color on yields the classic sixteen.
     */
   def detect(env: Map[String, String] = sys.env): ColorDepth =
-    val forced   = env.get("CLICOLOR_FORCE").exists(value => value.nonEmpty && value != "0")
-    val disabled = env.get("NO_COLOR").exists(_.nonEmpty) || env.get("CLICOLOR").contains("0")
+    val forceColor = env.get("FORCE_COLOR")
+    val forced     = env.get("CLICOLOR_FORCE").exists(value => value.nonEmpty && value != "0") ||
+      forceColor.exists(_ != "0")
+    val disabled   = env.get("NO_COLOR").exists(_.nonEmpty) || env.get("CLICOLOR").contains("0") ||
+      forceColor.contains("0")
     if disabled && !forced then NoColor
     else
-      val detected = capability(env)
-      // `CLICOLOR_FORCE` means "emit color anyway", so it also lifts the two capability answers of NoColor — a `dumb`
-      // or absent TERM — back to the classic sixteen colors, which is the safest thing to force on.
-      if forced && detected == NoColor then Ansi16 else detected
+      forceColor.flatMap(forcedLevel) match
+        case Some(level) => level
+        case None        =>
+          val detected = capability(env)
+          // `CLICOLOR_FORCE` means "emit color anyway", so it also lifts the two capability answers of NoColor — a
+          // `dumb` or absent TERM — back to the classic sixteen colors, which is the safest thing to force on.
+          if forced && detected == NoColor then Ansi16 else detected
+
+  /** The depth a numeric `FORCE_COLOR` level names outright (the Node convention: `1` sixteen colours, `2` the 256
+    * palette, `3` true colour); any other value forces colour on without choosing a depth.
+    */
+  private def forcedLevel(value: String): Option[ColorDepth] =
+    value match
+      case "1" => Some(Ansi16)
+      case "2" => Some(Ansi256)
+      case "3" => Some(TrueColor)
+      case _   => None
 
   /** The capability half of [[detect]], on the environment variables the conventions above name.
     *
