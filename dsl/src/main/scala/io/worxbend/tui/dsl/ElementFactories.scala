@@ -1,7 +1,7 @@
 package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Constraint, Direction, Line, Size, Span, Style, Text, Widget}
-import io.worxbend.tui.runtime.{ReactiveScope, Signal}
+import io.worxbend.tui.runtime.{LogRing, ReactiveScope, Signal}
 import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets.TableRow
 import io.worxbend.tui.widgets as w
@@ -870,6 +870,38 @@ private[dsl] trait ElementFactories:
     */
   def log(state: w.LogState): LogElement =
     LogElement(state)
+
+  /** The tail of a [[LogRing]] — records from `JulBridge.attach(ring)`, a `CaptureStdio.Console(ring)` or the app's own
+    * `ring.log(...)` — one per row, newest at the bottom; see [[LogConsoleElement]] for the row format.
+    *
+    * Filter with `.minLevel(LogLevel.Warning)` and `.loggerPrefix("app.net")`. There is no state to own and no scroll:
+    * the console follows the tail, so it is built in the view like any other node, typically behind a `Signal[Boolean]`
+    * the app flips from a key binding. Themed at construction: the level column takes the ambient [[Theme]]'s `warning`
+    * and `error`, the timestamp and logger its `muted`.
+    */
+  def logConsole(ring: LogRing)(using theme: Theme): LogConsoleElement =
+    LogConsoleElement(
+      ring,
+      minimumLevel = io.worxbend.tui.runtime.LogLevel.Trace,
+      prefix = "",
+      zone = java.time.ZoneId.systemDefault(),
+      warningStyle = theme.warning,
+      errorStyle = theme.error,
+      mutedStyle = theme.muted,
+    )
+
+  /** Keeps a failing `subtree` from ending the run: a non-fatal throwable while it is built or painted paints
+    * `fallback(error)` in its area instead, logs the failure, and the next frame tries the subtree again. See
+    * [[ErrorBoundaryElement]].
+    *
+    * {{{
+    * errorBoundary(error => text(s"chart unavailable: ${error.getMessage}").dim) {
+    *   chart(datasets, xBounds, yBounds)
+    * }
+    * }}}
+    */
+  def errorBoundary(fallback: Throwable => Element)(subtree: => Element): ErrorBoundaryElement =
+    ErrorBoundaryElement(() => subtree, fallback)
 
   /** A one-row horizontal divider, optionally captioned. Drawn in the ambient [[Theme]]'s `border` style, with the
     * caption in `muted`, so it matches the frames around it.

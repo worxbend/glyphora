@@ -3,6 +3,7 @@ package io.worxbend.tui.runtime
 import io.worxbend.tui.core.{Event, Widget}
 import io.worxbend.tui.terminal.{BackendError, MouseCaptureMode, PointerShape}
 
+import java.nio.file.Path
 import scala.concurrent.duration.FiniteDuration
 
 /** Runner configuration: an optional tick rate (synthetic [[Event.Tick]]s for animation) and whether to capture mouse
@@ -44,6 +45,22 @@ import scala.concurrent.duration.FiniteDuration
   * `viewport` decides how much of the terminal the run owns — the whole alternate screen (the default), or a strip of
   * rows at the bottom of the primary screen that leaves the shell's own output visible above it. See [[Viewport]].
   *
+  * `captureStdio` decides what happens to `System.out`/`System.err` while the run owns the terminal — see
+  * [[CaptureStdio]]. `None`, the default, leaves the decision to whoever owns the runner: a bare [[TerminalRunner]]
+  * captures nothing, while `TuiApp` captures into `printAbove`. Set it explicitly —
+  * `withCaptureStdio(CaptureStdio.Off)` — to overrule that host default.
+  *
+  * `recording`, when set, writes every flushed frame of the run to that file as an asciicast v2 recording — see
+  * [[AsciicastRecorder]]. The runner opens the file before it touches the terminal (a path that cannot be opened ends
+  * `run` with [[RunnerError.Handler]] and the terminal untouched), records synchronously after each flush alongside any
+  * `onFrame` observer, and closes it during teardown. `None`, the default, records nothing — unless the JVM was started
+  * with `-Dglyphora.record=<file>`, which names the file for a run whose configuration did not; the configuration wins
+  * when both are set.
+  *
+  * `nonInteractive` says what a run does when the process has no terminal to be interactive on — standard output is not
+  * a TTY, or `CI` is set. See [[NonInteractivePolicy]]; the default, [[NonInteractivePolicy.Fail]], is the behaviour
+  * every release before 0.20.0 had, and the one the CI smoke test of every example relies on.
+  *
   * An immutable value with a private constructor: build one from [[RunnerConfig.Default]] (or the companion `apply`)
   * and the `with*` methods, each of which returns a new configuration. The two Booleans and every `Option` come as a
   * pair — `withMouseCapture`/`withoutMouseCapture`, `withTickRate(d)`/`withoutTickRate` — so a call site reads as a
@@ -61,6 +78,9 @@ final class RunnerConfig private (
     val viewport: Viewport,
     val keyEventTypes: Boolean,
     val onFrameTiming: Option[FrameTiming => Unit],
+    val captureStdio: Option[CaptureStdio],
+    val recording: Option[Path],
+    val nonInteractive: NonInteractivePolicy,
     val mouseMotion: Boolean,
 ):
 
@@ -111,6 +131,22 @@ final class RunnerConfig private (
   /** No phase timing, and no profiling clock reads. The default. */
   def withoutOnFrameTiming: RunnerConfig = updated(onFrameTiming = None)
 
+  /** What to do with `System.out`/`System.err` during the run — see [[CaptureStdio]] and the class notes. */
+  def withCaptureStdio(mode: CaptureStdio): RunnerConfig = updated(captureStdio = Some(mode))
+
+  /** Back to the host's default: nothing for a bare runner, `printAbove` under `TuiApp`. The default. */
+  def withoutCaptureStdio: RunnerConfig = updated(captureStdio = None)
+
+  /** Records every flushed frame of the run to `path` as asciicast v2 — see the class notes and [[AsciicastRecorder]].
+    */
+  def withRecording(path: Path): RunnerConfig = updated(recording = Some(path))
+
+  /** No recording from the configuration (`-Dglyphora.record` may still name one). The default. */
+  def withoutRecording: RunnerConfig = updated(recording = None)
+
+  /** What a run does without a terminal to be interactive on — see [[NonInteractivePolicy]]. */
+  def withNonInteractive(policy: NonInteractivePolicy): RunnerConfig = updated(nonInteractive = policy)
+
   /** Asks for every pointer movement, not only presses, releases and drags — `MouseCaptureMode.AllMotion`, which is
     * what delivers [[io.worxbend.tui.core.MouseEventKind.Moved]] and so hover. Implies [[withMouseCapture]]. Off by
     * default because the terminal then sends a report per cell crossed; a DSL `TuiApp` running with mouse capture turns
@@ -134,9 +170,24 @@ final class RunnerConfig private (
       viewport: Viewport = viewport,
       keyEventTypes: Boolean = keyEventTypes,
       onFrameTiming: Option[FrameTiming => Unit] = onFrameTiming,
+      captureStdio: Option[CaptureStdio] = captureStdio,
+      recording: Option[Path] = recording,
+      nonInteractive: NonInteractivePolicy = nonInteractive,
       mouseMotion: Boolean = mouseMotion,
   ): RunnerConfig =
-    new RunnerConfig(tickRate, mouseCapture, onTaskError, onFrame, viewport, keyEventTypes, onFrameTiming, mouseMotion)
+    new RunnerConfig(
+      tickRate,
+      mouseCapture,
+      onTaskError,
+      onFrame,
+      viewport,
+      keyEventTypes,
+      onFrameTiming,
+      captureStdio,
+      recording,
+      nonInteractive,
+      mouseMotion,
+    )
 
   /** Structural over every field; the three function-valued fields compare by reference (see the class notes). */
   override def equals(other: Any): Boolean =
@@ -145,7 +196,8 @@ final class RunnerConfig private (
         (this eq that) ||
         (mouseCapture == that.mouseCapture && keyEventTypes == that.keyEventTypes && tickRate == that.tickRate &&
           viewport == that.viewport && onTaskError == that.onTaskError && onFrame == that.onFrame &&
-          onFrameTiming == that.onFrameTiming && mouseMotion == that.mouseMotion)
+          onFrameTiming == that.onFrameTiming && captureStdio == that.captureStdio && recording == that.recording &&
+          nonInteractive == that.nonInteractive && mouseMotion == that.mouseMotion)
       case _                  => false
 
   override def hashCode(): Int =
@@ -156,6 +208,9 @@ final class RunnerConfig private (
     hash = 31 * hash + viewport.hashCode()
     hash = 31 * hash + keyEventTypes.hashCode()
     hash = 31 * hash + onFrameTiming.hashCode()
+    hash = 31 * hash + captureStdio.hashCode()
+    hash = 31 * hash + recording.hashCode()
+    hash = 31 * hash + nonInteractive.hashCode()
     31 * hash + mouseMotion.hashCode()
 
   /** Only the fields that differ from [[RunnerConfig.Default]], so the common configuration prints as one short line; a
@@ -170,6 +225,9 @@ final class RunnerConfig private (
       Option.when(viewport != Viewport.Fullscreen)(s"viewport=$viewport"),
       Option.when(keyEventTypes)("keyEventTypes=true"),
       Option.when(onFrameTiming.nonEmpty)("onFrameTiming=<installed>"),
+      captureStdio.map(mode => s"captureStdio=$mode"),
+      recording.map(path => s"recording=$path"),
+      Option.when(nonInteractive != NonInteractivePolicy.Fail)(s"nonInteractive=$nonInteractive"),
       Option.when(mouseMotion)("mouseMotion=true"),
     ).flatten
     if fields.isEmpty then "RunnerConfig.Default" else fields.mkString("RunnerConfig(", ", ", ")")
@@ -193,14 +251,162 @@ object RunnerConfig:
       viewport: Viewport = Viewport.Fullscreen,
       keyEventTypes: Boolean = false,
       onFrameTiming: Option[FrameTiming => Unit] = None,
+      captureStdio: Option[CaptureStdio] = None,
+      recording: Option[Path] = None,
+      nonInteractive: NonInteractivePolicy = NonInteractivePolicy.Fail,
       mouseMotion: Boolean = false,
   ): RunnerConfig =
-    new RunnerConfig(tickRate, mouseCapture, onTaskError, onFrame, viewport, keyEventTypes, onFrameTiming, mouseMotion)
+    new RunnerConfig(
+      tickRate,
+      mouseCapture,
+      onTaskError,
+      onFrame,
+      viewport,
+      keyEventTypes,
+      onFrameTiming,
+      captureStdio,
+      recording,
+      nonInteractive,
+      mouseMotion,
+    )
+
+  /** The ten-field arity `apply` had before `mouseMotion` was added, kept default-free so code compiled against it
+    * keeps working — the policy the eleven-field `apply` above documents.
+    */
+  def apply(
+      tickRate: Option[FiniteDuration],
+      mouseCapture: Boolean,
+      onTaskError: Option[RenderTaskErrorHandler],
+      onFrame: Option[CompletedFrame => Unit],
+      viewport: Viewport,
+      keyEventTypes: Boolean,
+      onFrameTiming: Option[FrameTiming => Unit],
+      captureStdio: Option[CaptureStdio],
+      recording: Option[Path],
+      nonInteractive: NonInteractivePolicy,
+  ): RunnerConfig =
+    new RunnerConfig(
+      tickRate,
+      mouseCapture,
+      onTaskError,
+      onFrame,
+      viewport,
+      keyEventTypes,
+      onFrameTiming,
+      captureStdio,
+      recording,
+      nonInteractive,
+      false,
+    )
+
+  /** The nine-field arity `apply` had before `nonInteractive` was added, kept default-free so code compiled against it
+    * keeps working — the policy the eleven-field `apply` above documents.
+    */
+  def apply(
+      tickRate: Option[FiniteDuration],
+      mouseCapture: Boolean,
+      onTaskError: Option[RenderTaskErrorHandler],
+      onFrame: Option[CompletedFrame => Unit],
+      viewport: Viewport,
+      keyEventTypes: Boolean,
+      onFrameTiming: Option[FrameTiming => Unit],
+      captureStdio: Option[CaptureStdio],
+      recording: Option[Path],
+  ): RunnerConfig =
+    new RunnerConfig(
+      tickRate,
+      mouseCapture,
+      onTaskError,
+      onFrame,
+      viewport,
+      keyEventTypes,
+      onFrameTiming,
+      captureStdio,
+      recording,
+      NonInteractivePolicy.Fail,
+      false,
+    )
+
+  /** The eight-field arity `apply` had before `recording` and `nonInteractive` were added, kept default-free so code
+    * compiled against it keeps working — the policy the eleven-field `apply` above documents.
+    */
+  def apply(
+      tickRate: Option[FiniteDuration],
+      mouseCapture: Boolean,
+      onTaskError: Option[RenderTaskErrorHandler],
+      onFrame: Option[CompletedFrame => Unit],
+      viewport: Viewport,
+      keyEventTypes: Boolean,
+      onFrameTiming: Option[FrameTiming => Unit],
+      captureStdio: Option[CaptureStdio],
+  ): RunnerConfig =
+    new RunnerConfig(
+      tickRate,
+      mouseCapture,
+      onTaskError,
+      onFrame,
+      viewport,
+      keyEventTypes,
+      onFrameTiming,
+      captureStdio,
+      None,
+      NonInteractivePolicy.Fail,
+      false,
+    )
+
+  /** The seven-field arity `apply` had before `captureStdio`, `recording` and `nonInteractive` were added, kept
+    * default-free so code compiled against it keeps working — the policy the eleven-field `apply` above documents.
+    */
+  def apply(
+      tickRate: Option[FiniteDuration],
+      mouseCapture: Boolean,
+      onTaskError: Option[RenderTaskErrorHandler],
+      onFrame: Option[CompletedFrame => Unit],
+      viewport: Viewport,
+      keyEventTypes: Boolean,
+      onFrameTiming: Option[FrameTiming => Unit],
+  ): RunnerConfig =
+    new RunnerConfig(
+      tickRate,
+      mouseCapture,
+      onTaskError,
+      onFrame,
+      viewport,
+      keyEventTypes,
+      onFrameTiming,
+      None,
+      None,
+      NonInteractivePolicy.Fail,
+      false,
+    )
 
   /** Full screen, no ticks, no mouse or key-release reporting, no observers: what `RunnerConfig()` builds and where
     * every `with*` chain starts.
     */
   val Default: RunnerConfig = RunnerConfig()
+
+/** What a run does when the process has no terminal to be interactive on.
+  *
+  * "No terminal" is decided by the host of the run — in the DSL, `TuiApp.printTarget`: standard output is not a TTY
+  * (redirected into a file, piped into another program, an IDE's output panel), or the `CI` environment variable is
+  * set. Every policy but [[Fail]] drives the app without a terminal: `onStart` runs, the first frame is composed at the
+  * detected size (`COLUMNS`×`LINES`, else 80×24), and the run ends the first time the loop would wait for input — no
+  * keystroke is ever going to arrive — so an app that only exits on `q` still exits, and exits `0`. Background work and
+  * ticks are not waited for: the frame printed is the one the app composes from its initial state and whatever
+  * `onStart` set synchronously.
+  *
+  *   - [[Fail]] — the behaviour every release before 0.20.0 had: the backend reports `terminal not supported` and the
+  *     app exits non-zero. The default, because it is what a user who piped a full-screen app by mistake needs to see,
+  *     and what the CI smoke test of every example asserts.
+  *   - [[PrintFinalFrame]] — the last frame the run composed is written to standard output as styled text (colour per
+  *     the detected depth, `NO_COLOR`/`FORCE_COLOR` honoured, no escape sequence at all when colour is off), one row
+  *     per line.
+  *   - [[PrintEveryFrame]] — every frame the run composed, in order, each in the same encoding.
+  *   - [[Plain]] — the text rows of every frame with no styling whatsoever, consecutive identical frames written once:
+  *     the form for a screen reader, a log file, or a `grep`.
+  */
+enum NonInteractivePolicy:
+  case Fail, PrintFinalFrame, PrintEveryFrame, Plain
 
 /** An event handler's answer to one question: does this event change what is on screen?
   *

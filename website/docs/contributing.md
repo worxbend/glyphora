@@ -183,12 +183,22 @@ README, Pages, and Wiki belong in `docs/assets/`.
 When adding a page, add its ID to `website/docs-navigation.mjs`; that one navigation
 tree drives both Docusaurus and the generated Wiki sidebar.
 
+Screenshots and recordings are generated, not captured. A page that needs a picture of
+a widget renders the real widget in a test and writes `BufferExport.svg(buffer)` into
+`docs/assets/`; a page that needs a demo describes it as a tape (`Tape.parse` /
+`Tape.run`, see [Testing](./testing#script-a-demo-with-a-tape)) next to the suite that
+runs it. `scripts/render-tapes.sh` regenerates every tape-driven `.cast` and screenshot
+under `build/tapes` (or `GLYPHORA_TAPE_OUTPUT`); convert a `.cast` to a GIF with `agg`
+only when a page genuinely needs motion. A regenerated picture is reviewed like any other
+diff, and can never drift from the code it shows.
+
 ## Prepare a pull request
 
 - Keep the change focused and explain the user-visible outcome first.
 - Include commands you ran and any terminal/emulator used for manual verification.
-- Add screenshots only when the change is genuinely visual; prefer text/buffer
-  assertions for behavior.
+- Add screenshots only when the change is genuinely visual, and generate them from a
+  test or a tape rather than capturing them by hand; prefer text/buffer assertions
+  for behavior.
 - Call out public API and native-image implications explicitly.
 - Do not commit generated `website/build` or `build/wiki` output.
 

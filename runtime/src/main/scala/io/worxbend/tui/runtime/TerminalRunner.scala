@@ -5,6 +5,7 @@ import io.worxbend.tui.terminal.{Backend, BackendError, MouseCaptureMode, Pointe
 
 import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
 import scala.util.control.NonFatal
+import scala.util.{Failure, Success, Try}
 
 /** The production [[Runner]]: raw mode + alternate screen setup, diff-driven redraws, tick emission, resize handling,
   * and render-thread registration around a [[Backend]].
@@ -56,16 +57,19 @@ final class TerminalRunner(
       handleEvent: (Event, RunnerHandle) => EventOutcome,
       render: Frame => Unit,
   ): Either[RunnerError, Unit] =
-    val recorder = new QueuedTaskFailureRecorder
+    val failures = new QueuedTaskFailureRecorder
     val loop     = RenderThread.register(
       Thread.currentThread(),
       () => backend.wake(),
-      config.onTaskError.getOrElse(recorder),
+      config.onTaskError.getOrElse(failures),
     )
 
-    var result: Either[RunnerError, Unit] = Right(())
-    var thrown: Option[Throwable]         = None
-    var setupIncomplete                   = true
+    val capture = installCapture(loop)
+
+    var result: Either[RunnerError, Unit]   = Right(())
+    var thrown: Option[Throwable]           = None
+    var setupIncomplete                     = true
+    var recorder: Option[AsciicastRecorder] = None
 
     def recordCleanup(error: Throwable): Unit =
       thrown match
@@ -88,17 +92,24 @@ final class TerminalRunner(
       cleanup.collected.foreach(recordCleanup)
 
     try
-      setup() match
-        case Left(error) =>
-          result = Left(RunnerError.Backend(error))
-        case Right(())   =>
-          setupIncomplete = false
-          val outcome = runLoop(onStart, handleEvent, render, loop)
-          result = report(outcome, recorder.collected)
-          // One final bounded batch per queue, not a drain-until-empty: self-requeueing producers cannot postpone
-          // onStop and backend restoration forever. Remaining owned work is discarded by close after onStop.
-          RenderThread.drainPending(loop, RenderThread.FinalDrainBudget)
-          result = report(outcome, recorder.collected)
+      // The recording file is opened before the terminal is dressed: a path that cannot be written fails the run here,
+      // with the terminal untouched, instead of a frame later from inside the loop.
+      openRecorder() match
+        case Failure(error)  =>
+          result = Left(RunnerError.Handler(error))
+        case Success(opened) =>
+          recorder = opened
+          setup() match
+            case Left(error) =>
+              result = Left(RunnerError.Backend(error))
+            case Right(())   =>
+              setupIncomplete = false
+              val outcome = runLoop(onStart, handleEvent, render, loop, configWith(opened), capture)
+              result = report(outcome, failures.collected)
+              // One final bounded batch per queue, not a drain-until-empty: self-requeueing producers cannot postpone
+              // onStop and backend restoration forever. Remaining owned work is discarded by close after onStop.
+              RenderThread.drainPending(loop, RenderThread.FinalDrainBudget)
+              result = report(outcome, failures.collected)
     catch
       // What reaches here is a throwing `onTaskError` (non-fatal: `runLoop` guards the app's own callbacks and the
       // loop's handler absorbs a `NonFatal` from a queued body) or a fatal from a body run in the final drain. The
@@ -114,6 +125,8 @@ final class TerminalRunner(
         thrown = Some(error)
     finally
       // Confined resources are disposed while their owner remains registered. Each release is attempted independently.
+      // The recording is closed first, so the last frame is on disk whatever `onStop` does.
+      recorder.foreach(opened => release(opened.close()))
       release(onStop())
       release(loop.close())
       release(RenderThread.unregister())
@@ -134,6 +147,9 @@ final class TerminalRunner(
           case Right(())   => ()
       }
       if setupIncomplete then release(backend.emergencyRestore())
+      // last, once the terminal is the shell's again: the partial line this flushes belongs under the restored prompt,
+      // not on an alternate screen that is about to be discarded
+      release(capture.foreach(_.restore()))
     thrown.foreach(error => throw error)
     result
 
@@ -203,13 +219,70 @@ final class TerminalRunner(
       _ <- if config.keyEventTypes then backend.enableKeyEventTypes() else Right(())
     yield ()
 
+  /** Runs the loop with Scala's `Console` streams bound to the capturing ones for the duration, when capturing: the
+    * `System.setOut` half of the swap misses every Scala `println`, which reads a dynamic variable initialised once
+    * from the original `System.out` — see [[StdioCapture]].
+    */
   private def runLoop(
       onStart: RunnerHandle => Unit,
       handleEvent: (Event, RunnerHandle) => EventOutcome,
       render: Frame => Unit,
       loop: RenderThread.RenderLoop,
+      effective: RunnerConfig,
+      capture: Option[StdioCapture],
   ): Option[LoopFailure] =
-    LoopBody(backend, config, nanoTime, redrawRequested, onStart, handleEvent, render, loop).run()
+    val body = LoopBody(backend, effective, nanoTime, redrawRequested, onStart, handleEvent, render, loop, capture)
+    capture match
+      case Some(active) => Console.withOut(active.outStream)(Console.withErr(active.errStream)(body.run()))
+      case None         => body.run()
+
+  /** Opens the asciicast recorder the configuration — or, failing that, `-Dglyphora.record` — asks for. `Success(None)`
+    * when neither names a file; `Failure` when the file cannot be opened.
+    */
+  private def openRecorder(): Try[Option[AsciicastRecorder]] =
+    config.recording.orElse(AsciicastRecorder.systemPropertyPath) match
+      case Some(path) => Try(Some(AsciicastRecorder.toFile(path, nanoTime)))
+      case None       => Success(None)
+
+  /** The configuration the loop runs with: the user's own `onFrame` followed by the recorder, when there is one. */
+  private def configWith(recorder: Option[AsciicastRecorder]): RunnerConfig =
+    recorder match
+      case None         => config
+      case Some(record) =>
+        config.withOnFrame { frame =>
+          config.onFrame.foreach(observe => observe(frame))
+          record(frame)
+        }
+
+  /** Swaps the process streams for the configured [[CaptureStdio]], or does nothing for `Off` (and for the `None` a
+    * bare runner reads as `Off`). Lines captured under `PrintAbove` are printed through the backend on the render
+    * thread — inline when written there, queued onto `loop` otherwise — and fall back to the original stream once the
+    * loop is closed or its queue is full, so no line is lost. A `printAbove` the backend refuses is dropped here rather
+    * than ending the loop: the next frame's own draw reports a broken backend.
+    */
+  private def installCapture(loop: RenderThread.RenderLoop): Option[StdioCapture] =
+    config.captureStdio.getOrElse(CaptureStdio.Off) match
+      case CaptureStdio.Off           => None
+      case CaptureStdio.PrintAbove    =>
+        // the fallback is the *original* stream: writing to the capturing one from inside its own sink would loop
+        lazy val capture: StdioCapture =
+          StdioCapture(printAboveSink(loop, capture.priorOut), printAboveSink(loop, capture.priorErr))
+        capture.install()
+        Some(capture)
+      case CaptureStdio.Console(ring) =>
+        val capture = StdioCapture(
+          line => ring.log(LogLevel.Info, "stdout", line),
+          line => ring.log(LogLevel.Warning, "stderr", line),
+        )
+        capture.install()
+        Some(capture)
+
+  private def printAboveSink(loop: RenderThread.RenderLoop, fallback: => java.io.PrintStream): String => Unit =
+    line =>
+      val accepted =
+        try loop.execute { val _ = backend.printAbove(Seq(line)) }
+        catch case _: java.util.concurrent.RejectedExecutionException => false
+      if !accepted then fallback.println(line)
 
 object TerminalRunner:
   /** Releases an already-owned backend when application preparation failed before a runner existed. No terminal modes
@@ -245,11 +318,12 @@ private final class LoopBody(
     handleEvent: (Event, RunnerHandle) => EventOutcome,
     render: Frame => Unit,
     loop: RenderThread.RenderLoop,
+    capture: Option[StdioCapture],
 ):
 
   private val state    = LoopState()
   private val ticks    = TickSchedule(config.tickRate, nanoTime)
-  private val handle   = BackendHandle(backend, state)
+  private val handle   = BackendHandle(backend, state, capture)
   private val composer = FrameComposer(backend, render, config.onFrame, config.viewport, config.onFrameTiming, nanoTime)
 
   private def isLive: Boolean = state.isLive && !loop.stopRequested
@@ -548,15 +622,17 @@ private final class LoopState:
   * is not thrown: it is recorded on the shared [[LoopState]], which ends the loop after the current iteration rather
   * than unwinding it mid-frame.
   */
-private final class BackendHandle(backend: Backend, state: LoopState) extends RunnerHandle:
+private final class BackendHandle(backend: Backend, state: LoopState, capture: Option[StdioCapture])
+    extends RunnerHandle:
 
   def quit(): Unit                           = state.stop()
   def runOnRenderThread(body: => Unit): Unit = RenderThread.runOnRenderThread(body)
   def requestRedraw(): Unit                  = state.requestRedraw()
   def copyToClipboard(text: String): Unit    = state.record(backend.copyToClipboard(text))
 
-  // the backend forces a full repaint once `body` hands the terminal back
-  def suspend(body: => Unit): Unit         = state.record(backend.suspend(body))
+  // the backend forces a full repaint once `body` hands the terminal back; while it is away, captured output goes to
+  // the real streams, because the terminal the body is using *is* the real stream
+  def suspend(body: => Unit): Unit         = state.record(backend.suspend(StdioCapture.passingThrough(capture)(body)))
   def printAbove(lines: Seq[String]): Unit = state.record(backend.printAbove(lines))
 
   def insertBefore(height: Int, widget: Widget): Unit = state.record(backend.insertBefore(height, widget))
