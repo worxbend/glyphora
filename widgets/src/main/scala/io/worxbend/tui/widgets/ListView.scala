@@ -74,7 +74,9 @@ final class ListState(var selected: Option[Int] = None, var offset: Int = 0, var
   * press of Down moves past the whole block; the offset arithmetic that keeps the selection on screen is
   * [[ScrollWindow.offsetForItems]]. A `Text` with no lines at all still takes one blank row, so an item can never
   * become invisible and therefore unreachable. The last item on screen may be cut off part way through, which is what
-  * lets a block taller than the whole viewport still show its top.
+  * lets a block taller than the whole viewport still show its top — or, in a bottom-to-top list, its bottom: the cut
+  * always falls on the lines past the far edge, so a block keeps its reading order whichever edge the list grows from,
+  * and a `BottomToTop` item too tall for the rows left above its predecessors loses its *top* lines.
   *
   * `repeatHighlightSymbol` decides whether the marker is drawn on every row of a selected multi-row item or only on its
   * first. The default draws it once, so the marker reads as pointing at the item; repeating it reads as marking each
@@ -82,7 +84,9 @@ final class ListState(var selected: Option[Int] = None, var offset: Int = 0, var
   *
   * `direction` picks which edge of the area the rows are anchored to; see [[ListDirection]]. It changes only where the
   * visible rows are painted — the selection clamping and the scroll offset are index arithmetic and are identical in
-  * both directions.
+  * both directions. Items are placed as blocks, so `BottomToTop` stacks the *items* upwards from the floor while the
+  * lines inside each item still read top-down: a title stays above its subtitle, and the highlight marker sits on the
+  * item's first visible line — its top row, or the topmost row left when a bottom-to-top block is cut at the ceiling.
   */
 final case class ListView(
     items: Seq[String | Line | Text],
@@ -144,37 +148,50 @@ final case class ListView(
         case HighlightSpacing.WhenSelected => if selected.isDefined then CharWidth.of(highlightSymbol) else 0
         case HighlightSpacing.Never        => 0
       val padding     = " ".repeat(gutterWidth)
-      // One counter of visible rows across all the items drawn, so a multi-row item pushes the next item down by its
-      // own height rather than by one. Rows past the area are never reached, which is what cuts the last item short.
+      // One counter of visible rows across all the items drawn, so a multi-row item pushes the next item on by its
+      // own height rather than by one. It counts rows away from the anchored edge, so only the edge changes between
+      // the two directions and the scroll arithmetic above cannot drift apart from what is drawn.
       var row         = 0
       items.iterator.drop(state.offset).zipWithIndex.takeWhile(_ => row < area.height).foreach { (item, ordinal) =>
         val index      = state.offset + ordinal
         val isSelected = selected.contains(index)
         val rowStyle   = if isSelected then style.patch(highlightStyle) else style
-        linesOf(item).iterator.zipWithIndex.takeWhile(_ => row < area.height).foreach { (line, lineIndex) =>
-          // with no gutter reserved there is no room for the marker either, so the highlight style is the only cue.
-          // The marker belongs to the item, so on a multi-row item it is drawn once, at the top, unless the caller
-          // asked for it on every row.
-          val marks       = isSelected && gutterWidth > 0 && (lineIndex == 0 || repeatHighlightSymbol)
-          val prefix      = if marks then highlightSymbol else padding
-          // `row` counts visible rows away from the anchored edge, so only the edge changes between the two directions
-          // and the scroll arithmetic above cannot drift apart from what is drawn. `area.bottom - 1 - row` never falls
-          // above the area because the walk stops at `area.height` rows.
-          val y           = direction match
-            case ListDirection.TopToBottom => area.y + row
-            case ListDirection.BottomToTop => area.bottom - 1 - row
-          // clip to the area, not just to the buffer: a highlight symbol wider than a narrow list would otherwise be
-          // written straight over whatever owns the columns to the right. The width is measured once: when the prefix
-          // already fits, the substringByWidth cut (and its copy) is skipped, and a padding run in the default style
-          // draws nothing the frame does not already show, so that write is skipped too
-          val prefixWidth = CharWidth.of(prefix)
-          if prefixWidth > area.width then
-            buffer.setString(area.x, y, CharWidth.substringByWidth(prefix, area.width), rowStyle)
-          else if prefix.nonEmpty && (marks || rowStyle != Style.Default) then
-            buffer.setString(area.x, y, prefix, rowStyle)
-          val _ = LineRenderer.render(buffer, area.x + gutterWidth, y, line, area.width - gutterWidth, rowStyle)
-          row += 1
-        }
+        val lines      = linesOf(item)
+        // An item is placed as a block, not line by line: `blockTop` is the row its first line lands on, and every
+        // further line goes one row below it, so the lines keep their reading order whichever edge the list grows
+        // from. Top-to-bottom the block starts `row` rows under the ceiling; bottom-to-top its *last* line sits `row`
+        // rows above the floor, which puts its first line `lines.size` rows higher. A block that overruns the area
+        // loses the rows past the far edge — the bottom lines of a top-to-bottom block, the top lines of a
+        // bottom-to-top one — and the walk below visits only the lines that land inside the area, so a block of ten
+        // thousand lines still costs a screenful.
+        val blockTop   = direction match
+          case ListDirection.TopToBottom => area.y + row
+          case ListDirection.BottomToTop => area.bottom - row - lines.size
+        val cutAbove   = math.max(0, area.y - blockTop)
+        lines.iterator.zipWithIndex
+          .drop(cutAbove)
+          .takeWhile((_, lineIndex) => blockTop + lineIndex < area.bottom)
+          .foreach { (line, lineIndex) =>
+            // with no gutter reserved there is no room for the marker either, so the highlight style is the only cue.
+            // The marker belongs to the item, so on a multi-row item it is drawn once, on its first *visible* line,
+            // unless the caller asked for it on every row: a bottom-to-top block cut at the ceiling keeps its marker
+            // on the topmost row it still owns rather than losing it with the cut lines.
+            val marks       = isSelected && gutterWidth > 0 && (lineIndex == cutAbove || repeatHighlightSymbol)
+            val prefix      = if marks then highlightSymbol else padding
+            val y           = blockTop + lineIndex
+            // clip to the area, not just to the buffer: a highlight symbol wider than a narrow list would otherwise be
+            // written straight over whatever owns the columns to the right. The width is measured once: when the
+            // prefix already fits, the substringByWidth cut (and its copy) is skipped, and a padding run in the default
+            // style draws nothing the frame does not already show, so that write is skipped too
+            val prefixWidth = CharWidth.of(prefix)
+            if prefixWidth > area.width then
+              buffer.setString(area.x, y, CharWidth.substringByWidth(prefix, area.width), rowStyle)
+            else if prefix.nonEmpty && (marks || rowStyle != Style.Default) then
+              buffer.setString(area.x, y, prefix, rowStyle)
+            val _ = LineRenderer.render(buffer, area.x + gutterWidth, y, line, area.width - gutterWidth, rowStyle)
+          }
+        // the rows this block took from the viewport: all of it when it fits, whatever was left when it did not
+        row += math.min(lines.size, area.height - row)
       }
 
   /** The rows every item together occupies — the sum of the items' own heights, which is one row each until a [[Text]]

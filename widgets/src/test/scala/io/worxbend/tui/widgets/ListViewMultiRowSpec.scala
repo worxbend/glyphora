@@ -94,6 +94,34 @@ final class ListViewMultiRowSpec extends AnyFunSuite:
     val buffer = rendered(tall, ListState(selected = None, offset = 2), 10, 3)
     assert(trimmedLines(buffer) == Seq("  b", "  c", "  d"))
 
+  test("a bottom-to-top list keeps a multi-row item's lines in reading order"):
+    // The first item is anchored to the floor and the next climbs above it, but *inside* the item the title still
+    // reads above its subtitle: the direction moves blocks, never the lines within one. The marker belongs to the
+    // item's first line, which is its top row whichever edge the list grows from.
+    val widget = ListView(Seq(text("title", "sub"), "next"), direction = ListDirection.BottomToTop)
+    val buffer = rendered(widget, ListState(selected = Some(0)), 10, 4)
+    assert(trimmedLines(buffer) == Seq("", "  next", "> title", "  sub"))
+
+  test("the topmost bottom-to-top item that does not fit loses its top lines"):
+    // Two rows are left above "first" for a three-line item, and in reading order those two rows are its last two
+    // lines — the cut falls on the lines past the far edge, which bottom-to-top is the top of the block.
+    val widget = ListView(Seq("first", text("a", "b", "c")), direction = ListDirection.BottomToTop)
+    val buffer = rendered(widget, ListState(), 10, 3)
+    assert(trimmedLines(buffer) == Seq("  b", "  c", "  first"))
+
+  test("a bottom-to-top item taller than the viewport shows its bottom rather than disappearing"):
+    val widget = ListView(Seq(text("a", "b", "c", "d", "e")), direction = ListDirection.BottomToTop)
+    val buffer = rendered(widget, ListState(), 10, 3)
+    assert(trimmedLines(buffer) == Seq("  c", "  d", "  e"))
+
+  test("a selected bottom-to-top item that does not fit still shows its marker on its first visible line"):
+    // Scrolling keeps a selected item on screen, so only an item taller than the viewport is ever cut while selected.
+    // The cut takes the item's first line with it, and the marker moves to the topmost row the item still owns
+    // instead of vanishing along with the line it would normally sit on.
+    val widget = ListView(Seq(text("a", "b", "c", "d", "e")), direction = ListDirection.BottomToTop)
+    val buffer = rendered(widget, ListState(selected = Some(0)), 10, 3)
+    assert(trimmedLines(buffer) == Seq("> c", "  d", "  e"))
+
 /** The row-counting scroll rule on its own. */
 
 final class ScrollWindowItemsSpec extends AnyFunSuite:
