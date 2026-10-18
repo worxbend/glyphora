@@ -162,6 +162,12 @@ trait TuiApp:
     */
   protected final def colorScheme(using scope: ReactiveScope): ColorScheme = colorSchemeSignal.get(using scope)
 
+  /** [[colorScheme]] read without subscribing — the spelling for [[theme]] and for an event handler, neither of which
+    * has a [[ReactiveScope]]. A `theme` override that picks between two palettes by it still follows a live switch,
+    * because every frame subscribes to the scheme before it asks for the theme.
+    */
+  protected final def colorSchemeNow: ColorScheme = colorSchemeSignal.peek
+
   /** Mirrors `progress` on the terminal's tab or the taskbar (OSC 9;4) until [[clearTaskbarProgress]] — see
     * [[AppServices.taskbarProgress]]. Call it from [[onStart]] or a handler; binding again replaces the source.
     */
@@ -778,8 +784,11 @@ trait TuiApp:
     * Reading the scheme through `scope` is what subscribes a frame to a later mode 2031 report.
     */
   private def resolvedTheme(using scope: ReactiveScope): Theme =
+    // subscribed before `theme` is asked and whether or not it answers `auto`, so an override that reads
+    // `colorSchemeNow` to choose between two palettes of its own is repainted by a mode 2031 report too
+    val scheme     = colorSchemeSignal.get(using scope)
     val configured = theme
-    if configured eq Theme.auto then Theme.forScheme(colorSchemeSignal.get(using scope)) else configured
+    if configured eq Theme.auto then Theme.forScheme(scheme) else configured
 
   /** Pushes the bound progress source's current value to the taskbar when it differs from what is showing. Read under
     * `scope`, so a change to the source schedules the frame that pushes it.

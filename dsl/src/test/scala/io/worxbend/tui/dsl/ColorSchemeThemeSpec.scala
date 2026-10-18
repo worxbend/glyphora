@@ -15,6 +15,13 @@ final class ColorSchemeThemeSpec extends AnyFunSuite with PilotFixture:
       val pick = if lightDark(Color.Black, Color.White) == Color.Black then "black-text" else "white-text"
       column(text(s"theme=${summon[Theme].name}"), text(s"scheme=$colorScheme"), text(pick))
 
+  /** An app choosing between two palettes of its own by the untracked read, the shape the docs show. */
+  private final class ChoosingApp extends TuiApp:
+    override def theme: Theme                     =
+      if colorSchemeNow == ColorScheme.Light then Theme.Light.withName("mine-light")
+      else Theme.Dark.withName("mine-dark")
+    def view(using ReactiveScope, Theme): Element = text(s"theme=${summon[Theme].name}")
+
   private final class PinnedApp extends TuiApp:
     override def theme: Theme                     = Theme.HighContrast
     def view(using ReactiveScope, Theme): Element = text(s"theme=${summon[Theme].name}")
@@ -63,6 +70,14 @@ final class ColorSchemeThemeSpec extends AnyFunSuite with PilotFixture:
   test("lightDark picks the light colour on a light terminal and the dark one otherwise"):
     running(lightTerminal(), AutoApp())(pilot => assert(pilot.screenLines(2) == "black-text"))
     running(HeadlessBackend(Size(30, 5)), AutoApp())(pilot => assert(pilot.screenLines(2) == "white-text"))
+
+  test("a theme override reading colorSchemeNow still follows a live switch"):
+    running(lightTerminal(), ChoosingApp()) { pilot =>
+      assert(pilot.screenLines.head == "theme=mine-light")
+      pilot
+        .sendBytes("\u001b[?997;1n".map(_.toInt)*)
+        .waitUntil("the override was re-read")(pilot.screenLines.headOption.contains("theme=mine-dark"))
+    }
 
   test("an app that pins its theme is left alone whatever the terminal reports"):
     running(lightTerminal(), PinnedApp())(pilot => assert(pilot.screenLines.head == "theme=high-contrast"))

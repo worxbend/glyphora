@@ -218,11 +218,14 @@ terminal is deliberately handed over and restored.
 ## What the terminal supports
 
 When glyphora enters raw mode it asks the terminal about itself once, and then acts on
-the answer. Three queries go out — a DECRQM (`CSI ? mode $ p`) for synchronised output,
-bracketed paste and focus reporting, a `CSI ? u` for the kitty keyboard protocol, and a
-primary device attributes request (`CSI c`) last. DA1 is the fence: terminals answer in
-the order the queries arrived, so once its reply is back, anything still unanswered was
-never going to be answered.
+the answer. The queries go out together — a DECRQM (`CSI ? mode $ p`) each for
+synchronised output (2026), bracketed paste (2004), focus reporting (1004),
+colour-scheme reports (2031), in-band resize (2048) and grapheme widths (2027), a
+`CSI ? u` for the kitty keyboard protocol, an OSC 11 `?` for the background colour, a
+`CSI ? 996 n` for the terminal's own light/dark verdict, and a primary device
+attributes request (`CSI c`) last. DA1 is the fence: terminals answer in the order the
+queries arrived, so once its reply is back, anything still unanswered was never going
+to be answered.
 
 Each feature ends up in one of three states, and the third is the interesting one:
 
@@ -236,7 +239,27 @@ Silence has to mean "carry on". Almost every terminal ignores a query it does no
 implement rather than answering it, so treating silence as a denial would switch
 synchronised output and bracketed paste off on the majority of terminals that support
 them perfectly well. Only an explicit denial turns anything off, which is why adding
-the probe changed nothing for a terminal that answers nothing.
+the probe changed nothing for a terminal that answers nothing. Mode 2048 is the one
+exception: in-band resize reports are requested only on an explicit `Yes`, because the
+signal-driven resize they supplement already works everywhere and there is nothing to
+gain from asking a terminal that never said it understands the report.
+
+The colour answers are kept rather than acted on: `TerminalCapabilities.backgroundColor`
+is the OSC 11 colour, `reportedColorScheme` the `CSI ? 997 ; n` verdict, and
+`colorScheme` combines them (`Light`, `Dark`, or `Unknown` when neither came back) —
+which is what `Theme.auto` resolves against. A terminal that implements mode 2031 then
+sends the same `CSI ? 997 ; n` report whenever the user switches system theme, and the
+app follows.
+
+Three features cannot be probed at all — pointer shapes (OSC 22), desktop notifications
+(OSC 9, 777, 99) and tab or taskbar progress (OSC 9;4). They stay `Unknown`, and are
+written, unless the environment rules them out: under tmux or GNU screen (`TMUX` or
+`STY` set) the multiplexer swallows an OSC string it does not know, so `pointerShapes`,
+`desktopNotifications` and `taskbarProgress` are `Support.No` there and nothing is
+written. Which notification dialect is used is also decided from the environment:
+OSC 9 under iTerm2 (`TERM_PROGRAM=iTerm.app`), OSC 99 under kitty (`TERM=xterm-kitty`
+or `KITTY_WINDOW_ID`), OSC 777 otherwise — exactly one, so a terminal that speaks two
+of them does not show the message twice.
 
 The whole round trip is bounded at a tenth of a second, paid once at start-up and only
 by a terminal that answers nothing at all. If even that is unwanted — a CI harness, a
