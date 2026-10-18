@@ -92,18 +92,44 @@ final class LocaleIndependenceSpec extends AnyFunSuite:
     * carrying an `i` — `ini`, `kotlin`, `swift` — cannot be resolved through the default locale.
     */
   private val Aliases: Seq[(String, Language)] = Seq(
-    "scala"   -> Language.Scala,
-    "sc"      -> Language.Scala,
-    "sbt"     -> Language.Scala,
-    "json"    -> Language.Json,
-    "bash"    -> Language.Bash,
-    "sh"      -> Language.Bash,
-    "shell"   -> Language.Bash,
-    "zsh"     -> Language.Bash,
-    "console" -> Language.Bash,
-    "  scala" -> Language.Scala, // the info string is trimmed before it is folded
-    "rust"    -> Language.Generic,
-    ""        -> Language.Generic,
+    "scala"      -> Language.Scala,
+    "sc"         -> Language.Scala,
+    "sbt"        -> Language.Scala,
+    "json"       -> Language.Json,
+    "bash"       -> Language.Bash,
+    "sh"         -> Language.Bash,
+    "shell"      -> Language.Bash,
+    "zsh"        -> Language.Bash,
+    "console"    -> Language.Bash,
+    // every alias below carries an `i` (or sits beside one that does) — the dotless-ı trap under `tr`
+    "python"     -> Lexer.Python,
+    "py"         -> Lexer.Python,
+    "python3"    -> Lexer.Python,
+    "typescript" -> Lexer.TypeScript,
+    "ts"         -> Lexer.TypeScript,
+    "tsx"        -> Lexer.TypeScript,
+    "javascript" -> Lexer.TypeScript,
+    "js"         -> Lexer.TypeScript,
+    "jsx"        -> Lexer.TypeScript,
+    "mjs"        -> Lexer.TypeScript,
+    "sql"        -> Lexer.Sql,
+    "postgres"   -> Lexer.Sql,
+    "postgresql" -> Lexer.Sql,
+    "psql"       -> Lexer.Sql,
+    "mysql"      -> Lexer.Sql,
+    "sqlite"     -> Lexer.Sql,
+    "yaml"       -> Lexer.Yaml,
+    "yml"        -> Lexer.Yaml,
+    "markdown"   -> Lexer.Markdown,
+    "md"         -> Lexer.Markdown,
+    "gfm"        -> Lexer.Markdown,
+    "diff"       -> Lexer.Diff,
+    "patch"      -> Lexer.Diff,
+    "udiff"      -> Lexer.Diff,
+    "yaml title" -> Lexer.Yaml,     // only the info string's first word names the lexer
+    "  scala"    -> Language.Scala, // the info string is trimmed before it is folded
+    "rust"       -> Language.Generic,
+    ""           -> Language.Generic,
   )
 
   test("Language.of resolves every alias, in either case, under every default locale"):

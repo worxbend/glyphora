@@ -1,0 +1,4 @@
+Name        │ City │ Qty
+────────────┼──────┼────
+Ann         │ 東京 │   1
+Bartholomew │ Rome │ 200

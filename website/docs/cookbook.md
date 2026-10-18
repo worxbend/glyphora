@@ -286,6 +286,41 @@ showing a scrollbar only when needed. The same holds for any raw widget you drop
 widget that cannot report a height measures as exactly one viewport, which means it will
 not scroll at all — give that content an explicit `.length(n)` or pass `contentHeight`.
 
+## Stream an LLM reply as Markdown
+
+```scala
+private val reply    = MarkdownStream()
+private val scroll   = ScrollViewState()
+private val revision = Signal(0L) // bumped per chunk, so the view redraws
+
+private def ask(prompt: String): Unit =
+  reply.clear()
+  val loop = RenderThread.capture() // on the render thread, before going async
+  Async.runCatching {
+    llm.streamTokens(prompt).foreach { token =>
+      loop.execute {
+        reply.append(token)
+        revision.set(reply.revision)
+      }
+    }
+  } { _ =>
+    reply.finish()
+    revision.set(reply.revision)
+  }
+
+def view(using ReactiveScope, Theme): Element =
+  val _ = revision.get // subscribe: every appended chunk is a new frame
+  panel("Assistant")(markdownStream(reply, scroll)).rounded
+```
+
+`markdownStream(reply, scroll)` stays pinned to the newest row while tokens arrive. Scroll
+up and the view holds still; press End to follow again. While the reply is still arriving,
+`MarkdownSanitizer` closes the syntax a half-written reply leaves open. `**bold` renders bold,
+an unfinished link shows its label, and an open code fence is closed. `finish()` turns the
+sanitizer off, so the last frame is exactly the finished document. The stream is
+render-thread-only, which is why each token goes through the loop captured before going
+async.
+
 ## Create and validate a case-class form
 
 ```scala

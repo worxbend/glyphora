@@ -142,13 +142,28 @@ final class TextAreaState(initial: String = ""):
 object TextAreaState:
   private val UndoLimit = 100
 
+/** Optional knobs for [[TextArea]]; `TextAreaOptions()` is the plain editor.
+  *
+  * @param lexer
+  *   highlights each visible line through this [[Lexer]], its token styles patched over the editor's `style`; `None`
+  *   draws every cell in `style`
+  * @param syntax
+  *   the token colours the lexer paints with
+  */
+final case class TextAreaOptions(
+    lexer: Option[Lexer] = None,
+    syntax: SyntaxTheme = SyntaxTheme(),
+)
+
 /** A multi-line text editor view: vertical and horizontal scroll follow the cursor, which renders as a highlighted cell
-  * (`showCursor = false` for unfocused areas). No syntax highlighting.
+  * (`showCursor = false` for unfocused areas). Syntax highlighting is opt-in through [[TextAreaOptions.lexer]]; only
+  * the rows on screen are highlighted, each frame, so the cost follows the viewport rather than the document.
   */
 final case class TextArea(
     showCursor: Boolean = true,
     style: Style = Style.Default,
     cursorStyle: Style = Style.Default.reverse,
+    options: TextAreaOptions = TextAreaOptions(),
 ) extends StatefulWidget[TextAreaState]:
 
   def render(area: Rect, buffer: Buffer, state: TextAreaState): Unit =
@@ -212,7 +227,15 @@ final case class TextArea(
       style = style,
       cursorStyle = cursorStyle,
       paintEndCell = false,
+      tokenStyles = options.lexer.fold(IndexedSeq.empty)(lexer => tokenStyles(clusters, lexer)),
     )
+
+  /** One style per cluster from `lexer`, or none when its spans do not segment back into the same clusters — a lexer
+    * that rewrote the text has its styling ignored rather than painted onto the wrong cells.
+    */
+  private def tokenStyles(clusters: Vector[String], lexer: Lexer): IndexedSeq[Style] =
+    val graphemes = lexer.highlightLine(clusters.mkString, options.syntax).styledGraphemes(Style.Default).toVector
+    if graphemes.map(_.cluster) == clusters then graphemes.map(_.style) else IndexedSeq.empty
 
   /** Scrolls all lines left just enough that the cursor's column, measured on the cursor's own line, stays visible. The
     * rule and the reason it reserves the cursor cluster's display width rather than a flat column both live in
