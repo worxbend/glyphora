@@ -191,20 +191,19 @@ private def runBuild(): Unit =
     while read >= 0 do
       val lines = parser.feed(String(chunk, 0, read))
       if lines.nonEmpty then
-        val _ = owner.execute { lines.foreach(output.append); requestRedraw() }
+        val _ = owner.execute(lines.foreach(output.append))
       read = reader.read(chunk)
     process.waitFor()
   } { _ =>
     output.append(parser.finish())              // the unterminated last line, if the tool left one
-    requestRedraw()
   }
 
 def buildView(using ReactiveScope, Theme): Element = log(output).fill
 ```
 
 The reader runs on the worker; every `LogState.append` runs on the render thread through
-the captured loop, and the `requestRedraw()` beside it is what puts the new lines on
-screen, because `LogState` is a plain mutable object the reactive layer cannot see. The
+the captured loop. No `requestRedraw()` is needed: `LogState` is `Versioned`, so the app
+sees the appends moved it and draws the frame that shows them. The
 parser is touched by one thread at a time — the worker while reading, the render thread
 for the final `finish()` once the worker has returned — which is the ownership it asks
 for. A chunk boundary can fall anywhere, inside an escape sequence included; the parser
@@ -213,6 +212,37 @@ it checks for a TTY (`--color=always`, `FORCE_COLOR=1`), since a pipe reports no
 
 For a one-shot result rather than a stream, `Text.fromAnsi(wholeOutput)` is the same
 parser run once, and `text(...)` shows the result.
+
+## Show a git diff
+
+Run `git diff` on a worker, parse its output, and show it in a pane that steps through hunks:
+
+```scala
+private val state = DiffViewState()
+private val patch = Signal(Patch.empty)
+
+private def loadDiff(): Unit =
+  Async.runCatching {
+    val process = ProcessBuilder("git", "diff", "--no-color").start()
+    val output  = String(process.getInputStream.readAllBytes())
+    process.waitFor()
+    output
+  } {
+    case Right(output) => Patch.parse(output).foreach(patch.set)
+    case Left(_)       => ()                     // not a repository, or git is missing
+  }
+
+def view(using ReactiveScope, Theme): Element =
+  panel("git diff")(diffView(patch.get, state).split.contextLines(3)).fill
+```
+
+`Async.runCatching` reads the output on a worker and hands the result back on the render
+thread, where the `Signal` is set. `n`/`]` and `p`/`[` jump between hunks while the pane has
+focus. Pass `--no-color`: the parser reads plain unified-diff text, and a user's
+`color.ui = always` would otherwise put escape sequences into the pipe. Keeping the parsed
+`Patch` in a `Signal` hands the node the same value every frame, so the word-level highlight
+is computed once per diff rather than once per frame. To compare two strings you already
+hold — a file before and after an edit — skip git and use `Patch.of(before, after)`.
 
 ## Sort, filter, and select tabular data
 

@@ -137,19 +137,22 @@ why this survives casual testing. Under a headless test the runner ends while th
 poller keeps firing into a loop nobody drains. `Async.every` has no operation to
 change an interval either, so a new cadence means cancel and re-arm.
 
-## Ask for a frame the reactive layer did not see
+## Write widget state on the render thread
 
-A continuation that writes a `Signal` schedules its own redraw. A continuation that
-mutates **caller-owned widget state** does not: `ListState`, `TextInputState`,
-`DataTableState` and `LogState` are plain mutable objects with nothing subscribed to
-them, so the screen keeps the previous frame until the next keystroke. Say so:
+A continuation that writes a `Signal` schedules its own redraw, and so does one that
+mutates **caller-owned widget state**: `ListState`, `TextInputState`, `DataTableState`,
+`LogState` and the rest are `Versioned`, and the app notices a state it painted has
+moved since and draws the frame that shows it. What matters is the thread — every
+`Async` continuation already runs on the render thread:
 
 ```scala
-Async.run(loadRows()) { rows =>
-  tableState.rows = rows
-  requestRedraw()
-}
+Async.run(loadLines())(lines => lines.foreach(logState.append)) // no requestRedraw()
 ```
+
+A panel that should poll only while it is on screen does not need the app at all: a
+`useEffect` inside it starts the timer after the panel is first painted and cancels it
+the frame the panel disappears, and `useTask(id)(fetch(id))` loads one record per `id`
+and answers `Loadable.Loading` until it arrives. See [Reusable components](./component-state#lifetime-hooks).
 
 ## Give every timed action a key
 

@@ -1,5 +1,7 @@
 package io.worxbend.tui.widgets
 
+import io.worxbend.tui.core.Versioned
+
 /** Caller-owned Markdown that is still arriving — an LLM's reply, a log being narrated — rendered stably while it
   * grows.
   *
@@ -8,12 +10,11 @@ package io.worxbend.tui.widgets
   * rather than flashing literal markers. Once the source is done, [[finish]] stops sanitizing, and the frame is then
   * exactly `Markdown(text)`'s. Appending to a finished stream reopens it.
   *
-  * Render-thread-only, and mutating it does not by itself schedule a frame. This is a plain mutable object, invisible
-  * to the reactive layer: a background chunk appended straight into it stays off screen until something unrelated
-  * happens to repaint. Hop to the render thread (`RenderThread.capture()` before going async) and pair the append with
-  * a `Signal` write or `TuiApp.requestRedraw()`.
+  * Render-thread-only. `version` (the same counter as [[revision]]) moves on every append, finish and clear, so a
+  * `markdownStream` node notices a chunk appended outside the event path and schedules the frame that shows it. Hop to
+  * the render thread (`RenderThread.capture()` before going async) to append; no `Signal` write is needed.
   */
-final class MarkdownStream(initial: String = ""):
+final class MarkdownStream(initial: String = "") extends Versioned:
   private val source            = StringBuilder(initial)
   private var finished: Boolean = false
   private var changes: Long     = 0L
@@ -52,6 +53,9 @@ final class MarkdownStream(initial: String = ""):
 
   /** Advances on every append, finish and clear — cheap change detection for a caller deciding whether to redraw. */
   def revision: Long = changes
+
+  /** [[revision]] under its [[io.worxbend.tui.core.Versioned]] name. */
+  def version: Long = changes
 
   /** The widget for the text so far, reused until the stream, the theme or the options change. */
   def markdown(theme: MarkdownTheme = MarkdownTheme(), options: MarkdownOptions = MarkdownOptions()): Markdown =

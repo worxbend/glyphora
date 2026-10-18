@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, Rect, StatefulWidget, Style}
+import io.worxbend.tui.core.{Buffer, Rect, StatefulWidget, Style, VersionedState}
 
 import scala.collection.mutable
 
@@ -18,19 +18,30 @@ final case class TreeNode(label: String, children: Seq[TreeNode] = Seq.empty)
   * `==` and must be unique within the tree: when two nodes share one, the first in view order is the one navigation
   * treats as selected, and both wear the highlight.
   *
-  * Render-thread-only, and mutating it does not by itself schedule a frame. This is a plain mutable object, invisible
-  * to the reactive layer: a background result written straight into it stays off screen until something unrelated
-  * happens to repaint. Pair the mutation with a `Signal` write, or call `TuiApp.requestRedraw()` from the same
-  * render-thread callback that made it.
+  * Render-thread-only. Every mutation raises `version` (see [[io.worxbend.tui.core.Versioned]]), so a DSL node that
+  * paints this state notices a write made outside the event path — a background result applied on the render thread —
+  * and schedules the frame that shows it, with no `Signal` write and no `requestRedraw()`.
   *
   * @tparam K
   *   the key type; `Seq[Int]` — the node's path — for the positional `TreeState()`
   */
-final class TreeState[K] private (keyOf: (Seq[TreeNode], Seq[Int]) => K):
+final class TreeState[K] private (keyOf: (Seq[TreeNode], Seq[Int]) => K) extends VersionedState:
   private var cached: Option[(Seq[TreeNode], Tree.View[K])] = None
-  val expanded: mutable.Set[K]                              = new TreeExpansion(() => cached = None)
-  var selected: Option[K]                                   = None
-  var offset: Int                                           = 0
+  val expanded: mutable.Set[K]                              = new TreeExpansion(() => { cached = None; touch() })
+  def selected: Option[K]                                   = selectedValue
+
+  def selected_=(value: Option[K]): Unit =
+    selectedValue = value
+    touch()
+
+  private var selectedValue: Option[K] = None
+  def offset: Int                      = offsetValue
+
+  def offset_=(value: Int): Unit =
+    offsetValue = value
+    touch()
+
+  private var offsetValue: Int = 0
 
   def selectNext(nodes: Seq[TreeNode]): Unit =
     moveSelection(nodes, +1)

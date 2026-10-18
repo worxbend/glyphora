@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{KeyCode, KeyEvent, Line, MouseEvent, MouseEventKind, Rect, Text, Widget}
+import io.worxbend.tui.core.{KeyCode, KeyEvent, Line, MouseEvent, MouseEventKind, Rect, Text, Versioned, Widget}
 import io.worxbend.tui.widgets as w
 
 import java.nio.file.Path
@@ -25,6 +25,9 @@ final case class ListElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = ListElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
   override def debugName: String                                             = "list"
   private[dsl] override def componentRole: Option[ComponentRole]             = Some(ListRole)
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
@@ -81,6 +84,9 @@ final case class TreeElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = TreeElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
   override def debugName: String                                             = "tree"
   private[dsl] override def componentRole: Option[ComponentRole]             = Some(ListRole)
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
@@ -107,6 +113,9 @@ final case class MenuElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = MenuElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
   override def debugName: String                                             = "menu"
   private[dsl] override def componentRole: Option[ComponentRole]             = Some(ListRole)
   def widget: Widget                                                         =
@@ -160,6 +169,9 @@ final case class SelectionListElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = SelectionListElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
   override def debugName: String                                             = "selectionList"
   private[dsl] override def componentRole: Option[ComponentRole]             = Some(ListRole)
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
@@ -195,6 +207,9 @@ final case class FilePickerElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = FilePickerElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state.tree)
   override def debugName: String                                             = "filePicker"
   private[dsl] override def componentRole: Option[ComponentRole]             = Some(ListRole)
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
@@ -233,6 +248,9 @@ final case class DirectoryTreeElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = DirectoryTreeElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
   override def debugName: String                                             = "directoryTree"
   private[dsl] override def componentRole: Option[ComponentRole]             = Some(ListRole)
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
@@ -262,6 +280,9 @@ final case class DataTableElement[K](
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = DataTableElement[K]
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]              = Seq(state)
   override def debugName: String                                       = "dataTable"
   def widget: Widget                                                   =
     (area, buffer) => table.render(area, buffer, state)
@@ -300,6 +321,9 @@ final case class LogElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = LogElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
   override def debugName: String                                             = "log"
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some(wheelScrolls(() => state.scrollUp(), () => state.scrollDown()))

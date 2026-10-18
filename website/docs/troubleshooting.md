@@ -39,12 +39,10 @@ Check these in order:
 3. A signal only notifies when the new value is not equal (`!=`) to the old one.
 4. Replace immutable collections instead of mutating one in place.
 5. Third-party callbacks must write on the render thread.
-6. Caller-owned widget state — `ListState`, `TextInputState`, `TextAreaState`,
-   `TreeState`, `DataTableState`, `DirectoryTreeState`, `ScrollViewState`, `LogState`,
-   `MenuState` — is a plain mutable object the reactive layer cannot see. Writing to
-   one changes the next frame but does not ask for one. Pair the mutation with a
-   `Signal` write, or call `requestRedraw()` — see [A background result updates nothing
-   on screen](#a-background-result-updates-nothing-on-screen).
+6. Caller-owned widget state — `ListState`, `TextInputState`, `TreeState`, … — is
+   versioned: a write made on the render thread is painted on the next loop iteration
+   with no `Signal` write. A write made on a *worker* thread is the bug — see [A widget
+   state written from a worker thread](#a-widget-state-written-from-a-worker-thread).
 
 ```scala
 private val rows = Signal(Vector.empty[Row])
@@ -67,20 +65,26 @@ def view(using ReactiveScope, Theme) = input(inputState)
 Creating `TextInputState()` in `view` replaces it with an empty editor on the next
 redraw.
 
-## A background result updates nothing on screen
+## A widget state written from a worker thread
 
-A `Signal` write schedules its own redraw. Caller-owned widget state — `ListState`,
-`TextInputState`, `DataTableState`, `LogState` — is a plain mutable object that
-nothing subscribes to, so mutating it outside an event handler changes the *next*
-frame without asking for one, and the screen sits on the old contents until a key is
-pressed. Call `requestRedraw()` after the mutation:
+Every caller-owned widget state — `ListState`, `TextInputState`, `TextAreaState`,
+`TreeState`, `DataTableState`, `ScrollViewState`, `LogState`, the pickers — is
+`Versioned`: each mutation raises its `version`, and the app compares the versions of
+the states it painted against what they are now on every loop iteration. So a write
+made **on the render thread**, even outside any event handler, schedules the frame that
+shows it, with no `Signal` write and no `requestRedraw()`:
 
 ```scala
-Async.run(fetchRows()) { rows =>
-  tableState.rows = rows
-  requestRedraw()
-}
+Async.run(fetchName())(name => nameState.setValue(name)) // the continuation runs on the render thread
 ```
+
+The rule is the thread, not the redraw. A state is render-thread-only, and one written
+straight from a worker races the paint that is reading it — the frame may show half an
+edit, or the version moves while nothing is watching. Hand the write to the render
+thread: an `Async` continuation, `TaskScope`, or a loop captured with
+`RenderThread.capture()` before going async (`loop.execute { state.insert(chunk) }`).
+For a component that loads its own data, `useTask` does the hop for you — see
+[Reusable components](./component-state#lifetime-hooks).
 
 ## Input or mouse events do not arrive
 

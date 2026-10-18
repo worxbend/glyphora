@@ -88,6 +88,12 @@ trait Element:
     */
   private[dsl] def layoutOnly: Boolean = false
 
+  /** The caller-owned widget states this node paints — what the host watches for mutations made between frames (see
+    * [[ElementHost.pollStates]]). Every node that is handed a [[io.worxbend.tui.core.Versioned]] state answers it here;
+    * the walk reaches children by itself, so a node lists only its own.
+    */
+  private[dsl] def watchedStates: Seq[io.worxbend.tui.core.Versioned] = Nil
+
   /** The factory-style name of this node — `panel`, `button`, `scrollView` — for the element-tree snapshot and any
     * other diagnostic that has to say what a node *is* without reflecting over its class. Every node type declares its
     * own; a decorator answers with the name of the node it wraps. The default is only there so a node added without one

@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, Cell, Rect, StatefulWidget, Style}
+import io.worxbend.tui.core.{Buffer, Cell, Rect, StatefulWidget, Style, VersionedState}
 
 /** Which thumb of a [[RangeSlider]] the keyboard moves. */
 enum RangeThumb:
@@ -14,8 +14,8 @@ enum RangeThumb:
   * the whole range is cut down to the range. The constructor orders and clamps what it is handed rather than rejecting
   * it, as [[SliderRange.of]] orders its bounds.
   *
-  * Render-thread-only, and mutating it does not by itself schedule a frame; the DSL's `rangeSlider` node mutates it
-  * from its key handler, which repaints.
+  * Render-thread-only. Every mutation raises `version` (see [[io.worxbend.tui.core.Versioned]]), so a write made
+  * outside the event path is painted too, with no `Signal` write.
   *
   * @param range
   *   the bounds and the per-press step
@@ -26,7 +26,8 @@ enum RangeThumb:
   * @param minGap
   *   how close the two values may come; 0 lets them meet
   */
-final class RangeSliderState(val range: SliderRange, initialLow: Int, initialHigh: Int, minGap: Int = 0):
+final class RangeSliderState(val range: SliderRange, initialLow: Int, initialHigh: Int, minGap: Int = 0)
+    extends VersionedState:
 
   /** The gap actually enforced: never negative, never wider than the range itself. */
   val gap: Int = math.max(0, math.min(minGap.toLong, range.max.toLong - range.min.toLong).toInt)
@@ -37,7 +38,13 @@ final class RangeSliderState(val range: SliderRange, initialLow: Int, initialHig
   lowValue = range.clamp(math.min(lowValue.toLong, highValue.toLong - gap))
 
   /** The thumb the keyboard moves; starts on the lower one. */
-  var thumb: RangeThumb = RangeThumb.Low
+  def thumb: RangeThumb = thumbValue
+
+  def thumb_=(value: RangeThumb): Unit =
+    thumbValue = value
+    touch()
+
+  private var thumbValue: RangeThumb = RangeThumb.Low
 
   def low: Int  = lowValue
   def high: Int = highValue
@@ -56,6 +63,7 @@ final class RangeSliderState(val range: SliderRange, initialLow: Int, initialHig
     thumb match
       case RangeThumb.Low  => lowValue = range.clamp(math.min(value, highValue.toLong - gap))
       case RangeThumb.High => highValue = range.clamp(math.max(value, lowValue.toLong + gap))
+    touch()
 
   /** Hands the keyboard to the upper thumb; `false` when it already had it, so a caller can let Tab move on. */
   def focusNext(): Boolean =

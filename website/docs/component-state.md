@@ -49,10 +49,10 @@ def searchBox(using ReactiveScope, Theme): Element =
   input(useState(TextInputState()))
 ```
 
-The difference matches what those two kinds of state already do. Writing a `Signal`
-invalidates the view that read it and schedules a redraw. Writing a `TextInputState`
-does not, so a change made outside the event path still has to ask for its frame with
-`requestRedraw()`.
+Both kinds of state schedule their own frames. Writing a `Signal` invalidates the view
+that read it. A widget state is `Versioned` — every mutation raises its `version` — and
+the app watches the states it painted, so a `TextInputState` written on the render
+thread outside any event handler is drawn on the next loop iteration too.
 
 Both take their starting value by name, and evaluate it only on the frame that creates
 the slot — an expensive initial value costs nothing on later frames.
@@ -161,11 +161,59 @@ that must outlive its own disappearance. Put that in a `Signal` field on the app
 Each run has its own store, so running the same application object a second time starts
 every component-local value over.
 
+## Lifetime hooks
+
+Four more hooks attach behaviour, not just values, to a call site. They follow the same
+ordering rule and the same lifetime as `useSignal`.
+
+`useEffect(deps*)(start)` runs `start` after the frame that reached it has been painted,
+on the render thread. `start` returns a `Cancelable`; when a dep changes (`==`, element
+by element) the previous one is cancelled and `start` runs again, and when the call stops
+being reached — or the app stops — the last one is cancelled. No deps means "once":
+
+```scala
+def clock(using ReactiveScope, Theme): Element =
+  val now = useSignal(LocalTime.now())
+  useEffect()(Async.every(1.second)(now.set(LocalTime.now()))) // stops when the clock is hidden
+  text(now.get.toString)
+```
+
+A start with nothing to release returns `() => ()`.
+
+`useMemo(deps*)(compute)` keeps a derived value — a sorted copy, a parsed document —
+until its deps change. It is the value-level sibling of `memo`, which caches a whole
+subtree.
+
+`useTask(deps*)(work)` runs `work` on a background worker and answers a `Loadable`:
+`Loadable.Loading` until the result arrives on the render thread, then
+`Loadable.Ready(value)` or `Loadable.Failed(error)`; the arrival schedules its own frame.
+A dep change cancels the run in flight and starts a new one, and a node that disappears
+before its task finishes never receives the result:
+
+```scala
+def details(id: Long)(using ReactiveScope, Theme): Element =
+  useTask(id)(api.fetch(id)) match
+    case Loadable.Loading       => spinner()
+    case Loadable.Ready(record) => text(record.title)
+    case Loadable.Failed(error) => text(error.getMessage)
+```
+
+The task belongs to a `TaskScope` the call site owns. On a host with no render loop — a
+`Console.print`, a `Snapshot.render` — nothing is started and the answer stays `Loading`.
+
+`useArea()` answers where this call's node was painted on the last frame, as
+`Option[Rect]` — the same rect `boundsOf(key)` reports. "This node" is the one carrying
+the key of the innermost `each` row or `keyed` scope: `each` keys the row for you; inside
+`keyed(k)`, give the element `.key(k)`. Outside any keyed scope it answers `None`. It is
+`None` on the first frame, and when the node lands somewhere other than what it last
+answered, one more frame is drawn so the view settles.
+
 ## Where they may be called
 
 Only while a view is being evaluated, on the render thread. An event handler, a timer
 body or a plain unit test has no place in the tree for the state to attach to, so
-`useSignal`, `useState` and `keyed` all raise an `IllegalStateException` there rather
+every hook — `useSignal`, `useState`, `useEffect`, `useMemo`, `useTask`, `useArea` — and
+`keyed` raise an `IllegalStateException` there rather
 than quietly creating a slot nothing would ever reach again. Read state from a handler
 through the value the view already captured:
 
