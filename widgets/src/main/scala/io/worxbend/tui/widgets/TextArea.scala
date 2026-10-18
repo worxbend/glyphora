@@ -1,15 +1,13 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, Position, Rect, StatefulWidget, Style, Text}
+import io.worxbend.tui.core.{Buffer, Position, Rect, StatefulWidget, Style}
 
-import scala.collection.mutable
-
-/** Caller-owned multi-line editing state for [[TextArea]].
+/** Caller-owned multi-line editing state for [[TextArea]]: an [[EditBuffer]] of many lines.
   *
-  * Text is a vector of lines, each a vector of grapheme clusters — the cursor is `(line, column)` in cluster
-  * coordinates and can never split a combining sequence or emoji. Every editing operation snapshots onto a bounded undo
-  * stack. Edits and line joins re-segment affected lines; a splice inside a newly merged grapheme maps the cursor to
-  * that grapheme's end (right affinity), identically for insertion, deletion and either join direction.
+  * The cursor is `(line, column)` in cluster coordinates and can never split a combining sequence or emoji. Edits and
+  * line joins re-segment affected lines; a splice inside a newly merged grapheme maps the cursor to that grapheme's end
+  * (right affinity), identically for insertion, deletion and either join direction. Undo stores coalesced diffs — see
+  * [[EditBuffer]].
   *
   * Control characters other than the `\n` that separates lines are dropped on the way in — by the constructor as well
   * as by [[insert]] — because a control is zero columns wide but still fills a whole `Cell`, so storing one
@@ -20,127 +18,19 @@ import scala.collection.mutable
   * happens to repaint. Pair the mutation with a `Signal` write, or call `TuiApp.requestRedraw()` from the same
   * render-thread callback that made it.
   */
-final class TextAreaState(initial: String = ""):
+final class TextAreaState(initial: String = "") extends EditBuffer(initial, multiline = true):
 
-  private var lines: Vector[Vector[String]] = clusterLinesOf(initial)
-  private var line                          = lines.size - 1
-  private var column                        = lines.last.size
-  private[widgets] var scrollRow: Int       = 0
+  private[widgets] var scrollRow: Int = 0
 
   /** Horizontal scroll offset in *columns*, shared by every line — see [[TextArea.scrolledHorizontally]]. */
   private[widgets] var scrollColumn: Int = 0
-  private val undoStack                  = mutable.Stack[(Vector[Vector[String]], Int, Int)]()
-  private val redoStack                  = mutable.Stack[(Vector[Vector[String]], Int, Int)]()
-
-  def value: String = lines.map(_.mkString).mkString("\n")
 
   /** Cursor as `(line, column)` in cluster coordinates. */
-  def cursor: (Int, Int) = (line, column)
+  def cursor: (Int, Int) = (caret.line, caret.column)
 
-  def lineCount: Int = lines.size
-
-  private[widgets] def clusterLines: Vector[Vector[String]] = lines
-
-  /** Splits `text` into one cluster vector per line, dropping controls *after* the split so that the `\n` doing the
-    * splitting survives — [[newline]] is `insert("\n")`. Reads no field, so the field initializer may call it.
-    */
-  private def clusterLinesOf(text: String): Vector[Vector[String]] =
-    Text.splitLines(text).toVector.map(GraphemeEdit.clustersOf)
-
-  def insert(text: String): Unit =
-    pushUndo()
-    val segments        = clusterLinesOf(text)
-    val (before, after) = lines(line).splitAt(column)
-    if segments.size == 1 then editLine(column, 0, segments.head.mkString)
-    else
-      val (first, _)           = GraphemeEdit.joined(before.mkString, segments.head.mkString, "")
-      val (last, mappedColumn) = GraphemeEdit.joined("", segments.last.mkString, after.mkString)
-      val middle               = segments.drop(1).dropRight(1)
-      lines = lines.take(line) ++ (first +: middle :+ last) ++ lines.drop(line + 1)
-      line += segments.size - 1
-      column = mappedColumn
+  def lineCount: Int = clusterLines.size
 
   def newline(): Unit = insert("\n")
-
-  def backspace(): Unit =
-    if column > 0 then
-      pushUndo()
-      editLine(column - 1, 1, "")
-    else if line > 0 then
-      pushUndo()
-      joinLines(line - 1)
-
-  def delete(): Unit =
-    if column < lines(line).size then
-      pushUndo()
-      editLine(column, 1, "")
-    else if line < lines.size - 1 then
-      pushUndo()
-      joinLines(line)
-
-  private def editLine(from: Int, removed: Int, inserted: String): Unit =
-    val (edited, mappedColumn) = GraphemeEdit.splice(lines(line), from, removed, inserted)
-    lines = lines.updated(line, edited)
-    column = mappedColumn
-
-  private def joinLines(first: Int): Unit =
-    val (joined, mappedColumn) = GraphemeEdit.joined(lines(first).mkString, "", lines(first + 1).mkString)
-    lines = lines.updated(first, joined).patch(first + 1, Nil, 1)
-    line = first
-    column = mappedColumn
-
-  def moveLeft(): Unit =
-    if column > 0 then column -= 1
-    else if line > 0 then
-      line -= 1
-      column = lines(line).size
-
-  def moveRight(): Unit =
-    if column < lines(line).size then column += 1
-    else if line < lines.size - 1 then
-      line += 1
-      column = 0
-
-  def moveUp(): Unit =
-    if line > 0 then
-      line -= 1
-      column = math.min(column, lines(line).size)
-
-  def moveDown(): Unit =
-    if line < lines.size - 1 then
-      line += 1
-      column = math.min(column, lines(line).size)
-
-  def moveHome(): Unit = column = 0
-
-  def moveEnd(): Unit = column = lines(line).size
-
-  /** Restores the text and cursor from before the most recent edit; no-op on an empty history. */
-  def undo(): Unit =
-    if undoStack.nonEmpty then
-      redoStack.push((lines, line, column))
-      val (savedLines, savedLine, savedColumn) = undoStack.pop()
-      lines = savedLines
-      line = savedLine
-      column = savedColumn
-
-  /** Re-applies the most recently undone edit; a fresh edit clears the redo history. */
-  def redo(): Unit =
-    if redoStack.nonEmpty then
-      undoStack.push((lines, line, column))
-      val (savedLines, savedLine, savedColumn) = redoStack.pop()
-      lines = savedLines
-      line = savedLine
-      column = savedColumn
-
-  private def pushUndo(): Unit =
-    redoStack.clear()
-    undoStack.push((lines, line, column))
-    // the stack's bottom holds the oldest snapshots; drop from there so the newest `UndoLimit` survive
-    while undoStack.size > TextAreaState.UndoLimit do undoStack.remove(undoStack.size - 1)
-
-object TextAreaState:
-  private val UndoLimit = 100
 
 /** Optional knobs for [[TextArea]]; `TextAreaOptions()` is the plain editor.
   *

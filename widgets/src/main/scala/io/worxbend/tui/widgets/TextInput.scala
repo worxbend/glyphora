@@ -2,62 +2,36 @@ package io.worxbend.tui.widgets
 
 import io.worxbend.tui.core.{Buffer, CharWidth, Position, Rect, StatefulWidget, Style}
 
-/** Caller-owned single-line editing state. The text is stored as grapheme clusters, so the cursor can never land inside
-  * a combining sequence or split an emoji; the cursor is a cluster index in `[0, length]` (the top value meaning
-  * "append here"). Edits re-segment the line and map the cursor with right affinity: if the splice falls inside a newly
-  * merged grapheme, the cursor lands after that grapheme.
+/** Caller-owned single-line editing state: an [[EditBuffer]] holding one line.
   *
-  * Control characters are dropped on the way in — by the constructor as well as by [[insert]], because a field is just
-  * as often seeded from a file or an HTTP response as it is typed into. A control is zero columns wide but still fills
-  * a whole `Cell`, so storing one desynchronises the backend's cursor model from the terminal's.
+  * The text is stored as grapheme clusters, so the cursor can never land inside a combining sequence or split an emoji;
+  * the cursor is a cluster index in `[0, length]` (the top value meaning "append here"). Edits re-segment the line and
+  * map the cursor with right affinity: if the splice falls inside a newly merged grapheme, the cursor lands after that
+  * grapheme. Selection, word motion, kill ring, clipboard and coalesced undo all come from [[EditBuffer]].
+  *
+  * Control characters — line breaks included — are dropped on the way in, by the constructor as well as by [[insert]],
+  * because a field is just as often seeded from a file or an HTTP response as it is typed into. A control is zero
+  * columns wide but still fills a whole `Cell`, so storing one desynchronises the backend's cursor model from the
+  * terminal's.
   *
   * Render-thread-only, and mutating it does not by itself schedule a frame. This is a plain mutable object, invisible
   * to the reactive layer: a background result written straight into it stays off screen until something unrelated
   * happens to repaint. Pair the mutation with a `Signal` write, or call `TuiApp.requestRedraw()` from the same
   * render-thread callback that made it.
   */
-final class TextInputState(initial: String = ""):
+final class TextInputState(initial: String = "") extends EditBuffer(initial, multiline = false):
 
-  private var clusters: Vector[String]    = clustersOf(initial)
-  private var cursorIndex: Int            = clusters.size
   private[widgets] var scrollCluster: Int = 0
 
-  def value: String = clusters.mkString
-
   /** Cursor position as a cluster index. */
-  def cursor: Int = cursorIndex
+  def cursor: Int = caret.column
 
-  def insert(text: String): Unit = edit(cursorIndex, 0, text)
-
-  def backspace(): Unit =
-    if cursorIndex > 0 then edit(cursorIndex - 1, 1, "")
-
-  def delete(): Unit =
-    if cursorIndex < clusters.size then edit(cursorIndex, 1, "")
-
-  private def edit(from: Int, removed: Int, inserted: String): Unit =
-    val (edited, cursor) = GraphemeEdit.splice(clusters, from, removed, inserted)
-    clusters = edited
-    cursorIndex = cursor
-
-  def moveLeft(): Unit = cursorIndex = math.max(0, cursorIndex - 1)
-
-  def moveRight(): Unit = cursorIndex = math.min(clusters.size, cursorIndex + 1)
-
-  def moveHome(): Unit = cursorIndex = 0
-
-  def moveEnd(): Unit = cursorIndex = clusters.size
-
-  def clear(): Unit =
-    clusters = Vector.empty
-    cursorIndex = 0
+  /** Empties the field, forgets its undo history and scrolls back to the start. */
+  override def clear(): Unit =
+    super.clear()
     scrollCluster = 0
 
-  private[widgets] def clusterSeq: Vector[String] = clusters
-
-  /** The single choke point every entry path goes through: reads no field, so the field initializer may call it. */
-  private def clustersOf(text: String): Vector[String] =
-    GraphemeEdit.clustersOf(text)
+  private[widgets] def clusterSeq: Vector[String] = clusterLines.head
 
 /** A single-line text input with horizontal scrolling and an optional visible cursor.
   *
