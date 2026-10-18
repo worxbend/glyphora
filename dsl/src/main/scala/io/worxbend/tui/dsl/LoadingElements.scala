@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{CharWidth, Constraint, Style, Widget}
+import io.worxbend.tui.core.{CharWidth, Constraint, Style, Versioned, Widget}
 import io.worxbend.tui.widgets as w
 
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
@@ -362,3 +362,21 @@ final case class SkeletonElement(
   def period(duration: FiniteDuration): SkeletonElement = copy(period = duration)
 
   private[dsl] def withProps(props: ElementProps): SkeletonElement = copy(props = props)
+
+/** Multi-task progress: one row per caller-owned [[w.ProgressTask]], each row the same [[w.ProgressColumn]]s, themed at
+  * construction from the [[LoadingTheme]]. The tasks are watched, so a background `task.advance(n)` posted back to the
+  * render thread repaints without a signal; while any task is still running the node also asks for animation ticks so a
+  * spinner column turns and the elapsed and ETA columns count.
+  */
+final case class MultiProgressElement(
+    tasks: Seq[w.ProgressTask],
+    columns: Seq[w.ProgressColumn],
+    options: w.MultiProgressOptions,
+    props: ElementProps = ElementProps(),
+) extends Element:
+  type Self = MultiProgressElement
+  override def debugName: String                                        = "multiProgress"
+  override private[dsl] def watchedStates: Seq[Versioned]               = tasks
+  def widget: Widget                                                    =
+    w.MultiProgress(tasks, columns, options.copy(style = options.style.patch(props.style)))
+  private[dsl] def withProps(props: ElementProps): MultiProgressElement = copy(props = props)
