@@ -19,10 +19,11 @@ final class MarkdownStream(initial: String = ""):
   private var changes: Long     = 0L
   private var built             = Option.empty[(Long, MarkdownTheme, MarkdownOptions, Markdown)]
 
-  /** Follow-the-tail bookkeeping for a scroll view drawing this stream: whether the view was showing the last row when
-    * it last drew. Owned by whichever element pins the view, render-thread-only like the rest of this class.
+  /** Follow-the-tail bookkeeping for a scroll view drawing this stream: the furthest offset that view could scroll to
+    * when it last drew. A view whose offset is still there was showing the last row, so it keeps following; one the
+    * user scrolled above it has stopped. Owned by the element that pins the view, render-thread-only like the rest.
     */
-  private[tui] var followingTail: Boolean = true
+  private[tui] var tailOffset: Int = 0
 
   /** Adds `chunk` to the end of the document and reopens a finished stream. */
   def append(chunk: String): Unit =
@@ -46,7 +47,7 @@ final class MarkdownStream(initial: String = ""):
   def clear(): Unit =
     source.clear()
     finished = false
-    followingTail = true
+    tailOffset = 0
     changes += 1
 
   /** Advances on every append, finish and clear — cheap change detection for a caller deciding whether to redraw. */

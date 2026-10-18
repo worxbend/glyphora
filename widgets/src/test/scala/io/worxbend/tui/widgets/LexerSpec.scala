@@ -44,10 +44,16 @@ final class LexerSpec extends AnyFunSuite:
 
   // ---- one styled golden per new lexer, over a representative snippet ----
 
-  private val Snippets: Seq[(String, Lexer, String)] = Seq(
-    (
-      "lexer-yaml",
-      Lexer.Yaml,
+  /** The frame a lexer's highlighting draws, after checking its spans concatenate back to the source — an editor maps
+    * them onto its clusters, so a lexer that dropped or added a character would be painting the wrong cells.
+    */
+  private def highlighted(lexer: Lexer, snippet: String): io.worxbend.tui.core.Buffer =
+    val text = SyntaxHighlighter.highlight(snippet, lexer, theme)
+    assert(text.plainText == snippet)
+    rendered(Paragraph(text), 60, text.lines.size)
+
+  test("golden: Yaml highlights a representative snippet"):
+    val snippet =
       """---
         |# deployment
         |name: "glyphora"
@@ -57,28 +63,28 @@ final class LexerSpec extends AnyFunSuite:
         |  - &base tui
         |  - *base
         |script: |
-        |  echo hi # not a key""".stripMargin,
-    ),
-    (
-      "lexer-sql",
-      Lexer.Sql,
+        |  echo hi # not a key""".stripMargin
+    GoldenFrames.assertMatchesStyled("lexer-yaml", highlighted(Lexer.Yaml, snippet))
+
+  test("golden: Sql highlights a representative snippet"):
+    val snippet =
       """-- active users
         |SELECT id, name FROM users
         |where active = true and age > 21
-        |ORDER BY name LIMIT 'ten';""".stripMargin,
-    ),
-    (
-      "lexer-markdown",
-      Lexer.Markdown,
+        |ORDER BY name LIMIT 'ten';""".stripMargin
+    GoldenFrames.assertMatchesStyled("lexer-sql", highlighted(Lexer.Sql, snippet))
+
+  test("golden: Markdown highlights a representative snippet"):
+    val snippet =
       """# Title
         |> quoted
         |- [x] done with `code`
         |1. **bold** and [link](https://x.io)
-        |```scala""".stripMargin,
-    ),
-    (
-      "lexer-diff",
-      Lexer.Diff,
+        |```scala""".stripMargin
+    GoldenFrames.assertMatchesStyled("lexer-markdown", highlighted(Lexer.Markdown, snippet))
+
+  test("golden: Diff highlights a representative snippet"):
+    val snippet =
       """diff --git a/a.txt b/a.txt
         |--- a/a.txt
         |+++ b/a.txt
@@ -86,33 +92,24 @@ final class LexerSpec extends AnyFunSuite:
         | context
         |-old line
         |+new line
-        |\ No newline at end of file""".stripMargin,
-    ),
-    (
-      "lexer-typescript",
-      Lexer.TypeScript,
+        |\ No newline at end of file""".stripMargin
+    GoldenFrames.assertMatchesStyled("lexer-diff", highlighted(Lexer.Diff, snippet))
+
+  test("golden: TypeScript highlights a representative snippet"):
+    val snippet =
       """// greet
         |export const greet = (name: string): void => {
         |  console.log(`hi ${name}`, 'x', 42)
-        |}""".stripMargin,
-    ),
-    (
-      "lexer-python",
-      Lexer.Python,
+        |}""".stripMargin
+    GoldenFrames.assertMatchesStyled("lexer-typescript", highlighted(Lexer.TypeScript, snippet))
+
+  test("golden: Python highlights a representative snippet"):
+    val snippet =
       """# fib
         |def fib(n):
         |    return n if n < 2 else fib(n - 1) + fib(n - 2)
-        |print(fib(10), "done", None)""".stripMargin,
-    ),
-  )
-
-  Snippets.foreach { (name, lexer, snippet) =>
-    test(s"golden: ${lexer.name} highlights a representative snippet"):
-      val text = SyntaxHighlighter.highlight(snippet, lexer, theme)
-      // the spans must concatenate back to the source, or an editor could not map them onto its clusters
-      assert(text.plainText == snippet)
-      GoldenFrames.assertMatchesStyled(name, rendered(Paragraph(text), 60, text.lines.size))
-  }
+        |print(fib(10), "done", None)""".stripMargin
+    GoldenFrames.assertMatchesStyled("lexer-python", highlighted(Lexer.Python, snippet))
 
   test("Diff colours + lines inserted and - lines deleted, and never mistakes a file header for either"):
     val lines =
