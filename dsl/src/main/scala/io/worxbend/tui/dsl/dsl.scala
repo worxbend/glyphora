@@ -22,6 +22,7 @@ export Element.{
   confirmDialog,
   dataTable,
   dialog,
+  diffView,
   directoryTree,
   dock,
   dropdown,
@@ -379,6 +380,15 @@ export io.worxbend.tui.widgets.{
   TitlePosition,
   TreeNode,
   TreeState,
+  Patch,
+  PatchError,
+  FilePatch,
+  Hunk,
+  DiffLine,
+  DiffLayout,
+  DiffView,
+  DiffViewOptions,
+  DiffViewState,
 }
 
 /** The shape of an app's `view` (and any sub-view helper): a computation, run under a tracking [[ReactiveScope]] *and*
