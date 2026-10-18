@@ -1257,3 +1257,16 @@ private[dsl] trait ElementFactories:
       target: Element
   ): ContextMenuElement =
     ContextMenuElement(target, items, state, onSelect)
+
+  /** A movable, resizable floating window titled `title` around `content`, at the rectangle in caller-owned
+    * [[w.WindowState]]. Put windows in a [[windowStack]]: a press raises a window, dragging its title moves it and
+    * dragging its `◢` grip resizes it; with focus inside, `Alt+M` / `Alt+R` (the `window-move` / `window-resize`
+    * framework keys) enter a keyboard mode where the arrows move or resize it and Enter or Esc leave. See [[w.Window]].
+    */
+  def window(title: String, state: w.WindowState)(content: Element): WindowElement =
+    WindowElement.of(title, state, content)
+
+  /** Draws `windows` at their states' rectangles in stacking order — the window raised last on top — over the area it
+    * is given; usually the overlay of `layers(base, windowStack(...))`. Paints nothing between the windows.
+    */
+  def windowStack(windows: Element*): WindowStackElement = WindowStackElement(windows)

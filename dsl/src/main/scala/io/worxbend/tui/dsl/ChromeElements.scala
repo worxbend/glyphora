@@ -138,7 +138,7 @@ final case class ToolbarElement(
   private def strip: w.Toolbar                                                   =
     w.Toolbar(
       children.map(child => RowChildWidget(child, child.widget)),
-      focus = Some(children.indexWhere(ToolbarElement.holdsFocus)).filter(_ >= 0),
+      focus = Some(children.indexWhere(holdsFocus)).filter(_ >= 0),
       gap = gap,
       divider = divider,
       style = props.style,
@@ -149,10 +149,11 @@ final case class ToolbarElement(
   private[dsl] override def claim: SizeClaim                                     = SizeClaim.OneRow
   private[dsl] override def intrinsicWidth(height: Int): Option[Int] = constrainedWidth(strip.widthAt(height))
 
-private[dsl] object ToolbarElement:
+/** Whether focus sits on `element` or anywhere under it, as the focus pass marked the decorated tree. */
+private def holdsFocus(element: Element): Boolean = element.props.focused || element.children.exists(holdsFocus)
 
-  /** Whether focus sits on `element` or anywhere under it. */
-  def holdsFocus(element: Element): Boolean = element.props.focused || element.children.exists(holdsFocus)
+/** Whether `element` or anything under it is focusable. */
+private def offersFocus(element: Element): Boolean = element.props.focusable || element.children.exists(offersFocus)
 
 /** A tag (chip) field over a caller-owned [[w.TagInputState]]: committed tags draw as chips that wrap onto further rows
   * through [[w.Flow]], followed by the text being typed. While focused, typing edits the text with every key a text
@@ -460,3 +461,145 @@ final case class ContextMenuElement(
       case KeyEvent(KeyCode.Tab, _)                             => state.close(); false
       case KeyEvent(KeyCode.Char(_), _) if isPlainTyping(event) => true
       case _                                                    => false
+
+/** The content of a [[WindowElement]]: transparent to layout and painting. Its `onMouse` — heard by every node on the
+  * path as an event bubbles — raises the window on any press inside it, then declines, so the control pressed still
+  * gets the press. Built by `window`; application code never sees it.
+  */
+private[dsl] final case class WindowBodyElement(content: Element, props: ElementProps) extends Element:
+  type Self = WindowBodyElement
+  override def debugName: String                                                    = "windowBody"
+  override def children: Seq[Element]                                               = Seq(content)
+  def widget: Widget                                                                = content.widget
+  private[dsl] override def layoutOnly: Boolean                                     = true
+  private[dsl] def withProps(props: ElementProps): WindowBodyElement                = copy(props = props)
+  private[dsl] override def withChildren(children: Seq[Element]): WindowBodyElement =
+    children.headOption.fold(this)(child => copy(content = child))
+
+/** A movable, resizable floating window over a caller-owned [[w.WindowState]], drawn by [[w.Window]]: a frame with the
+  * title on top and a `◢` grip in the bottom-right corner, its content inside. Place windows in a
+  * [[WindowStackElement]] (`windowStack`), which draws them at their state's rectangles in stacking order.
+  *
+  * Pointer: a press anywhere on the window raises it above the others; a drag that starts on the title row moves it and
+  * one that starts on the grip resizes it — the press captures the pointer, so the drag keeps following once the
+  * pointer leaves the window. Keyboard, while focus is inside the window: the `window-move` framework key (`Alt+M`)
+  * enters a move mode and `window-resize` (`Alt+R`) a resize mode, in which the arrows move or resize the window one
+  * cell at a time and `Enter` or `Esc` leave; the mode shows in the title. A window whose content has nothing to focus
+  * is a tab stop itself, so it can always be arranged from the keyboard.
+  */
+final case class WindowElement(
+    title: String,
+    state: w.WindowState,
+    body: Element,
+    props: ElementProps = ElementProps(),
+) extends Element:
+  type Self = WindowElement
+  override private[dsl] def watchedStates: Seq[Versioned]                       = Seq(state)
+  override def debugName: String                                                = "window"
+  override def accessibleName: String                                           = s"window $title"
+  override def children: Seq[Element]                                           = Seq(body)
+  private def frame: w.Window                                                   =
+    val active = holdsFocus(this)
+    w.Window(title, style = props.style, borderStyle = if active then Style.Default.bold else Style.Default)
+  def widget: Widget                                                            =
+    val current = frame
+    (area, buffer) =>
+      current.render(area, buffer, state)
+      body.widget.render(current.inner(area), buffer)
+  private[dsl] def withProps(props: ElementProps): WindowElement                = copy(props = props)
+  private[dsl] override def withChildren(children: Seq[Element]): WindowElement =
+    children.headOption.fold(this)(child => copy(body = child))
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler]    = Some(handleMouse)
+  private[dsl] override def captureKeyHandler: Option[BuiltinKeyHandler]        =
+    Some(event => holdsFocus(this) && handleKey(event))
+
+  private def handleMouse(event: MouseEvent, area: Rect): Boolean =
+    event.kind match
+      case MouseEventKind.Down if event.button == MouseButton.Left =>
+        state.raise()
+        val onGrip = event.position.x == area.right - 1 && event.position.y == area.bottom - 1
+        if onGrip || event.position.y == area.y then state.startDrag(event.position, resizing = onGrip)
+        true
+      case MouseEventKind.Drag if state.dragging                   =>
+        state.dragTo(event.position)
+        true
+      case MouseEventKind.Up if state.dragging                     =>
+        state.endDrag()
+        true
+      case _                                                       => false
+
+  private def handleKey(event: KeyEvent): Boolean =
+    val keys = FrameworkKeys.current.value
+    if keys.fires(keys.windowMove, event) then
+      state.mode = if state.mode == w.WindowMode.Moving then w.WindowMode.Normal else w.WindowMode.Moving
+      state.raise()
+      true
+    else if keys.fires(keys.windowResize, event) then
+      state.mode = if state.mode == w.WindowMode.Resizing then w.WindowMode.Normal else w.WindowMode.Resizing
+      state.raise()
+      true
+    else if state.mode == w.WindowMode.Normal then false
+    else
+      val step: (Int, Int) => Unit =
+        if state.mode == w.WindowMode.Moving then state.moveBy else state.resizeBy
+      event match
+        case KeyEvent(KeyCode.Left, _)                            => step(-1, 0); true
+        case KeyEvent(KeyCode.Right, _)                           => step(1, 0); true
+        case KeyEvent(KeyCode.Up, _)                              => step(0, -1); true
+        case KeyEvent(KeyCode.Down, _)                            => step(0, 1); true
+        case KeyEvent(KeyCode.Enter | KeyCode.Escape, _)          => state.mode = w.WindowMode.Normal; true
+        case KeyEvent(KeyCode.Tab, _)                             => state.mode = w.WindowMode.Normal; false
+        case KeyEvent(KeyCode.Char(_), _) if isPlainTyping(event) => true
+        case _                                                    => false
+
+private[dsl] object WindowElement:
+
+  /** A window over `content`; a tab stop itself when `content` offers nothing to focus. */
+  def of(title: String, state: w.WindowState, content: Element): WindowElement =
+    val body = WindowBodyElement(
+      content,
+      ElementProps(onMouse = Some { event =>
+        if event.kind == MouseEventKind.Down then state.raise()
+        false
+      }),
+    )
+    WindowElement(title, state, body, ElementProps(focusable = !offersFocus(content)))
+
+/** Floating windows over the area it is given — usually the overlay of a `layers(base, windowStack(...))`. Each
+  * [[WindowElement]] is drawn at its state's rectangle, nudged back inside the area when it has been dragged past an
+  * edge (the state keeps where it was put), in stacking order: a larger `z` — the window raised last — draws on top and
+  * so takes the pointer where windows overlap. Other children draw across the whole area, beneath every window. Paints
+  * nothing of its own, so a press between the windows reaches whatever is underneath.
+  */
+final case class WindowStackElement(override val children: Seq[Element], props: ElementProps = ElementProps())
+    extends Element:
+  type Self = WindowStackElement
+  override def debugName: String                                                     = "windowStack"
+  private[dsl] override def layoutOnly: Boolean                                      = true
+  def widget: Widget                                                                 =
+    (area, buffer) =>
+      if !area.isEmpty then
+        children.sortBy(child => WindowStackElement.windowOf(child).fold(Long.MinValue)(_.state.z)).foreach { child =>
+          WindowStackElement.windowOf(child) match
+            case Some(window) => child.widget.render(WindowStackElement.placed(window.state.rect, area), buffer)
+            case None         => child.widget.render(area, buffer)
+        }
+  private[dsl] def withProps(props: ElementProps): WindowStackElement                = copy(props = props)
+  private[dsl] override def withChildren(children: Seq[Element]): WindowStackElement = copy(children = children)
+
+private[dsl] object WindowStackElement:
+
+  /** The window a child is, under whatever decorators the focus pass put around it. */
+  def windowOf(element: Element): Option[WindowElement] =
+    element match
+      case window: WindowElement        => Some(window)
+      case decorator: DecoratingElement => windowOf(decorator.inner)
+      case _                            => None
+
+  /** `rect` (relative to `area`) in screen cells, shrunk to fit `area` and shifted back inside it. */
+  def placed(rect: Rect, area: Rect): Rect =
+    val width  = math.min(rect.width, area.width)
+    val height = math.min(rect.height, area.height)
+    val x      = math.max(area.x, math.min(area.x + rect.x, area.right - width))
+    val y      = math.max(area.y, math.min(area.y + rect.y, area.bottom - height))
+    Rect(x, y, width, height)

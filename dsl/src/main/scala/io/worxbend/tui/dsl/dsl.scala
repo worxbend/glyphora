@@ -113,6 +113,8 @@ export Element.{
   tree,
   treeTable,
   widget,
+  window,
+  windowStack,
   wizard,
 }
 // Form signatures are part of the one-import application surface too. `Codec` is the context bound of `persisted`, and
@@ -331,6 +333,8 @@ export io.worxbend.tui.widgets.{
   ChartOptions,
   AccordionState,
   ColorPickerState,
+  WindowMode,
+  WindowState,
   ContextMenuState,
   MenuBarMenu,
   MenuBarState,

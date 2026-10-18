@@ -2557,6 +2557,40 @@ blank field and a Tab with nothing to accept keep bubbling, so a form's submit a
 focus traversal still work. The node measures as many rows as its chips wrap onto; the
 widget is `TagInput(placeholder, showCursor, style, chipStyle, suggestionStyle)`.
 
+### Floating windows
+
+`window(title, state)(content)` is a movable, resizable window; `windowStack(windows*)`
+draws a set of them over the area it is given, usually as the overlay of a `layers`:
+
+```scala
+private val inspector = WindowState(x = 4, y = 2, width = 30, height = 10)
+private val console   = WindowState(x = 20, y = 8, width = 40, height = 8)
+
+layers(
+  mainView,
+  windowStack(
+    window("Inspector", inspector)(inspect(selected.get)),
+    window("Console", console)(logConsole(ring)),
+  ),
+)
+```
+
+Each window is drawn at its state's rectangle — nudged back inside the stack when it has
+been dragged past an edge — in stacking order, so the window raised last draws on top
+and takes the pointer where windows overlap. Windows are opaque; the stack paints
+nothing between them, so a press there reaches whatever is underneath.
+
+A press anywhere on a window raises it. Dragging its title row moves it and dragging the
+`◢` grip in its bottom-right corner resizes it; the press captures the pointer, so the
+drag keeps following once the pointer has left the window. From the keyboard, with focus
+inside the window, `Alt+M` enters a move mode and `Alt+R` a resize mode — the arrows then
+move or resize it a cell at a time, the title shows `· move` or `· resize`, and `Enter`
+or `Esc` leave. Both keys are the rebindable `window-move` and `window-resize`
+framework keys. A window whose content has nothing to focus is a tab stop itself, so it
+can always be arranged from the keyboard. `WindowState` keeps the rectangle (`rect`),
+the stacking order (`z`, raised with `raise()`), and the mode; the frame alone is the
+`Window(title, style, borderStyle, titleStyle, gripSymbol, borderType)` widget.
+
 ### Menu bars and context menus
 
 `menuBar(menus, state)(onSelect)` is a one-row bar of titles whose menus drop down over

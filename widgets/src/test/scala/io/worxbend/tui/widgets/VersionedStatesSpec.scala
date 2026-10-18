@@ -222,6 +222,14 @@ final class VersionedStatesSpec extends AnyFunSuite:
       "move"                 -> (_.move(1, 3)),
       "menu.selected ="      -> (_.menu.selected = Some(0)),
     ),
+    row("WindowState", WindowState(0, 0, 10, 4))(
+      "mode ="               -> (_.mode = WindowMode.Moving),
+      "raise"                -> (_.raise()),
+      "moveBy"               -> (_.moveBy(1, 1)),
+      "resizeBy"             -> (_.resizeBy(1, 1)),
+      "startDrag"            -> (_.startDrag(io.worxbend.tui.core.Position(0, 0), resizing = false)),
+      "endDrag"              -> (_.endDrag()),
+    ),
     row("ContextMenuState", ContextMenuState())(
       "openAt"               -> (_.openAt(io.worxbend.tui.core.Position(1, 1))),
       "close"                -> (_.close()),

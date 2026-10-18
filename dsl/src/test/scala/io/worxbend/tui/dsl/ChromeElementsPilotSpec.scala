@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{MouseButton, Size}
+import io.worxbend.tui.core.{MouseButton, Rect, Size}
 import io.worxbend.tui.terminal.HeadlessBackend
 import io.worxbend.tui.testsupport.{GoldenFrames, Pilot}
 
@@ -171,4 +171,42 @@ final class ChromeElementsPilotSpec extends AnyFunSuite with PilotFixture:
     assert(lines(7).stripTrailing.length == 29 && lines(7).stripTrailing.endsWith("╯") && lines(3).contains("╭"))
     pilot.press("escape").waitForIdle()
     assert(!menuState.isOpen)
+    quitApp(pilot)
+
+  private def desk(windows: Element*): ReactiveScope ?=> Element =
+    layers(column(text("desktop " * 5), text("base layer " * 3)), windowStack(windows*))
+
+  test("window: dragging the title moves it 5 cells, dragging the grip resizes it"):
+    val notes = WindowState(2, 1, 16, 5)
+    val pilot = startApp(Size(40, 12))(desk(window("Notes", notes)(text("alpha"))))
+    assert(pilot.screenLines(1).drop(2).startsWith("┌ Notes "))
+    pilot.drag(5, 1, 10, 1).waitForIdle()
+    assert(notes.rect == Rect(7, 1, 16, 5))
+    assert(pilot.screenLines(1).drop(7).startsWith("┌ Notes "))
+    pilot.drag(22, 5, 25, 7).waitForIdle()
+    assert(notes.rect == Rect(7, 1, 19, 7))
+    quitApp(pilot)
+
+  test("window: two windows overlap; a click on the one beneath brings it to the front"):
+    val back  = WindowState(2, 1, 18, 6)
+    val front = WindowState(10, 3, 18, 6)
+    val pilot = startApp(Size(40, 12)) {
+      desk(window("Back", back)(text("back window")), window("Front", front)(text("front window")))
+    }
+    assert(pilot.screenLines(3).contains("┌ Front "))
+    pilot.click(4, 4).waitForIdle()
+    assert(back.z > front.z)
+    GoldenFrames.assertMatches("window-z-order", pilot.lastFrame)
+    quitApp(pilot)
+
+  test("window: Alt+M then the arrows move it, Alt+R then the arrows resize it, Enter and Esc leave the mode"):
+    val panel = WindowState(2, 1, 16, 5)
+    val pilot = startApp(Size(40, 12))(desk(window("Tools", panel)(button("ok")(()))))
+    pilot.press("alt+m").waitForIdle()
+    assert(panel.mode == WindowMode.Moving)
+    assert(pilot.screenText.contains("Tools · move"))
+    pilot.press("right", "right", "right", "down", "enter").waitForIdle()
+    assert(panel.rect == Rect(5, 2, 16, 5) && panel.mode == WindowMode.Normal)
+    pilot.press("alt+r", "right", "down", "down", "escape").waitForIdle()
+    assert(panel.rect == Rect(5, 2, 17, 7) && panel.mode == WindowMode.Normal)
     quitApp(pilot)
