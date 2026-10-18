@@ -61,8 +61,8 @@ and only the current one is ever visible. That is right for three options and wr
 forty — choosing the thirtieth takes thirty keystrokes, and the user cannot see what they
 are choosing between.
 
-`dropdown(...)` shows the list. It draws one row while closed and, when opened, the whole
-option list beneath that row as a bordered, scrolling popup:
+`dropdown(...)` shows the list. It draws one row while closed and, when opened, floats the
+whole option list beneath that row as a bordered, scrolling popup:
 
 ```scala
 import io.worxbend.tui.dsl.*
@@ -81,7 +81,10 @@ Enter, Space or Down opens the list, and so does a click on the row. While it is
 Up and Down move the highlight, the wheel moves it too, and Enter or a click on an option
 commits that option through the callback. Escape closes the list and changes nothing — the
 highlight is not the chosen value until it is committed, which is what makes "open it,
-look around, back out" safe.
+look around, back out" safe. A click anywhere *outside* the list closes it too, and is
+spent on that: the control under the pointer does not also receive it, the way a click
+outside a menu dismisses the menu and nothing more. Tab closes the list on its way to the
+next control.
 
 The state carries the navigation those keys drive, for an app that wants its own
 bindings: `regionState.openAt(selected)` opens the list with the highlight parked on the
@@ -91,12 +94,12 @@ optionCount)` turns a clicked popup row into the option it shows.
 
 Two things are worth knowing before reaching for it. An open dropdown **consumes Escape**,
 so an app that binds Escape globally will not see it while a list is showing. And the popup
-is drawn inside the node's own area rather than floated over the screen, so while the list
-is open the node claims `1 + maxVisibleRows + 2` rows and whatever sits below it moves down.
-That is what lets it work inside any panel or column with no overlay machinery; the cost is
-that a dropdown near the bottom of a short area gets a clipped list rather than one that
-opens upwards. `maxVisibleRows` (8 by default) caps the popup, and a longer list scrolls
-inside it.
+floats over the frame the way a `portal` does rather than being drawn inside the node's
+own area: the node claims one row whether the list is open or not, nothing beside or below
+it moves when the list opens, and the list spills past the border of the panel or pane the
+row sits in. It opens beneath the row when the frame has room for it there and above the
+row when it does not, clipped to the frame either way. `maxVisibleRows` (8 by default)
+caps the popup, and a longer list scrolls inside it.
 
 ## One name for the chosen thing
 
