@@ -39,3 +39,11 @@ final class RichTextElementSpec extends AnyFunSuite:
   test("empty and zero-sized areas paint nothing and do not throw"):
     assert(lines(text(Text.Empty), 0, 0).isEmpty)
     assert(lines(text(Text.raw("")).wrapped, 4, 1) == Seq(""))
+
+  test("the String overload is still what a bare `text` function value resolves to, so helpers keep compiling"):
+    // `labels.map(text)` is how a list of captions is built in more than one app; the Text overload must not make it
+    // ambiguous
+    val captions: Seq[Element] = Seq("a", "b").map(text)
+    assert(captions.size == 2)
+    val styled: Seq[Element]   = Seq(Text.raw("a")).map(text)
+    assert(styled.size == 1)
