@@ -42,6 +42,14 @@ object LoadingTheme:
   * and progress family, `markdown` for a rendered document, and `markdown.syntax` (mirrored as [[syntax]] for the
   * standalone highlighter) for code.
   *
+  * A `final class` with a private constructor rather than a `case class`, as `Style`, `Layout` and `RunnerConfig` are,
+  * because this is the type a new semantic role lands in. A case class rewrites `apply`, `copy` and `unapply` on every
+  * new field, and a consumer compiled against the old shape fails with `NoSuchMethodError`; here the compatibility
+  * surface is the three presets plus the `with*` builders — `Theme.Dark.withBorder(...)` where the docs used to say
+  * `Theme.Dark.copy(border = ...)` — all of which a new field leaves untouched. There is no `copy` and no pattern
+  * extractor; equality and `hashCode` are structural over every field, and `toString` is `Theme(<name>)`, which is what
+  * a theme switcher and a failed assertion both want to see.
+  *
   * @param border
   *   the frame style `panel` and `rule` draw with when the caller sets no style of their own.
   * @param focus
@@ -52,24 +60,175 @@ object LoadingTheme:
   *   has to run somewhere less certain writes `theme = Theme.detected()` and every panel border, spinner and progress
   *   bar in the tree follows, with no other call site changing.
   */
-final case class Theme(
-    name: String,
-    primary: Style,
-    accent: Style,
-    muted: Style,
-    error: Style,
-    warning: Style,
-    success: Style,
-    surface: Style,
-    border: Style,
-    focus: Style,
-    loading: LoadingTheme,
-    markdown: MarkdownTheme,
-    syntax: SyntaxTheme,
-    glyphs: GlyphSupport = GlyphSupport.Full,
-)
+final class Theme private (
+    val name: String,
+    val primary: Style,
+    val accent: Style,
+    val muted: Style,
+    val error: Style,
+    val warning: Style,
+    val success: Style,
+    val surface: Style,
+    val border: Style,
+    val focus: Style,
+    val loading: LoadingTheme,
+    val markdown: MarkdownTheme,
+    val syntax: SyntaxTheme,
+    val glyphs: GlyphSupport,
+):
+
+  /** This theme with the named fields replaced — the one place the builders below spell out the constructor. */
+  private def updated(
+      name: String = name,
+      primary: Style = primary,
+      accent: Style = accent,
+      muted: Style = muted,
+      error: Style = error,
+      warning: Style = warning,
+      success: Style = success,
+      surface: Style = surface,
+      border: Style = border,
+      focus: Style = focus,
+      loading: LoadingTheme = loading,
+      markdown: MarkdownTheme = markdown,
+      syntax: SyntaxTheme = syntax,
+      glyphs: GlyphSupport = glyphs,
+  ): Theme =
+    new Theme(
+      name,
+      primary,
+      accent,
+      muted,
+      error,
+      warning,
+      success,
+      surface,
+      border,
+      focus,
+      loading,
+      markdown,
+      syntax,
+      glyphs,
+    )
+
+  /** The name [[toString]] prints and a theme switcher shows; the presets are `"dark"`, `"light"`, `"high-contrast"`.
+    */
+  def withName(name: String): Theme = updated(name = name)
+
+  def withPrimary(style: Style): Theme = updated(primary = style)
+  def withAccent(style: Style): Theme  = updated(accent = style)
+  def withMuted(style: Style): Theme   = updated(muted = style)
+  def withError(style: Style): Theme   = updated(error = style)
+  def withWarning(style: Style): Theme = updated(warning = style)
+  def withSuccess(style: Style): Theme = updated(success = style)
+  def withSurface(style: Style): Theme = updated(surface = style)
+
+  /** The frame style `panel` and `rule` draw with when the caller sets none of their own. */
+  def withBorder(style: Style): Theme = updated(border = style)
+
+  /** The focus cue, and the selection highlight of every "pick a row" element. */
+  def withFocus(style: Style): Theme = updated(focus = style)
+
+  /** The loading palette as a unit — [[LoadingTheme.from]] derives a coherent one from `accent`, `muted` and `surface`
+    * rather than making a custom theme spell out all five.
+    */
+  def withLoading(palette: LoadingTheme): Theme = updated(loading = palette)
+
+  /** The document palette `markdown(…)` renders through. Its `syntax` is independent of [[withSyntax]]: the presets
+    * bind both to one `SyntaxTheme` so fenced code and the standalone highlighter cannot drift apart, and a custom
+    * theme that changes one should usually change the other.
+    */
+  def withMarkdown(theme: MarkdownTheme): Theme = updated(markdown = theme)
+
+  /** Token colours for the standalone `SyntaxHighlighter` — see [[withMarkdown]] for the pairing. */
+  def withSyntax(theme: SyntaxTheme): Theme = updated(syntax = theme)
+
+  /** The glyph ceiling every themed factory keeps under — what [[Theme.detected]] lowers. Only the ceiling moves; every
+    * colour is kept.
+    */
+  def withGlyphs(ceiling: GlyphSupport): Theme = updated(glyphs = ceiling)
+
+  /** Structural equality over every field, reference equality tried first; the two cheap fields are compared before the
+    * twelve styles and palettes.
+    */
+  override def equals(other: Any): Boolean =
+    other match
+      case that: Theme =>
+        (this eq that) ||
+        (name == that.name && glyphs == that.glyphs && primary == that.primary && accent == that.accent &&
+          muted == that.muted && error == that.error && warning == that.warning && success == that.success &&
+          surface == that.surface && border == that.border && focus == that.focus && loading == that.loading &&
+          markdown == that.markdown && syntax == that.syntax)
+      case _           => false
+
+  /** Hashes every field [[equals]] compares, so a `Set[Theme]` or a memo keyed by theme cannot conflate two that differ
+    * in one role.
+    */
+  override def hashCode(): Int =
+    var hash = name.hashCode
+    hash = 31 * hash + primary.hashCode
+    hash = 31 * hash + accent.hashCode
+    hash = 31 * hash + muted.hashCode
+    hash = 31 * hash + error.hashCode
+    hash = 31 * hash + warning.hashCode
+    hash = 31 * hash + success.hashCode
+    hash = 31 * hash + surface.hashCode
+    hash = 31 * hash + border.hashCode
+    hash = 31 * hash + focus.hashCode
+    hash = 31 * hash + loading.hashCode
+    hash = 31 * hash + markdown.hashCode
+    hash = 31 * hash + syntax.hashCode
+    31 * hash + glyphs.hashCode
+
+  /** `Theme(dark)` — the name alone. Fourteen styles and palettes printed in full were unreadable in exactly the place
+    * a theme is printed most, a failed assertion, and the name is what distinguishes one theme from another to a
+    * reader.
+    */
+  override def toString: String = s"Theme($name)"
 
 object Theme:
+
+  /** A theme from its fields — the form the three presets below are written in. Only the glyph ceiling has a default:
+    * every colour is a decision the theme's author makes.
+    *
+    * This is a construction convenience, not the compatibility surface. Adding a field changes its descriptor and
+    * renumbers its default-argument getters, so a consumer compiled against `Theme(name = …, …)` still fails with
+    * `NoSuchMethodError` on the next field until it recompiles; at that growth the previous arity is kept as a plain
+    * default-free overload so compiled callers keep working. Code that must survive a new field without recompiling
+    * starts from [[Dark]], [[Light]] or [[HighContrast]] and builds with the `with*` methods.
+    */
+  def apply(
+      name: String,
+      primary: Style,
+      accent: Style,
+      muted: Style,
+      error: Style,
+      warning: Style,
+      success: Style,
+      surface: Style,
+      border: Style,
+      focus: Style,
+      loading: LoadingTheme,
+      markdown: MarkdownTheme,
+      syntax: SyntaxTheme,
+      glyphs: GlyphSupport = GlyphSupport.Full,
+  ): Theme =
+    new Theme(
+      name,
+      primary,
+      accent,
+      muted,
+      error,
+      warning,
+      success,
+      surface,
+      border,
+      focus,
+      loading,
+      markdown,
+      syntax,
+      glyphs,
+    )
 
   // The three shared code palettes are declared before the themes that name them: `object` members initialise top to
   // bottom, so a `val Light` that read a `LightSyntax` declared below it would capture `null`.
@@ -214,8 +373,9 @@ object Theme:
     * The one place the pure value in `tui-core` meets the environment reading in `tui-terminal`, so that an application
     * writing `theme = Theme.detected()` needs no import beyond `io.worxbend.tui.dsl.*`.
     *
-    * Only the ceiling moves; every colour in `base` is kept. Call it once, at start-up, and hold the result: it reads
-    * the process environment, which does not change under a running application.
+    * Only the ceiling moves; every colour in `base` is kept — it is [[withGlyphs]] over `base`. Call it once, at
+    * start-up, and hold the result: it reads the process environment, which does not change under a running
+    * application.
     */
   def detected(base: Theme = Dark, env: Map[String, String] = sys.env): Theme =
-    base.copy(glyphs = TerminalGlyphs.detect(env))
+    base.withGlyphs(TerminalGlyphs.detect(env))

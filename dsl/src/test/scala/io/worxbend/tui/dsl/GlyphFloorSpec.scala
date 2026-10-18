@@ -13,7 +13,7 @@ import org.scalatest.funsuite.AnyFunSuite
   */
 final class GlyphFloorSpec extends AnyFunSuite:
 
-  private val AsciiTheme: Theme = Theme.Dark.copy(glyphs = GlyphSupport.Ascii)
+  private val AsciiTheme: Theme = Theme.Dark.withGlyphs(GlyphSupport.Ascii)
 
   private def frameOf(theme: Theme): Seq[String] =
     given Theme = theme
@@ -48,4 +48,4 @@ final class GlyphFloorSpec extends AnyFunSuite:
   test("Theme.detected lowers only the ceiling and keeps the palette"):
     val detected = Theme.detected(Theme.Light, Map("TERM" -> "xterm", "LANG" -> "C"))
     assert(detected.glyphs == GlyphSupport.Ascii)
-    assert(detected.copy(glyphs = GlyphSupport.Full) == Theme.Light)
+    assert(detected.withGlyphs(GlyphSupport.Full) == Theme.Light)

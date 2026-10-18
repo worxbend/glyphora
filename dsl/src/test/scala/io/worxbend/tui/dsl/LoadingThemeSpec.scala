@@ -135,7 +135,7 @@ final class LoadingThemeSpec extends AnyFunSuite with PilotFixture:
       muted = Style.Default.dim,
       surface = Style.Default.withFg(Color.White),
     )
-    val custom  = Theme.Dark.copy(name = "custom", loading = derived)
+    val custom  = Theme.Dark.withName("custom").withLoading(derived)
     val pilot   = renderWith(custom)(spinner("x"))
     assert(pilot.cellAt(0, 0).style.fg.contains(Color.Magenta))
     close(pilot)
