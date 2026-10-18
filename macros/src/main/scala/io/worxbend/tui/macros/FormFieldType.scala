@@ -37,8 +37,8 @@ import scala.util.Try
   "deriveForm: no form control is defined for a field of type ${A}. Out of the box String, Int, Long, Double, " +
     "BigDecimal, Boolean, java.util.UUID, java.time.LocalDate/LocalTime/LocalDateTime/Duration and Option of those " +
     "are supported; define a `given FormFieldType[${A}]` next to your own type to teach the derivation about it. " +
-    "An enum whose cases all take no parameters can say " +
-    "`given FormFieldType[${A}] = FormFieldType.ofEnum[${A}]` in its companion."
+    "If the field's type is an enum whose cases all take no parameters, " +
+    "`given FormFieldType[YourEnum] = FormFieldType.ofEnum[YourEnum]` in its companion is enough."
 )
 trait FormFieldType[A]:
 
