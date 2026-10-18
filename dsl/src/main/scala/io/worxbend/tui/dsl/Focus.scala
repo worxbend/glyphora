@@ -482,6 +482,9 @@ private[dsl] object FocusPass:
     * where it looks for them. With `None` no wrapper is built and the tree is exactly what it was before recording
     * existed — and `onBoundsDemand` is called for every [[BoundsAwareElement]] met on the way, which is how a host that
     * is not recording learns that the tree it is about to paint has a consumer and records the next frame.
+    *
+    * `onFocusPath` is handed the child positions, root first, that lead to the focused element in the returned tree
+    * (`None` when nothing is focused) — the path key routing would otherwise search the whole tree for on every event.
     */
   def decorate(
       root: Element,
@@ -493,10 +496,15 @@ private[dsl] object FocusPass:
       onMotionDemand: () => Unit = () => (),
       onCueDemand: () => Unit = () => (),
       theme: Theme = Theme.default,
+      onFocusPath: Option[Vector[Int]] => Unit = _ => (),
   ): Element =
     var counter        = 0
     var pointerCounter = 0
     var nodeCounter    = 0
+    // child positions from the root down to the node being transformed, innermost first, and the trail that led to the
+    // focused node — the path key routing follows instead of searching the tree for it
+    var trail          = List.empty[Int]
+    var focusedTrail   = Option.empty[Vector[Int]]
 
     def themed(
         element: Element,
@@ -554,6 +562,7 @@ private[dsl] object FocusPass:
           val index  = counter
           counter += 1
           val target = Some(InputTarget.Focus(index))
+          if index == tracker.focusedIndex then focusedTrail = Some(trail.reverse.toVector)
           TrackedElement(
             themed(element, focused = index == tracker.focusedIndex, disabled, target, states, inherited),
             index,
@@ -574,8 +583,21 @@ private[dsl] object FocusPass:
           )
         else themed(element, focused = false, disabled, None, states, inherited)
       // Inert trees still paint, including deferred portals: keep theme and coordinate wrappers, but no input records.
+      val outer    = trail
+      var position = 0
       val children =
-        viewportWrapped(element, current.children.map(child => transform(child, inert, disabled, cascade)))
+        viewportWrapped(
+          element,
+          current.children.map { child =>
+            // a scroll view's content sits one level down, under the viewport wrapper `viewportWrapped` adds
+            trail = element match
+              case _: ScrollViewElement => 0 :: position :: outer
+              case _                    => position :: outer
+            position += 1
+            transform(child, inert, disabled, cascade)
+          },
+        )
+      trail = outer
       val recorded = bounds.fold(current)(recorder => boundsWrapped(current, nodeId, nodeCounter - 1, recorder))
       val revealed =
         if element.props.ensureVisible && !inert then
@@ -583,7 +605,9 @@ private[dsl] object FocusPass:
         else recorded
       revealed.withChildren(children)
 
-    transform(root, ancestorInert = false, ancestorDisabled = false, inherited = Style.Default)
+    val decorated = transform(root, ancestorInert = false, ancestorDisabled = false, inherited = Style.Default)
+    onFocusPath(focusedTrail)
+    decorated
 
   /** The theme's component styles for `element`'s role: its `.variant(...)`, else the role its node type declares. */
   private def componentOf(element: Element, theme: Theme): StateStyles =

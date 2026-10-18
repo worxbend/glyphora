@@ -23,19 +23,19 @@ private[dsl] final class ViewSession(areaOf: String => Option[Rect] = _ => None)
   state.requestFrame = () => changes.update(_ + 1)
   state.areaOf = areaOf
 
-  def resolve(view: View, size: Size, theme: Theme)(using scope: ReactiveScope): Element =
+  /** Evaluates `view` and runs the frame's resolution pass over it, which also collects the frame's analysis. */
+  def resolve(view: View, size: Size, theme: Theme)(using scope: ReactiveScope): ResolvedFrame =
     state.beginGeneration()
-    val tree = ViewState.during(state)(ResponsivePass.resolveFrame(view(using scope, theme), size, dryPaint(size)))
+    val frame = ViewState.during(state)(ResponsivePass.resolveFrame(view(using scope, theme), size, dryPaint(size)))
     state.sweep()
-    val _    = changes.get
-    tree
+    val _     = changes.get
+    frame
 
-  /** After the paint of `tree` (the resolved, undecorated tree) has been published: remember the versions it painted —
-    * after the paint, because a widget's render may itself adjust its state's scroll offset — then run the hooks'
-    * after-paint work.
+  /** After the paint of `frame` has been published: remember the versions of the states it painted — after the paint,
+    * because a widget's render may itself adjust its state's scroll offset — then run the hooks' after-paint work.
     */
-  def afterPaint(tree: Element): Unit =
-    painted = StateWatch.collect(tree)
+  def afterPaint(frame: ResolvedFrame): Unit =
+    painted = StateWatch.versions(frame.analysis.states)
     state.afterPaint()
 
   /** Whether a versioned state painted on the last frame has been mutated since; when one has, the view is invalidated
