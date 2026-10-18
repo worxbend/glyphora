@@ -18,25 +18,112 @@ All publishable modules in this checkout share one synchronized version under `c
 
 ```scala
 // Mill
-def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.18.3")
+def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.19.0")
 ```
 
 ```scala
 // sbt
-libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.18.3"
+libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.19.0"
 ```
 
 Applications normally need only `tui-dsl`. Lower-tier artifacts are `tui-core`,
 `tui-terminal`, `tui-widgets`, `tui-runtime`, and `tui-macros`; `tui-test` carries the
 headless test harness and belongs in the test configuration only.
 
-Version `0.18.3` is available from Maven Central under `com.worxbend`. Downloads
-require no credentials, and Mill and sbt use Central by default. GitHub Packages
-also hosts the libraries; its resolver requires a classic PAT with `read:packages`.
+Version `0.19.0` is published to Maven Central under `com.worxbend` by the `v0.19.0`
+tag (see [Release process](#release-process)); Central keeps every earlier release, so a
+build pinned to `0.18.3` keeps resolving.
+Downloads require no credentials, and Mill and sbt use Central by default. GitHub
+Packages also hosts the libraries; its resolver requires a classic PAT with
+`read:packages`.
 See [Getting started](./getting-started#1-add-glyphora) for both options.
 
 GitHub Packages releases through `v0.18.1` used `io.worxbend`. Update dependency
 coordinates to `com.worxbend` when moving to `0.18.3`; Scala imports use `io.worxbend.tui`.
+
+## Migrating to 0.19.0
+
+- `Style`, `Layout`, `RunnerConfig` and `Theme` are now `final class`es with private
+  constructors, as the "Types that will break when they grow" note promised. Construction
+  through the companion `apply` with named arguments (`Style(fg = Some(c))`,
+  `RunnerConfig(tickRate = Some(d))`, `Layout.horizontal(…)`) and every preset
+  (`Theme.Dark`, `Style.Default`, the new `RunnerConfig.Default`) compiles unchanged.
+  `copy` and pattern extractors are gone: `x.copy(field = v)` becomes `x.withField(v)` —
+  `Layout.horizontal(3, 4).copy(spacing = 1)` → `.withSpacing(1)`,
+  `Theme.Dark.copy(glyphs = …)` → `Theme.Dark.withGlyphs(…)`,
+  `Theme.Dark.copy(name = "mine", loading = …)` → `Theme.Dark.withName("mine").withLoading(…)`,
+  `Style.Default.copy(modifiers = m)` → `Style.mods(m)`. Only construction through a
+  preset or `Default` plus `with*` is unaffected by future fields; a call to the companion
+  `apply` still needs a recompile when a field is added — the `apply` is a construction
+  convenience, not the compatibility surface. They are plain classes now — not `Product`s
+  and not `java.io.Serializable`; `productIterator` and friends are gone with `copy`.
+  - `Style` gains `withModifiers`, `withClearedModifiers` and `withoutLink`. `Layout` gains
+    `withSpacing`, `withFlex` and `withoutBetween`; `Layout.spaced(Spacing)` remains the
+    builder for `between`, and an explicit `spaced(…)` keeps precedence over `withSpacing`
+    until `withoutBetween` clears it.
+  - `RunnerConfig` gains `RunnerConfig.Default` and a `with*`/`without*` pair for every
+    field (`withTickRate`/`withoutTickRate`, `withMouseCapture`/`withoutMouseCapture`,
+    `withKeyEventTypes`/`withoutKeyEventTypes`, `withOnTaskError`/`withoutOnTaskError`,
+    `withOnFrame`/`withoutOnFrame`, `withOnFrameTiming`/`withoutOnFrameTiming`,
+    `withViewport`). Its `equals`/`hashCode` are structural except that the three
+    function-valued fields compare by reference, as before.
+  - `Theme` gains one builder per role — `withName`, `withPrimary`, `withAccent`,
+    `withMuted`, `withError`, `withWarning`, `withSuccess`, `withSurface`, `withBorder`,
+    `withFocus`, `withLoading`, `withMarkdown`, `withSyntax`, `withGlyphs`. `Theme.Dark`,
+    `Theme.Light`, `Theme.HighContrast`, the `given Theme.default` and `Theme.detected()`
+    are unchanged, and the companion `apply` keeps its thirteen named arguments plus
+    `glyphs = GlyphSupport.Full`.
+  - `toString` is briefer: `Theme` prints as `Theme(dark)` — the name only — and
+    `RunnerConfig` as `RunnerConfig.Default` or
+    `RunnerConfig(tickRate=Some(100 milliseconds), mouseCapture=true)` — the non-default
+    fields only. `Layout` prints `Layout(Horizontal, List(Length(3)), spacing=0, flex=Start,
+    between=None)` instead of the derived positional form.
+- `BarChart`, `Calendar` and `LinearSpinner` bundle their optional knobs into
+  `BarChartOptions`, `CalendarOptions` and `LinearSpinnerOptions`, matching `Chart`,
+  `DataTable`, `Scrollbar` and `OrbitSpinner`: `BarChart(data, barSet = …)` →
+  `BarChart(data, BarChartOptions(barSet = …))`;
+  `Calendar(y, m, selected = Some(d), dayStyles = s)` →
+  `Calendar(y, m, Some(d), CalendarOptions(dayStyles = s))` — or
+  `Calendar(y, m, options = CalendarOptions(dayStyles = s))` when `selected` is left out,
+  since the bundle is the fourth parameter; `LinearSpinner(elapsed, style, headStyle, axis = …)`
+  → `LinearSpinner(elapsed, LinearSpinnerOptions(axis = …, style = …, headStyle = …))`. The
+  DSL factories `barChart`, `horizontalBarChart`, `calendar` and `linearSpinner` are
+  unchanged. There is no deprecated delegate for the old constructor shapes: an overloaded
+  `apply` cannot repeat the primary constructor's defaults, so a delegate would have had to
+  spell out every old parameter by hand. `WidgetOptionsDisciplineSpec` now fails
+  `widgets.test` when a widget carries more than eight defaulted constructor parameters
+  without an options bundle; `Block` is the one allowlisted deferral.
+- `TerminalCapabilities.enabled(support)` is deprecated; write `support.usable`.
+- Input and runtime fixes that may change observed behaviour. A `wake()` interrupt (every
+  timer tick or async completion) no longer drops a pending Escape, turns Alt+key into a
+  bare key, or dispatches a terminal reply's tail as keystrokes — a half-read sequence
+  (`ESC`, `ESC O`, `ESC [ 1 ; 5`, an X10 mouse report, a split surrogate pair) is re-queued
+  and re-parsed whole, the escape window is not restarted by the wake, and a wake inside a
+  skipped reply resumes the skip with its length cap intact. `HeadlessBackend.wake()` now
+  interrupts `readEvent`, so `Pilot` works with any `tickRate`; `HeadlessBackend.idleReads`
+  also counts a wake that found the queue empty, and `pendingEvents` counts posted events
+  only. `waitForIdle` means what it did; what changed is latency — a timer or async
+  continuation now reaches the render thread within milliseconds instead of at the next
+  tick poll, so a pilot test that waited on a `Signal` value and then asserted on
+  `drawCount` (or any frame-derived state) in the next statement could pass on 0.18.3 by
+  accident and now races the frame. Wait for the frame too:
+  `pilot.waitUntil("repaint")(backend.drawCount > before)` or `waitForDraws(n)`. A
+  throwing custom `Backend.wake()` no longer stops a repeating timer silently (it
+  reaches the timer thread's uncaught handler); an uncancelled `Async.every` retires itself
+  on its next firing once its owner has closed; a fatal throwable from the final drain
+  escapes `run` even after an earlier failure; `RunnerError.message` reports the number of
+  cleanup failures.
+- Rendering fixes: `Buffer.blit` keeps the owner's style on a cut wide glyph; a `Cell("")`
+  is stored and flushed as a styled one-column blank; `ListView` BottomToTop keeps a
+  multi-row item's lines in reading order (a bottom-to-top item that does not fit loses its
+  *top* lines, and one taller than the viewport shows its bottom); `Paragraph.scrollX` no
+  longer leaves a one-column gap after a straddling wide glyph — the glyph is dropped whole
+  and the column it would have occupied past the edge stays blank, so rows stay
+  column-aligned as in `TextArea`; `Masked` falls back to its default glyph for a zero-width
+  `maskChar`.
+- One import: `Cell`, `UnderlineStyle`, `LegendConstraints`, `ScrollbarSide`,
+  `SpinDirection` and `SignalEquality` are now reachable from `import io.worxbend.tui.dsl.*`.
+  `DataTableState.keyed[K]` builds a state for a keyed table.
 
 ## Migrating to 0.18.0
 
@@ -98,23 +185,36 @@ patch versions.
 
 Adding a field to a `case class` changes the signatures of `apply`, `copy` and
 `unapply`, so downstream code compiled against the old shape fails with
-`NoSuchMethodError` — recompiling fixes it, but only if you know to. These public
-types are the ones most likely to gain fields, and are the reason the table above says
-"not yet" rather than "yes":
+`NoSuchMethodError` — recompiling fixes it, but only if you know to.
+
+`Style`, `Layout`, `RunnerConfig` and `Theme` left this category in 0.19.0. Each is a
+`final class` with a private constructor, and its compatibility surface is its presets or
+`Default` plus the `with*` builders: `Style.Default`/`Style.Reset`/`Style.fg`/`bg`/`of`/`mods`,
+`Layout.horizontal`/`vertical` (`Layout.spaced` for `between`), `RunnerConfig.Default`, and
+`Theme.Dark`/`Light`/`HighContrast`. A value built that way keeps working when a field is
+added. Their companion `apply` keeps today's defaults for convenience but is still
+arity-sensitive — adding a field changes its descriptor, so a call to it needs a recompile —
+and at that growth the previous arity is kept as a plain default-free overload so compiled
+callers keep working. One public type is still a `case class` that will grow:
 
 | Type | Module | Why it will grow |
 |---|---|---|
-| `Style` | `tui-core` | new text attributes as terminals gain them |
 | `ElementProps` | `tui-dsl` | every new element modifier lands here |
-| `Theme` | `tui-dsl` | new semantic roles |
-| `RunnerConfig` | `tui-runtime` | new loop options |
-| `Layout` | `tui-core` | new constraint or flex behaviour |
 
-Before 1.0 these should move to a `final class` with a private constructor plus `with*`
-builders — the builder style `Style` already uses — so a new field is additive. The
+`ElementProps` stays a case class until the DSL-node step below because its user-facing
+surface is already the fluent builders (`.fg(…)`, `.length(n)`, `.onKeyEvent(…)`), which
+keep their shape when a field is added, and nothing published calls its `copy`. The
 genuinely closed value types (`Position`, `Size`, `Rect`, `Cell`, `KeyEvent`,
 `MouseEvent`) are expected to stay `case class`es: their shape is fixed by what a
 terminal cell and a coordinate are.
+
+The DSL node types — `TextElement`, `PanelElement` and the other `*Element` case classes
+the factories return — are a related surface. Their constructors, `copy` methods and
+pattern extractors are not part of the compatibility contract; the factories (`text(…)`,
+`panel(…)`) and the fluent builders on `Element` are. A node gains a field whenever its
+factory gains an option, so inspect a tree through `props`, `children` and `widget`
+rather than pattern-matching a node's constructor. Before 1.0 a node may become a
+`final class` behind its factory with no user-visible change.
 
 ## Release process
 
@@ -147,7 +247,7 @@ dependencies fail the release workflow.
 To publish the current main commit manually:
 
 ```sh
-gh workflow run publish-packages.yml --ref main -f version=0.18.3
+gh workflow run publish-packages.yml --ref main -f version=0.19.0
 ```
 
 Treat released versions as immutable. Increment the shared `publishVersion`

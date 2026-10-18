@@ -178,7 +178,7 @@ def view(using ReactiveScope, Theme): Element =
         portal(dx = 12, dy = 4, width = 22, height = 6)(
           layers(clear(), menu(menuEntries, menuState)(runAction)),
         )
-      else spacer().length(0),
+      else spacer.length(0),
     ),
   )
 ```
@@ -346,7 +346,7 @@ space between each pair, space after the last":
 import io.worxbend.tui.core.*
 import io.worxbend.tui.widgets.{Block, Borders, Rule}
 
-val (panes, gaps) = Layout.horizontal(0.5, 0.5).copy(spacing = 1).splitWithSpacers(buffer.area)
+val (panes, gaps) = Layout.horizontal(0.5, 0.5).withSpacing(1).splitWithSpacers(buffer.area)
 Block(borders = Borders.All).render(panes(0), buffer)
 Block(borders = Borders.All).render(panes(1), buffer)
 // gaps(1) is exactly the one-cell channel `spacing` opened between the two panes
@@ -812,6 +812,10 @@ import io.worxbend.tui.core.hex
 val brand = hex"#c83232"   // expands to Color.Rgb(200, 50, 50) — no Option, no parsing at runtime
 val short = hex"#f80"      // the three-digit form, same as Color.hex accepts
 ```
+
+`hex"…"` is the one literal the DSL does not forward, so it needs this import where
+`key"…"` does not: a colour literal is written in a theme, which is `tui-core` territory,
+where a key spec is written in every app's bindings.
 
 A malformed literal — `hex"#ff88"`, `hex"nothex"` — fails the build with an error naming
 the string, rather than returning `None` at runtime. Interpolating a value

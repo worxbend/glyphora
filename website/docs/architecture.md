@@ -61,6 +61,13 @@ maximum-stability tier everything else builds on:
   `Layout.split` solver, plus `split2`…`split5`, which hand back a tuple so a
   statically known arity is destructured instead of indexed, and `splitWithSpacers`,
   which additionally returns the gap rectangles between and around the segments.
+- **Public-by-design helpers**: `LayoutSolver` (the "how many cells does each segment
+  get" half of `Layout`, public because how a toolkit decides sizes is the part users
+  most need to read), `Symbols` (the named glyphs the library draws with, so a theme or
+  a custom ramp can reach the same characters), and `LineBreaks` (where a run of text
+  may break, kept apart from `CharWidth`'s "how wide is it"). In `tui-widgets`, `Fraction`
+  (the clamp/`NaN` rule for ratios) and `BarStyling` (the shared no-override default) play
+  the same role; the module's other shared render helpers are `private[widgets]`.
 - **Widget traits**: `Widget`, `StatefulWidget[S]`. `Widget` has exactly one abstract
   method, `render(area: Rect, buffer: Buffer): Unit`, so Scala's SAM conversion means a
   **plain lambda is a complete widget** — there is no trait to implement, no base class,
@@ -357,6 +364,10 @@ The mid-level framework tier:
   `runOnRenderThread`, `runLater`. `Signal.set` asserts it.
 - **`Runner` / `TerminalRunner` / `Frame` / `RunnerConfig`** — the event/render loop:
   terminal setup/teardown, diff-driven redraws, tick emission, resize handling.
+  `RunnerConfig` is an immutable value: start from `RunnerConfig.Default` (or the
+  named-argument `RunnerConfig(...)`) and add `withTickRate(100.millis)`,
+  `withMouseCapture`, `withKeyEventTypes`, `withOnFrame(...)`,
+  `withViewport(Viewport.Inline(3))`; each Boolean and `Option` has a `without*` twin.
 - **`Stopwatch` / `Timer` / `TickDriven`** — caller-owned tick clocks, the thing
   that supplies the `elapsed` `tui-core`'s motion values are pure functions of.
 

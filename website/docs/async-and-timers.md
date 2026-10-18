@@ -87,7 +87,10 @@ including exceptions thrown by a custom worker-side error handler, reach that
 thread's uncaught-exception handler; they are not hidden in discarded futures.
 Only exceptions from the worker's `work` body go to `onError`. Dispatch failures—for
 example, a custom backend throwing from its wakeup—escape to the worker's uncaught
-handler instead. A result already queued before wakeup failed remains accepted.
+handler instead. A result already queued before wakeup failed remains accepted. The
+same holds on the timer path: a repeating timer whose wake throws reports the throwable
+to the timer thread's uncaught-exception handler and keeps firing, instead of ending
+silently inside its `ScheduledFuture`.
 Avoid it in a
 terminal app: the JVM prints the stack trace to standard error, which is the tty the
 UI is drawn on, so the trace lands on top of the alternate screen and the frame diff
@@ -112,8 +115,12 @@ and retry only when capacity is available—not in an immediate retry loop.
 Each repeating timer holds one reservation until cancelled. Ticks while its callback is
 pending or running coalesce into that delivery rather than accumulating for replay.
 This bounds timer backlog, not callback duration, and does not make overlapping HTTP
-loads single-flight. The bounds are per owner, not a global cap on runner instances;
-unscoped timers still need explicit lifecycle cancellation.
+loads single-flight. The bounds are per owner, not a global cap on runner instances.
+An unscoped timer that was never cancelled retires itself on its first firing after its
+owner has closed — the body never runs again and the scheduler entry is removed — but
+cancelling it in `onStop` is still the right habit: the body may hold resources of its
+own, and cancellation frees the reservation and the entry at once rather than one
+interval later.
 
 ## Schedule one-shot and repeating work
 

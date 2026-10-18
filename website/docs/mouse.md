@@ -203,7 +203,9 @@ sends. No built-in element consumes them, because no widget in this library scro
 sideways, so they bubble untouched all the way out and are yours to act on:
 
 ```scala
-dataTable(columns, rows, tableState).onMouseEvent { event =>
+val table: DataTable[Int] = DataTable(columns, rows, widths)
+
+dataTable(table, tableState).onMouseEvent { event =>
   event.kind match {
     case MouseEventKind.ScrollLeft  => columnOffset.update(n => math.max(0, n - 1)); true
     case MouseEventKind.ScrollRight => columnOffset.update(_ + 1); true

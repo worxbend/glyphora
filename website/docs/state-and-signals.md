@@ -99,11 +99,17 @@ def view(using ReactiveScope, Theme): Element =
   )
 ```
 
-Long-lived computed values belong beside your signals, not inside `view`. A
-`Computed` created inside a `view` body subscribes to its dependencies again on every
-evaluation and is never released on its own, so the source signal's subscriber set
-grows by one per frame. Hoist it out beside your signals, or call `.dispose()` when
-whatever owns it goes away. (`map`, below, needs neither.)
+A `Computed` is never created per evaluation. One created inside a `view` body
+subscribes to its dependencies again on every frame and nothing releases it, and
+calling `.dispose()` on it in that same body does not repair that — it breaks two more
+things. Dispose invalidates the dependents of the computed, and the dependent here is
+the scope drawing this very frame, so every frame owes the next one and an idle app
+repaints at the poll rate for ever. And the disposing scope ends the frame subscribed to
+nothing — the computed was its only edge to the source — so a real `set` on that signal
+reaches nobody; the continuous redraw is what hides it. Hoist long-lived computed values
+out beside your signals and dispose them where their owner goes away (`Screen.onLeave`,
+`TuiApp.onStop`); for a per-frame derivation use `map`, below, or read the signal
+inline — neither needs disposing.
 
 `dispose` detaches; it does not close. Anything derived from a disposed computed is
 marked stale so it recomputes rather than freezing at its last value, and reading the

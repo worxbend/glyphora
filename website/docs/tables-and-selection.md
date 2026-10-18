@@ -92,6 +92,10 @@ def view(using ReactiveScope, Theme): Element =
   dataTable(buildTable(processes.get), tableState).fill
 ```
 
+A table keyed by something other than the row position names the key type through the
+factory — `DataTableState.keyed[String]` for a table keyed by name. (`DataTableState[String]()`
+does not compile: the companion's `apply` takes no type parameter.)
+
 Each row is a `KeyedRow(key, cells)`: the cells are what the table sorts,
 filters and draws, and the key is the row's stable identity, which the selection
 pins itself to — see [Pin the selection to an
@@ -206,8 +210,6 @@ The filter lives on the table state, the text lives in a `TextInputState`, and
 one of them has to push into the other. Push only on change:
 
 ```scala
-import io.worxbend.tui.widgets.TextInputState
-
 val filterInput: TextInputState = TextInputState()
 
 private def syncFilter(): Unit =
@@ -279,8 +281,6 @@ one value, `Paging`, because neither means anything without the other — a page
 number with no page size describes nothing the widget can draw.
 
 ```scala
-import io.worxbend.tui.widgets.Paging
-
 tableState.paging = Some(Paging(size = 20, page = 0))
 
 tableState.nextPage(table.filteredRows(tableState).size)

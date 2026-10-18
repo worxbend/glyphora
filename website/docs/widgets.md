@@ -650,7 +650,9 @@ blank rows above it. Call `bottomToTop` for that. It anchors the first item of t
 sequence to the *last* row of the area and grows upward, so feed the items newest-first.
 The underlying `ListView` takes the same choice as a `ListDirection` value
 (`TopToBottom`, the default, or `BottomToTop`); nothing else changes — the selection
-still clamps and scrolls exactly as it does the other way up.
+still clamps and scrolls exactly as it does the other way up. A multi-row `Text` item
+keeps its lines in reading order either way up — the items stack upwards, the lines
+inside each item do not — and the topmost item that does not fit loses its top lines.
 
 ```scala
 private val transcript = ListState()
@@ -1190,7 +1192,13 @@ barChart(load, 3, (_, value) => Option.when(value > limit)(Style.Default.withFg(
 ```
 
 Only the bars change colour. The label under a bar and the number beside it keep the
-chart's label and value styles, so they stay readable whatever the bar is doing.
+chart's label and value styles, so they stay readable whatever the bar is doing. The
+override every chart starts with is `BarStyling.NoOverride` — one shared value rather than
+a fresh `(_, _) => None`, so two charts built with the same arguments still compare equal.
+Ratios have one documented rule in the same spirit: `Fraction.clamped` confines a progress,
+sweep or intensity value to `[0, 1]` and reads `NaN` as no progress, never as a full bar.
+`gauge`, `lineGauge` and the ramps all apply it, and a caller building its own ratio can
+apply the same one.
 
 Each `Dataset` picks how it is drawn with `graphType`. `GraphType.Line` joins the points,
 `GraphType.Scatter` leaves them separate, `GraphType.Bar` drops an upright bar from each
@@ -1362,13 +1370,13 @@ than half-drawn, the same rule `barChart` follows for a single bar.
 A terminal has no pixels, so a bar two and a half cells tall is drawn as two full cells and
 one half-filled one. The glyphs that make that possible are the eight Unicode block
 elements `▁▂▃▄▅▆▇█`, and `BarSet` is the record that holds them — one glyph per eighth of a
-cell, plus an optional glyph for the cells the bar does not reach. `Sparkline` and
-`BarChart` both take one as `barSet`:
+cell, plus an optional glyph for the cells the bar does not reach. `Sparkline` takes one
+as `barSet`, `BarChart` as `BarChartOptions(barSet = …)`:
 
 ```scala
 Sparkline(samples, barSet = BarSet.Ascii)   // '#', for a terminal with no block elements
-BarChart(data, barSet = BarSet.Halves)      // three levels: empty, half a cell, a whole cell
-BarChart(data, barSet = BarSet.Solid)       // whole cells only, no sub-cell precision
+BarChart(data, BarChartOptions(barSet = BarSet.Halves))  // three levels: empty, half a cell, a whole cell
+BarChart(data, BarChartOptions(barSet = BarSet.Solid))   // whole cells only, no sub-cell precision
 Sparkline(samples, barSet = BarSet.uniform("*", empty = Some("·")))
 ```
 
@@ -1447,7 +1455,7 @@ same for a whole series — that is an area chart:
 
 ```scala
 canvas(Bounds(0.0, 24.0), Bounds(0.0, 100.0))(
-  Shape.FilledPolyline(readings, baselineY = 0.0, style = Style.Default.fg(Color.Cyan)),
+  Shape.FilledPolyline(readings, baselineY = 0.0, style = Style.fg(Color.Cyan)),
 )
 ```
 
@@ -1469,7 +1477,7 @@ given those same bounds, or the coastlines land somewhere no map has them:
 ```scala
 canvas(Bounds(-180.0, 180.0), Bounds(-90.0, 90.0))(
   Shape.WorldMap(MapResolution.High),
-  Shape.Points(Seq((-0.13, 51.51), (139.69, 35.69)), Style.Default.fg(Color.Yellow)),
+  Shape.Points(Seq((-0.13, 51.51), (139.69, 35.69)), Style.fg(Color.Yellow)),
 ).braille
 ```
 
@@ -1584,7 +1592,7 @@ the days of a streak — instead of only the one day the cursor is on:
 
 ```scala
 import io.worxbend.tui.core.Style
-import io.worxbend.tui.widgets.Calendar
+import io.worxbend.tui.widgets.{Calendar, CalendarOptions}
 import java.time.LocalDate
 
 private val busy = Map(
@@ -1592,7 +1600,7 @@ private val busy = Map(
   LocalDate.of(2026, 7, 14) -> Style.Default.underline,
 )
 
-widget(Calendar(2026, 7, selected = Some(14), dayStyles = busy))
+widget(Calendar(2026, 7, Some(14), CalendarOptions(dayStyles = busy)))
 ```
 
 The map is keyed by `LocalDate`, not by day-of-month, so one map can be handed to
@@ -1601,9 +1609,11 @@ outermost-last: the calendar's own `style`, then the date's entry, then
 `highlightStyle` for the selected day — so the cursor is still visible when it lands
 on a marked date.
 
-`Calendar` also decides how the grid is framed and which language it speaks:
+`CalendarOptions` also decides how the grid is framed and which language it speaks
+(`Calendar(2026, 7, options = CalendarOptions(showTitle = false))` — the bundle is the
+fourth parameter, so name it when `selected` is left out):
 
-| Parameter | Default | Effect |
+| Field | Default | Effect |
 |---|---|---|
 | `showTitle` | `true` | the `July 2026` row; switching it off gives its row back to the grid |
 | `showWeekdays` | `true` | the `Mo Tu We ...` row, likewise |
@@ -1786,10 +1796,9 @@ final case class LoadingTheme(
 A custom theme gets a coherent palette for free from its own semantic styles:
 
 ```scala
-val mine = Theme.Dark.copy(
-  name = "mine",
-  loading = LoadingTheme.from(accent = myAccent, muted = myMuted, surface = mySurface),
-)
+val mine = Theme.Dark
+  .withName("mine")
+  .withLoading(LoadingTheme.from(accent = myAccent, muted = myMuted, surface = mySurface))
 ```
 
 Anything set at the call site layers on top of the theme, and the glyph and the label
@@ -1969,7 +1978,9 @@ moves the view by exactly one screen row whatever the width — something `scrol
 cannot express, because it scrolls a rendered widget and has to be told its content
 height. `scrollX` does the same for columns and only has anything to skip under
 `Overflow.Clip`, since a wrapped row is never wider than the area. Both are clamped at
-zero, and scrolling past the end leaves the area blank instead of failing. The number to
+zero, and scrolling past the end leaves the area blank instead of failing. A wide glyph
+straddling the scrolled-off edge is dropped whole and its remaining column left blank, so
+every row keeps the columns it has in the source. The number to
 hand a `scrollbar` beside it is `heightAt(width)`: the height of the whole text, which
 the scroll offset deliberately does not reduce.
 

@@ -312,7 +312,15 @@ malformed `binding` does.
 
 `waitForIdle` waits for posted events to be consumed and for the backend to complete
 an idle read. It is stronger and less flaky than sleeping for an arbitrary number of
-milliseconds.
+milliseconds. `HeadlessBackend` honours `Backend.wake()` the way the JLine backend does —
+queued render-thread work, `Pilot.close()` and `Pilot.waitForIdle()` interrupt a blocked
+`readEvent` instead of waiting out the poll — so a pilot works with any `tickRate`,
+including one longer than the pilot's 2 s default deadline. An "idle read" is any read
+that found nothing posted: a timed-out poll slice or a wake that found the queue empty.
+Because wakes land promptly, a `Signal` written by a continuation is visible to the test
+thread a moment before the frame that shows it is drawn; a test that asserts on
+`drawCount` or `screenText` after waiting on a `Signal` waits for the frame too
+(`waitForDraws`, or `waitUntil` on `drawCount`).
 
 ## Test focus and text entry
 

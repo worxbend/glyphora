@@ -298,7 +298,7 @@ assert(TerminalGlyphs.detect(Map("TERM" -> "xterm", "LANG" -> "C")) == GlyphSupp
 ```
 
 And a rendering test pins the frame the way any other one does — render the tree under
-`Theme.Dark.copy(glyphs = GlyphSupport.Ascii)` and assert no character above `~`
+`Theme.Dark.withGlyphs(GlyphSupport.Ascii)` and assert no character above `~`
 survives.
 
 ## Color depth: what is detected, and how to test it

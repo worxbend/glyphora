@@ -257,7 +257,9 @@ Run it: the count is your machine's, and the header reads `source ps` — or
 ## 4. Put the snapshot on screen
 
 Add `java.util.Locale` and `io.worxbend.tui.widgets.{ColumnSort, DataTable, DataTableState, KeyedRow, SortDirection}` to
-`Main.scala`'s imports, plus `import ProcmonApp.*` at the top of the class body.
+`Main.scala`'s imports, plus `import ProcmonApp.*` at the top of the class body. The table is
+keyed by pid, an `Int`, so `DataTableState()` infers the key; a table keyed by anything else
+names it through the factory — a `DataTable[Long]` pairs with `DataTableState.keyed[Long]`.
 
 ```scala title="Main.scala"
   val tableState: DataTableState[Int] = DataTableState()

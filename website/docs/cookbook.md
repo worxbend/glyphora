@@ -60,8 +60,6 @@ The middle panel gets twice the remaining width of either side panel.
 ## Filter a list as the user types
 
 ```scala
-import io.worxbend.tui.widgets.{ListState, TextInputState}
-
 private val query = TextInputState()
 private val selection = ListState()
 private val projects = Signal(Vector("atlas", "borealis", "glyphora"))

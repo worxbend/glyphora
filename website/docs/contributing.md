@@ -55,8 +55,9 @@ command per module names the culprit immediately.
 
 The build uses Mill. Every Scala module has a `package.mill`; shared Scala version,
 strict compiler flags, ScalaTest wiring, and publication metadata live in
-`build.mill`. Two shared traits carry the repetition: `TuiPilotTests` is a test
-submodule that can also drive a whole app through `Pilot`, and `TuiExampleModule` is
+`build.mill`. Three of its five shared traits carry the repetition: `TuiSupportTests` is a test
+submodule with `test-support` on its classpath, `TuiPilotTests` is the same shape under
+a name that says it drives a whole app through `Pilot`, and `TuiExampleModule` is
 everything an `examples/<name>` module needs — the GraalVM pin, `--no-fallback`, and
 that test submodule — so an example's own `package.mill` declares only its
 `moduleDeps` and its `mainClass`.

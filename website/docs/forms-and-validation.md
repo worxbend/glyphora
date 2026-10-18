@@ -267,8 +267,6 @@ express — a nested case class, a radio group over an enum, a suggestion list t
 a service as you type — is still an ordinary column of controls:
 
 ```scala
-import io.worxbend.tui.widgets.TextInputState
-
 private val environment = Signal(0)
 private val replicas = TextInputState("2")
 

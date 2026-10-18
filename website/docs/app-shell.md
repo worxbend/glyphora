@@ -758,23 +758,32 @@ while the strip keeps showing the current one.
 
 ## Theme semantically
 
+A `Theme` names every role the built-in chrome and the themed factories draw with:
+
+| Role | Used by |
+|---|---|
+| `name` | what `Theme.toString` prints and a theme switcher shows |
+| `primary`, `accent`, `muted` | body text, highlights, secondary text |
+| `error`, `warning`, `success` | notices, badges, toasts |
+| `surface` | dialogs and raised panes |
+| `border` | the frame `panel` and `rule` draw with |
+| `focus` | the focus cue, and every element's selection highlight |
+| `loading: LoadingTheme` | spinners and progress bars |
+| `markdown: MarkdownTheme` | headings, bullets, quotes, inline code in `markdown(…)` |
+| `syntax: SyntaxTheme` | token colours for the standalone `SyntaxHighlighter` |
+| `glyphs: GlyphSupport` | the glyph ceiling every themed factory keeps under (`Theme.detected()` lowers it) |
+
+A custom theme starts from a preset and replaces roles with the `with*` builders, or
+spells every role out through `Theme(name = …, primary = …, …)`:
+
 ```scala
-final case class Theme(
-  name: String,
-  primary: Style,
-  accent: Style,
-  muted: Style,
-  error: Style,
-  warning: Style,
-  success: Style,
-  surface: Style,
-  border: Style,          // the frame `panel` and `rule` draw with
-  focus: Style,           // the focus cue, and every element's selection highlight
-  loading: LoadingTheme,  // spinners and progress bars
-  markdown: MarkdownTheme,// headings, bullets, quotes, inline code in `markdown(…)`
-  syntax: SyntaxTheme,    // token colours for the standalone `SyntaxHighlighter`
-)
+val mine: Theme = Theme.Dark
+  .withBorder(Style.fg(Color.Magenta))
+  .withFocus(Style.Default.reverse.bold)
 ```
+
+`Theme` is a `final class`, not a case class: there is no `copy`, and only construction
+through a preset plus `with*` is unaffected by a role added in a later release.
 
 `Theme.Dark`, `Theme.Light`, and `Theme.HighContrast` ship with glyphora. Built-in
 chrome, palette, focus, and toasts use semantic theme roles rather than hardcoded
@@ -959,7 +968,11 @@ The order is: detach app service handles and cancel the ambient ticker, screen
 release, then queue closure, owner unregistration and backend closure.
 Every release is attempted even if an earlier one throws. A prior run failure stays
 primary and later failures are available through `RunnerError.cleanupFailures`
-(and suppressed on the primary throwable when it has one). With no earlier failure,
+(and suppressed on the primary throwable when it has one). `RunnerError.message` ends
+with ` (+N cleanup failure(s))` when teardown failed too, so printing the one line is
+enough; `cleanupFailures` is identity-bound — not part of `==`, `hashCode` or `toString`,
+lost on re-construction — and the suppressed chain on the primary throwable is the
+durable record. With no earlier failure,
 a non-fatal cleanup exception is returned as `RunnerError.Handler`; an escaping
 throwable is rethrown only after cleanup, with later failures suppressed on it.
 

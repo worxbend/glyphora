@@ -70,11 +70,11 @@ neighbour. Lift the call above the condition:
 
 ```scala
 // wrong: the second call site changes number when `expanded` flips
-if expanded.get then row(useSignal(0)) else spacer()
+if expanded.get then row(useSignal(0)) else spacer
 
 // right: the hook is reached either way, and the branch only decides what is drawn
 val rows = useSignal(0)
-if expanded.get then row(rows) else spacer()
+if expanded.get then row(rows) else spacer
 ```
 
 ## `keyed` for anything built in a loop
