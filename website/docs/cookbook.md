@@ -321,6 +321,28 @@ sanitizer off, so the last frame is exactly the finished document. The stream is
 render-thread-only, which is why each token goes through the loop captured before going
 async.
 
+## Build a chat prompt with history and @-mentions
+
+```scala
+private val people   = Seq("alice", "albert", "bob")
+private val composer = PromptComposerState(
+  completions = (trigger, query) =>
+    if trigger == '@' then people.filter(_.startsWith(query)) else Seq("help", "clear").filter(_.startsWith(query)),
+)
+
+def view(using ReactiveScope, Theme): Element =
+  column(
+    markdownStream(reply, scroll).fill,
+    promptComposer(composer)(text => ask(text)),
+  )
+```
+
+`promptComposer` submits on Enter and inserts a newline on Shift+Enter or Alt+Enter.
+Up and Down on the first or last line walk earlier submissions, `Ctrl+R` searches them,
+and a dim suggestion from history is accepted with Tab. The provider runs on a worker,
+debounced, and only the newest answer is shown. Paste a long log and the draft shows
+`[Pasted 120 lines]`; `ask` receives the whole text.
+
 ## Create and validate a case-class form
 
 ```scala

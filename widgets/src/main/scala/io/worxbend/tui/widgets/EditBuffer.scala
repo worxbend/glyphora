@@ -47,6 +47,12 @@ abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRin
   /** The selected text, lines joined with `\n`; empty when nothing is selected. */
   def selectedText: String = selection.fold("")((from, to) => Fragment.text(Fragment.between(lines, from, to)))
 
+  /** The text of line `index` (zero-based), without its line break. */
+  def lineText(index: Int): String = lines(index).mkString
+
+  /** Whether the caret sits at the very end of the text. */
+  def isAtEnd: Boolean = head == endOfText
+
   /** The kill ring this buffer kills into and yanks from. */
   def kills: KillRing = killRing
 

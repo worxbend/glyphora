@@ -61,6 +61,7 @@ export Element.{
   portal,
   positioned,
   progressBar,
+  promptComposer,
   radioGroup,
   responsive,
   row,
