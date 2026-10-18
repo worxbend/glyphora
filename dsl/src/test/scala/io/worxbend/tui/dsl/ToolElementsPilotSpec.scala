@@ -45,3 +45,18 @@ final class ToolElementsPilotSpec extends AnyFunSuite with PilotFixture:
     assert(state.time == LocalTime.MIDNIGHT)
     assert(pilot.screenText.contains("00:00"))
     quitApp(pilot)
+
+  test("rangeSlider: Tab moves to the upper thumb, the thumbs cannot cross, Tab from the top leaves"):
+    val state = RangeSliderState(SliderRange.of(0, 100, 10), 40, 60)
+    var heard = Option.empty[(Int, Int)]
+    val other = TextInputState()
+    val pilot = startApp(column(rangeSlider(state, (lo, hi) => heard = Some((lo, hi))), input(other)))
+    pilot.pressKey(KeyCode.Right).pressKey(KeyCode.Right).pressKey(KeyCode.Right).waitForIdle()
+    assert((state.low, state.high) == (60, 60))
+    assert(heard.contains((60, 60)))
+    pilot.pressKey(KeyCode.Tab).pressKey(KeyCode.Right).waitForIdle()
+    assert(state.thumb == RangeThumb.High)
+    assert(state.high == 70)
+    pilot.pressKey(KeyCode.Tab).typeText("x").waitForIdle()
+    assert(other.value == "x")
+    quitApp(pilot)

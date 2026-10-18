@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{KeyCode, KeyEvent, Style, Widget}
+import io.worxbend.tui.core.{KeyCode, KeyEvent, KeyModifiers, MouseEventKind, Style, Widget}
 import io.worxbend.tui.widgets as w
 
 /** A prototyping stand-in: a dashed box with `label` centred in it and the size the layout actually gave it written
@@ -82,3 +82,54 @@ final case class TimePickerElement(
         case KeyEvent(KeyCode.Down, _)  => state.decrement()
       }
     )
+
+/** A two-thumb range slider over a caller-owned [[w.RangeSliderState]]. While focused, Left/Right move the thumb that
+  * has the keyboard by `state.range.step` and Home/End send it to its limit; a thumb stops at the other one (and at the
+  * state's minimum gap), so the two never cross. Tab hands the keyboard from the lower thumb to the upper one and
+  * Shift+Tab back; from the upper thumb Tab is left unconsumed, so focus moves on to the next control as usual and a
+  * user is never trapped inside the slider. A press or drag on the track moves whichever thumb is nearer. `onChange`
+  * hears the pair after every move.
+  */
+final case class RangeSliderElement(
+    state: w.RangeSliderState,
+    onChange: (Int, Int) => Unit,
+    props: ElementProps = ElementProps(focusable = true),
+) extends Element:
+  type Self = RangeSliderElement
+  override def debugName: String                                             = "rangeSlider"
+  def widget: Widget                                                         =
+    val slider = w.RangeSlider(props.style, props.style.bold, props.style.bold, focusStyled(props).bold)
+    (area, buffer) => slider.render(area, buffer, state)
+  private[dsl] def withProps(props: ElementProps): RangeSliderElement        = copy(props = props)
+  private[dsl] override def claim: SizeClaim                                 = SizeClaim.OneRow
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
+    Some { event =>
+      val shifted = event.modifiers.hasAny(KeyModifiers.Shift)
+      event.code match
+        case KeyCode.Tab if shifted => state.focusPrevious()
+        case KeyCode.Tab            => state.focusNext()
+        case KeyCode.Left           => changed(state.step(-1))
+        case KeyCode.Right          => changed(state.step(1))
+        case KeyCode.Home           => changed(state.toMin())
+        case KeyCode.End            => changed(state.toMax())
+        case _                      => false
+    }
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
+    Some { (event, area) =>
+      event.kind match
+        case MouseEventKind.Down | MouseEventKind.Drag if area.width > ChromeWidth =>
+          val value = state.range.valueAt(event.position.x.toLong - area.x.toLong - 1, area.width - ChromeWidth)
+          if event.kind == MouseEventKind.Down then
+            val nearerHigh = math.abs(value.toLong - state.high) < math.abs(value.toLong - state.low)
+            if nearerHigh then state.focusNext() else state.focusPrevious()
+          changed(state.moveTo(value.toLong))
+        case _                                                                     => false
+    }
+
+  private def changed(move: => Unit): Boolean =
+    move
+    onChange(state.low, state.high)
+    true
+
+  /** Columns the end caps and one thumb take off the draggable track. */
+  private val ChromeWidth = 3

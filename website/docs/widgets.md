@@ -2188,6 +2188,28 @@ A time step moves the whole clock and wraps round midnight, so one minute up fro
 test can pin it; the widgets behind the nodes, `DatePicker(options, selectedStyle)`
 and `TimePicker(style, highlightStyle)`, take a `CalendarOptions` and plain styles.
 
+### Selecting a range
+
+`rangeSlider(state, onChange)` is `slider` with two thumbs. The state owns the pair
+and the keyboard focus between them:
+
+```scala
+private val price = RangeSliderState(SliderRange.of(0, 500, 10), 50, 200, minGap = 20)
+
+rangeSlider(price, (low, high) => filter.set(low to high))
+```
+
+```text
+├──●━━━━━━━●────────┤
+```
+
+Left/Right move the focused thumb by the range's step and Home/End send it to its
+limit. A thumb pushed into the other stops there — they can meet, never cross — and
+`minGap` keeps them that many units apart. Tab hands the keyboard from the lower thumb
+to the upper one and Shift+Tab back; Tab from the upper thumb is not consumed, so focus
+moves on to the next control and nobody gets stuck inside the slider. A press on the
+track moves whichever thumb is nearer, and dragging keeps moving it.
+
 ## Drop to a raw Widget
 
 The DSL is not a separate renderer. Any core `Widget` can become a leaf:

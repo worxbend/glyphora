@@ -1003,3 +1003,10 @@ private[dsl] trait ElementFactories:
     * wrap past midnight. Read the value back from `state.time`. See [[w.TimePicker]].
     */
   def timePicker(state: w.TimePickerState): TimePickerElement = TimePickerElement(state)
+
+  /** A slider with two thumbs selecting a sub-range of `state.range`: Left/Right move the focused thumb, Tab and
+    * Shift+Tab switch thumbs, and the thumbs never cross or come closer than the state's `minGap`. `onChange` hears the
+    * `(low, high)` pair after each move. See [[w.RangeSlider]].
+    */
+  def rangeSlider(state: w.RangeSliderState, onChange: (Int, Int) => Unit = (_, _) => ()): RangeSliderElement =
+    RangeSliderElement(state, onChange)
