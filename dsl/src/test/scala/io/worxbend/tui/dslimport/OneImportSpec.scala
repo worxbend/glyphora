@@ -96,3 +96,62 @@ final class OneImportSpec extends AnyFunSuite with PilotFixture:
 
     val third: Element = text("a").ratio(1, 3)
     assert(third.props.constraint.contains(Constraint.Ratio(1, 3)))
+
+  /** Six names the exported API names in its *members'* signatures, each written the way a view, a theme or a config
+    * writes it. Every one of these was missing from the export blocks for several releases: `ChartOptions` was
+    * reachable but the `LegendConstraints` its `hiddenLegendConstraints` field takes was not, and so on down the list.
+    * `OneImportSurfaceSpec` reads the constructors out of the sources and guards the next one; this test is the
+    * compiled proof for the six, and it compiles against the real classes, not a `typeCheckErrors` string.
+    */
+  test("the types named by exported members' own signatures are reachable from the one import"):
+    // `Signal.apply` takes a `SignalEquality`, and state-and-signals.md shows an app installing its own as a `given`
+    final case class Reading(id: Int, value: Double)
+    given SignalEquality[Reading] with
+      def unchanged(next: Reading, current: Reading): Boolean = next.id == current.id
+    val reading = Signal(Reading(1, 0.5))
+    assert(reading.peek == Reading(1, 0.5))
+    assert(summon[SignalEquality[Reading]].unchanged(Reading(1, 0.5), Reading(1, 0.9)))
+
+    // `Style.withUnderlineStyle` takes an `UnderlineStyle`; layout-and-style.md tells the reader to call it
+    val curly: Style = Style.Default.withUnderlineStyle(UnderlineStyle.Curly)
+    assert(curly.underlineStyle == UnderlineStyle.Curly)
+
+    // `Buffer.get` returns a `Cell`, which is what every `widget { … }` body that reads back what it drew holds
+    var seen: Option[Cell] = None
+    val probe: Element     = widget { (area: Rect, buffer: Buffer) =>
+      buffer.setString(area.x, area.y, "x", Style.Default.bold)
+      seen = Some(buffer.get(area.x, area.y))
+    }
+    probe.widget.render(Rect(0, 0, 1, 1), Buffer(Rect(0, 0, 1, 1)))
+    assert(seen.map(_.symbol).contains("x"))
+
+    // the three option bundles whose fields are typed by an enum or a pair that was not exported alongside them
+    val legend  =
+      ChartOptions(hiddenLegendConstraints = LegendConstraints(Constraint.Percentage(50), Constraint.Percentage(50)))
+    assert(legend.hiddenLegendConstraints.horizontal == Constraint.Percentage(50))
+    val near    = ScrollbarOptions(side = ScrollbarSide.Near)
+    assert(near.side == ScrollbarSide.Near)
+    val reverse = OrbitSpinnerOptions(direction = SpinDirection.CounterClockwise)
+    assert(reverse.direction == SpinDirection.CounterClockwise)
+
+  /** The call shapes the published pages show, compiled as written. Each of these was documented in a form that did not
+    * compile — `spacer()`, `Style.Default.fg(Color.Cyan)`, `dataTable(columns, rows, state)` — and the pages were
+    * corrected to these; the test is what keeps the prose and the API from drifting apart a second time. The keyed
+    * `DataTableState` is here for the same reason: its Scaladoc used to show `DataTableState[String]()`, which the
+    * companion's parameterless `apply` cannot mean.
+    */
+  test("the call shapes the published pages show compile from the one import"):
+    val gap: Element                   = spacer                       // component-state.md, layout-and-style.md
+    assert(gap.props.constraint.isEmpty)
+    val cyan: Style                    = Style.fg(Color.Cyan)         // widgets.md
+    assert(cyan.fg.contains(Color.Cyan))
+    val tableState                     = DataTableState()             // tables-and-selection.md
+    val table                          = DataTable(
+      columns = Seq("name", "state"),
+      rows = Seq(KeyedRow(0, Seq("api", "ready"))),
+      widths = Seq(Constraint.Fill(1), Constraint.Length(6)),
+    )
+    val grid: Element                  = dataTable(table, tableState) // mouse.md: build the `DataTable` first
+    assert(grid.props.focusable)
+    val byName: DataTableState[String] = DataTableState.keyed[String] // R1-05: the keyed form has a factory
+    assert(byName.selected.isEmpty)

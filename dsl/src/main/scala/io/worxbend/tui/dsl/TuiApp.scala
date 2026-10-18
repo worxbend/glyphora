@@ -99,9 +99,10 @@ trait TuiApp:
 
   /** Called once on the way out of [[runWith]], whatever ended the run: [[quit]], an unconsumed `Ctrl+C`, a backend
     * failure, or an event handler that threw. The place to cancel timers, stop pollers, and close whatever [[onStart]]
-    * opened — nothing else cancels a repeating `Async.every` for you. It can also run before [[onStart]] when
-    * preparation (for example, evaluating [[config]] or [[splash]]) fails, so cleanup must tolerate resources not yet
-    * being opened.
+    * opened — the runtime retires an uncancelled repeating `Async.every` only on its first firing after the owner has
+    * closed, so cancelling here is what frees its slot and its scheduler entry at once. It can also run before
+    * [[onStart]] when preparation (for example, evaluating [[config]] or [[splash]]) fails, so cleanup must tolerate
+    * resources not yet being opened.
     *
     * After the event loop exits, its owner remains registered until cleanup completes. Preparation failure instead
     * installs a temporary registered cleanup owner; signal updates remain render-thread-confined in either case.

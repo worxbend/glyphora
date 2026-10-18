@@ -92,12 +92,26 @@ export io.worxbend.tui.macros.{DerivedField, FieldValidation, FormSpec}
 
 // Every core type the exported API's own signatures mention, so a view never needs a second import.
 //
-// The rule this block and the two below are kept to: if a name appears in the *signature* of anything this package
-// exports, it is re-exported here. The regression test is the examples directory — eight of the ten example apps take
-// `io.worxbend.tui.dsl.*` and nothing else from glyphora; `form-demo` adds only
-// `io.worxbend.tui.macros.deriveForm`, a genuinely separate module a form-less app never touches, and
+// The rule this block and the three below are kept to: if a name appears in the signature of anything this package
+// exports — a factory's parameter, or a *member* of an exported type that a view, a theme or a config has to write —
+// it is re-exported here. `ChartOptions` carries a `LegendConstraints`, `ScrollbarOptions` a `ScrollbarSide`,
+// `OrbitSpinnerOptions` a `SpinDirection`, `Style.withUnderlineStyle` takes an `UnderlineStyle`, `Buffer.get` returns a
+// `Cell` and `Signal.apply` wants a `SignalEquality`, so each of those is here too; each spent several releases
+// missing, which is what `OneImportSurfaceSpec` now reads the constructors out of the sources to prevent. The
+// regression tests are that suite, `OneImportSpec` (compiled from a package other than this one) and the examples
+// directory — eight of the ten example apps take `io.worxbend.tui.dsl.*` and nothing else from glyphora; `form-demo`
+// adds only `io.worxbend.tui.macros.deriveForm`, a genuinely separate module a form-less app never touches, and
 // `loadtest` separately imports `io.worxbend.tui.runtime.Async`. An example that needs a second glyphora import means
 // this list is short.
+//
+// The boundary runs where a name stops being something an application *writes* and becomes something it would only
+// write while implementing a lower tier. Backend-implementation vocabulary (`TerminalCapabilities`, `Support`,
+// `WindowSize`, `CursorShape`, …), `Frame` (the `ElementHost` embedding seam for a host that already owns a
+// `TerminalRunner`), the `Buffer`/`Line`/`Span` encoding knobs (`DiffDirective`, `TrailingCellPolicy`, `WidthMode`,
+// `StyledGrapheme`), the `deriveForm`/`FormFieldType`/`Field` derivation extension point and the `hex"…"` colour
+// literal stay behind `io.worxbend.tui.terminal`, `core` and `macros` on purpose: the code that needs them is already
+// a backend, a widget or a derivation, and is reaching into that module deliberately. (`key"…"` *is* forwarded, below,
+// because a binding is written in every app; a colour literal is written in a theme, which is `core` territory.)
 //
 // `core.Progress` is the deliberate omission from the motion group (`Easing`, `Effect`, `Spring`, `Tween`): it is the
 // shared time-to-position arithmetic those four and the animated widgets are built *from*, so it belongs to whoever
@@ -105,6 +119,7 @@ export io.worxbend.tui.macros.{DerivedField, FieldValidation, FormSpec}
 export io.worxbend.tui.core.{
   Alignment,
   Buffer,
+  Cell,
   Color,
   Constraint,
   Direction,
@@ -131,6 +146,7 @@ export io.worxbend.tui.core.{
   Style,
   Text,
   Tween,
+  UnderlineStyle,
   Widget,
 }
 
@@ -210,6 +226,7 @@ export io.worxbend.tui.runtime.{
   RunnerConfig,
   RunnerError,
   Signal,
+  SignalEquality,
   TaskScope,
   Viewport,
 }
@@ -258,6 +275,7 @@ export io.worxbend.tui.widgets.{
   LinearPath,
   LinearTrail,
   Language,
+  LegendConstraints,
   ListDirection,
   ListState,
   LogState,
@@ -278,11 +296,13 @@ export io.worxbend.tui.widgets.{
   ProgressLabel,
   ProgressPreset,
   ScrollbarOptions,
+  ScrollbarSide,
   ScrollViewState,
   Shape,
   SliderRange,
   SortDirection,
   SparkDirection,
+  SpinDirection,
   SpinnerPreset,
   SyntaxHighlighter,
   SyntaxTheme,

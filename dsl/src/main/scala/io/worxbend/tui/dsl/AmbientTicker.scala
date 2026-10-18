@@ -37,10 +37,14 @@ private[dsl] final class AmbientTicker(effects: EffectStack, toasts: ToastStack,
     * Runs on the render thread, at the end of the render pass, which is where `Async.every` must be armed for its body
     * to come back to this loop.
     *
-    * One limit worth knowing. A tick arrives as a task queued back to the render loop, and a loop with no configured
-    * `tickRate` blocks on input for up to 100ms between draining that queue — so an ambient animation advances at that
-    * granularity however short an interval it asked for. That is the difference between "the spinner spins" and "the
-    * spinner is perfectly smooth"; an app that wants the second still sets `config.tickRate`.
+    * One limit worth knowing. A tick arrives as a task queued back to the render loop, and the loop notices it when its
+    * current `readEvent` returns. With `JLine3Backend` — and with `HeadlessBackend`, since 0.19.0 — the queued task
+    * `wake()`s the backend and the read returns at once, so an ambient animation advances as soon as its interval
+    * fires. Only a custom `Backend` that keeps the trait's no-op `wake` is bound by its poll: such a loop with no
+    * configured `tickRate` blocks on input for up to 100ms between draining that queue, and an ambient animation
+    * advances at that granularity however short an interval it asked for. That is the difference between "the spinner
+    * spins" and "the spinner is perfectly smooth"; an app on such a backend that wants the second still sets
+    * `config.tickRate`.
     */
   def retarget(run: RunState): Unit =
     if !run.runnerTicks then

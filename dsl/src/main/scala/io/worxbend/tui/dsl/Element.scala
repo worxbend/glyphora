@@ -15,8 +15,13 @@ private[dsl] type BuiltinPasteHandler = String => Boolean
 /** A node of the retained-mode UI tree.
   *
   * Every element ultimately renders through a `tui-core` [[Widget]] — the DSL is a declarative layer over
-  * `tui-widgets`, never a parallel rendering path. The hierarchy is plain data: construction tests can pattern-match
-  * it, and styling extensions rebuild nodes instead of mutating them.
+  * `tui-widgets`, never a parallel rendering path. The hierarchy is plain data: construction tests can inspect `props`,
+  * `children` and `widget`, and styling extensions rebuild nodes instead of mutating them.
+  *
+  * The node types' constructors, `copy` methods and pattern extractors are not part of the compatibility contract — the
+  * factories (`text`, `panel`, `list`, …) and the fluent builders on them are. A node gains a field whenever its
+  * factory gains an option, and before 1.0 a node may become a `final class` behind its factory with no user-visible
+  * change, so application code names a node type at most as a result type and never destructures one.
   *
   * The node types themselves live one family per file (`LayoutElements`, `DisplayElements`, …). What closes the
   * hierarchy to outside implementors is the `private[dsl]` on [[withProps]]: no class outside this package can
