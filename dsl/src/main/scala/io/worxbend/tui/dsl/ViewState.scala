@@ -208,6 +208,25 @@ object ViewState:
       case Some(store) => store.scoped(key)(body)
       case None        => body
 
+  /** The slot behind `memo`: the value built last time with its deps, rebuilt only when the deps differ. Generic rather
+    * than typed to `Element` so this file names nothing from the element tree: `ElementFactories` reaches in here, and
+    * a reference back out would make the two complete each other.
+    */
+  private[dsl] final class MemoCell[A](var deps: Seq[Any], var value: A)
+
+  /** `memo`'s cache when a view is being evaluated, and a plain build otherwise — the same stance as [[scopeIfActive]],
+    * and for the same reason: a subtree built outside a view has no frame to be reused on.
+    */
+  private[dsl] def memoIfActive[A](deps: Seq[Any])(build: () => A): A =
+    active.get() match
+      case Some(store) =>
+        val cell = store.slot(() => MemoCell(deps, build()))
+        if cell.deps != deps then
+          cell.deps = deps
+          cell.value = build()
+        cell.value
+      case None        => build()
+
   /** Evaluates `body` with `store` installed as the one hooks attach to. */
   private[dsl] def during[A](store: ViewState)(body: => A): A =
     val previous = active.get()

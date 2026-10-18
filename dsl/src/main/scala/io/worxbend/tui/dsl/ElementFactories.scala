@@ -121,6 +121,31 @@ private[dsl] trait ElementFactories:
       ViewState.scopeIfActive(itemKey)(render(item)).key(itemKey)
     }
 
+  /** A subtree built once and handed back unchanged on every later frame whose `deps` are `==` to the ones it was built
+    * with — for a part of the view that is expensive to *compose* (a large table, a tree with thousands of nodes, a
+    * markdown document) and changes less often than the frames around it.
+    *
+    * {{{
+    * memo(rows.get, sortColumn.get)(dataTable(columns, rows.peek, widths))
+    * }}}
+    *
+    * The deps are the whole contract. The cached subtree is not re-evaluated on a frame whose deps are unchanged, so a
+    * `Signal` read *inside* `subtree` does not subscribe that frame to the signal: read every signal the subtree
+    * depends on in the deps list, where the comparison sees it, and `peek` it inside. For the same reason the subtree
+    * must not own hooks — a `useSignal` or `useState` inside it is reached only on frames that rebuild, and a slot not
+    * reached is swept at the end of the frame — so state the subtree needs lives beside the `memo` call and is passed
+    * in as a dep. Children of the cached subtree keep their focus keys and handlers exactly as built, which is what
+    * makes the cache transparent to focus and events.
+    *
+    * Deps compare with `==`: an immutable collection or a case class compares structurally and a mutable object
+    * compares by identity, so a mutable `ListState` as a dep never triggers a rebuild on its own. The cache is a hook
+    * slot and follows the hook rules on [[ViewState]]: it belongs to its call site (scope it with `each` or `keyed` in
+    * a loop) and is released one frame after the call stops being reached. Outside a view evaluation `memo` simply
+    * builds the subtree.
+    */
+  def memo(deps: Any*)(subtree: => Element): Element =
+    ViewState.memoIfActive(deps)(() => subtree)
+
   /** Flexible blank space (fills what siblings leave over). */
   def spacer: SpacerElement = SpacerElement()
 

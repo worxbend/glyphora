@@ -45,6 +45,7 @@ export Element.{
   markdown,
   marquee,
   marqueeAt,
+  memo,
   menu,
   notice,
   numberInput,
