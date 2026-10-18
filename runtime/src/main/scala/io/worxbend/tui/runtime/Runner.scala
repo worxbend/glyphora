@@ -1,7 +1,7 @@
 package io.worxbend.tui.runtime
 
 import io.worxbend.tui.core.{Event, Widget}
-import io.worxbend.tui.terminal.{BackendError, PointerShape}
+import io.worxbend.tui.terminal.{BackendError, MouseCaptureMode, PointerShape}
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -61,6 +61,7 @@ final class RunnerConfig private (
     val viewport: Viewport,
     val keyEventTypes: Boolean,
     val onFrameTiming: Option[FrameTiming => Unit],
+    val mouseMotion: Boolean,
 ):
 
   /** Synthetic [[Event.Tick]]s every `rate` — the whole-app clock for animation; see the class notes on why the type is
@@ -110,6 +111,21 @@ final class RunnerConfig private (
   /** No phase timing, and no profiling clock reads. The default. */
   def withoutOnFrameTiming: RunnerConfig = updated(onFrameTiming = None)
 
+  /** Asks for every pointer movement, not only presses, releases and drags — `MouseCaptureMode.AllMotion`, which is
+    * what delivers [[io.worxbend.tui.core.MouseEventKind.Moved]] and so hover. Implies [[withMouseCapture]]. Off by
+    * default because the terminal then sends a report per cell crossed; a DSL `TuiApp` running with mouse capture turns
+    * it on by itself the first time a frame asks for a hover cue, so this is for an app that wants hover from the very
+    * first frame or drives its own loop.
+    */
+  def withMouseMotion: RunnerConfig = updated(mouseCapture = true, mouseMotion = true)
+
+  /** Button-only mouse reporting, when mouse capture is on at all. The default. */
+  def withoutMouseMotion: RunnerConfig = updated(mouseMotion = false)
+
+  /** The capture mode setup asks the backend for when [[mouseCapture]] is on. */
+  def mouseCaptureMode: MouseCaptureMode =
+    if mouseMotion then MouseCaptureMode.AllMotion else MouseCaptureMode.Buttons
+
   private def updated(
       tickRate: Option[FiniteDuration] = tickRate,
       mouseCapture: Boolean = mouseCapture,
@@ -118,8 +134,9 @@ final class RunnerConfig private (
       viewport: Viewport = viewport,
       keyEventTypes: Boolean = keyEventTypes,
       onFrameTiming: Option[FrameTiming => Unit] = onFrameTiming,
+      mouseMotion: Boolean = mouseMotion,
   ): RunnerConfig =
-    new RunnerConfig(tickRate, mouseCapture, onTaskError, onFrame, viewport, keyEventTypes, onFrameTiming)
+    new RunnerConfig(tickRate, mouseCapture, onTaskError, onFrame, viewport, keyEventTypes, onFrameTiming, mouseMotion)
 
   /** Structural over every field; the three function-valued fields compare by reference (see the class notes). */
   override def equals(other: Any): Boolean =
@@ -128,7 +145,7 @@ final class RunnerConfig private (
         (this eq that) ||
         (mouseCapture == that.mouseCapture && keyEventTypes == that.keyEventTypes && tickRate == that.tickRate &&
           viewport == that.viewport && onTaskError == that.onTaskError && onFrame == that.onFrame &&
-          onFrameTiming == that.onFrameTiming)
+          onFrameTiming == that.onFrameTiming && mouseMotion == that.mouseMotion)
       case _                  => false
 
   override def hashCode(): Int =
@@ -138,7 +155,8 @@ final class RunnerConfig private (
     hash = 31 * hash + onFrame.hashCode()
     hash = 31 * hash + viewport.hashCode()
     hash = 31 * hash + keyEventTypes.hashCode()
-    31 * hash + onFrameTiming.hashCode()
+    hash = 31 * hash + onFrameTiming.hashCode()
+    31 * hash + mouseMotion.hashCode()
 
   /** Only the fields that differ from [[RunnerConfig.Default]], so the common configuration prints as one short line; a
     * function field prints as `<installed>`, a lambda having no readable text of its own.
@@ -152,6 +170,7 @@ final class RunnerConfig private (
       Option.when(viewport != Viewport.Fullscreen)(s"viewport=$viewport"),
       Option.when(keyEventTypes)("keyEventTypes=true"),
       Option.when(onFrameTiming.nonEmpty)("onFrameTiming=<installed>"),
+      Option.when(mouseMotion)("mouseMotion=true"),
     ).flatten
     if fields.isEmpty then "RunnerConfig.Default" else fields.mkString("RunnerConfig(", ", ", ")")
 
@@ -174,8 +193,9 @@ object RunnerConfig:
       viewport: Viewport = Viewport.Fullscreen,
       keyEventTypes: Boolean = false,
       onFrameTiming: Option[FrameTiming => Unit] = None,
+      mouseMotion: Boolean = false,
   ): RunnerConfig =
-    new RunnerConfig(tickRate, mouseCapture, onTaskError, onFrame, viewport, keyEventTypes, onFrameTiming)
+    new RunnerConfig(tickRate, mouseCapture, onTaskError, onFrame, viewport, keyEventTypes, onFrameTiming, mouseMotion)
 
   /** Full screen, no ticks, no mouse or key-release reporting, no observers: what `RunnerConfig()` builds and where
     * every `with*` chain starts.
@@ -292,6 +312,13 @@ trait RunnerHandle:
     * fraction changes.
     */
   def setTaskbarProgress(progress: Option[Double]): Unit
+
+  /** Switches how much mouse traffic the terminal sends, mid-run — `MouseCaptureMode.AllMotion` for hover. Only
+    * meaningful while mouse capture is on; the DSL calls it the first time a frame asks for a hover cue. The default
+    * does nothing, so a handle written before the method existed keeps compiling.
+    */
+  def setMouseCaptureMode(mode: MouseCaptureMode): Unit =
+    val _ = mode
 
 /** Every queued-body failure one run absorbed, collapsed into a single report.
   *

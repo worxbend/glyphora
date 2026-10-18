@@ -1,7 +1,7 @@
 package io.worxbend.tui.runtime
 
 import io.worxbend.tui.core.{Buffer, Event, Position, Widget}
-import io.worxbend.tui.terminal.{Backend, BackendError, PointerShape}
+import io.worxbend.tui.terminal.{Backend, BackendError, MouseCaptureMode, PointerShape}
 
 import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
 import scala.util.control.NonFatal
@@ -199,7 +199,7 @@ final class TerminalRunner(
         case Viewport.Fullscreen     => backend.enterAlternateScreen()
         case inline: Viewport.Inline => backend.reserveInlineRows(inline.reservedRows)
       _ <- backend.hideCursor()
-      _ <- if config.mouseCapture then backend.enableMouseCapture() else Right(())
+      _ <- if config.mouseCapture then backend.enableMouseCapture(config.mouseCaptureMode) else Right(())
       _ <- if config.keyEventTypes then backend.enableKeyEventTypes() else Right(())
     yield ()
 
@@ -564,6 +564,8 @@ private final class BackendHandle(backend: Backend, state: LoopState) extends Ru
   def setPointerShape(shape: PointerShape): Unit         = state.record(backend.setPointerShape(shape))
   def notifyDesktop(title: String, body: String): Unit   = state.record(backend.notifyDesktop(title, body))
   def setTaskbarProgress(progress: Option[Double]): Unit = state.record(backend.setTaskbarProgress(progress))
+
+  override def setMouseCaptureMode(mode: MouseCaptureMode): Unit = state.record(backend.enableMouseCapture(mode))
 
 /** Collects the failures of bodies queued onto the render thread during a single [[TerminalRunner.run]].
   *
