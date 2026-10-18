@@ -540,6 +540,8 @@ trait TuiApp:
         // on the render thread, and while this run is still registered on it: the clock this app's animations read
         // is the one belonging to this loop, and the exit path below can no longer resolve it for itself
         run.renderLoop = Some(AnimationClock.attachToCurrentLoop())
+        // the same loop's `animateTo` motions sample this run's clock and ask this run for their frames
+        SignalMotion.attachToCurrentLoop(nanoTime, () => requestRedraw())
         screenStack.beginRun()
         onStart()
         screenStack.enterRemaining()
@@ -560,6 +562,7 @@ trait TuiApp:
       () => onStop(),
       () => scope.dispose(),
       () => run.renderLoop.foreach(AnimationClock.releaseLoop),
+      () => run.renderLoop.foreach(SignalMotion.releaseLoop),
     )
 
   /** Runs `Screen.onLeave` for active entries still on the stack when a run ends, innermost first, so every attempted
@@ -662,6 +665,7 @@ trait TuiApp:
   private def handleTick(run: RunState): Boolean =
     // before user code, so an `onTick` that reads the clock sees this tick's value rather than the last one's
     AnimationClock.advance()
+    SignalMotion.step()
     toasts.age()
     onTick()
     val splashJustFinished  = run.splash.advance()

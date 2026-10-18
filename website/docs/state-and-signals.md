@@ -165,6 +165,29 @@ each returning whether anything happened (`canUndo`/`canRedo` ask without moving
 `dispatch` after an `undo` discards the redo branch. `store.get`, `store.peek` and the
 read-only `store.state` are the signal's reads, under the same render-thread rules.
 
+## Animate a signal with animateTo
+
+`signal.animateTo(target, duration, easing)` moves a `Signal[Double]` or `Signal[Int]`
+from its current value to `target` along a `Tween`, on the ticks the run already has:
+
+```scala
+private val ratio = Signal(0.0)
+
+def view(using ReactiveScope, Theme): Element =
+  column(gauge(ratio.get), button("fill")(ratio.animateTo(1.0, 600.millis, Easing.CubicOut)))
+```
+
+Each tick sets the signal to the next sample, so the view repaints through the ordinary
+reactive path and the last sample is exactly `target` (`Int` signals round each sample,
+so a scroll offset moves in whole cells). Starting another `animateTo` on the same
+signal replaces the one in flight from wherever the value has got to; the returned
+`Cancelable` stops it where it is. Time is the run's own clock — a `ManualClock` handed
+to `runWith` steps it exactly in tests — and the ticks come from your `tickRate` when
+you configured one, otherwise from the same ambient ticker that spins a `spinner`,
+armed only while a motion is in flight. Like `set`, it is a render-thread call: start it
+from a handler, a timer body or `onStart`. For whole-frame motion and the ambient clock
+behind the animated widgets, see [Motion](./motion).
+
 ## Persist a signal across restarts
 
 `persisted(path, initial)` is a `Signal` loaded from a file when it is created and
