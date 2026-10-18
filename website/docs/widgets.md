@@ -2496,10 +2496,10 @@ content and the check `Next` runs before leaving it:
 
 ```scala
 private val signup = WizardState()
-private val email  = Signal("")
+private val email  = TextInputState()
 
 wizard(signup)(
-  WizardStep("Account", textInput(email), () => Option.when(email.peek.isEmpty)("email is required")),
+  WizardStep("Account", input(email), () => Option.when(email.value.isEmpty)("email is required")),
   WizardStep("Profile", profileForm),
   WizardStep("Confirm", summary),
 )(submit())

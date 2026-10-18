@@ -1203,7 +1203,7 @@ private[dsl] trait ElementFactories:
     *
     * {{{
     * wizard(signup)(
-    *   WizardStep("Account", accountForm, () => Option.when(email.peek.isEmpty)("email is required")),
+    *   WizardStep("Account", input(email), () => Option.when(email.value.isEmpty)("email is required")),
     *   WizardStep("Confirm", summary),
     * )(submit())
     * }}}
