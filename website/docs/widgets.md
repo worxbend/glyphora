@@ -435,6 +435,10 @@ column(
 ```
 
 - `text` uses a grapheme-aware paragraph renderer, in one style for the whole block.
+- `text(Text)` shows a block whose spans already carry their styles — a `markup"…"`
+  literal, or the coloured output `Text.fromAnsi` reads back from a subprocess — with
+  the same wrapping, alignment and layout claim as `text(String)`; the element's own
+  style sits underneath the spans'. See [Layout & style](./layout-and-style#write-styled-text-as-a-markup-literal).
 - `line(spans*)` is the mixed-style row: each part carries its own style.
 - `markdown` supports headings, lists, quotes, fenced code, inline styles, and OSC 8
   links. Its DSL element reports width-dependent height to scroll containers.

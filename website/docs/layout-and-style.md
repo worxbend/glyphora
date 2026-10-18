@@ -724,6 +724,82 @@ Do not measure with it. `plainText.length` counts UTF-16 code units, which is no
 number of terminal columns the text occupies: one CJK character is one code unit and two
 columns, and a combining accent is one code unit and no column at all. `width` is the
 accessor that answers in columns, and it goes through `CharWidth`.
+### Read terminal output back into text
+
+A compiler, a test runner or `git` run as a subprocess colours its output with the same
+SGR escape sequences glyphora writes. Shown as a plain string, those sequences are either
+stripped or, worse, drawn as stray characters that push the rest of the row out of place.
+`Text.fromAnsi` reads them back into the styled `Text` they describe — the inverse of the
+terminal module's encoder:
+
+```scala
+val out = Text.fromAnsi("\u001b[1;31merror\u001b[0m: missing semicolon")
+text(out)   // "error" in bold red, the rest in the element's own style
+```
+
+It understands the 16 named colours, the 256-colour and truecolour forms in both their
+`;` and `:` spellings, every text attribute and its reset code, the `4:n` styled
+underlines with the SGR 58 underline colour, and OSC 8 hyperlinks, which land on
+`Style.link`. An SGR reset returns to `Style.Default` — silence, not `Style.Reset` — so
+the uncoloured stretches take whatever style the widget drawing the text gives them,
+exactly as plain text in that widget would. Every other escape sequence (cursor
+movement, screen clearing, other OSC strings) is dropped whole, and so are control
+characters other than `\n`, so CRLF output splits into clean rows. Plain text with no
+escape in it comes out exactly as `Text.raw` reads it, and widths are measured through
+`CharWidth` as they are for every `Text`.
+
+Output that is still arriving goes through `AnsiParser`, which keeps its place between
+chunks — a chunk boundary can fall inside an escape sequence or in the middle of a line,
+and the style in force at the end of one chunk is the style the next one starts in.
+`feed` hands back the lines a chunk *completed*; `finish` returns the unterminated
+remainder once the stream has ended:
+
+```scala
+val parser = AnsiParser()
+parser.feed(chunk).foreach(logState.append)   // on every chunk
+logState.append(parser.finish())              // when the process exits
+```
+
+The cookbook's [subprocess log recipe](./cookbook#show-a-subprocesss-coloured-output-in-a-log)
+shows the whole wiring, including which thread each line runs on.
+
+### Write styled text as a markup literal
+
+Assembling a message from spans is exact but verbose: `Line.of("error", " in ",
+"f.scala".styled(_.withLink(url)))` names the style of every piece in Scala. The
+`markup"…"` interpolator writes the same thing as one literal with inline tags, and the
+compiler checks the tags:
+
+```scala
+val message = markup"[bold red]error[/] in [link=$url]$file[/]"
+text(message)
+text(markup"[green]✓[/] $passed passed, [red]$failed[/] failed")
+```
+
+A tag is one or more space-separated words in square brackets; it styles everything up
+to the matching `[/]`, and tags nest, each inner one layered onto the outer with
+`Style.patch`. The words are the attributes `bold`, `dim`, `italic`, `underline`, `blink`,
+`reverse`, `hidden` and `strike` (`underline=curly` and friends for a styled underline);
+a colour in any spelling `Color.parse` reads — `red`, `bright_cyan`, `#ff8800` — plus
+`ansi(208)` for a palette index, which is the foreground, with `on <colour>` for the
+background (`[red on blue]`) or the explicit `fg=`/`bg=`; and `link=<url>`. `[[` is a
+literal `[`; a `]` outside a tag is already literal. A `\n` in the literal starts a new
+row, as it does in `Text.raw`.
+
+An interpolated `$value` is **text, never markup**. Whatever it contains — `[red]`
+included — is rendered as the characters it is, in the style in force where it appears,
+so `markup"[bold]$input[/]"` is safe to write over input the program did not author. The
+one place a value stands inside a tag is as the whole value of `link=`, `fg=` or `bg=`:
+`[link=$url]` takes a `String`, `[fg=$accent]` a `Color`, and the compiler checks those
+types too.
+
+A word that is not a style (`[bogus]`), a tag never closed, a `[/]` with nothing to
+close, or a `[` with no `]` stops the build with an error naming the problem, instead of
+being found the first time that view is drawn. What survives into the compiled code is
+the span constructors with every literal style already a constant, so nothing is parsed
+when the program runs — the same bargain `key"…"` and `hex"…"` make. `markup"…"` is
+forwarded by `import io.worxbend.tui.dsl.*`, like `key"…"`.
+
 ## Turn a style back into code
 
 When a cell assertion or a golden-frame comparison fails, the message shows the style it

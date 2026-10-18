@@ -421,3 +421,53 @@ final case class CanvasElement(
   def braille: CanvasElement = copy(resolution = w.CanvasResolution.Braille)
 
   private[dsl] def withProps(props: ElementProps): CanvasElement = copy(props = props)
+
+/** A block of text that already carries its own styles, laid out the way [[TextElement]] lays out a plain string.
+  *
+  * [[TextElement]] holds a `String` and paints the whole block in the element's one style, which is the right shape for
+  * a caption but cannot show a `markup"…"` literal or the coloured output `Text.fromAnsi` reads back from a subprocess:
+  * both arrive as a [[io.worxbend.tui.core.Text]] whose spans have already chosen their colours. Before this node the
+  * only way to show one was `widget(Paragraph(text))`, which needs a second import and claims every row the container
+  * has left, so a styled message under a plain one pushed the plain one off the screen.
+  *
+  * The overflow and alignment knobs are the same two [[TextElement]] offers and mean the same thing. The element's own
+  * style is laid *underneath* the text's own base style, so a span that set a colour keeps it and `.dim` on the element
+  * dims only what the spans left unset — the direction a theme colour travels, as `Span.under` documents.
+  */
+final case class RichTextElement(
+    content: Text,
+    overflow: w.Overflow = w.Overflow.Clip,
+    alignment: Alignment = Alignment.Left,
+    props: ElementProps = ElementProps(),
+) extends Element:
+  type Self = RichTextElement
+  // Layout and painting share this immutable description and its bounded measurement cache. Node copies start fresh.
+  lazy val widget: Widget = w.Paragraph(content.withStyleOf(own => props.style.patch(own)), alignment, overflow)
+
+  /** Breaks lines that do not fit onto further rows instead of cutting them off — see [[TextElement.wrapped]]. */
+  def wrapped: RichTextElement = copy(overflow = w.Overflow.Wrap)
+
+  /** Cuts each line at the right edge of the area, the default. Undoes a `.wrapped` on an element built elsewhere. */
+  def clipped: RichTextElement = copy(overflow = w.Overflow.Clip)
+
+  /** Positions each line within the area's width: left (the default), centre, or right. A line or the text itself
+    * carrying an alignment of its own still wins for that row, as it does inside any paragraph.
+    */
+  def aligned(alignment: Alignment): RichTextElement = copy(alignment = alignment)
+
+  /** Centres every line in the area. */
+  def centered: RichTextElement = aligned(Alignment.Center)
+
+  /** Pushes every line against the right edge. */
+  def rightAligned: RichTextElement = aligned(Alignment.Right)
+
+  /** Every line pinned to the left edge — the default, spelled out. */
+  def leftAligned: RichTextElement = aligned(Alignment.Left)
+
+  private[dsl] def withProps(props: ElementProps): RichTextElement = copy(props = props)
+
+  /** The same claim [[TextElement]] makes — the exact box of the unwrapped rows, measured in display columns through
+    * the text's own `width`, or the container's width when wrapping leaves the height to `intrinsicHeight`.
+    */
+  private[dsl] override def claim: SizeClaim =
+    if overflow.wraps then SizeClaim.Fill else SizeClaim.box(content.width, content.height)
