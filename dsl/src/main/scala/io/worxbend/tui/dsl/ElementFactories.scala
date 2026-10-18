@@ -1026,3 +1026,10 @@ private[dsl] trait ElementFactories:
     * [[w.HexViewer]].
     */
   def hexViewer(bytes: IndexedSeq[Byte], state: w.HexViewerState): HexViewerElement = HexViewerElement(bytes, state)
+
+  /** A collapsible tree whose rows carry columns — build the [[w.TreeTable]] with the nodes, the column titles, a
+    * `cells` lookup by row key and the column widths. Up/Down select, Enter toggles, Right/Left expand/collapse. The
+    * state is the same [[w.TreeState]] a [[tree]] takes; key it with `TreeState.keyed` so the `cells` lookup and the
+    * expansion follow a node across a refresh.
+    */
+  def treeTable[K](table: w.TreeTable[K], state: w.TreeState[K]): TreeTableElement[K] = TreeTableElement(table, state)

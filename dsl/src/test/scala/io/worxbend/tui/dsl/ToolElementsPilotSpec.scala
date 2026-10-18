@@ -81,3 +81,25 @@ final class ToolElementsPilotSpec extends AnyFunSuite with PilotFixture:
     assert(pilot.screenText.contains("00000180"))
     assert(!pilot.screenText.contains("00000000"))
     quitApp(pilot)
+
+  test("treeTable: Enter expands a branch and its children appear with their columns"):
+    val nodes = Seq(TreeNode("src", Seq(TreeNode("Main.scala"))), TreeNode("README.md"))
+    val size  = Map("src" -> "-", "Main.scala" -> "1200", "README.md" -> "80")
+    val state = TreeState.keyed(_.label)
+    state.selected = Some("src")
+    val table = TreeTable[String](
+      nodes,
+      Seq("Name", "Bytes"),
+      key => Seq(size(key)),
+      Seq(Constraint.Length(16), Constraint.Length(6)),
+    )
+    val pilot = startApp(treeTable(table, state))
+    assert(!pilot.screenText.contains("Main.scala"))
+    pilot.pressKey(KeyCode.Enter).waitForIdle()
+    assert(pilot.screenText.contains("Main.scala"))
+    assert(pilot.screenText.contains("1200"))
+    pilot.pressKey(KeyCode.Left).waitForIdle()
+    assert(!pilot.screenText.contains("Main.scala"))
+    pilot.pressKey(KeyCode.Right).pressKey(KeyCode.Down).waitForIdle()
+    assert(state.selected.contains("Main.scala"))
+    quitApp(pilot)

@@ -96,6 +96,7 @@ export Element.{
   toggle,
   tooltip,
   tree,
+  treeTable,
   widget,
 }
 // Form signatures are part of the one-import application surface too. `Codec` is the context bound of `persisted`, and
@@ -380,6 +381,7 @@ export io.worxbend.tui.widgets.{
   TitlePosition,
   TreeNode,
   TreeState,
+  TreeTable,
 }
 
 /** The shape of an app's `view` (and any sub-view helper): a computation, run under a tracking [[ReactiveScope]] *and*

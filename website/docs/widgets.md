@@ -2255,6 +2255,40 @@ as `.` in the right-hand column. The widget, `HexViewer(bytes, bytesPerRow, …)
 `Measured`: one row per `bytesPerRow` bytes, 78 columns for the default 16, and only
 the rows on screen are formatted.
 
+### A tree with columns
+
+`treeTable(table, state)` puts `tree`'s collapsible hierarchy in the first column
+and a grid of cells beside it. The cells come from a lookup by the row's key in the
+`TreeState`, so the records stay in your own map instead of being folded into labels:
+
+```scala
+private val files = Map(
+  "src"        -> Seq("dir", "-"),
+  "Main.scala" -> Seq("file", "1200"),
+  "README.md"  -> Seq("file", "80"),
+)
+private val nodes = Seq(TreeNode("src", Seq(TreeNode("Main.scala"))), TreeNode("README.md"))
+private val state = TreeState.keyed(_.label)
+
+treeTable(
+  TreeTable[String](nodes, Seq("Name", "Kind", "Bytes"), files(_), Seq(Constraint.Fill(1), Constraint.Length(5), Constraint.Length(6))),
+  state,
+)
+```
+
+```text
+Name                Kind  Bytes
+▾ src               dir   -
+    Main.scala      file  1200
+  README.md         file  80
+```
+
+Up/Down move the selection through the visible rows, Enter toggles the selected
+branch, Right expands and Left collapses it. The header stays pinned while the body
+scrolls, the selected row is highlighted across every column, and each cell is cut to
+its column's display width through `CharWidth`, so a CJK cell never spills half a
+character into its neighbour. `cells` is only called for rows on screen.
+
 ## Drop to a raw Widget
 
 The DSL is not a separate renderer. Any core `Widget` can become a leaf:
