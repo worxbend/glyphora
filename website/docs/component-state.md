@@ -222,3 +222,48 @@ def counter(using ReactiveScope, Theme): Element =
   val count = useSignal(0)                        // in the view: fine
   button(s"clicked ${count.get}")(count.update(_ + 1)) // in the handler: uses the captured signal
 ```
+
+## Write your own container
+
+`row`, `column`, `grid`, `flow` and `dock` cover most layouts. When none of them is the
+shape you need — a radial menu, a diagonal, a node graph, a masonry wall — write the
+placement yourself with `container(…)` and keep everything else the framework's:
+
+```scala
+def diagonal(children: Element*): Element =
+  container(children*)((area, kids) =>
+    kids.map { kid =>
+      val width = kid.intrinsicWidth(1).getOrElse(10)
+      Rect(area.x + 6 * kid.index, area.y + kid.index, width, 1)
+    }
+  )
+
+diagonal(button("one")(a()), button("two")(b()), button("three")(c()))
+```
+
+Every frame, the placement function is handed the container's area and one `ChildInfo`
+per child, and answers one `Rect` per child, in child order. A `ChildInfo` says:
+
+- `index` — where the child sits in the list;
+- `key` — the name it was given with `.key(…)`;
+- `constraint` — the `.length(n)`, `.fill`, `.auto`, … it carries, for a layout that
+  wants to honour one (`alignSelf` likewise);
+- `intrinsicWidth(height)` / `intrinsicHeight(width)` — how big its content measures, in
+  display columns and rows, `None` when it cannot say. These are the measurements the
+  built-in containers lay out by.
+
+Each child is painted into its rect, cut to the container's area; a child the answer
+leaves out is not painted. The optional second argument is a `Widget` painted across the
+whole area first, under the children — a background, a frame, grid lines:
+
+```scala
+container(nodes*)(placeNodes, chrome = Some(edgesWidget))
+```
+
+What you do not write is the part that is easy to get wrong. The children are ordinary
+children of the tree, so the Tab order is child order, a click lands on whichever child
+was painted under it, `boundsOf(key)` answers where each one went, and themes, hover and
+disabled states reach them as they reach any other node. The placement function runs on
+the render thread during the paint and should be a pure function of its arguments — it
+is called again on every frame. A `container` cannot measure itself (its size depends on
+a function it cannot invert), so it fills its slot; give it `.length(n)` to fix it.
