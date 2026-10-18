@@ -553,3 +553,55 @@ final case class RichTextElement(
     */
   private[dsl] override def claim: SizeClaim =
     if overflow.wraps then SizeClaim.Fill else SizeClaim.box(content.width, content.height)
+
+/** Markdown that is still arriving — an LLM's reply, token by token — drawn from a caller-owned [[w.MarkdownStream]].
+  *
+  * Without a `follow` state this is a measured leaf like `markdown(…)`: it reports its wrapped height, so it sizes
+  * correctly in a column or inside a `scrollView`. With one (`markdownStream(stream, scroll)`) the node is its own
+  * scroll view over the document, pinned to the newest row while content arrives: each frame it measures the document,
+  * and if the view's offset was still at the bottom the frame before, moves it to the new bottom. Scrolling up (Up,
+  * PageUp, Home, the wheel) leaves the bottom and the view holds still while text keeps arriving; End, or scrolling
+  * back down, rejoins the tail. That decision lives here rather than in `scrollView`, so a plain scroll view keeps its
+  * offset exactly where the user left it.
+  *
+  * The stream is render-thread-only and appending does not schedule a frame: append from a render-thread callback (an
+  * `Async` continuation, a binding) and pair it with a `Signal` write or `TuiApp.requestRedraw()`. One pinned view per
+  * stream — the follow bookkeeping is kept on the stream.
+  */
+final case class MarkdownStreamElement(
+    stream: w.MarkdownStream,
+    theme: w.MarkdownTheme,
+    markdownOptions: w.MarkdownOptions,
+    follow: Option[w.ScrollViewState],
+    props: ElementProps = ElementProps(),
+) extends Element:
+  type Self = MarkdownStreamElement
+  override def debugName: String = "markdownStream"
+
+  /** Tables, lexers and list glyphs for the document — see [[w.MarkdownOptions]]. */
+  def withOptions(options: w.MarkdownOptions): MarkdownStreamElement = copy(markdownOptions = options)
+
+  def widget: Widget =
+    val document = stream.markdown(theme, markdownOptions)
+    follow match
+      case None         => document
+      case Some(scroll) =>
+        (area, buffer) =>
+          if !area.isEmpty then
+            // measured one column narrower, as `scrollView` measures, for the scrollbar an overflowing view draws
+            val rows = document.heightAt(math.max(1, area.width - 1)).getOrElse(area.height)
+            val tail = math.max(0, rows - area.height)
+            if scroll.offset >= stream.tailOffset then scroll.offset = tail
+            w.ScrollView(document, rows).render(area, buffer, scroll)
+            stream.tailOffset = tail
+
+  private[dsl] def withProps(props: ElementProps): MarkdownStreamElement = copy(props = props)
+
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler] =
+    follow.map(scroll =>
+      scrollKeys(rows => scroll.scrollUp(rows), rows => scroll.scrollDown(rows))
+        .orElse(scrollJumpKeys(() => scroll.first(), () => scroll.last()))
+    )
+
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
+    follow.map(scroll => wheelScrolls(() => scroll.scrollUp(), () => scroll.scrollDown()))

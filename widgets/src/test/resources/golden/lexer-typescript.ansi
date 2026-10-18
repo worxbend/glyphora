@@ -1,0 +1,4 @@
+[0;2;3m// greet[0m                                                    [0m
+[0;35mexport[0m [0;35mconst[0m greet = (name: [0;35mstring[0m): [0;35mvoid[0m => {              [0m
+[0m  console.[0;36mlog[0m([0;32m`hi ${name}`[0m, [0;32m'x'[0m, [0;33m42[0m)                        [0m
+[0m}                                                           [0m

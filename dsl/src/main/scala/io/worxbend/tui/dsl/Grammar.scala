@@ -135,6 +135,26 @@ extension [E <: Element](element: E)
   */
 extension [E <: Element](element: E)
 
+  /** A mouse handler that is told where the element is: a [[MouseContext]] carrying the event, the position relative to
+    * the element's top-left cell (`ctx.local`, `(0, 0)` at the corner) and the element's laid-out area. Prefer it to
+    * [[Element.onMouseEvent]], whose absolute coordinates leave a handler to subtract an origin it was never given.
+    *
+    * `true` consumes the event, `false` lets it keep bubbling, and several handlers compose, the most recent first. A
+    * press this handler consumes captures the pointer, so the drags and the release that follow arrive here even when
+    * the pointer has left the element; `ctx.event.clickCount` is `2` for a double click.
+    *
+    * {{{
+    * canvas(width, height)(draw).onMouse { ctx =>
+    *   if ctx.event.kind == MouseEventKind.Down then { plot(ctx.local); true } else false
+    * }
+    * }}}
+    */
+  def onMouse(handler: MouseContext => Boolean): element.Self =
+    val previous = element.props.onMouseContext
+    element.withProps(
+      element.props.copy(onMouseContext = Some(context => handler(context) || previous.exists(_(context))))
+    )
+
   /** A mouse press inside this element (`MouseEventKind.Down`).
     *
     * This is the same press the framework's own click-to-activate behavior reacts to, and a handler here runs first, so

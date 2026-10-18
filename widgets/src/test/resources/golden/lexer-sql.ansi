@@ -1,0 +1,4 @@
+[0;2;3m-- active users[0m                                             [0m
+[0;35mSELECT[0m id, name [0;35mFROM[0m users                                  [0m
+[0;35mwhere[0m active = [0;35mtrue[0m [0;35mand[0m age > [0;33m21[0m                            [0m
+[0;35mORDER[0m [0;35mBY[0m name [0;35mLIMIT[0m [0;32m'ten'[0m;                                  [0m

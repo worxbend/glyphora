@@ -18,7 +18,7 @@ Use this page to choose a widget and understand its state model. The
 |---|---|---|
 | Arrange a screen | `row`, `column`, `panel`, `spacer`, `rule` | `scrollView`, `splitPane`, `layers` |
 | Show prose or records | `text`, `list`, `table`, `tabs` | `markdown`, `SyntaxHighlighter`, `log`, `dataTable`, `directoryTree` |
-| Collect input | `input`, `checkbox`, `toggle`, `select`, `button` | `radioGroup`, `slider`, `textArea`, `autocomplete`, `filePicker`, `selectionList`, `Form` |
+| Collect input | `input`, `checkbox`, `toggle`, `select`, `button` | `radioGroup`, `slider`, `textArea`, `autocomplete`, `filePicker`, `selectionList`, `focusGroup`, `Form` |
 | Show a metric | `gauge`, `sparkline` | `lineGauge`, `dualSparkline`, `barChart`, `horizontalBarChart` |
 | Plot data | `chart`, `pieChart`, `heatmap` | `stackedBarChart`, `canvas`, `calendar` |
 | Communicate progress | `spinner`, `progressBar`, `orbitSpinner`, `skeleton`, `indeterminateBar` | `marquee`, `animatedText`, effects, toasts |
@@ -443,14 +443,66 @@ column(
   the same wrapping, alignment and layout claim as `text(String)`; the element's own
   style sits underneath the spans'. See [Layout & style](./layout-and-style#write-styled-text-as-a-markup-literal).
 - `line(spans*)` is the mixed-style row: each part carries its own style.
-- `markdown` supports headings, lists, quotes, fenced code, inline styles, and OSC 8
-  links. Its DSL element reports width-dependent height to scroll containers.
+- `markdown` supports headings, nested lists, task lists, GFM tables, quotes, fenced
+  code, inline styles, and OSC 8 links. Its DSL element reports width-dependent height to
+  scroll containers. Images and raw HTML are deliberately out of scope.
+- `markdownStream(stream)` renders a `MarkdownStream` that is still arriving, such as an LLM's
+  reply token by token; `markdownStream(stream, scroll)` is its own scroll view, pinned to
+  the newest row. See [Markdown that is still arriving](#markdown-that-is-still-arriving).
 - `log(LogState)` supports append-heavy output and follow-tail behavior.
 - `logConsole(ring)` shows the tail of a `LogRing` — captured `println`s, `java.util.logging`
   records, the app's own — filtered by level and logger; see below.
 - `errorBoundary(fallback)(subtree)` confines a subtree that throws to its own area; see below.
 - `link(label, url)` emits a clickable OSC 8 hyperlink when the terminal supports it.
 - `bigText` renders banners; `image` renders raster data with half-block cells.
+
+### Tables, nested lists and task lists
+
+```markdown
+| Service | Region | Replicas |
+|:--------|:------:|---------:|
+| api     | 東京   |        3 |
+
+- [x] migrate the schema
+- [ ] ship it
+  - nested items indent by level
+```
+
+A GFM table needs its alignment row (`:---` left, `:---:` centre, `---:` right). Columns are
+measured through `CharWidth`, so a CJK or emoji cell takes the two columns it draws in and the
+separators still line up. When the table is wider than the area, the widest column gives up
+a column at a time; a cell that no longer fits wraps onto more rows by default, or is cut with
+`…` under `MarkdownOptions(tableOverflow = TableOverflow.Truncate)`.
+
+Lists nest by indentation, `listIndent` (2) columns per level, with the bullet cycling
+through `bullets` (`•`, `◦`, `▪`). A `- [ ]` / `- [x]` item draws `taskOpen` / `taskDone`
+(`☐` / `☑`) in place of its bullet, the checked glyph in `MarkdownTheme.taskDone`. The
+table header and rules use `MarkdownTheme.tableHeader` and `tableBorder`. All of these live
+on `MarkdownOptions`, the widget's third argument: `Markdown(source, theme, options)`.
+
+### Markdown that is still arriving
+
+A `MarkdownStream` is caller-owned Markdown that keeps growing: call `append(chunk)` as
+tokens arrive and `finish()` once the source is done. Until then, `MarkdownSanitizer` closes
+whatever the last line leaves open. An unclosed `**bold` renders bold, `[label](ht` shows its
+label, an open code fence is closed, and a bare `##` waits for its heading text. Text that
+is already well formed passes through unchanged, so the last frame is exactly the document's
+own.
+
+```scala
+private val reply  = MarkdownStream()
+private val scroll = ScrollViewState()
+
+def view(using ReactiveScope, Theme): Element =
+  panel("Assistant")(markdownStream(reply, scroll))
+```
+
+`markdownStream(stream, scroll)` follows the tail. While its offset is at the bottom, each
+frame moves it to the new bottom; Up, PageUp, Home or the wheel leave the tail and the view
+holds still, and End rejoins it. The one-argument `markdownStream(stream)` is a measured leaf
+for a column or your own `scrollView`. The stream is render-thread-only, and appending does
+not schedule a frame. The [cookbook recipe](./cookbook#stream-an-llm-reply-as-markdown)
+shows a background producer.
 
 ### A console over the log ring
 
@@ -596,19 +648,29 @@ terminal columns. `line` measures its parts through `CharWidth`, so the row stay
 or element can then render. It is a pure function, not a widget, so it owns no state:
 
 ```scala
-import io.worxbend.tui.widgets.{Language, SyntaxHighlighter, SyntaxTheme}
+text(SyntaxHighlighter.highlight(snippet, Lexer.Scala))
 
-text(SyntaxHighlighter.highlight(snippet, Language.Scala))
-
-// `Language.of` resolves a Markdown fence's info-string; unknown names fall back to Generic
-text(SyntaxHighlighter.highlight(snippet, Language.of("sh"), SyntaxTheme(comment = Style.Default.dim)))
+// `Lexer.forName` resolves a Markdown fence's info-string; `Language.of` falls back to Generic
+text(SyntaxHighlighter.highlight(patch, Lexer.Diff, SyntaxTheme(comment = Style.Default.dim)))
 ```
 
-Highlighting is line-oriented and dependency-free: it recognises line comments,
-single-line strings, numbers, per-language keywords, `name(` call sites and shell
-`$variables`. Block comments and triple-quoted strings that span lines fall back to plain
-text — the right trade-off for snippets in help screens, READMEs and Markdown fences
-rather than for a full editor. `markdown` already highlights its fenced code this way.
+A `Lexer` turns one line into styled spans. The built-in ones are `Lexer.Scala`, `Json`,
+`Bash`, `Python`, `TypeScript` (which also answers to `js`), `Sql`, `Yaml`, `Markdown`
+and `Diff`; `Lexer.builtIn` lists them all and `Lexer.Generic` is the strings-and-numbers
+fallback. `Diff` paints `+` lines in `SyntaxTheme.inserted` and `-` lines in `deleted`. The
+0.19 `Language` names still work: `Language` is now a type alias for `Lexer`, and
+`Language.Scala`, `Json`, `Bash` and `Generic` are those same lexers.
+
+`Lexer` is an open trait, so you can add a language with a `name`, its info-string
+`aliases` and a `highlightLine(line, theme)`. A Markdown fence resolves its info string
+against `MarkdownOptions.lexers`, so `MarkdownOptions(lexers = Lexer.builtIn :+ MyLexer)`
+teaches every fence your language. A fence that no lexer claims renders verbatim in the
+`code` style.
+
+Highlighting is line-oriented and dependency-free. Block comments and triple-quoted strings
+that span lines fall back to plain text. That is the right trade-off for snippets in help
+screens, READMEs, Markdown fences and a small editor, and it lets an editor highlight only
+the rows it draws.
 
 ## Lists and navigation
 
@@ -1081,6 +1143,10 @@ glyph reserves two.
 | `autocomplete` | `AutocompleteState` | input plus selectable suggestions and accept callback; `.maxSuggestions(n)` caps the list |
 | `filePicker` | `FilePickerState` | navigable file selection; explicitly load its root before showing |
 
+The raw `TextArea` widget highlights its visible rows through a lexer:
+`TextArea(options = TextAreaOptions(lexer = Some(Lexer.Sql)))`. Token styles are laid over
+the editor's `style`, and the cursor still shows on top of them.
+
 ### Local file picker
 
 `FilePickerState(root)` starts unloaded, just like `DirectoryTreeState`. Load its
@@ -1173,8 +1239,31 @@ below that; at exactly three, every value sits on the single track column. `pagi
 falls back to the `page/total` counter as soon as the dots would not fit, which for
 `total` pages needs `total * 2 - 1` columns, and always uses the counter above ten pages.
 
+A slider drag keeps following the pointer once it leaves the track: the press captures the
+pointer until the button comes back up, so dragging past the right edge pins the value at
+the maximum rather than stopping wherever the pointer crossed out.
+
 Underneath, the raw `w.Slider`, `w.RadioGroup` and `w.Paginator` widgets take plain
 values rather than signals, for use outside the DSL.
+
+### A row of controls as one tab stop
+
+`focusGroup(children*)` lays its children out as a `row` and makes them a single tab stop:
+`Tab` enters on the member it was last left on, the arrow keys move between members
+(wrapping), and the next `Tab` leaves. A toolbar of five buttons then costs one `Tab`, not
+five:
+
+```scala
+focusGroup(
+  button("Bold")(toggleBold()),
+  button("Italic")(toggleItalic()),
+  button("Code")(toggleCode()),
+)
+```
+
+Pass a single `column(...)` for a vertical group. A member that wants an arrow for itself
+— a `slider`, a `list` — still gets it first. Focus groups and `.trapFocus` are covered on
+the [Mouse & focus](mouse.md#focus-groups) page.
 
 ## Data visualization
 

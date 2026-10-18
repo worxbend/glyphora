@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{ColorScheme, Effect, Event, KeyCode, KeyEvent, Position, Rect, Size, Widget}
+import io.worxbend.tui.core.{ColorScheme, Effect, Event, KeyCode, KeyEvent, KeyModifiers, Position, Rect, Size, Widget}
 import io.worxbend.tui.runtime.{
   CaptureStdio,
   Cleanup,
@@ -17,6 +17,7 @@ import io.worxbend.tui.runtime.{
   TerminalRunner,
 }
 import io.worxbend.tui.terminal.{Backend, BackendError, ColorDepth, HeadlessBackend, JLine3Backend, PointerShape}
+import io.worxbend.tui.terminal.MouseCaptureMode
 import io.worxbend.tui.widgets.NoticeLevel
 
 import java.nio.file.Path
@@ -65,6 +66,12 @@ trait TuiApp:
   def view(using ReactiveScope, Theme): Element
 
   def config: RunnerConfig = RunnerConfig()
+
+  /** Whether Alt+arrow keys move focus spatially — to the nearest focusable painted in that direction — once nothing in
+    * the tree and no binding claimed them. Off by default, because Alt+arrows are a common app binding and a terminal
+    * may reserve them; turn it on for grid-shaped screens (a dashboard of tiles, a keypad).
+    */
+  def spatialNavigation: Boolean = false
 
   /** The theme the built-in overlays (toasts, palette), the chrome presets and the themed element factories render
     * with. Overriding it re-themes all of them, because it is handed to [[view]] as a `using` parameter.
@@ -500,6 +507,12 @@ trait TuiApp:
     * Readable from the test thread once the frame has been observed as drawn (`pilot.waitForIdle()` first): the answer
     * is the last *published* frame's record, never the paint in progress.
     */
+  /** How the element declared with `.key(key)` is announced — see [[ElementHost.accessibleLabel]]: `button Save,
+    * disabled`. `None` when no element on the last frame carried the key or the app is not running. Render-thread only.
+    */
+  final def accessibleLabel(key: String): Option[String] =
+    activeHost.get().flatMap(_.accessibleLabel(key))
+
   final def boundsOf(key: String): Option[Rect] =
     boundsRequested = true
     activeHost.get().flatMap(_.boundsOf(key))
@@ -694,6 +707,7 @@ trait TuiApp:
         // what the probe established, before the first frame: a `Theme.auto` first frame is already the right one
         colorSchemeSignal.set(backend.capabilities.colorScheme)
         shownPointer = PointerShape.Default
+        motionRequested = false
         shownTaskbar = None
         terminalFocused = true
         screenStack.beginRun()
@@ -763,6 +777,7 @@ trait TuiApp:
       )
       effects.applyTo(frame)
       syncTaskbar(using scope)
+      syncMouseMotion(run)
     // asked after either branch: an intro is an animation like any other, and it is what a run with no configured
     // `tickRate` borrows ticks for. Borrowing through this negotiation rather than through the runner's tick rate is
     // what lets the loan end when the intro does.
@@ -921,6 +936,8 @@ trait TuiApp:
     else if keys.fires(keys.closeModal, key) && topScreenClosesOnEscape then
       popScreen()
       false
+    else if spatialNavigation && key.modifiers == KeyModifiers.Alt then
+      SpatialDirection.of(key.code).exists(tracker.focusInDirection)
     else false
 
   /** Whether the screen on top of the stack is a modal that asked to be closed by `Esc`.
@@ -965,6 +982,15 @@ trait TuiApp:
     if progress != shownTaskbar then
       activeHandle.get().foreach(_.setTaskbarProgress(progress))
       shownTaskbar = progress
+
+  /** Upgrades a run with mouse capture to all-motion tracking the first frame that contains a hover cue or an explicit
+    * pointer shape, so `.hoverStyle` works without the app configuring anything. Once per run, and never for an app
+    * that left mouse capture off: turning the mouse on would take the terminal's own text selection away.
+    */
+  private def syncMouseMotion(run: RunState): Unit =
+    if !motionRequested && run.host.wantsMouseMotion && run.config.mouseCapture && !run.config.mouseMotion then
+      motionRequested = true
+      activeHandle.get().foreach(_.setMouseCaptureMode(MouseCaptureMode.AllMotion))
 
   /** Asks the terminal for the pointer the last frame wants at `position`, when it differs from the one showing.
     *
@@ -1032,6 +1058,9 @@ trait TuiApp:
   private var shownTaskbar: Option[Double]                    = None
   private var taskbarSource: Option[Reactive[Option[Double]]] = None
   private var terminalFocused: Boolean                        = true
+
+  /** Whether this run already asked for all-motion tracking — see `syncMouseMotion`. Render thread only. */
+  private var motionRequested: Boolean = false
 
   // Everything below is per-instance state written only from the render thread (event handlers, the render lambda, and
   // the app's own callbacks all run there). None of it is reset by `runWith`, so running the same instance a second
