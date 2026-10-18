@@ -112,6 +112,51 @@ A fix's elapsed-time ceiling is the share of the workload it removes. A path res
 for 5% of runtime cannot buy more than a 5% runtime reduction even if eliminated
 completely. A shorter isolated benchmark is not an end-to-end speedup claim.
 
+## Lists and tables over large data
+
+The three collection widgets virtualise their rows — they paint the window and nothing
+else — and 0.20.0 closes the gaps where per-frame work still grew with the data rather
+than with the viewport. Each one is pinned by a test that counts the rows a widget asked
+for, in the style `ViewportCostSpec` set.
+
+**`ListView` measures its items once per sequence.** The widget has to learn whether
+every item is one row high — a `Text` item can take several — and used to find out with
+a full `forall` on every frame, and `heightAt` summed every item on every call. The
+measurement is now taken once and remembered on the `ListState`, keyed by the *identity*
+of the `items` sequence, the way `TreeState` and `DataTableState` already remember their
+flattened rows and filtered views. A frame over an unchanged reference reads only the
+rows it draws (`ListViewCostSpec`: a 100 000-item list is touched at most viewport + 2
+times after its first frame), and a second `heightAt` on the same widget value costs
+nothing. So:
+
+- keep the sequence between frames — a `Signal[Vector[String]]` does this for you —
+  and replace it, rather than mutating it in place, when the data changes;
+- a sequence mutated under the same reference is still drawn correctly — the widget
+  re-measures when the count changes or a drawn item's height disagrees with what it
+  remembered — but an off-screen item that changed height is not noticed until it
+  scrolls into view;
+- prefer an `IndexedSeq` (`Vector`, `ArraySeq`): the visible window is then read by
+  position, so a window deep inside a long list costs the window and not the offset.
+  A `List` is walked from the front, which is the cost its own `iterator.drop` carries.
+
+**`TreeState` keyed by identity** (`TreeState.keyed(_.label)`, `TreeState.byLabelPath`)
+flattens the visible rows once per node sequence and expansion change, like the positional
+state always did, and because expansion and selection name the node rather than its row,
+a refresh that reorders the nodes does not cost the reader their place. See
+[Lists and navigation](./widgets#lists-and-navigation) in the catalog.
+
+**`DataTable` over a `TableRows` provider.** For data too large or too remote to hold —
+a million records behind a query — implement `TableRows[K]` with `count` and `apply(i)`
+and pass it where the row sequence goes; a provider *is* a `Seq[KeyedRow[K]]`, so a
+plain `Vector` needs no adapter. The table reads only the body window, the selected
+row (one read, to confirm the key still sits where it did), and the rows of the current
+page (`DataTableLazyRowsSpec`: a 1 000 000-row provider is asked for at most body + 2
+rows per frame). Two costs remain with the caller: `state.sort` and `state.filter`
+walk every row, because they are defined on the cells the table draws — sort and filter
+at the source and leave both unset — and `selectKey` scans for a key, which is as
+expensive as the provider makes `apply`. Replace the provider instance (or call
+`state.invalidate()`) when its contents change: the memoised view is keyed by identity.
+
 ## Why none of this is a CI gate
 
 A wall-clock threshold asserted in CI fails for reasons that have nothing to do with the
