@@ -20,6 +20,7 @@ export Element.{
   collapsible,
   colorPicker,
   column,
+  container,
   confirmDialog,
   dataTable,
   datePicker,

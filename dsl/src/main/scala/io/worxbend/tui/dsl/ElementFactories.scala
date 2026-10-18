@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Constraint, Direction, Line, Size, Span, Style, Text, Widget}
+import io.worxbend.tui.core.{Constraint, Direction, Line, Rect, Size, Span, Style, Text, Widget}
 import io.worxbend.tui.runtime.{LogRing, ReactiveScope, Signal}
 import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets.TableRow
@@ -140,6 +140,16 @@ private[dsl] trait ElementFactories:
       if pane.props.constraint.isEmpty then sized(pane, Constraint.Auto) else pane
     val middle = RowElement(Seq(docked(left), sized(center, Constraint.Fill(1)), docked(right)))
     ColumnElement(Seq(docked(top), sized(middle, Constraint.Fill(1)), docked(bottom)))
+
+  /** A container with a layout of your own: `place` answers one `Rect` per child from the container's area and a
+    * [[ChildInfo]] per child (key, constraint, measured size), and `chrome` is painted under the children first. Focus
+    * order, click hit-testing and `boundsOf` keep working for the children. See [[ContainerElement]].
+    */
+  def container(children: Element*)(
+      place: (Rect, Seq[ChildInfo]) => Seq[Rect],
+      chrome: Option[Widget] = None,
+  ): ContainerElement =
+    ContainerElement(children, place, chrome)
 
   /** One element per item, each stamped with a `.key` derived from the item itself, so focus follows the *item* across
     * insertions and reorders rather than the screen position it happened to occupy.
