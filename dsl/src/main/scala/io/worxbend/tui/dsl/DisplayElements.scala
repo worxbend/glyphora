@@ -452,8 +452,10 @@ final case class RichTextElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = RichTextElement
+  // the same factory name as TextElement: both are what `text(...)` builds, and a snapshot reader should see one kind
+  override def debugName: String = "text"
   // Layout and painting share this immutable description and its bounded measurement cache. Node copies start fresh.
-  lazy val widget: Widget = w.Paragraph(content.withStyleOf(own => props.style.patch(own)), alignment, overflow)
+  lazy val widget: Widget        = w.Paragraph(content.withStyleOf(own => props.style.patch(own)), alignment, overflow)
 
   /** Breaks lines that do not fit onto further rows instead of cutting them off — see [[TextElement.wrapped]]. */
   def wrapped: RichTextElement = copy(overflow = w.Overflow.Wrap)
