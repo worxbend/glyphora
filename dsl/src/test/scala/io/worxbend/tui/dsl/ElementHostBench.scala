@@ -24,25 +24,26 @@ object ElementHostBench:
     Seq("80x24" -> Rect(0, 0, 80, 24), "200x50" -> Rect(0, 0, 200, 50))
 
   /** One configuration under test: a host with recording off or on, painting one size. */
-  private final class Configuration(label: String, area: Rect, recording: Boolean):
+  private final class Configuration(label: String, area: Rect, recording: Boolean, wide: Boolean = false):
     private val host   = ElementHost()
     private val buffer = Buffer(area)
     private val state  = ScrollViewState()
     host.recordBounds = recording
 
-    def name: String = s"$label recording ${if recording then "on" else "off"}"
+    def name: String = s"$label${if wide then " wide" else ""} recording ${if recording then "on" else "off"}"
 
     def measure(iterations: Int): Bench.Result =
       Bench.measure(name, iterations) { () =>
         buffer.reset()
-        host.render(area, buffer, Theme.Dark, dashboard(state))
+        host.render(area, buffer, Theme.Dark, if wide then wideTree(state) else dashboard(state))
         Bench.consume(buffer.area.width.toLong)
       }
 
   def main(args: Array[String]): Unit =
     val _              = args
     val configurations =
-      sizes.flatMap((label, area) => Seq(false, true).map(recording => Configuration(label, area, recording)))
+      sizes.flatMap((label, area) => Seq(false, true).map(recording => Configuration(label, area, recording))) ++
+        Seq(false, true).map(recording => Configuration("80x24", Rect(0, 0, 80, 24), recording, wide = true))
     // every configuration shares the same resolve, focus-pass and paint code, so the first one measured would
     // otherwise pay for compiling it: warm all of them, several rounds over, before timing any of them — and time
     // them in reverse, so whatever warmth is left favours "recording off" and the recorder's cost reads high, not low
@@ -68,4 +69,14 @@ object ElementHostBench:
       ).fill,
       row(button("Save")(()).key("save"), button("Cancel")(()).key("cancel"), spacer).length(1),
       statusBar(Seq("ctrl+s" -> "save", "q" -> "quit")),
+    )
+
+  /** A tree whose per-frame walks, not its paint, dominate: two thousand keyed rows of a label and a button in a scroll
+    * view, of which a viewport's worth is painted — the shape the fused frame pass exists for.
+    */
+  private def wideTree(scrolling: ScrollViewState): View =
+    scrollView(
+      column((0 until 2000).map(i => row(text(s"item $i").length(12), button("open")(()).key(s"b$i")))*),
+      2000,
+      scrolling,
     )
