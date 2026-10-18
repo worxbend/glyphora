@@ -122,6 +122,11 @@ final class AllWidgetsDegenerateSpec extends AnyFunSuite:
   private def listView: Widget =
     bound(ListView(Seq("alpha", "beta"), highlightSymbol = "==> "), ListState(selected = Some(1)))
 
+  private def multiProgress: Widget =
+    val task = ProgressTask("下载 files", Some(10L))
+    task.advance(3L)
+    MultiProgress(Seq(task, ProgressTask("idle")), ProgressColumn.Default :+ ProgressColumn.SpinnerColumn())
+
   private def scrollView: Widget =
     bound(ScrollView(Paragraph(Text.raw("a\nb\nc\nd\ne")), 5), ScrollViewState())
 
@@ -158,6 +163,7 @@ final class AllWidgetsDegenerateSpec extends AnyFunSuite:
     "Markdown"         -> (() => Markdown("# Title\n\n- one\n- two\n\n> note\n")),
     "Marquee"          -> (() => Marquee("scrolling text", 300.millis)),
     "Menu"             -> (() => menu),
+    "MultiProgress"    -> (() => multiProgress),
     "Notice"           -> (() => Notice("disk almost full", NoticeLevel.Warning)),
     "OrbitSpinner"     -> (() => OrbitSpinner(300.millis)),
     "Paginator"        -> (() => Paginator(2, 7)),
