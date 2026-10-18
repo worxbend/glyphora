@@ -100,6 +100,21 @@ runEffect(Effect.sweepIn(350.millis, Easing.CubicOut))
 The effect applies to the full frame after normal rendering. When a finite effect
 finishes, the runtime removes it and paints one final unmodified frame.
 
+### Keyed effects
+
+A binding that starts an effect on every press stacks one copy per press. Start it
+under a key instead, and a second start replaces the first, timed from the new press:
+
+```scala
+binding("ctrl+s", "save") {
+  save()
+  runEffect("flash", Effect.pingPong(Effect.paint(Color.Yellow, 120.millis)))
+}
+```
+
+`runEffect(key, fx)` is on `TuiApp` and on `AppServices`. Unkeyed effects and effects
+under other keys keep running.
+
 ## Pick an effect
 
 | Effect | Visual behavior | Good for |
@@ -107,9 +122,14 @@ finishes, the runtime removes it and paints one final unmodified frame.
 | `fadeIn` / `fadeOut` | interpolates foreground colors from/to black | gentle screen transitions |
 | `coalesce` / `dissolve` | reveals/hides cells in deterministic random order | splash and success moments |
 | `sweepIn` | reveals columns left to right | page or panel arrival |
-| `slideInFromRight` | shifts content in from the right | directional navigation |
+| `slideIn(direction, …)` | slides content into place travelling `MotionDirection.Up`, `Down`, `Left` or `Right` | directional navigation |
+| `slideInFromRight` | `slideIn(MotionDirection.Left, …)` under its older name | directional navigation |
 | `typewriter` | reveals cells in row-major reading order | short messages and intros |
 | `pulse` | endless brightness oscillation | a single live/attention state |
+| `hslShift(hue, saturation, lightness, …)` | turns text colours around the HSL wheel | mood changes, warnings warming up |
+| `paint(color, …)` | mixes text colours towards one colour | highlighting a change |
+| `glitch(intensity, …)` | scrambles a share of the text into block noise, seeded, clean at the end | errors, retro flourishes |
+| `evolve(symbols, …)` | runs text through a symbol ramp such as `Effect.ShadeSymbols`, then settles on the real glyph | materialising content |
 
 Most finite effects take a duration and optional `Easing`. Scatter effects also take
 a seed; equal seeds produce equal cell order, which makes testing repeatable.
@@ -141,7 +161,57 @@ val threePulses = Effect.repeat(Effect.fadeIn(180.millis), times = 3)
 - `sequence` runs effects one after another;
 - `parallel` runs all effects and completes with the longest;
 - `delay` holds an effect at zero progress before it begins;
-- `repeat` loops a finite effect a fixed number of times.
+- `repeat` loops a finite effect a fixed number of times;
+- `reversed` plays a finite effect backwards;
+- `pingPong` plays it forwards then backwards, ending on the frame it began with.
+
+## Limit an effect to some cells
+
+`Effect.filtered(filter)(fx)`, or `fx.filtered(filter)`, puts back every cell the
+`CellFilter` rejects once `fx` has run. Filters see each cell as it was rendered,
+before the effect touched it:
+
+```scala
+val textOnly  = Effect.fadeIn(300.millis).filtered(CellFilter.text)
+val redAlerts = Effect.glitch(0.4, 600.millis).filtered(CellFilter.fg(Color.Red))
+val rim       = Effect.paint(Color.Cyan, 200.millis).filtered(CellFilter.outer(1))
+val custom    = Effect.dissolve(400.millis).filtered(
+  CellFilter.inner(2).and(CellFilter.where(_.symbol != "│")).and(CellFilter.bg(Color.Blue).not),
+)
+```
+
+`text` accepts non-blank cells; `fg(color)` and `bg(color)` match the rendered
+colour exactly; `inner(margin)` and `outer(margin)` split the effect's area at a
+margin; `where(pred)` takes any `Cell => Boolean`; `and`, `or` and `not` combine
+them, and `CellFilter.all` accepts everything.
+
+## Give an effect a spatial shape
+
+`Effect.patterned(pattern)(fx)` gives each cell its own progress through `fx`, so a
+reveal can bloom from a point or wipe across the screen:
+
+```scala
+val bloom   = Effect.patterned(Pattern.radial(Position(40, 12)))(Effect.fadeIn(500.millis))
+val wipe    = Effect.patterned(Pattern.sweep(MotionDirection.Right))(Effect.dissolve(400.millis))
+val corner  = Effect.patterned(Pattern.diagonal(softness = 0.1))(Effect.coalesce(600.millis))
+val tiles   = Effect.patterned(Pattern.checker(4))(Effect.fadeOut(300.millis))
+val ripple  = Effect.patterned(Pattern.wave(frequency = 2.0))(Effect.sweepIn(500.millis))
+```
+
+| Pattern | Leads | Trails |
+|---|---|---|
+| `Pattern.radial(center)` | the centre (rows count double, so rings look round) | the farthest corner |
+| `Pattern.diagonal()` | the top-left corner | the bottom-right corner |
+| `Pattern.sweep(direction)` | the edge opposite `direction` | the edge it travels towards |
+| `Pattern.checker(size)` | one colour of `size`-cell squares, in the first half | the other colour, in the second half |
+| `Pattern.wave(freq)` | the left column, with `freq` ripples down the rows | the right column |
+
+`softness` (default `Pattern.DefaultSoftness`, 0.3) is how much of the run each
+cell's own transition takes: small is a hard front, close to 1 a broad gradient.
+Every pattern starts every cell at 0 and finishes every cell at 1. Per-cell progress
+is resolved to `Effect.PatternLevels` (64) steps, so the cost per frame is bounded by
+that, not by the size of the screen. An endless effect such as `pulse` has no run to
+spread out and plays unpatterned.
 
 An infinite effect such as `pulse` never prunes itself. Use it sparingly, and avoid
 placing one inside a sequence that needs to continue.
