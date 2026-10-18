@@ -220,7 +220,8 @@ private[dsl] final case class DropdownPopupElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = DropdownPopupElement
-  def widget: Widget = (area, buffer) => dropdown.renderPopup(area, buffer, state)
+  override def debugName: String = "dropdownPopup"
+  def widget: Widget             = (area, buffer) => dropdown.renderPopup(area, buffer, state)
   private[dsl] def withProps(props: ElementProps): DropdownPopupElement      = copy(props = props)
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] = Some(handleMouse)
 
@@ -259,6 +260,7 @@ private[dsl] final case class DropdownPopupElement(
 private[dsl] final case class DropdownScrimElement(state: w.DropdownState, props: ElementProps = ElementProps())
     extends Element:
   type Self = DropdownScrimElement
+  override def debugName: String                                             = "dropdownScrim"
   def widget: Widget                                                         = (_, _) => ()
   private[dsl] def withProps(props: ElementProps): DropdownScrimElement      = copy(props = props)
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] = Some { (event, _) =>
