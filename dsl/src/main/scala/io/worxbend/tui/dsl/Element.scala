@@ -89,6 +89,11 @@ trait Element:
     */
   def debugName: String = "element"
 
+  /** What this node is called when it is announced — `button Save`, `checkbox agree` — before the interaction states
+    * [[ElementHost.accessibleLabel]] appends. Defaults to [[debugName]]; a node with a label of its own says it.
+    */
+  def accessibleName: String = debugName
+
   /** The space this element claims inside a container when the user set nothing explicit — one-row widgets claim one
     * row vertically but their natural width (or a fill) horizontally.
     */

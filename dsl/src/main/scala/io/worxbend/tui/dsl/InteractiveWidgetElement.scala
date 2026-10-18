@@ -7,7 +7,9 @@ final case class InteractiveContext(style: Style, focused: Boolean, focusStyle: 
 
 /** Default behavior for a caller-owned state. User handlers run first; false leaves the event unconsumed. Mouse bounds
   * are translated, unclipped layout bounds in the event's coordinate space. The router has already checked the pointer
-  * against every enclosing viewport and the host boundary. No pointer capture is implied.
+  * against every enclosing viewport and the host boundary for the press. A press `onMouse` consumes captures the
+  * pointer: the drags and the release that follow arrive here with the press-time bounds even after the pointer has
+  * left them, so clamp positions rather than assuming they are inside. `MouseEvent.clickCount` tells a double click.
   */
 final case class InteractiveHandlers[S](
     onKey: (S, KeyEvent) => Boolean = (_: S, _: KeyEvent) => false,

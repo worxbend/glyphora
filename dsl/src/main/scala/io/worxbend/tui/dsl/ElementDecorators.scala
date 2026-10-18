@@ -26,6 +26,7 @@ private[dsl] trait DecoratingElement extends Element:
   private[dsl] override def claim: SizeClaim                                 = inner.claim
   private[dsl] override def layoutOnly: Boolean                              = inner.layoutOnly
   override def debugName: String                                             = inner.debugName
+  override def accessibleName: String                                        = inner.accessibleName
   override def pointerShape: Option[PointerShape]                            = inner.pointerShape
   private[dsl] override def pointerShapeAt(position: Position, area: Rect): Option[PointerShape] =
     inner.pointerShapeAt(position, area)

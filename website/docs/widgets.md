@@ -18,7 +18,7 @@ Use this page to choose a widget and understand its state model. The
 |---|---|---|
 | Arrange a screen | `row`, `column`, `panel`, `spacer`, `rule` | `scrollView`, `splitPane`, `layers` |
 | Show prose or records | `text`, `list`, `table`, `tabs` | `markdown`, `SyntaxHighlighter`, `log`, `dataTable`, `directoryTree` |
-| Collect input | `input`, `checkbox`, `toggle`, `select`, `button` | `radioGroup`, `slider`, `textArea`, `autocomplete`, `filePicker`, `selectionList`, `Form` |
+| Collect input | `input`, `checkbox`, `toggle`, `select`, `button` | `radioGroup`, `slider`, `textArea`, `autocomplete`, `filePicker`, `selectionList`, `focusGroup`, `Form` |
 | Show a metric | `gauge`, `sparkline` | `lineGauge`, `dualSparkline`, `barChart`, `horizontalBarChart` |
 | Plot data | `chart`, `pieChart`, `heatmap` | `stackedBarChart`, `canvas`, `calendar` |
 | Communicate progress | `spinner`, `progressBar`, `orbitSpinner`, `skeleton`, `indeterminateBar` | `marquee`, `animatedText`, effects, toasts |
@@ -1173,8 +1173,31 @@ below that; at exactly three, every value sits on the single track column. `pagi
 falls back to the `page/total` counter as soon as the dots would not fit, which for
 `total` pages needs `total * 2 - 1` columns, and always uses the counter above ten pages.
 
+A slider drag keeps following the pointer once it leaves the track: the press captures the
+pointer until the button comes back up, so dragging past the right edge pins the value at
+the maximum rather than stopping wherever the pointer crossed out.
+
 Underneath, the raw `w.Slider`, `w.RadioGroup` and `w.Paginator` widgets take plain
 values rather than signals, for use outside the DSL.
+
+### A row of controls as one tab stop
+
+`focusGroup(children*)` lays its children out as a `row` and makes them a single tab stop:
+`Tab` enters on the member it was last left on, the arrow keys move between members
+(wrapping), and the next `Tab` leaves. A toolbar of five buttons then costs one `Tab`, not
+five:
+
+```scala
+focusGroup(
+  button("Bold")(toggleBold()),
+  button("Italic")(toggleItalic()),
+  button("Code")(toggleCode()),
+)
+```
+
+Pass a single `column(...)` for a vertical group. A member that wants an arrow for itself
+— a `slider`, a `list` — still gets it first. Focus groups and `.trapFocus` are covered on
+the [Mouse & focus](mouse.md#focus-groups) page.
 
 ## Data visualization
 

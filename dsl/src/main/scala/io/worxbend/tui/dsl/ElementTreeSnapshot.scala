@@ -1,8 +1,9 @@
 package io.worxbend.tui.dsl
 
 /** The decorated element tree of the last frame as text — one line per node with its type, key, focus index, the
-  * `focused`/`inert` marks, its constraint and the rect it was painted into — for the question a frame dump cannot
-  * answer: *why* did that element not get focus, not get the click, not get drawn where it should.
+  * `focused`/`inert`/`disabled`/`hovered`/`pressed` marks, its constraint and the rect it was painted into — for the
+  * question a frame dump cannot answer: *why* did that element not get focus, not get the click, not get drawn where it
+  * should.
   *
   * {{{
   * column @ 0,0 20x4
@@ -50,6 +51,9 @@ object ElementTreeSnapshot:
             unwrapped.focusIndex.map(index => s"focus=$index") ++
             Option.when(props.focused)("focused") ++
             Option.when(props.inert)("inert") ++
+            Option.when(props.isDisabled)("disabled") ++
+            Option.when(props.hovered)("hovered") ++
+            Option.when(props.pressed)("pressed") ++
             props.constraint.map(_.toString) ++
             Vector(s"@ $bounds")
         ("  " * depth + parts.mkString(" ")) +: node.children.toVector.flatMap(lines(_, frame, depth + 1))
