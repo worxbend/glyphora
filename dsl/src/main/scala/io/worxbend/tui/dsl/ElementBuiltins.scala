@@ -36,9 +36,19 @@ extension (handler: BuiltinKeyHandler)
 
 /** Focused interactive elements render with the focus style (the theme's, once the focus pass ran) layered over their
   * own, so the user can see where keystrokes go.
+  *
+  * The other interaction states layer here too, so every node that reads its style through this one helper shows them
+  * without a line of its own: a disabled node draws in the disabled style and nothing else — it cannot be focused,
+  * hovered or pressed in any way the user should see — and otherwise the focus cue goes on first, the hover cue over it
+  * and the pressed cue over that, each only when the node asked for one and the state holds. Pressed wins over hover
+  * because a press is the stronger, briefer signal.
   */
 private def focusStyled(props: ElementProps): Style =
-  if props.focused then props.style.patch(props.focusStyle) else props.style
+  if props.isDisabled then props.style.patch(props.focusState.disabledStyle)
+  else
+    val focused = if props.focused then props.style.patch(props.focusStyle) else props.style
+    val hovered = props.hoverStyle.filter(_ => props.hovered).fold(focused)(focused.patch)
+    props.pressedStyle.filter(_ => props.pressed).fold(hovered)(hovered.patch)
 
 /** The theme colour a severity draws in — the mapping shared by the `notice`/`badge` factories and the toast stack,
   * which reverses it into a padded badge at its own call site.

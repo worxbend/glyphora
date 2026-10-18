@@ -277,10 +277,11 @@ private[dsl] trait ElementFactories:
     *
     * '''Say how big it is.''' A wrapped widget claims *all* the space its container has left over, because a bare
     * `Widget` has no way to say otherwise. So `column(text("a"), widget(oneRowThing), text("b"))` gives the custom
-    * widget every row the two captions did not take. A widget that implements [[io.worxbend.tui.core.Measured]] can
-    * be sized to what it measures with `.auto`; otherwise say the height with `.rows(n)`: `widget(oneRowThing).rows(1)`
-    * is one row tall and full width in a `column` *and* in a `row`. Reach for `.length(n)` only when the number really is the container'''s decision, because that
-    * extension applies along whichever axis the container runs — in a `row`, `.length(1)` is one column wide.
+    * widget every row the two captions did not take. A widget that implements [[io.worxbend.tui.core.Measured]] can be
+    * sized to what it measures with `.auto`; otherwise say the height with `.rows(n)`: `widget(oneRowThing).rows(1)` is
+    * one row tall and full width in a `column` *and* in a `row`. Reach for `.length(n)` only when the number really is
+    * the container'''s decision, because that extension applies along whichever axis the container runs — in a `row`,
+    * `.length(1)` is one column wide.
     */
   def widget(wrapped: Widget): WidgetElement = WidgetElement(wrapped)
 
@@ -824,6 +825,14 @@ private[dsl] trait ElementFactories:
     */
   def button(label: String)(action: => Unit): ButtonElement =
     ButtonElement(label, () => action)
+
+  /** One tab stop for `children`, laid out as a `row`, with the arrow keys moving focus between them — a toolbar, a row
+    * of choices, a menu bar. See [[FocusGroupElement]]; for a vertical group pass a single `column(...)`.
+    */
+  def focusGroup(children: Element*): FocusGroupElement =
+    children match
+      case Seq(single) => FocusGroupElement(single)
+      case many        => FocusGroupElement(RowElement(many))
 
   /** Later layers paint over earlier ones across the full area. */
   def layers(base: Element, overlays: Element*): LayersElement =

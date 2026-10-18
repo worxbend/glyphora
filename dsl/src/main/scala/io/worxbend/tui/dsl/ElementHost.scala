@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Buffer, KeyEvent, MouseEvent, MouseEventKind, Position, Rect, Size, Style}
+import io.worxbend.tui.core.{Buffer, KeyCode, KeyEvent, MouseEvent, MouseEventKind, Position, Rect, Size, Style}
 import io.worxbend.tui.runtime.{Frame, ReactiveScope}
 import io.worxbend.tui.terminal.PointerShape
 
@@ -46,12 +46,30 @@ final class ElementHost:
     */
   @volatile var recordBounds: Boolean = false
 
+  /** Pointer capture and click counting between mouse events — see [[PointerCapture]]. */
+  private var pointer = PointerCapture()
+
+  /** The clock click counting reads, in nanoseconds; a test swaps in a hand-moved one. */
+  private[dsl] var clock: () => Long = () => System.nanoTime()
+
+  /** Whether the last frame contained a node that only shows under all-motion tracking — a `.hoverStyle`, or an
+    * explicit `.pointer(shape)`. A host that owns its loop and sees this turn true asks its backend for
+    * `MouseCaptureMode.AllMotion`; `TuiApp` does so by itself when it runs with mouse capture on.
+    */
+  def wantsMouseMotion: Boolean = motionDemanded
+
+  private var motionDemanded = false
+
+  /** Whether the last frame drew a hover or pressed cue, so a change of hovered/pressed target owes a frame. */
+  private var cuesDemanded = false
+
   /** Retires this mount's hooks, focus history and dispatch tree. The next render starts a fresh mount. Call only
     * between frames on the owning thread. Caller-owned state, subscriptions and resources are not closed: the embedding
     * loop owns its ReactiveScope and must dispose it separately.
     */
   def reset(): Unit =
     tracker = FocusTracker()
+    pointer = PointerCapture()
     session = ViewSession()
     lastTree = None
 
@@ -63,7 +81,7 @@ final class ElementHost:
     */
   def render(area: Rect, buffer: Buffer, theme: Theme, view: View)(using scope: ReactiveScope): Unit =
     val raw = session.resolve(view, Size(area.width, area.height), theme)
-    renderTree(raw, theme.focus, tree => session.paint(tree, area, buffer))
+    renderTree(raw, theme.focus, tree => session.paint(tree, area, buffer), theme.disabled)
 
   /** [[render]] against a runner's `Frame`, for a host inside a `TerminalRunner`. */
   def render(frame: Frame, theme: Theme, view: View)(using scope: ReactiveScope): Unit =
@@ -74,7 +92,7 @@ final class ElementHost:
   ): Unit =
     val raw = session.resolve(view, Size(frame.area.width, frame.area.height), theme)
     beforeFocus()
-    renderTree(raw, theme.focus, tree => paintWithCaret(frame, tree))
+    renderTree(raw, theme.focus, tree => paintWithCaret(frame, tree), theme.disabled)
 
   /** Paints `tree` into `frame`, then parks the frame's caret where the focused text node said its insertion point is.
     *
@@ -96,11 +114,27 @@ final class ElementHost:
     * that decides *where focus is* lives here, so the app and an embedding host cannot answer that question
     * differently.
     */
-  private[dsl] def renderTree(raw: Element, focusStyle: Style, paint: Element => Unit): Unit =
-    tracker.reconcile(FocusPass.focusKeys(raw), FocusPass.autofocusRequest(raw))
+  private[dsl] def renderTree(
+      raw: Element,
+      focusStyle: Style,
+      paint: Element => Unit,
+      disabledStyle: Style = Style.Default.dim,
+  ): Unit =
+    tracker.reconcile(FocusPass.focusKeys(raw), FocusPass.autofocusRequest(raw), FocusScope.of(raw))
     val recorder = Option.when(recordBounds)(bounds)
+    motionDemanded = false
+    cuesDemanded = false
     // a tree with a consumer of bounds in it (a click-outside backdrop) turns recording on for the frames after this one
-    val tree     = FocusPass.decorate(raw, tracker, focusStyle, recorder, onBoundsDemand = () => recordBounds = true)
+    val tree     = FocusPass.decorate(
+      raw,
+      tracker,
+      focusStyle,
+      recorder,
+      onBoundsDemand = () => recordBounds = true,
+      disabledStyle = disabledStyle,
+      onMotionDemand = () => motionDemanded = true,
+      onCueDemand = () => cuesDemanded = true,
+    )
     lastTree = Some(tree)
     recorder.foreach(_.begin())
     try paint(tree)
@@ -119,6 +153,24 @@ final class ElementHost:
     recordBounds = true
     bounds.current.boundsOf(key)
 
+  /** How the element declared with `.key(key)` is announced on the last frame: its [[Element.accessibleName]] followed
+    * by the interaction states that hold — `button Save, disabled`, `input, focused`. This is the text a status line,
+    * an announcement region or a test reads to tell a screen-reader user what the cursor is on; colour alone (the
+    * dimmed disabled style, the reversed focus cue) announces nothing. `None` when no node on the last frame carried
+    * the key. Render-thread only.
+    */
+  def accessibleLabel(key: String): Option[String] =
+    lastTree.flatMap(find(_, key)).map { node =>
+      val props  = node.props
+      val states =
+        Option.when(props.isDisabled)("disabled") ++ Option.when(props.focused)("focused") ++
+          Option.when(props.pressed)("pressed")
+      (node.accessibleName +: states.toSeq).mkString(", ")
+    }
+
+  private def find(node: Element, key: String): Option[Element] =
+    if node.props.focusKey.contains(key) then Some(node) else node.children.iterator.flatMap(find(_, key)).nextOption()
+
   /** The focus-decorated tree the last [[render]] painted — what events are routed against and what
     * [[ElementTreeSnapshot]] prints. `None` before the first frame. Render-thread only, like the tree itself.
     */
@@ -130,15 +182,38 @@ final class ElementHost:
     * focus and does not quit: Tab traversal and Ctrl+C are policy, and policy belongs to whoever owns the loop — call
     * [[focusNext]] or [[focusPrevious]] from your own key handling if you want the usual meaning.
     */
-  def dispatchKey(key: KeyEvent): Boolean = lastTree.exists(EventRouter.dispatchKey(_, key))
+  def dispatchKey(key: KeyEvent): Boolean =
+    lastTree.exists(EventRouter.dispatchKey(_, key)) || (lastTree.isDefined && groupArrow(key))
+
+  /** An unmodified arrow nobody on the focus path consumed moves focus inside the focused element's focus group. That
+    * is the group's own behaviour rather than app policy, so it belongs here and an embedding host gets it too.
+    */
+  private def groupArrow(key: KeyEvent): Boolean =
+    if !key.modifiers.isEmpty then false
+    else
+      key.code match
+        case KeyCode.Right | KeyCode.Down => tracker.moveInGroup(forward = true)
+        case KeyCode.Left | KeyCode.Up    => tracker.moveInGroup(forward = false)
+        case _                            => false
+
+  /** Moves focus to the nearest focusable painted in `direction` from the focused one — spatial navigation, which
+    * `TuiApp` binds to Alt+arrows when `spatialNavigation` is on. `true` when focus moved; takes effect next frame.
+    */
+  def focusInDirection(direction: SpatialDirection): Boolean = tracker.focusInDirection(direction)
 
   /** Hit-tests the pointer, moves focus if a press landed inside a different focusable, then routes the event to the
-    * element under it. `true` when focus moved or an element consumed the event.
+    * element under it. `true` when focus moved, an element consumed the event, or the hovered or pressed target changed
+    * while the frame draws a `.hoverStyle`/`.pressedStyle` cue (so the next frame looks different).
+    *
+    * On the way it synthesises the event's `clickCount` and applies pointer capture — see [[PointerCapture]]: while a
+    * consumed press holds the pointer, drags and the release go to the pressed target wherever they land.
     */
   def dispatchMouse(mouse: MouseEvent): Boolean =
-    val target     = tracker.mouseHit(mouse.position)
+    val event      = pointer.counted(mouse, clock())
+    val under      = tracker.mouseHit(event.position)
+    val target     = pointer.route(event, under)
     val focusMoved =
-      if mouse.kind == MouseEventKind.Down then
+      if event.kind == MouseEventKind.Down then
         target.flatMap(_.target.focusIndex) match
           case Some(index) if index != tracker.focusedIndex =>
             tracker.focusTo(index)
@@ -146,8 +221,24 @@ final class ElementHost:
           case _                                            => false
       else false
 
-    val consumed = lastTree.exists(EventRouter.dispatchMouse(_, mouse, target))
-    consumed || focusMoved
+    val consumed = lastTree.exists(EventRouter.dispatchMouse(_, event, target))
+    pointer.delivered(event, target, consumed)
+    val restyled = trackPointerStates(event, under) && cuesDemanded
+    consumed || focusMoved || restyled
+
+  /** Updates the hovered and pressed targets the next focus pass stamps, `true` when either changed. Hover follows the
+    * pointer over every event that has a position on screen; pressed is set by a press and cleared by a release.
+    */
+  private def trackPointerStates(event: MouseEvent, under: Option[MouseHit]): Boolean =
+    val hovered = under.map(_.target)
+    val pressed = event.kind match
+      case MouseEventKind.Down => hovered
+      case MouseEventKind.Up   => None
+      case _                   => tracker.pressedTarget
+    val changed = hovered != tracker.hoveredTarget || pressed != tracker.pressedTarget
+    tracker.hoveredTarget = hovered
+    tracker.pressedTarget = pressed
+    changed
 
   /** The mouse pointer the last frame wants shown at `position` — see [[EventRouter.pointerShapeAt]]. A host that owns
     * its own loop hands the answer to `Backend.setPointerShape` when it changes; `TuiApp` does so on every mouse event.

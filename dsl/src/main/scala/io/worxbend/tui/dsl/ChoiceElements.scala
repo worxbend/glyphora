@@ -17,10 +17,11 @@ final case class CheckboxElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = CheckboxElement
-  override def debugName: String                                   = "checkbox"
-  def widget: Widget                                               = w.Checkbox(label, checked, focusStyled(props))
-  private[dsl] def withProps(props: ElementProps): CheckboxElement = copy(props = props)
-  private[dsl] override def claim: SizeClaim                       = SizeClaim.OneRow
+  override def debugName: String      = "checkbox"
+  override def accessibleName: String = s"checkbox $label, ${if checked then "checked" else "unchecked"}"
+  def widget: Widget                  = w.Checkbox(label, checked, focusStyled(props))
+  private[dsl] def withProps(props: ElementProps): CheckboxElement           = copy(props = props)
+  private[dsl] override def claim: SizeClaim                                 = SizeClaim.OneRow
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
     Some(toggleOnActivate(() => onChange(!checked)))
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
@@ -34,10 +35,11 @@ final case class ToggleElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = ToggleElement
-  override def debugName: String                                             = "toggle"
-  def widget: Widget                                                         = w.Toggle(label, on, focusStyled(props))
-  private[dsl] def withProps(props: ElementProps): ToggleElement             = copy(props = props)
-  private[dsl] override def claim: SizeClaim                                 = SizeClaim.OneRow
+  override def debugName: String                                 = "toggle"
+  override def accessibleName: String                            = s"toggle $label, ${if on then "on" else "off"}"
+  def widget: Widget                                             = w.Toggle(label, on, focusStyled(props))
+  private[dsl] def withProps(props: ElementProps): ToggleElement = copy(props = props)
+  private[dsl] override def claim: SizeClaim                     = SizeClaim.OneRow
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
     Some(toggleOnActivate(() => onChange(!on)))
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
@@ -370,6 +372,7 @@ final case class ButtonElement(
 ) extends Element:
   type Self = ButtonElement
   override def debugName: String                                             = "button"
+  override def accessibleName: String                                        = s"button $label"
   def widget: Widget                                                         = w.Button(label, focusStyled(props))
   override def pointerShape: Option[PointerShape]                            =
     props.pointerShape.orElse(Some(PointerShape.Pointer))

@@ -106,6 +106,9 @@ private[dsl] final class PaintedAreas:
 
   def pointerAreaOf(id: Int): Option[Rect] = areas.get(InputTarget.Pointer(id)).map(_.hitArea)
 
+  /** Unclipped screen bounds of any recorded input target. */
+  def layoutAreaOf(target: InputTarget): Option[Rect] = areas.get(target).map(_.layoutArea)
+
   /** Unclipped screen bounds of a visible control, for local-coordinate and size arithmetic in its handlers. */
   def layoutAreaOf(index: Int): Option[Rect] = areas.get(InputTarget.Focus(index)).map(_.layoutArea)
 
@@ -147,6 +150,14 @@ private[dsl] final class FocusTracker:
     * [[focusToKey]] can answer "which index is the element named `email`?" without walking the tree again.
     */
   private var focusKeysSeen = Vector.empty[Option[String]]
+
+  /** The focus scope of every focusable in the last reconciled tree, aligned with [[focusKeysSeen]]; empty means "every
+    * focusable is its own tab stop", which is what a caller that passes no scopes gets.
+    */
+  private var scopes = Vector.empty[FocusScope]
+
+  /** The member each focus group was last left on, by group id — where the next `Tab` into the group lands. */
+  private val groupEntry    = mutable.Map.empty[Int, Int]
   private var lastAutofocus = Option.empty[AutofocusRequest]
 
   /** Where everything rendered this frame — a separate job from "where focus is", forwarded rather than exposed so a
@@ -186,8 +197,13 @@ private[dsl] final class FocusTracker:
     * every frame instead would pin the keyboard to that one element forever: Tab would move focus and the next render
     * would take it straight back.
     */
-  def reconcile(keys: Seq[Option[String]], autofocus: Option[AutofocusRequest]): Unit =
+  def reconcile(
+      keys: Seq[Option[String]],
+      autofocus: Option[AutofocusRequest],
+      focusScopes: Seq[FocusScope] = Seq.empty,
+  ): Unit =
     focusKeysSeen = keys.toVector
+    scopes = focusScopes.toVector
     focusableCount = keys.size
     if anchor.index < 0 then anchor = FocusAnchor.Cleared
     else
@@ -206,6 +222,7 @@ private[dsl] final class FocusTracker:
       val index = clampedIndex(request.index)
       anchor = FocusAnchor(index, keys.lift(index).flatten)
     }
+    scopeOf(anchor.index).group.foreach(group => groupEntry(group) = anchor.index)
     clearAreas()
 
   /** An index pulled back inside the tab order, or zero when there is nothing focusable to point at. */
@@ -265,9 +282,80 @@ private[dsl] final class FocusTracker:
         anchor = FocusAnchor(0, scala.None)
         lastAutofocus = None
 
-  /** `Tab`. From the no-focus state this lands on the *first* focusable rather than the second one. */
+  private def scopeOf(index: Int): FocusScope = scopes.lift(index).getOrElse(FocusScope.Unscoped)
+
+  private def membersOf(group: Int): Vector[Int] =
+    (0 until focusableCount).filter(scopeOf(_).group.contains(group)).toVector
+
+  /** The tab stops from where focus stands: every ungrouped focusable, one member per focus group (the focused one,
+    * else the one the group was last left on, else its first), and — while focus is inside a `.trapFocus` subtree —
+    * only those inside the innermost such subtree.
+    */
+  private def tabStops: Vector[Int] =
+    val current = scopeOf(focusedIndex)
+    val trapped = Option.when(focusedIndex >= 0)(current.traps.headOption).flatten
+    (0 until focusableCount).filter { index =>
+      val scope = scopeOf(index)
+      trapped.forall(scope.traps.contains) && scope.group.forall { group =>
+        val members = membersOf(group)
+        val entry   =
+          if members.contains(focusedIndex) then focusedIndex
+          else groupEntry.get(group).filter(members.contains).getOrElse(members.head)
+        index == entry
+      }
+    }.toVector
+
+  /** Steps through [[tabStops]] from the focused index, wrapping; `false` when there is nowhere else to go. */
+  private def stepStops(forward: Boolean): Boolean =
+    val stops = tabStops
+    if stops.isEmpty then false
+    else if focusedIndex < 0 then
+      focusTo(if forward then stops.head else stops.last)
+      true
+    else
+      val next =
+        if forward then stops.find(_ > focusedIndex).getOrElse(stops.head)
+        else stops.findLast(_ < focusedIndex).getOrElse(stops.last)
+      if next == focusedIndex then false
+      else
+        focusTo(next)
+        true
+
+  /** An arrow inside a focus group: the next (`forward`) or previous member, wrapping. `false` when focus is in no
+    * group or the group has a single member, so the arrow keeps bubbling.
+    */
+  def moveInGroup(forward: Boolean): Boolean =
+    scopeOf(focusedIndex).group.map(membersOf).filter(_.size > 1) match
+      case Some(members) =>
+        val at = members.indexOf(focusedIndex)
+        focusTo(members((at + (if forward then 1 else members.size - 1)) % members.size))
+        true
+      case None          => false
+
+  /** Spatial navigation: the nearest focusable painted in `direction` from the focused one, by the hit areas the last
+    * frame recorded — see [[SpatialNavigation]]. Stays inside a `.trapFocus` subtree; `false` when nothing lies that
+    * way or the focused element was not painted.
+    */
+  def focusInDirection(direction: SpatialDirection): Boolean =
+    val trapped = scopeOf(focusedIndex).traps.headOption
+    areaOf(focusedIndex) match
+      case None       => false
+      case Some(from) =>
+        val candidates = (0 until focusableCount)
+          .filter(index => index != focusedIndex && trapped.forall(scopeOf(index).traps.contains))
+          .flatMap(index => areaOf(index).map(index -> _))
+        SpatialNavigation.nearest(from, candidates, direction) match
+          case Some(index) =>
+            focusTo(index)
+            true
+          case None        => false
+
+  /** `Tab`. From the no-focus state this lands on the *first* focusable rather than the second one. A focus group
+    * counts once, and a `.trapFocus` subtree holding focus keeps it — see [[tabStops]].
+    */
   def focusNext(): Boolean =
     if focusableCount == 0 then false
+    else if scopes.nonEmpty then stepStops(forward = true)
     else if focusedIndex < 0 then
       focusTo(0)
       true
@@ -281,6 +369,7 @@ private[dsl] final class FocusTracker:
     */
   def focusPrevious(): Boolean =
     if focusableCount == 0 then false
+    else if scopes.nonEmpty then stepStops(forward = false)
     else if focusedIndex < 0 then
       focusTo(focusableCount - 1)
       true
@@ -300,11 +389,25 @@ private[dsl] final class FocusTracker:
     // an index outside the range would render a frame with nothing focused at all
     anchor = FocusAnchor(clampedIndex(index), scala.None)
 
+  /** The input target the pointer last rested over, as of the last mouse event — what the next focus pass marks
+    * `hovered`. Identities are this frame's numbering, applied to the next frame's tree: stable as long as the tree's
+    * shape is, which is the same bargain an unkeyed focus index makes.
+    */
+  var hoveredTarget: Option[InputTarget] = None
+
+  /** The input target a button went down on, until it comes back up — what the next focus pass marks `pressed`, and
+    * where pointer capture keeps delivering the drag.
+    */
+  var pressedTarget: Option[InputTarget] = None
+
   /** @see [[PaintedAreas.areaOf]] */
   def areaOf(index: Int): Option[Rect] = painted.areaOf(index)
 
   /** @see [[PaintedAreas.layoutAreaOf]] */
   def layoutAreaOf(index: Int): Option[Rect] = painted.layoutAreaOf(index)
+
+  /** @see [[PaintedAreas.layoutAreaOf(target:io\.worxbend\.tui\.dsl\.InputTarget)*]] */
+  def layoutAreaOf(target: InputTarget): Option[Rect] = painted.layoutAreaOf(target)
 
   /** @see [[PaintedAreas.pointerAreaOf]] */
   def pointerAreaOf(id: Int): Option[Rect] = painted.pointerAreaOf(id)
@@ -332,7 +435,7 @@ private[dsl] object FocusPass:
     * [[FocusTracker.focusedIndex]], and what lets focus follow an element across renders when the tree changes shape.
     */
   def focusKeys(element: Element): Vector[Option[String]] =
-    if element.props.inert then Vector.empty
+    if element.props.inert || element.props.disabled then Vector.empty
     else
       val own = if element.props.focusable then Vector(element.props.focusKey) else Vector.empty
       own ++ element.children.flatMap(focusKeys)
@@ -347,7 +450,7 @@ private[dsl] object FocusPass:
     */
   def autofocusRequest(root: Element): Option[AutofocusRequest] =
     def search(element: Element, index: Int): (Option[AutofocusRequest], Int) =
-      if element.props.inert then (None, index)
+      if element.props.inert || element.props.disabled then (None, index)
       else
         val own  =
           if element.props.focusable && element.props.autofocus then
@@ -386,40 +489,61 @@ private[dsl] object FocusPass:
       focusStyle: Style,
       bounds: Option[NodeBounds] = None,
       onBoundsDemand: () => Unit = () => (),
+      disabledStyle: Style = Style.Default.dim,
+      onMotionDemand: () => Unit = () => (),
+      onCueDemand: () => Unit = () => (),
   ): Element =
     var counter        = 0
     var pointerCounter = 0
     var nodeCounter    = 0
 
-    def themed(element: Element, focused: Boolean): Element =
+    def themed(element: Element, focused: Boolean, disabled: Boolean, target: Option[InputTarget]): Element =
+      val live = !disabled && target.isDefined
       element.withProps(
-        element.props.copy(focusState = element.props.focusState.copy(focused = focused, focusStyle = focusStyle))
+        element.props.copy(focusState =
+          element.props.focusState.copy(
+            focused = focused,
+            focusStyle = focusStyle,
+            disabled = disabled,
+            disabledStyle = disabledStyle,
+            hovered = live && tracker.hoveredTarget == target,
+            pressed = live && tracker.pressedTarget == target,
+          )
+        )
       )
 
-    def transform(element: Element, ancestorInert: Boolean): Element =
+    def transform(element: Element, ancestorInert: Boolean, ancestorDisabled: Boolean): Element =
       val inert    = ancestorInert || element.props.inert
+      val disabled = ancestorDisabled || element.props.disabled
       val nodeId   = nodeCounter
       nodeCounter += 1
       if bounds.isEmpty then
         element match
           case _: BoundsAwareElement => onBoundsDemand()
           case _                     => ()
+      // a hover cue, or a pointer shape asked for by name, only shows under all-motion tracking
+      if element.props.hoverStyle.isDefined || element.props.pointerShape.isDefined then onMotionDemand()
+      // a hover or pressed cue is what makes a change of hovered/pressed target change the next frame
+      if element.props.hoverStyle.isDefined || element.props.pressedStyle.isDefined then onCueDemand()
       val current  =
-        if inert then themed(element, focused = false)
-        else if element.props.focusable then
-          val index = counter
+        if inert then themed(element, focused = false, disabled, None)
+        else if element.props.focusable && !disabled then
+          val index  = counter
           counter += 1
-          TrackedElement(themed(element, focused = index == tracker.focusedIndex), index, tracker)
+          val target = Some(InputTarget.Focus(index))
+          TrackedElement(themed(element, focused = index == tracker.focusedIndex, disabled, target), index, tracker)
         // a node that only asks for a pointer shape is a pointer target too: the shape is resolved by hit-testing, so a
-        // `link` with no handler still has to record where it painted
-        else if element.props.onMouse.isDefined || element.builtinMouseHandler.isDefined || element.pointerShape.isDefined
+        // `link` with no handler still has to record where it painted. A disabled control is one as well — it is out of
+        // the tab order, but a press on it must land on it (and do nothing) rather than on whatever is drawn beneath.
+        else if element.props.focusable || element.props.onMouse.isDefined || element.props.onMouseContext.isDefined ||
+          element.builtinMouseHandler.isDefined || element.pointerShape.isDefined
         then
           val id = pointerCounter
           pointerCounter += 1
-          PointerElement(themed(element, focused = false), id, tracker)
-        else themed(element, focused = false)
+          PointerElement(themed(element, focused = false, disabled, Some(InputTarget.Pointer(id))), id, tracker)
+        else themed(element, focused = false, disabled, None)
       // Inert trees still paint, including deferred portals: keep theme and coordinate wrappers, but no input records.
-      val children = viewportWrapped(element, current.children.map(child => transform(child, inert)))
+      val children = viewportWrapped(element, current.children.map(child => transform(child, inert, disabled)))
       val recorded = bounds.fold(current)(recorder => boundsWrapped(current, nodeId, nodeCounter - 1, recorder))
       val revealed =
         if element.props.ensureVisible && !inert then
@@ -427,7 +551,7 @@ private[dsl] object FocusPass:
         else recorded
       revealed.withChildren(children)
 
-    transform(root, ancestorInert = false)
+    transform(root, ancestorInert = false, ancestorDisabled = false)
 
   /** `current` with a [[BoundsElement]] around the themed node — *under* an input wrapper, never over it, so the walks
     * in [[EventRouter]] that match on `TrackedElement`/`PointerElement` keep finding them at the node's own level.

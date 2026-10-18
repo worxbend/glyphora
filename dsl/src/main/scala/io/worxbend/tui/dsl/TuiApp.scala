@@ -7,6 +7,7 @@ import io.worxbend.tui.runtime.{
   EventOutcome,
   Frame,
   GenerationalScope,
+  NonInteractivePolicy,
   Reactive,
   ReactiveScope,
   RunnerConfig,
@@ -16,11 +17,13 @@ import io.worxbend.tui.runtime.{
   TerminalRunner,
 }
 import io.worxbend.tui.terminal.{Backend, BackendError, ColorDepth, HeadlessBackend, JLine3Backend, PointerShape}
+import io.worxbend.tui.terminal.MouseCaptureMode
 import io.worxbend.tui.widgets.NoticeLevel
 
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.util.control.NonFatal
 
 /** How long a toast lives when the caller does not say. */
 private val DefaultToastDuration: FiniteDuration = 3.seconds
@@ -63,6 +66,12 @@ trait TuiApp:
   def view(using ReactiveScope, Theme): Element
 
   def config: RunnerConfig = RunnerConfig()
+
+  /** Whether Alt+arrow keys move focus spatially — to the nearest focusable painted in that direction — once nothing in
+    * the tree and no binding claimed them. Off by default, because Alt+arrows are a common app binding and a terminal
+    * may reserve them; turn it on for grid-shaped screens (a dashboard of tiles, a keypad).
+    */
+  def spatialNavigation: Boolean = false
 
   /** The theme the built-in overlays (toasts, palette), the chrome presets and the themed element factories render
     * with. Overriding it re-themes all of them, because it is handed to [[view]] as a `using` parameter.
@@ -470,6 +479,12 @@ trait TuiApp:
     * Readable from the test thread once the frame has been observed as drawn (`pilot.waitForIdle()` first): the answer
     * is the last *published* frame's record, never the paint in progress.
     */
+  /** How the element declared with `.key(key)` is announced — see [[ElementHost.accessibleLabel]]: `button Save,
+    * disabled`. `None` when no element on the last frame carried the key or the app is not running. Render-thread only.
+    */
+  final def accessibleLabel(key: String): Option[String] =
+    activeHost.get().flatMap(_.accessibleLabel(key))
+
   final def boundsOf(key: String): Option[Rect] =
     boundsRequested = true
     activeHost.get().flatMap(_.boundsOf(key))
@@ -549,11 +564,56 @@ trait TuiApp:
     */
   protected def createBackend(): Either[BackendError, Backend] = JLine3Backend.create(colorDepth = colorDepth)
 
-  /** Runs on the terminal [[createBackend]] opens. Blocks until the app quits. */
+  /** Where this run prints when the process has no terminal to be interactive on, or `None` when it has one.
+    *
+    * Consulted by [[run]] only when `config.nonInteractive` is not [[NonInteractivePolicy.Fail]] — the default never
+    * asks, so an app that has not opted in behaves exactly as before and the environment is not even read. The default
+    * answer is `Some(PrintTarget.detect())` when [[Console.isNonInteractive]] says so (standard output is not a
+    * terminal, or `CI` is set): the frame is composed at `COLUMNS`×`LINES` (80×24 when unset), encoded at the colour
+    * depth [[Console.detectedColors]] resolves, and written to standard output.
+    *
+    * Override it to decide for yourself: `None` forces the interactive path whatever the environment looks like;
+    * `Some(PrintTarget(size, colors, sink))` is how a test captures what a no-TTY run prints. Read once per [[run]], on
+    * the calling thread.
+    */
+  protected def printTarget: Option[PrintTarget] =
+    Option.when(Console.isNonInteractive())(PrintTarget.detect())
+
+  /** Runs on the terminal [[createBackend]] opens — or, under a [[NonInteractivePolicy]] other than `Fail` in a process
+    * [[printTarget]] says has no terminal, drives the app once without one and prints what it composed. Blocks until
+    * the app quits.
+    */
   final def run(): Either[RunnerError, Unit] =
-    createBackend() match
-      case Left(error)    => Left(RunnerError.Backend(error))
-      case Right(backend) => runWith(backend)
+    nonInteractiveRun() match
+      case Some(result) => result
+      case None         =>
+        createBackend() match
+          case Left(error)    => Left(RunnerError.Backend(error))
+          case Right(backend) => runWith(backend)
+
+  /** The print-mode branch of [[run]]: `Some(result)` when a policy other than `Fail` applies and [[printTarget]] names
+    * a target, `None` to take the terminal path.
+    */
+  private def nonInteractiveRun(): Option[Either[RunnerError, Unit]] =
+    // `config` is the app's own and may throw. A throwing one is left for the interactive path to evaluate, because
+    // that path owns the preparation-failure contract — the backend is closed and `onStop` runs exactly once
+    // (`TuiAppLifecycleSpec`) — and a second policy for the same failure would be one too many.
+    val policy =
+      try config.nonInteractive
+      catch case NonFatal(_) => NonInteractivePolicy.Fail
+    if policy == NonInteractivePolicy.Fail then None
+    else printTarget.map(target => runPrinting(policy, target))
+
+  /** Drives the app over a [[PrintBackend]] at the target's size and writes what the policy asks for. The run ends on
+    * the loop's first wait for input — see [[PrintBackend]] — so `onStart`, the first frame and synchronously queued
+    * work are what gets printed.
+    */
+  private def runPrinting(policy: NonInteractivePolicy, target: PrintTarget): Either[RunnerError, Unit] =
+    val printer = FramePrinter(policy, target.colors, target.write)
+    val backend = PrintBackend(target.size, printer.frame, () => quit())
+    val result  = runWith(backend)
+    printer.finish()
+    result
 
   /** Runs over an explicit backend — how headless tests drive a `TuiApp`.
     *
@@ -596,7 +656,7 @@ trait TuiApp:
       // the app default for stdio: a `println` lands above the UI rather than on it. Only a config that left the field
       // unset takes it, so `RunnerConfig(tickRate = …)` keeps the capture and `.withCaptureStdio(CaptureStdio.Off)`
       // is how an app declines it
-      runConfig.captureStdio.fold(runConfig.withCaptureStdio(CaptureStdio.PrintAbove))(_ => runConfig),
+      withStdioDefault(runConfig, backend),
       nanoTime,
       redrawRequested = () => run.invalidated,
       onStop = () => stopRun(run, scope),
@@ -619,6 +679,7 @@ trait TuiApp:
         // what the probe established, before the first frame: a `Theme.auto` first frame is already the right one
         colorSchemeSignal.set(backend.capabilities.colorScheme)
         shownPointer = PointerShape.Default
+        motionRequested = false
         shownTaskbar = None
         terminalFocused = true
         screenStack.beginRun()
@@ -628,6 +689,15 @@ trait TuiApp:
       handleEvent(_, run, _),
       frame => renderFrame(frame, run, scope),
     )
+
+  /** `config` with the app's stdio-capture default applied. A print run ([[PrintBackend]]) never captures: it has no UI
+    * for a `println` to land above, and the headless `printAbove` it would be handed to drops it — so the app's own
+    * output goes straight to standard output, interleaved with the frames printed.
+    */
+  private def withStdioDefault(config: RunnerConfig, backend: Backend): RunnerConfig =
+    backend match
+      case _: PrintBackend => config.withCaptureStdio(CaptureStdio.Off)
+      case _               => config.captureStdio.fold(config.withCaptureStdio(CaptureStdio.PrintAbove))(_ => config)
 
   /** Releases all run-owned resources while the runner is still registered. Terminal services become inert first;
     * screen callbacks precede app cleanup, and framework releases cannot be skipped by a callback failure.
@@ -679,6 +749,7 @@ trait TuiApp:
       )
       effects.applyTo(frame)
       syncTaskbar(using scope)
+      syncMouseMotion(run)
     // asked after either branch: an intro is an animation like any other, and it is what a run with no configured
     // `tickRate` borrows ticks for. Borrowing through this negotiation rather than through the runner's tick rate is
     // what lets the loan end when the intro does.
@@ -796,19 +867,21 @@ trait TuiApp:
     */
   private def handleFrameworkKey(key: KeyEvent, tracker: FocusTracker, handle: RunnerHandle): Boolean =
     key match
-      case KeyEvent(KeyCode.Tab, modifiers) if modifiers.hasAny(KeyModifiers.Shift)      => tracker.focusPrevious()
-      case KeyEvent(KeyCode.Tab, _)                                                      => tracker.focusNext()
+      case KeyEvent(KeyCode.Tab, modifiers) if modifiers.hasAny(KeyModifiers.Shift)        => tracker.focusPrevious()
+      case KeyEvent(KeyCode.Tab, _)                                                        => tracker.focusNext()
       case KeyEvent(KeyCode.Char('p'), modifiers)
           if modifiers.hasAny(KeyModifiers.Ctrl) && activeBindingsNow.bindings.nonEmpty && !palette.isOpenNow =>
         openPalette()
         false
-      case KeyEvent(KeyCode.Char('c'), modifiers) if modifiers.hasAny(KeyModifiers.Ctrl) =>
+      case KeyEvent(KeyCode.Char('c'), modifiers) if modifiers.hasAny(KeyModifiers.Ctrl)   =>
         handle.quit()
         false
-      case KeyEvent(KeyCode.Escape, _) if topScreenClosesOnEscape                        =>
+      case KeyEvent(KeyCode.Escape, _) if topScreenClosesOnEscape                          =>
         popScreen()
         false
-      case _                                                                             => false
+      case KeyEvent(code, modifiers) if spatialNavigation && modifiers == KeyModifiers.Alt =>
+        SpatialDirection.of(code).exists(tracker.focusInDirection)
+      case _                                                                               => false
 
   /** Whether the screen on top of the stack is a modal that asked to be closed by `Esc`.
     *
@@ -852,6 +925,15 @@ trait TuiApp:
     if progress != shownTaskbar then
       activeHandle.get().foreach(_.setTaskbarProgress(progress))
       shownTaskbar = progress
+
+  /** Upgrades a run with mouse capture to all-motion tracking the first frame that contains a hover cue or an explicit
+    * pointer shape, so `.hoverStyle` works without the app configuring anything. Once per run, and never for an app
+    * that left mouse capture off: turning the mouse on would take the terminal's own text selection away.
+    */
+  private def syncMouseMotion(run: RunState): Unit =
+    if !motionRequested && run.host.wantsMouseMotion && run.config.mouseCapture && !run.config.mouseMotion then
+      motionRequested = true
+      activeHandle.get().foreach(_.setMouseCaptureMode(MouseCaptureMode.AllMotion))
 
   /** Asks the terminal for the pointer the last frame wants at `position`, when it differs from the one showing.
     *
@@ -915,6 +997,9 @@ trait TuiApp:
   private var shownTaskbar: Option[Double]                    = None
   private var taskbarSource: Option[Reactive[Option[Double]]] = None
   private var terminalFocused: Boolean                        = true
+
+  /** Whether this run already asked for all-motion tracking — see `syncMouseMotion`. Render thread only. */
+  private var motionRequested: Boolean = false
 
   // Everything below is per-instance state written only from the render thread (event handlers, the render lambda, and
   // the app's own callbacks all run there). None of it is reset by `runWith`, so running the same instance a second

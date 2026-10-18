@@ -1,10 +1,11 @@
 package io.worxbend.tui.runtime
 
 import io.worxbend.tui.core.{Buffer, Event, Position, Widget}
-import io.worxbend.tui.terminal.{Backend, BackendError, PointerShape}
+import io.worxbend.tui.terminal.{Backend, BackendError, MouseCaptureMode, PointerShape}
 
 import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
 import scala.util.control.NonFatal
+import scala.util.{Failure, Success, Try}
 
 /** The production [[Runner]]: raw mode + alternate screen setup, diff-driven redraws, tick emission, resize handling,
   * and render-thread registration around a [[Backend]].
@@ -56,18 +57,19 @@ final class TerminalRunner(
       handleEvent: (Event, RunnerHandle) => EventOutcome,
       render: Frame => Unit,
   ): Either[RunnerError, Unit] =
-    val recorder = new QueuedTaskFailureRecorder
+    val failures = new QueuedTaskFailureRecorder
     val loop     = RenderThread.register(
       Thread.currentThread(),
       () => backend.wake(),
-      config.onTaskError.getOrElse(recorder),
+      config.onTaskError.getOrElse(failures),
     )
 
     val capture = installCapture(loop)
 
-    var result: Either[RunnerError, Unit] = Right(())
-    var thrown: Option[Throwable]         = None
-    var setupIncomplete                   = true
+    var result: Either[RunnerError, Unit]   = Right(())
+    var thrown: Option[Throwable]           = None
+    var setupIncomplete                     = true
+    var recorder: Option[AsciicastRecorder] = None
 
     def recordCleanup(error: Throwable): Unit =
       thrown match
@@ -90,17 +92,24 @@ final class TerminalRunner(
       cleanup.collected.foreach(recordCleanup)
 
     try
-      setup() match
-        case Left(error) =>
-          result = Left(RunnerError.Backend(error))
-        case Right(())   =>
-          setupIncomplete = false
-          val outcome = runLoop(onStart, handleEvent, render, loop, capture)
-          result = report(outcome, recorder.collected)
-          // One final bounded batch per queue, not a drain-until-empty: self-requeueing producers cannot postpone
-          // onStop and backend restoration forever. Remaining owned work is discarded by close after onStop.
-          RenderThread.drainPending(loop, RenderThread.FinalDrainBudget)
-          result = report(outcome, recorder.collected)
+      // The recording file is opened before the terminal is dressed: a path that cannot be written fails the run here,
+      // with the terminal untouched, instead of a frame later from inside the loop.
+      openRecorder() match
+        case Failure(error)  =>
+          result = Left(RunnerError.Handler(error))
+        case Success(opened) =>
+          recorder = opened
+          setup() match
+            case Left(error) =>
+              result = Left(RunnerError.Backend(error))
+            case Right(())   =>
+              setupIncomplete = false
+              val outcome = runLoop(onStart, handleEvent, render, loop, configWith(opened), capture)
+              result = report(outcome, failures.collected)
+              // One final bounded batch per queue, not a drain-until-empty: self-requeueing producers cannot postpone
+              // onStop and backend restoration forever. Remaining owned work is discarded by close after onStop.
+              RenderThread.drainPending(loop, RenderThread.FinalDrainBudget)
+              result = report(outcome, failures.collected)
     catch
       // What reaches here is a throwing `onTaskError` (non-fatal: `runLoop` guards the app's own callbacks and the
       // loop's handler absorbs a `NonFatal` from a queued body) or a fatal from a body run in the final drain. The
@@ -116,6 +125,8 @@ final class TerminalRunner(
         thrown = Some(error)
     finally
       // Confined resources are disposed while their owner remains registered. Each release is attempted independently.
+      // The recording is closed first, so the last frame is on disk whatever `onStop` does.
+      recorder.foreach(opened => release(opened.close()))
       release(onStop())
       release(loop.close())
       release(RenderThread.unregister())
@@ -204,7 +215,7 @@ final class TerminalRunner(
         case Viewport.Fullscreen     => backend.enterAlternateScreen()
         case inline: Viewport.Inline => backend.reserveInlineRows(inline.reservedRows)
       _ <- backend.hideCursor()
-      _ <- if config.mouseCapture then backend.enableMouseCapture() else Right(())
+      _ <- if config.mouseCapture then backend.enableMouseCapture(config.mouseCaptureMode) else Right(())
       _ <- if config.keyEventTypes then backend.enableKeyEventTypes() else Right(())
     yield ()
 
@@ -217,12 +228,31 @@ final class TerminalRunner(
       handleEvent: (Event, RunnerHandle) => EventOutcome,
       render: Frame => Unit,
       loop: RenderThread.RenderLoop,
+      effective: RunnerConfig,
       capture: Option[StdioCapture],
   ): Option[LoopFailure] =
-    val body = LoopBody(backend, config, nanoTime, redrawRequested, onStart, handleEvent, render, loop, capture)
+    val body = LoopBody(backend, effective, nanoTime, redrawRequested, onStart, handleEvent, render, loop, capture)
     capture match
       case Some(active) => Console.withOut(active.outStream)(Console.withErr(active.errStream)(body.run()))
       case None         => body.run()
+
+  /** Opens the asciicast recorder the configuration — or, failing that, `-Dglyphora.record` — asks for. `Success(None)`
+    * when neither names a file; `Failure` when the file cannot be opened.
+    */
+  private def openRecorder(): Try[Option[AsciicastRecorder]] =
+    config.recording.orElse(AsciicastRecorder.systemPropertyPath) match
+      case Some(path) => Try(Some(AsciicastRecorder.toFile(path, nanoTime)))
+      case None       => Success(None)
+
+  /** The configuration the loop runs with: the user's own `onFrame` followed by the recorder, when there is one. */
+  private def configWith(recorder: Option[AsciicastRecorder]): RunnerConfig =
+    recorder match
+      case None         => config
+      case Some(record) =>
+        config.withOnFrame { frame =>
+          config.onFrame.foreach(observe => observe(frame))
+          record(frame)
+        }
 
   /** Swaps the process streams for the configured [[CaptureStdio]], or does nothing for `Off` (and for the `None` a
     * bare runner reads as `Off`). Lines captured under `PrintAbove` are printed through the backend on the render
@@ -610,6 +640,8 @@ private final class BackendHandle(backend: Backend, state: LoopState, capture: O
   def setPointerShape(shape: PointerShape): Unit         = state.record(backend.setPointerShape(shape))
   def notifyDesktop(title: String, body: String): Unit   = state.record(backend.notifyDesktop(title, body))
   def setTaskbarProgress(progress: Option[Double]): Unit = state.record(backend.setTaskbarProgress(progress))
+
+  override def setMouseCaptureMode(mode: MouseCaptureMode): Unit = state.record(backend.enableMouseCapture(mode))
 
 /** Collects the failures of bodies queued onto the render thread during a single [[TerminalRunner.run]].
   *
