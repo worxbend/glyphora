@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Alignment, Constraint, Flex, Line, Span, Style, Text, Widget}
+import io.worxbend.tui.core.{Alignment, Constraint, Flex, Line, Span, Style, Text, Versioned, Widget}
 import io.worxbend.tui.runtime.{LogLevel, LogRecord, LogRing}
 import io.worxbend.tui.widgets.{TableCell, TableRow}
 import io.worxbend.tui.widgets as w
@@ -577,7 +577,10 @@ final case class MarkdownStreamElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = MarkdownStreamElement
-  override def debugName: String = "markdownStream"
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned] = stream +: follow.toSeq
+  override def debugName: String                          = "markdownStream"
 
   /** Tables, lexers and list glyphs for the document — see [[w.MarkdownOptions]]. */
   def withOptions(options: w.MarkdownOptions): MarkdownStreamElement = copy(markdownOptions = options)

@@ -1,17 +1,55 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Buffer, Position, Rect, Size}
-import io.worxbend.tui.runtime.ReactiveScope
+import io.worxbend.tui.core.{Buffer, Position, Rect, Size, Versioned}
+import io.worxbend.tui.runtime.{ReactiveScope, Signal}
 
-/** One host's component state and frame composition. The caller owns scheduling and reactive subscriptions. */
-private[dsl] final class ViewSession:
-  private val state = ViewState()
+/** One host's component state and frame composition. The caller owns scheduling and reactive subscriptions.
+  *
+  * The session also owns the one signal every resolved view reads, `changes`: hooks bump it when something they own
+  * moved between frames (a task's result, a node's area), and [[pollStates]] bumps it when a [[Versioned]] widget state
+  * painted on the last frame has been mutated since. Because the view read it through the caller's `ReactiveScope`, the
+  * bump invalidates that view the way any signal write does — so a background write into a `TextInputState` schedules
+  * its frame through the same path a `Signal` write would.
+  *
+  * Render-thread-only, like the host that owns it.
+  */
+private[dsl] final class ViewSession(areaOf: String => Option[Rect] = _ => None):
+  private val state   = ViewState()
+  private val changes = Signal(0L)
+
+  /** Every versioned state the last painted tree held, with the version it had once the paint finished. */
+  private var painted: Vector[(Versioned, Long)] = Vector.empty
+
+  state.requestFrame = () => changes.update(_ + 1)
+  state.areaOf = areaOf
 
   def resolve(view: View, size: Size, theme: Theme)(using scope: ReactiveScope): Element =
     state.beginGeneration()
     val tree = ViewState.during(state)(ResponsivePass.resolve(view(using scope, theme), size))
     state.sweep()
+    val _    = changes.get
     tree
+
+  /** After the paint of `tree` (the resolved, undecorated tree) has been published: remember the versions it painted —
+    * after the paint, because a widget's render may itself adjust its state's scroll offset — then run the hooks'
+    * after-paint work.
+    */
+  def afterPaint(tree: Element): Unit =
+    painted = StateWatch.collect(tree)
+    state.afterPaint()
+
+  /** Whether a versioned state painted on the last frame has been mutated since; when one has, the view is invalidated
+    * through `changes` so the frame that shows the mutation is scheduled.
+    */
+  def pollStates(): Boolean =
+    val moved = painted.exists((subject, seen) => subject.version != seen)
+    if moved then
+      painted = Vector.empty
+      changes.update(_ + 1)
+    moved
+
+  /** Disposes every hook this session holds — effects cancelled, tasks' scopes closed. */
+  def dispose(): Unit = state.disposeAll()
 
   /** A host boundary clips both paint and input, including portals, without changing layout origins. */
   def paint(tree: Element, area: Rect, buffer: Buffer): Unit =

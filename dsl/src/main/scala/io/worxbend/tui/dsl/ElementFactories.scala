@@ -970,8 +970,8 @@ private[dsl] trait ElementFactories:
   /** An append-only scrolling panel for build output, chat, or a live log, over caller-owned [[w.LogState]].
     *
     * The state holds a bounded ring of lines and follows the tail by default; scrolling up detaches, scrolling back to
-    * the bottom re-attaches. Create it once outside `view`. Appending a line to it is a mutation the reactive layer
-    * cannot see, so pair it with a `Signal` write or `requestRedraw()`.
+    * the bottom re-attaches. Create it once outside `view`. Appending a line to it on the render thread is drawn on the
+    * next loop iteration with no `Signal` write: the state is versioned and the node watches it.
     *
     * Up/Down and PageUp/PageDown scroll while focused; the wheel scrolls on hover.
     */

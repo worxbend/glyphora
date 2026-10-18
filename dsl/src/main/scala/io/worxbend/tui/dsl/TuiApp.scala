@@ -435,21 +435,15 @@ trait TuiApp:
 
   /** Schedules one frame. No-op when the app is not running.
     *
-    * Most state does not need this. A `Signal` write already invalidates the view that read it, and an event handler
-    * that returns `true` already asks for a repaint. What needs it is state the reactive layer cannot see, mutated
-    * outside the event path: the caller-owned widget states — `ListState`, `TextInputState`, `DataTableState`,
-    * `LogState`, `TreeState` — are plain mutable objects, so
+    * Most state does not need this. A `Signal` write already invalidates the view that read it, an event handler that
+    * returns `true` already asks for a repaint, and a caller-owned widget state painted on the last frame — every one
+    * is [[io.worxbend.tui.core.Versioned]] — is watched, so a mutation of it on the render thread is drawn too. What
+    * needs it is state nothing watches: a plain field of the app's own that the view reads, mutated outside the event
+    * path:
     *
     * {{{
-    * Async.run(fetchRows())(rows => tableState.rows = rows)
-    * }}}
-    *
-    * updates the table on the render thread correctly and yet leaves the previous frame on screen until the user
-    * happens to press a key. Ask for the frame the mutation earned:
-    *
-    * {{{
-    * Async.run(fetchRows()) { rows =>
-    *   tableState.rows = rows
+    * Async.run(fetchCount()) { count =>
+    *   lastCount = count // a plain var, not a Signal
     *   requestRedraw()
     * }
     * }}}
@@ -694,7 +688,9 @@ trait TuiApp:
       // is how an app declines it
       withStdioDefault(runConfig, backend),
       nanoTime,
-      redrawRequested = () => run.invalidated,
+      // a widget state painted last frame and mutated since — a background write — invalidates the view the way a
+      // signal write does; polled first so the flag read after it already counts the invalidation
+      redrawRequested = () => run.host.pollStates() || run.invalidated,
       onStop = () => stopRun(run, scope),
     ).run(
       handle =>
@@ -746,6 +742,8 @@ trait TuiApp:
       () => ambientTicker.cancel(run),
       () => leaveRemainingScreens(),
       () => onStop(),
+      // the view's hooks: running effects are cancelled and in-flight `useTask`s closed with their app
+      () => run.host.reset(),
       () => scope.dispose(),
       () => run.renderLoop.foreach(AnimationClock.releaseLoop),
       () => run.renderLoop.foreach(SignalMotion.releaseLoop),

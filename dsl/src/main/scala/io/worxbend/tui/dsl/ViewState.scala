@@ -1,5 +1,6 @@
 package io.worxbend.tui.dsl
 
+import io.worxbend.tui.core.Rect
 import io.worxbend.tui.runtime.Signal
 
 import scala.collection.mutable
@@ -31,8 +32,14 @@ import scala.collection.mutable
   * retains eager slots in covered entries without evaluating their builders; discarded responsive slots are still
   * swept.
   *
+  * Lifetime hooks. A slot whose value is a [[ViewState.HookResource]] — the cells behind `useEffect` and `useTask` — is
+  * disposed when it is swept, when the host is reset, and when the run ends, which is what cancels an effect or a task
+  * the moment its node stops being drawn. Effects start *after* the frame that reached them has been painted: the host
+  * calls [[afterPaint]] once the paint is published, and that is also when `useArea` cells compare what they answered
+  * with where their node actually landed.
+  *
   * Ownership and threads: one store belongs to one `ElementHost` mount (one `TuiApp` run) and is touched only while
-  * that run's render thread is evaluating the view. Nothing here is synchronised, and nothing needs to be.
+  * that run's render thread is evaluating or painting the view. Nothing here is synchronised, and nothing needs to be.
   */
 final class ViewState private[dsl] ():
 
@@ -50,17 +57,62 @@ final class ViewState private[dsl] ():
     */
   private var generation: Long = 0L
 
+  /** Work queued during evaluation for after the paint — effect starts and restarts — in the order it was queued. */
+  private val paintQueue = mutable.ArrayBuffer.empty[() => Unit]
+
+  /** The `useArea` cells reached by the generation being evaluated, checked against the paint in [[afterPaint]]. */
+  private val reachedAreas = mutable.ArrayBuffer.empty[ViewState.AreaCell]
+
+  /** What a hook calls when something it owns changed between frames — a task's result arrived, a node's area moved —
+    * and the view must be evaluated again. The host's session points it at a signal the view reads; a bare store (a
+    * unit test) leaves it inert.
+    */
+  private[dsl] var requestFrame: () => Unit = () => ()
+
+  /** Where the node declared with `.key(key)` was painted on the last published frame — the host's bounds recorder. */
+  private[dsl] var areaOf: String => Option[Rect] = _ => None
+
   /** Starts a new frame: nothing has been reached yet, and the scope path is back at the root. */
   private[dsl] def beginGeneration(): Unit =
     generation += 1
     occurrences.clear()
+    reachedAreas.clear()
     path = Nil
     ordinal = 0
 
-  /** Drops every slot the generation that just ended did not reach. */
+  /** Drops every slot the generation that just ended did not reach, disposing the hook resources among them. */
   private[dsl] def sweep(): Unit =
     val stale = slots.collect { case (id, slot) if slot.generation != generation => id }.toList
-    stale.foreach(id => slots.subtractOne(id))
+    stale.foreach(id => slots.remove(id).foreach(slot => ViewState.dispose(slot.value)))
+
+  /** Runs once the frame this generation built has been painted and its bounds published: queued effects start, and a
+    * `useArea` cell whose node landed somewhere other than what it answered asks for the frame that corrects it.
+    */
+  private[dsl] def afterPaint(): Unit =
+    val moved  = reachedAreas.exists(cell => cell.key.flatMap(areaOf) != cell.seen)
+    reachedAreas.clear()
+    val queued = paintQueue.toList
+    paintQueue.clear()
+    queued.foreach(run => run())
+    if moved then requestFrame()
+
+  /** Disposes every slot — the end of the mount. Caller-owned state reached through `useState` is not closed. */
+  private[dsl] def disposeAll(): Unit =
+    val values = slots.valuesIterator.map(_.value).toList
+    slots.clear()
+    paintQueue.clear()
+    reachedAreas.clear()
+    values.foreach(ViewState.dispose)
+
+  /** Queues `action` for [[afterPaint]]. */
+  private[dsl] def onAfterPaint(action: () => Unit): Unit = paintQueue += action
+
+  /** Records that a `useArea` cell answered this generation. */
+  private[dsl] def reachedArea(cell: ViewState.AreaCell): Unit = reachedAreas += cell
+
+  /** The innermost user key on the scope path — the `each` row or `keyed` scope a hook call sits in. */
+  private[dsl] def innermostKey: Option[String] =
+    path.collectFirst { case segment if segment.startsWith("key:") => segment.stripPrefix("key:") }
 
   /** Keeps eager hooks in navigation entries covered by a full-screen page without evaluating their builders. Deferred
     * responsive hooks remain unvisited and are swept, matching the existing disappearance contract.
@@ -167,6 +219,19 @@ object ViewState:
     id ++= ordinal.toString
     id.result()
 
+  /** A slot value that holds something to release — a running effect, a task scope — when its call site goes away. */
+  private[dsl] trait HookResource:
+    def dispose(): Unit
+
+  private def dispose(value: Any): Unit =
+    value match
+      case resource: HookResource => resource.dispose()
+      case _                      => ()
+
+  /** The slot behind `useArea`: the innermost key it answers for, and the rect it last answered. */
+  private[dsl] final class AreaCell(val key: Option[String]):
+    var seen: Option[Rect] = None
+
   /** One call site's value, plus the last frame that reached it. */
   private final class Slot(
       val value: Any,
@@ -245,7 +310,8 @@ object ViewState:
       case Some(store) => store
       case None        =>
         throw new IllegalStateException(
-          "useSignal, useState and keyed may only be called while an ElementHost or TuiApp view is being evaluated on the render " +
+          "Hooks (useSignal, useState, useEffect, useMemo, useTask, useArea) and keyed may only be called while an " +
+            "ElementHost or TuiApp view is being evaluated on the render " +
             "thread. An event handler, a timer body or a test helper has no place in the view tree to attach state " +
             "to; declare a Signal field on the app and read that instead."
         )
@@ -278,9 +344,9 @@ def useSignal[A](initial: => A): Signal[A] =
   *   input(useState(TextInputState()))
   * }}}
   *
-  * Unlike [[useSignal]] this is not reactive: writing the object does not invalidate anything, so a mutation made
-  * outside the event path has to ask for its frame with `requestRedraw()`. That is the same contract these states
-  * already have when an app declares them as fields.
+  * The slot itself is not reactive, but the widget states are: each is [[io.worxbend.tui.core.Versioned]], and the host
+  * watches the ones it painted, so a mutation made outside the event path — on the render thread — is drawn on the next
+  * loop iteration, exactly as it is for a state the app declares as a field.
   *
   * `create` is by-name and runs only on the frame that creates the slot.
   */

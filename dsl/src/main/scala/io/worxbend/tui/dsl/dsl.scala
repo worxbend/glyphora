@@ -176,6 +176,8 @@ export io.worxbend.tui.core.{
   Text,
   Tween,
   UnderlineStyle,
+  Versioned,
+  VersionedState,
   Widget,
 }
 
