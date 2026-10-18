@@ -1210,3 +1210,14 @@ private[dsl] trait ElementFactories:
     */
   def wizard(state: w.WizardState)(steps: WizardStep*)(onFinish: => Unit)(using theme: Theme): WizardElement =
     LateBinding.themed(theme)(theme => WizardElement.of(state, steps, () => onFinish, theme.error))
+
+  /** A row of controls that is one tab stop: `Tab` enters on the control last used, `Left`/`Right` move between them
+    * (see [[focusGroup]]). Controls sit at their natural widths a column apart; when the row is too narrow it shows the
+    * ones that fit, marked `«`/`»`, and slides to keep the focused one on screen. See [[w.Toolbar]].
+    */
+  def toolbar(buttons: Element*): FocusGroupElement =
+    FocusGroupElement(ToolbarElement(buttons, gap = 1, divider = None))
+
+  /** [[toolbar]] drawn as one segmented control — `[ Left ]│[ Center ]│[ Right ]` — for a set of related actions. */
+  def buttonGroup(buttons: Element*): FocusGroupElement =
+    FocusGroupElement(ToolbarElement(buttons, gap = 0, divider = Some("│")))

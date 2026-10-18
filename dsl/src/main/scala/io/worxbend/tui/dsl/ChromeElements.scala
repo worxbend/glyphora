@@ -106,3 +106,36 @@ private[dsl] object WizardElement:
       Seq(back.length(CharWidth.of("Back") + 4), SpacerElement(), next.length(CharWidth.of(nextText) + 4))
     ).length(1)
     WizardElement(ColumnElement(Seq(header) ++ error.toSeq ++ Seq(body, buttons)))
+
+/** The strip inside a [[Element.toolbar]] or [[Element.buttonGroup]]: its controls left to right at their natural
+  * widths over [[w.Toolbar]], `gap` columns apart with an optional `divider`. When they do not all fit, the strip shows
+  * the window that does, marked `«` / `»`, and slides it so the focused control is always on screen — the controls
+  * themselves stay in the enclosing focus group, so the arrows still reach every one of them.
+  */
+final case class ToolbarElement(
+    override val children: Seq[Element],
+    gap: Int,
+    divider: Option[String],
+    props: ElementProps = ElementProps(),
+) extends Element:
+  type Self = ToolbarElement
+  override def debugName: String                                                 = "toolbar"
+  private[dsl] override def layoutOnly: Boolean                                  = true
+  private def strip: w.Toolbar                                                   =
+    w.Toolbar(
+      children.map(child => RowChildWidget(child, child.widget)),
+      focus = Some(children.indexWhere(ToolbarElement.holdsFocus)).filter(_ >= 0),
+      gap = gap,
+      divider = divider,
+      style = props.style,
+    )
+  def widget: Widget                                                             = strip
+  private[dsl] def withProps(props: ElementProps): ToolbarElement                = copy(props = props)
+  private[dsl] override def withChildren(children: Seq[Element]): ToolbarElement = copy(children = children)
+  private[dsl] override def claim: SizeClaim                                     = SizeClaim.OneRow
+  private[dsl] override def intrinsicWidth(height: Int): Option[Int] = constrainedWidth(strip.widthAt(height))
+
+private[dsl] object ToolbarElement:
+
+  /** Whether focus sits on `element` or anywhere under it. */
+  def holdsFocus(element: Element): Boolean = element.props.focused || element.children.exists(holdsFocus)

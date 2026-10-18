@@ -2514,6 +2514,28 @@ keys `wizard-back` and `wizard-next`, so focus stays on `Next` while the user wa
 forward. `WizardState` holds the step and the message — `signup.current` is the step on
 screen — and the header alone is the `Wizard(titles, current)` widget.
 
+### Toolbars and button groups
+
+`toolbar(buttons*)` is a row of controls that is one tab stop — a `focusGroup` laid out
+as a strip. `Tab` enters it on the control last used, `Left` and `Right` move between
+its controls, and the next `Tab` leaves it:
+
+```scala
+toolbar(
+  button("New")(newDocument()),
+  button("Open")(openPicker()),
+  button("Save")(save()).disabled(!dirty.get),
+)
+```
+
+The controls sit at their natural widths a column apart. When the row is too narrow
+for all of them it shows the ones that fit, marks what is cut off with `«` and `»`,
+and slides to keep the focused control on screen, so the arrows still reach every one.
+`buttonGroup(buttons*)` is the same strip drawn as one segmented control,
+`[ Bold ]│[ Italic ]│[ Underline ]`. The strip alone is the `Toolbar(items, focus, gap,
+divider)` widget; a `Button` now measures its own width (`[ label ]`), which is what the
+strip — and a `flow` — lays it out by.
+
 ## Drop to a raw Widget
 
 The DSL is not a separate renderer. Any core `Widget` can become a leaf:

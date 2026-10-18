@@ -68,3 +68,26 @@ final class ChromeElementsPilotSpec extends AnyFunSuite with PilotFixture:
     pilot.press("enter").waitForIdle()
     assert(finished == 1)
     quitApp(pilot)
+
+  test("toolbar: one tab stop whose arrows move between its buttons, sliding the strip to keep focus visible"):
+    var pressed                      = Vector.empty[String]
+    def tool(label: String): Element = button(label)(pressed :+= label).key(label)
+    val pilot                        = startApp(Size(20, 3)) {
+      column(toolbar(tool("New"), tool("Open"), tool("Save"), tool("Quit")).length(1), button("after")(()).key("after"))
+    }
+    assert(pilot.screenLines.head == "[ New ] [ Open ]   »")
+    pilot.press("right", "right", "right").waitForIdle()
+    assert(pilot.screenLines.head.stripTrailing == "« [ Save ] [ Quit ]")
+    pilot.press("enter", "left", "enter").waitForIdle()
+    assert(pressed == Vector("Quit", "Save"))
+    pilot.press("tab", "enter").waitForIdle()
+    assert(pressed == Vector("Quit", "Save"))
+    // focus left the strip, so it slides back to its start; the arrows belong to the group, not to `after`
+    pilot.press("right").waitForIdle()
+    assert(pilot.screenLines.head == "[ New ] [ Open ]   »")
+    quitApp(pilot)
+
+  test("buttonGroup joins its buttons with dividers"):
+    val pilot = startApp(Size(30, 2))(buttonGroup(button("B")(()), button("I")(()), button("U")(())))
+    assert(pilot.screenLines.head.stripTrailing == "[ B ]│[ I ]│[ U ]")
+    quitApp(pilot)
