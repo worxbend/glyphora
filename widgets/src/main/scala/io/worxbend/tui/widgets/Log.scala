@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, Line, Rect, StatefulWidget, Style}
+import io.worxbend.tui.core.{Buffer, Line, Rect, StatefulWidget, Style, VersionedState}
 
 import scala.collection.mutable
 
@@ -9,18 +9,29 @@ import scala.collection.mutable
   * While `follow` is on (the default), the view pins to the newest lines; scrolling up detaches it and scrolling back
   * to the bottom re-attaches.
   *
-  * Render-thread-only, and mutating it does not by itself schedule a frame. This is a plain mutable object, invisible
-  * to the reactive layer: a background result written straight into it stays off screen until something unrelated
-  * happens to repaint. Pair the mutation with a `Signal` write, or call `TuiApp.requestRedraw()` from the same
-  * render-thread callback that made it.
+  * Render-thread-only. Every mutation raises `version` (see [[io.worxbend.tui.core.Versioned]]), so a DSL node that
+  * paints this state notices a write made outside the event path — a background result applied on the render thread —
+  * and schedules the frame that shows it, with no `Signal` write and no `requestRedraw()`.
   */
-final class LogState(maxLines: Int = 1000):
+final class LogState(maxLines: Int = 1000) extends VersionedState:
 
   require(maxLines > 0, s"a log needs a positive maxLines, got $maxLines")
 
-  private val ring                             = mutable.ArrayDeque[Line]()
-  var follow: Boolean                          = true
-  var offset: Int                              = 0
+  private val ring    = mutable.ArrayDeque[Line]()
+  def follow: Boolean = followValue
+
+  def follow_=(value: Boolean): Unit =
+    followValue = value
+    touch()
+
+  private var followValue: Boolean = true
+  def offset: Int                  = offsetValue
+
+  def offset_=(value: Int): Unit =
+    offsetValue = value
+    touch()
+
+  private var offsetValue: Int                 = 0
   private[widgets] var lastViewportHeight: Int = 1
 
   /** Appends `text` as one or more lines, split on `\n` (a lone `\r` before it is trimmed, so CRLF input splits clean).
@@ -35,6 +46,7 @@ final class LogState(maxLines: Int = 1000):
 
   def append(line: Line): Unit =
     ring.append(line)
+    touch()
     while ring.size > maxLines do
       val _ = ring.removeHead()
       if !follow then offset = math.max(0, offset - 1)
@@ -43,6 +55,7 @@ final class LogState(maxLines: Int = 1000):
 
   def clear(): Unit =
     ring.clear()
+    touch()
     offset = 0
     follow = true
 

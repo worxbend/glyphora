@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Color, KeyCode, KeyEvent, KeyModifiers, MouseEventKind, Style, Widget}
+import io.worxbend.tui.core.{Color, KeyCode, KeyEvent, KeyModifiers, MouseEventKind, Style, Versioned, Widget}
 import io.worxbend.tui.macros.PrettyShape
 import io.worxbend.tui.widgets as w
 
@@ -29,6 +29,9 @@ final case class DatePickerElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = DatePickerElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]            = Seq(state)
   override def debugName: String                                     = "datePicker"
   def widget: Widget                                                 =
     val picker = w.DatePicker(w.CalendarOptions(style = props.style, highlightStyle = props.focusStyle))
@@ -67,6 +70,9 @@ final case class TimePickerElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = TimePickerElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]                = Seq(state)
   override def debugName: String                                         = "timePicker"
   private def picker: w.TimePicker                                       = w.TimePicker(props.style, props.focusStyle)
   def widget: Widget                                                     =
@@ -97,6 +103,9 @@ final case class RangeSliderElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = RangeSliderElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
   override def debugName: String                                             = "rangeSlider"
   def widget: Widget                                                         =
     val slider = w.RangeSlider(props.style, props.style.bold, props.style.bold, focusStyled(props).bold)
@@ -145,6 +154,9 @@ final case class ColorPickerElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = ColorPickerElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
   override def debugName: String                                             = "colorPicker"
   private def picker: w.ColorPicker                                          = w.ColorPicker(style = props.style)
   def widget: Widget                                                         =
@@ -189,6 +201,9 @@ final case class HexViewerElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = HexViewerElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
   override def debugName: String                                             = "hexViewer"
   private val viewer: w.HexViewer                                            = w.HexViewer(bytes)
   def widget: Widget                                                         =
@@ -224,6 +239,9 @@ final case class TreeTableElement[K](
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = TreeTableElement[K]
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
   override def debugName: String                                             = "treeTable"
   private def nodes                                                          = table.nodes
   def widget: Widget                                                         =

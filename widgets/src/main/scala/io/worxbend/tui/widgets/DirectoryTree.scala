@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, Rect, StatefulWidget, Style}
+import io.worxbend.tui.core.{Buffer, Rect, StatefulWidget, Style, VersionedState}
 
 import java.nio.file.Path
 import scala.collection.mutable
@@ -16,7 +16,7 @@ import scala.collection.mutable
   * Links outside root are followed; this is not a sandbox. Cycle checks use only snapshot identities along the current
   * ancestor chain, so sibling aliases remain independently browsable. Selection, expansion and scroll are caller-owned.
   */
-final class DirectoryTreeState(val root: Path):
+final class DirectoryTreeState(val root: Path) extends VersionedState:
   private final case class View(
       entries: Vector[(Path, Boolean)],
       paths: Vector[Path],
@@ -24,12 +24,24 @@ final class DirectoryTreeState(val root: Path):
       missing: Vector[Path],
   )
   private var cached: Option[View] = None
-  var selected: Option[Path]       = None
-  var offset: Int                  = 0
-  val expanded: mutable.Set[Path]  = new TreeExpansion(() => cached = None)
-  private val listings             = mutable.Map.empty[Path, DirectoryListing]
-  private val requests             = mutable.Map.empty[Path, DirectoryLoadRequest]
-  private val failures             = mutable.Map.empty[Path, Throwable]
+  def selected: Option[Path]       = selectedValue
+
+  def selected_=(value: Option[Path]): Unit =
+    selectedValue = value
+    touch()
+
+  private var selectedValue: Option[Path] = None
+  def offset: Int                         = offsetValue
+
+  def offset_=(value: Int): Unit =
+    offsetValue = value
+    touch()
+
+  private var offsetValue: Int    = 0
+  val expanded: mutable.Set[Path] = new TreeExpansion(() => { cached = None; touch() })
+  private val listings            = mutable.Map.empty[Path, DirectoryListing]
+  private val requests            = mutable.Map.empty[Path, DirectoryLoadRequest]
+  private val failures            = mutable.Map.empty[Path, Throwable]
 
   /** Pure lookup; an unloaded, loading or failed branch has no children. */
   def childrenOf(directory: Path): Vector[Path] =
@@ -47,6 +59,7 @@ final class DirectoryTreeState(val root: Path):
     invalidate(Some(directory))
     val request = new DirectoryLoadRequest(directory)
     requests(directory) = request
+    touch()
     request
 
   /** Installs only the latest outstanding generation from this state. False means stale, foreign or mismatched data. A
@@ -61,6 +74,7 @@ final class DirectoryTreeState(val root: Path):
       result match
         case Right(listing) => listings(request.directory) = listing
         case Left(error)    => failures(request.directory) = error
+      touch()
       true
 
   /** Drops snapshots and retires in-flight generations. Loading resumes only on an explicit request. */
@@ -75,6 +89,7 @@ final class DirectoryTreeState(val root: Path):
         listings.clear()
         requests.clear()
         failures.clear()
+    touch()
 
   /** Visible unloaded directories, with cycles suppressed using acquired identities. Does not start work. */
   def directoriesToLoad: Vector[Path] =

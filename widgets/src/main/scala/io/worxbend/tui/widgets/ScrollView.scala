@@ -1,16 +1,21 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, Rect, StatefulWidget, Widget}
+import io.worxbend.tui.core.{Buffer, Rect, StatefulWidget, VersionedState, Widget}
 
 /** Caller-owned scroll offset for a [[ScrollView]].
   *
-  * Render-thread-only, and mutating it does not by itself schedule a frame. This is a plain mutable object, invisible
-  * to the reactive layer: a background result written straight into it stays off screen until something unrelated
-  * happens to repaint. Pair the mutation with a `Signal` write, or call `TuiApp.requestRedraw()` from the same
-  * render-thread callback that made it.
+  * Render-thread-only. Every mutation raises `version` (see [[io.worxbend.tui.core.Versioned]]), so a DSL node that
+  * paints this state notices a write made outside the event path — a background result applied on the render thread —
+  * and schedules the frame that shows it, with no `Signal` write and no `requestRedraw()`.
   */
-final class ScrollViewState:
-  var offset: Int                              = 0
+final class ScrollViewState extends VersionedState:
+  def offset: Int = offsetValue
+
+  def offset_=(value: Int): Unit =
+    offsetValue = value
+    touch()
+
+  private var offsetValue: Int                 = 0
   private[widgets] var lastViewportHeight: Int = 1
   private[widgets] var lastContentHeight: Int  = 0
 

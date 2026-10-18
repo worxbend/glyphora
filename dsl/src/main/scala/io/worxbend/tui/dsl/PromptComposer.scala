@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Buffer, CharWidth, KeyCode, KeyEvent, KeyModifiers, Position, Rect, Widget}
+import io.worxbend.tui.core.{Buffer, CharWidth, KeyCode, KeyEvent, KeyModifiers, Position, Rect, Versioned, Widget}
 import io.worxbend.tui.runtime.{Async, Cancelable, ReactiveScope, Signal, TaskScope}
 import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets as w
@@ -235,8 +235,11 @@ final case class PromptComposerElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = PromptComposerElement
-  override def debugName: String                  = "promptComposer"
-  override def pointerShape: Option[PointerShape] = textPointer(props)
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned] = Seq(state.editor)
+  override def debugName: String                          = "promptComposer"
+  override def pointerShape: Option[PointerShape]         = textPointer(props)
 
   private def editorRows: Int = math.max(1, math.min(state.maxRows, state.editor.lineCount))
 

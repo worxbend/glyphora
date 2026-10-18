@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, CharWidth, Measured, Rect, StatefulWidget, Style}
+import io.worxbend.tui.core.{Buffer, CharWidth, Measured, Rect, StatefulWidget, Style, Versioned}
 
 /** Caller-owned dropdown state: whether the option list is showing, and the highlight and scroll position of that list
   * while it is.
@@ -9,11 +9,23 @@ import io.worxbend.tui.core.{Buffer, CharWidth, Measured, Rect, StatefulWidget, 
   * changes nothing the application can see; only committing it does. That is what lets a user open the list, look
   * around, and back out with the value they started with.
   *
-  * Render-thread-only, and mutating it does not by itself schedule a frame — the same contract every widget state in
-  * this module carries. It is a plain mutable object the reactive layer cannot see, so a change written into it stays
-  * off screen until something else repaints; pair it with a `Signal` write or a `requestRedraw()`.
+  * Render-thread-only. Its `version` is its own count of open/close changes plus `menu.version`, so a mutation of
+  * either half is seen (see [[io.worxbend.tui.core.Versioned]]) and a DSL node painting it schedules the frame that
+  * shows it.
   */
-final class DropdownState(var open: Boolean = false, val menu: MenuState = MenuState()):
+final class DropdownState private (initialOpen: Boolean, val menu: MenuState) extends Versioned:
+
+  private var openValue: Boolean = initialOpen
+  private var openChanges: Long  = 0L
+
+  /** Whether the list is showing. */
+  def open: Boolean = openValue
+
+  def open_=(value: Boolean): Unit =
+    openValue = value
+    openChanges += 1
+
+  def version: Long = openChanges + menu.version
 
   /** Shows the list with the highlight parked on the option that is currently chosen, and the list scrolled back to the
     * top. Parking the highlight on the current value is what makes "open it and press Enter" a no-op rather than a
@@ -62,6 +74,13 @@ final class DropdownState(var open: Boolean = false, val menu: MenuState = MenuS
     * would go stale silently.
     */
   private def items(options: Seq[String]): Seq[MenuEntry] = options.map(label => MenuEntry.Item(label))
+
+object DropdownState:
+
+  /** A dropdown state, closed unless `open`, over `menu` — see [[ListState.apply]] for why this is the companion's
+    * `apply` rather than the constructor.
+    */
+  def apply(open: Boolean = false, menu: MenuState = MenuState()): DropdownState = new DropdownState(open, menu)
 
 /** A collapsed option chooser: one row showing the option in force, and, while [[DropdownState.open]], the whole option
   * list drawn directly beneath that row as a bordered popup.

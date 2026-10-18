@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Buffer, KeyCode, KeyEvent, MouseEvent, MouseEventKind, Rect, Text, Widget}
+import io.worxbend.tui.core.{Buffer, KeyCode, KeyEvent, MouseEvent, MouseEventKind, Rect, Text, Versioned, Widget}
 import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets as w
 
@@ -99,7 +99,10 @@ final case class DropdownElement(
     floating: Seq[Element] = Seq.empty,
 ) extends Element:
   type Self = DropdownElement
-  override def debugName: String = "dropdown"
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned] = Seq(state)
+  override def debugName: String                          = "dropdown"
 
   private def dropdownWidget: w.Dropdown =
     w.Dropdown(options, selected, maxVisibleRows, focusStyled(props), props.focusStyle)

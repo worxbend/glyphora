@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{KeyEvent, MouseEvent, Rect, Style, Widget}
+import io.worxbend.tui.core.{KeyEvent, MouseEvent, Rect, Style, Versioned, Widget}
 
 /** Appearance for a custom leaf, rebuilt from the current focus pass on each frame. */
 final case class InteractiveContext(style: Style, focused: Boolean, focusStyle: Style)
@@ -28,8 +28,14 @@ final case class InteractiveWidgetElement[S](
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = InteractiveWidgetElement[S]
-  override def debugName: String = "interactiveWidget"
-  def widget: Widget             = build(state, InteractiveContext(style, props.focused, props.focusStyle))
+
+  /** A versioned `state` is watched for writes made between frames, like a built-in node's. */
+  override private[dsl] def watchedStates: Seq[Versioned] =
+    state match
+      case versioned: Versioned => Seq(versioned)
+      case _                    => Nil
+  override def debugName: String                          = "interactiveWidget"
+  def widget: Widget = build(state, InteractiveContext(style, props.focused, props.focusStyle))
   private[dsl] def withProps(props: ElementProps): InteractiveWidgetElement[S] = copy(props = props)
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]       = Some(key => handlers.onKey(state, key))
   private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler]   =

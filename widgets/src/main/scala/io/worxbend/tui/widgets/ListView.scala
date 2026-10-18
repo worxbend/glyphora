@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, CharWidth, Line, Measured, Rect, StatefulWidget, Style, Text}
+import io.worxbend.tui.core.{Buffer, CharWidth, Line, Measured, Rect, StatefulWidget, Style, Text, VersionedState}
 
 /** Caller-owned list state: the selection, the scroll offset and how close to the edge the selection is allowed to get.
   * Mutable on purpose — the widget adjusts the offset during render to keep the selection visible, and the app mutates
@@ -21,12 +21,37 @@ import io.worxbend.tui.core.{Buffer, CharWidth, Line, Measured, Rect, StatefulWi
   * re-measures when the item count moves or when a drawn item's height disagrees with what it remembered — but a height
   * change on an item that is off screen is not seen until it scrolls into view.
   *
-  * Render-thread-only, and mutating it does not by itself schedule a frame. This is a plain mutable object, invisible
-  * to the reactive layer: a background result written straight into it stays off screen until something unrelated
-  * happens to repaint. Pair the mutation with a `Signal` write, or call `TuiApp.requestRedraw()` from the same
-  * render-thread callback that made it.
+  * Render-thread-only. Every mutation raises `version` (see [[io.worxbend.tui.core.Versioned]]), so a DSL node that
+  * paints this state notices a write made outside the event path — a background result applied on the render thread —
+  * and schedules the frame that shows it, with no `Signal` write and no `requestRedraw()`.
   */
-final class ListState(var selected: Option[Int] = None, var offset: Int = 0, var scrollPadding: Int = 0):
+final class ListState private (initialSelected: Option[Int], initialOffset: Int, initialScrollPadding: Int)
+    extends VersionedState:
+
+  private var selectedValue: Option[Int] = initialSelected
+  private var offsetValue: Int           = initialOffset
+  private var scrollPaddingValue: Int    = initialScrollPadding
+
+  /** The selected item, or `None`. */
+  def selected: Option[Int] = selectedValue
+
+  def selected_=(value: Option[Int]): Unit =
+    selectedValue = value
+    touch()
+
+  /** The first item on screen; the widget re-derives it during render to keep the selection visible. */
+  def offset: Int = offsetValue
+
+  def offset_=(value: Int): Unit =
+    offsetValue = value
+    touch()
+
+  /** How many items stay visible beyond the selection on each side — see the class notes. */
+  def scrollPadding: Int = scrollPaddingValue
+
+  def scrollPadding_=(value: Int): Unit =
+    scrollPaddingValue = value
+    touch()
 
   private var layoutCache: Option[(AnyRef, ListLayout)] = None
 
@@ -84,6 +109,15 @@ final class ListState(var selected: Option[Int] = None, var offset: Int = 0, var
     */
   def selectBy(itemCount: Int, delta: Int): Unit =
     if itemCount > 0 then selected = Selection.by(selected, itemCount, delta)
+
+object ListState:
+
+  /** A list state with `selected` highlighted, scrolled to `offset`, keeping `scrollPadding` items around the
+    * selection. The companion `apply` rather than a public constructor so the three fields can be accessor pairs that
+    * raise `version` while `ListState(selected = Some(0))` keeps compiling.
+    */
+  def apply(selected: Option[Int] = None, offset: Int = 0, scrollPadding: Int = 0): ListState =
+    new ListState(selected, offset, scrollPadding)
 
 /** A scrollable list of single-row items with an optional highlighted selection.
   *

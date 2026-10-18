@@ -33,7 +33,7 @@ import io.worxbend.tui.terminal.PointerShape
 final class ElementHost:
 
   private[dsl] var tracker              = FocusTracker()
-  private var session                   = ViewSession()
+  private var session                   = ViewSession(key => boundsOf(key))
   private var lastTree: Option[Element] = None
 
   /** The one recorder of where every node was painted — see [[NodeBounds]]. Filled only while [[recordBounds]] is on.
@@ -68,9 +68,10 @@ final class ElementHost:
     * loop owns its ReactiveScope and must dispose it separately.
     */
   def reset(): Unit =
+    session.dispose()
     tracker = FocusTracker()
     pointer = PointerCapture()
-    session = ViewSession()
+    session = ViewSession(key => boundsOf(key))
     lastTree = None
 
   /** Resolves `view` for an area of this size, reconciles focus, decorates the tree with `theme`'s focus cue and paints
@@ -141,6 +142,18 @@ final class ElementHost:
     recorder.foreach(_.begin())
     try paint(tree)
     finally recorder.foreach(_.publish())
+    session.afterPaint(raw)
+
+  /** Whether a widget state painted on the last frame — a `TextInputState`, a `ListState`, any
+    * [[io.worxbend.tui.core.Versioned]] state a node was handed — has been mutated since that frame. When one has, the
+    * view the last [[render]] evaluated is invalidated through its `ReactiveScope`, exactly as a `Signal` write would
+    * invalidate it, and this answers `true`.
+    *
+    * `TuiApp` asks once per loop iteration, which is why a background result written into a state on the render thread
+    * shows without a `requestRedraw()`. A host that owns its loop asks the same way, after running queued work and
+    * before deciding whether to draw. Render-thread-only.
+    */
+  def pollStates(): Boolean = session.pollStates()
 
   /** The rect the element declared with `.key(key)` was painted into on the last [[render]], in the coordinates of the
     * buffer that frame was drawn into and mapped out of any scroll view it sits in — so a test can click its centre

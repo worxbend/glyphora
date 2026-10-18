@@ -13,6 +13,7 @@ import io.worxbend.tui.core.{
   Span,
   Style,
   Text,
+  Versioned,
   Widget,
 }
 import io.worxbend.tui.runtime.{LogLevel, LogRecord, LogRing}
@@ -591,7 +592,10 @@ final case class MarkdownStreamElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = MarkdownStreamElement
-  override def debugName: String = "markdownStream"
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned] = stream +: follow.toSeq
+  override def debugName: String                          = "markdownStream"
 
   /** Tables, lexers and list glyphs for the document — see [[w.MarkdownOptions]]. */
   def withOptions(options: w.MarkdownOptions): MarkdownStreamElement = copy(markdownOptions = options)
@@ -641,7 +645,10 @@ final case class DiffViewElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = DiffViewElement
-  override def debugName: String = "diffView"
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned] = Seq(state)
+  override def debugName: String                          = "diffView"
 
   /** Side by side: the old file left of the divider, the new one right of it. */
   def split: DiffViewElement = copy(options = options.copy(layout = w.DiffLayout.Split))

@@ -13,6 +13,7 @@ import io.worxbend.tui.core.{
   Rect,
   Size,
   Style,
+  Versioned,
   Widget,
 }
 import io.worxbend.tui.terminal.PointerShape
@@ -96,9 +97,12 @@ final case class ScrollViewElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = ScrollViewElement
-  override def debugName: String      = "scrollView"
-  override def children: Seq[Element] = Seq(content)
-  def widget: Widget                  =
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned] = Seq(state)
+  override def debugName: String                          = "scrollView"
+  override def children: Seq[Element]                     = Seq(content)
+  def widget: Widget                                      =
     (area, buffer) =>
       // `area.height` is the last resort, and it is a lie the caller cannot see: content that reports no height
       // measures as exactly one viewport tall, the offset clamps to zero, and everything below the fold becomes

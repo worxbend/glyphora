@@ -1,6 +1,17 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, CharWidth, Color, Line, Measured, Rect, Span, StatefulWidget, Style}
+import io.worxbend.tui.core.{
+  Buffer,
+  CharWidth,
+  Color,
+  Line,
+  Measured,
+  Rect,
+  Span,
+  StatefulWidget,
+  Style,
+  VersionedState,
+}
 
 /** How a [[DiffView]] lays a hunk out: one column with `-` lines above their `+` replacements (`Unified`, what `git
   * diff` prints), or the old file on the left and the new one on the right with a replaced line beside its replacement
@@ -52,11 +63,17 @@ final case class DiffViewOptions(
   * keeps the laid-out rows of the last patch it drew, so a view redrawn every frame does not diff its changed lines
   * again until the patch (by reference) or the options change.
   *
-  * Render-thread-only, and mutating it does not by itself schedule a frame: pair a mutation made outside a key handler
-  * with a `Signal` write or `TuiApp.requestRedraw()`.
+  * Render-thread-only. Every mutation raises `version` (see [[io.worxbend.tui.core.Versioned]]), so a DSL node that
+  * paints this state notices a write made outside the event path and schedules the frame that shows it.
   */
-final class DiffViewState:
-  var offset: Int                                                                   = 0
+final class DiffViewState extends VersionedState:
+  def offset: Int = offsetValue
+
+  def offset_=(value: Int): Unit =
+    offsetValue = value
+    touch()
+
+  private var offsetValue: Int                                                      = 0
   private[widgets] var hunkRows: IndexedSeq[Int]                                    = IndexedSeq.empty
   private[widgets] var lastViewportHeight: Int                                      = 1
   private[widgets] var lastContentHeight: Int                                       = 0

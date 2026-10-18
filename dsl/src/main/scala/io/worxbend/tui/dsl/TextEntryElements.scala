@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{CharWidth, KeyCode, KeyEvent, KeyModifiers, Position, Rect, Widget}
+import io.worxbend.tui.core.{CharWidth, KeyCode, KeyEvent, KeyModifiers, Position, Rect, Versioned, Widget}
 import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets as w
 
@@ -96,6 +96,9 @@ final case class InputElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = InputElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
   override def debugName: String                                             = "input"
   private[dsl] override def componentRole: Option[ComponentRole]             = Some(InputRole)
   override def pointerShape: Option[PointerShape]                            = textPointer(props)
@@ -132,6 +135,9 @@ final case class AutocompleteElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = AutocompleteElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]        = Seq(state.input)
   override def debugName: String                                 = "autocomplete"
   private[dsl] override def componentRole: Option[ComponentRole] = Some(InputRole)
 
@@ -214,6 +220,9 @@ final case class NumberInputElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = NumberInputElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]        = Seq(state)
   override def debugName: String                                 = "numberInput"
   private[dsl] override def componentRole: Option[ComponentRole] = Some(InputRole)
   override def pointerShape: Option[PointerShape]                = textPointer(props)
@@ -266,6 +275,9 @@ final case class TemplateInputElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = TemplateInputElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
   override def debugName: String                                             = "templateInput"
   private[dsl] override def componentRole: Option[ComponentRole]             = Some(InputRole)
   override def pointerShape: Option[PointerShape]                            = textPointer(props)
@@ -341,6 +353,9 @@ final case class TextAreaElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = TextAreaElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]        = Seq(state)
   override def debugName: String                                 = "textArea"
   private[dsl] override def componentRole: Option[ComponentRole] = Some(InputRole)
   override def pointerShape: Option[PointerShape]                = textPointer(props)

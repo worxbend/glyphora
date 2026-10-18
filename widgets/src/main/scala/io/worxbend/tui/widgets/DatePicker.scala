@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, Rect, StatefulWidget, Style}
+import io.worxbend.tui.core.{Buffer, Rect, StatefulWidget, Style, VersionedState}
 
 import java.time.LocalDate
 import scala.util.Try
@@ -11,21 +11,33 @@ import scala.util.Try
   * the next one — Right on the 31st of July is the 1st of August — and the picker's grid follows it. A move that would
   * leave the range `LocalDate` can represent leaves the cursor where it is rather than throwing.
   *
-  * Render-thread-only, and mutating it does not by itself schedule a frame: the DSL's `datePicker` node mutates it from
-  * its key handler, which repaints; a caller writing to it from elsewhere pairs the write with a `Signal` update.
+  * Render-thread-only. Every mutation raises `version` (see [[io.worxbend.tui.core.Versioned]]), so a write made
+  * outside the event path is painted too, with no `Signal` write.
   *
   * @param initial
   *   where the cursor starts
   * @param today
   *   the clock `goToToday` reads; injectable so a test does not depend on the day it runs
   */
-final class DatePickerState(initial: LocalDate, today: () => LocalDate = () => LocalDate.now()):
+final class DatePickerState(initial: LocalDate, today: () => LocalDate = () => LocalDate.now()) extends VersionedState:
 
   /** The date under the cursor — the highlighted day, and the month the grid shows. */
-  var cursor: LocalDate = initial
+  def cursor: LocalDate = cursorValue
+
+  def cursor_=(value: LocalDate): Unit =
+    cursorValue = value
+    touch()
+
+  private var cursorValue: LocalDate = initial
 
   /** The date the user last confirmed with [[select]]; `None` until they do. */
-  var selected: Option[LocalDate] = None
+  def selected: Option[LocalDate] = selectedValue
+
+  def selected_=(value: Option[LocalDate]): Unit =
+    selectedValue = value
+    touch()
+
+  private var selectedValue: Option[LocalDate] = None
 
   /** Moves the cursor `days` days, across month and year boundaries. */
   def moveDays(days: Int): Unit = cursor = Try(cursor.plusDays(days.toLong)).getOrElse(cursor)

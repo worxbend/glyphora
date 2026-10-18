@@ -191,20 +191,19 @@ private def runBuild(): Unit =
     while read >= 0 do
       val lines = parser.feed(String(chunk, 0, read))
       if lines.nonEmpty then
-        val _ = owner.execute { lines.foreach(output.append); requestRedraw() }
+        val _ = owner.execute(lines.foreach(output.append))
       read = reader.read(chunk)
     process.waitFor()
   } { _ =>
     output.append(parser.finish())              // the unterminated last line, if the tool left one
-    requestRedraw()
   }
 
 def buildView(using ReactiveScope, Theme): Element = log(output).fill
 ```
 
 The reader runs on the worker; every `LogState.append` runs on the render thread through
-the captured loop, and the `requestRedraw()` beside it is what puts the new lines on
-screen, because `LogState` is a plain mutable object the reactive layer cannot see. The
+the captured loop. No `requestRedraw()` is needed: `LogState` is `Versioned`, so the app
+sees the appends moved it and draws the frame that shows them. The
 parser is touched by one thread at a time — the worker while reading, the render thread
 for the final `finish()` once the worker has returned — which is the ownership it asks
 for. A chunk boundary can fall anywhere, inside an escape sequence included; the parser

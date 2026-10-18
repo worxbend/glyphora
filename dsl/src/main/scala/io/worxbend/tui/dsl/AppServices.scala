@@ -54,7 +54,7 @@ trait AppServices extends Notifications:
     */
   def runEffect(key: String, effect: Effect): Unit
 
-  /** Schedules one frame — for state the reactive layer cannot see, such as a mutable widget state. */
+  /** Schedules one frame — for state the reactive layer cannot see, such as a plain field the view reads. */
   def requestRedraw(): Unit
 
   /** Copies `text` to the system clipboard via OSC 52, best effort. */

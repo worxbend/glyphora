@@ -13,10 +13,9 @@ import io.worxbend.tui.core.{Buffer, CharWidth, Position, Rect, StatefulWidget, 
   * as by [[insert]] — because a control is zero columns wide but still fills a whole `Cell`, so storing one
   * desynchronises the backend's cursor model from the terminal's.
   *
-  * Render-thread-only, and mutating it does not by itself schedule a frame. This is a plain mutable object, invisible
-  * to the reactive layer: a background result written straight into it stays off screen until something unrelated
-  * happens to repaint. Pair the mutation with a `Signal` write, or call `TuiApp.requestRedraw()` from the same
-  * render-thread callback that made it.
+  * Render-thread-only. Every mutation raises `version` (see [[io.worxbend.tui.core.Versioned]]), so a DSL node that
+  * paints this state notices a write made outside the event path — a background result applied on the render thread —
+  * and schedules the frame that shows it, with no `Signal` write and no `requestRedraw()`.
   *
   * Incremental search lives here too: [[openSearch]], [[updateSearch]] as the query is typed, then [[nextMatch]] and
   * [[previousMatch]]; the widget draws the open prompt and underlines [[matches]].
@@ -53,6 +52,7 @@ final class TextAreaState(initial: String = "", killRing: KillRing = KillRing())
   def openSearch(): Unit =
     searchOrigin = Some(caret)
     openQuery = Some("")
+    touch()
 
   /** Sets the open prompt's query and jumps to the first match at or after where the search started, wrapping round;
     * the caret stays at the origin when nothing matches. Case-insensitive unless the query holds a capital letter.
@@ -61,6 +61,7 @@ final class TextAreaState(initial: String = "", killRing: KillRing = KillRing())
     if openQuery.isDefined then
       openQuery = Some(query)
       lastQuery = query
+      touch()
       val origin = searchOrigin.getOrElse(caret)
       val found  = matches
       found.find(_.start >= origin).orElse(found.headOption) match
@@ -71,6 +72,7 @@ final class TextAreaState(initial: String = "", killRing: KillRing = KillRing())
   def closeSearch(): Unit =
     openQuery = None
     searchOrigin = None
+    touch()
 
   /** Closes the prompt and puts the caret back where the search started. */
   def cancelSearch(): Unit =
