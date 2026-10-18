@@ -101,20 +101,20 @@ final class TextAreaSpec extends AnyFunSuite:
 
   test("redo re-applies undone edits and a fresh edit clears the redo history"):
     val state = TextAreaState("a")
-    state.insert("b")
-    state.insert("c")
-    assert(state.value == "abc")
+    state.insert("bb") // multi-grapheme inserts are steps of their own
+    state.insert("cc")
+    assert(state.value == "abbcc")
     state.undo()
     state.undo()
     assert(state.value == "a")
     state.redo()
-    assert(state.value == "ab")
+    assert(state.value == "abb")
     state.redo()
-    assert(state.value == "abc")
+    assert(state.value == "abbcc")
     state.undo()
-    state.insert("X") // new edit invalidates the redo branch
+    state.insert("X")  // new edit invalidates the redo branch
     state.redo()
-    assert(state.value == "abX")
+    assert(state.value == "abbX")
 
   test("controls are dropped on insert but the newline still splits"):
     // the filter has to run per segment, after the split: filtering the whole string first would eat the "\n" that

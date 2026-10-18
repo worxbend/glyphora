@@ -1163,7 +1163,8 @@ glyph reserves two.
 | Widget | State | Notes |
 |---|---|---|
 | `input` | `TextInputState` | one line, horizontal scrolling, paste folds newlines |
-| `textArea` | `TextAreaState` | multiple lines, 2D cursor, scrolling, bounded undo/redo |
+| `textArea` | `TextAreaState` | multiple lines, soft wrap (`.wrap`), line numbers (`.lineNumbers`), `.lexer(…)`, search (`Ctrl+F`), `.readOnly` viewer |
+| `promptComposer` | `PromptComposerState` | LLM-CLI prompt: Enter submits, history, `Ctrl+R`, ghost suggestions, `/` and `@` completion, paste compaction |
 | `numberInput` | `TextInputState` | whole numbers only; add `.decimal` to accept one decimal point |
 | `templateInput` | `TextInputState` | template field: `#` digit, `A` letter, other characters are literals |
 | `autocomplete` | `AutocompleteState` | input plus selectable suggestions and accept callback; `.maxSuggestions(n)` caps the list |
@@ -1172,6 +1173,12 @@ glyph reserves two.
 The raw `TextArea` widget highlights its visible rows through a lexer:
 `TextArea(options = TextAreaOptions(lexer = Some(Lexer.Sql)))`. Token styles are laid over
 the editor's `style`, and the cursor still shows on top of them.
+
+`input` and `textArea` share one editing engine, `EditBuffer`: selection with `Shift`, word
+motion with `Ctrl+Left`/`Ctrl+Right`, `Ctrl+A`/`Ctrl+C`/`Ctrl+X`/`Ctrl+V` through the app
+clipboard, a kill ring (`Ctrl+K`, `Ctrl+U`, `Ctrl+W`, `Ctrl+Y`, `Alt+Y`) and coalesced undo
+(`Ctrl+Z`, redo `Ctrl+Shift+Z`). The full chord table, soft wrap, search and the prompt
+composer are on [Text editing](editing.md).
 
 ### Local file picker
 

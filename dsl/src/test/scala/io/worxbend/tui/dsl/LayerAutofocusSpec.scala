@@ -18,7 +18,7 @@ final class LayerAutofocusSpec extends AnyFunSuite:
 
     override def bindings: KeyBindings = KeyBindings(
       binding("ctrl+o", "open")(pushScreen(Screen(dialog, dismissal = Dismissal.Escape))),
-      binding("ctrl+u", "clear focus")(clearFocus()),
+      binding("ctrl+l", "clear focus")(clearFocus()),
     )
 
     def view(using ReactiveScope, Theme): Element =
@@ -45,7 +45,7 @@ final class LayerAutofocusSpec extends AnyFunSuite:
   test("closing a layer preserves deliberately cleared focus despite an existing autofocus request"):
     val app = App("dialog-auto")
     Pilot.using(Size(50, 14))(backend => app.runWith(backend)) { pilot =>
-      pilot.waitForIdle().press("ctrl+u").waitForIdle()
+      pilot.waitForIdle().press("ctrl+l").waitForIdle()
       pilot.press("ctrl+p").waitForIdle().press("esc").waitForIdle().typeText("!").waitForIdle()
       assert(app.baseAuto.value == "")
       assert(app.baseFirst.value == "")

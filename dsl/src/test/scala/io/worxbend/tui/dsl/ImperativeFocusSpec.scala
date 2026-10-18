@@ -30,7 +30,7 @@ final class ImperativeFocusSpec extends AnyFunSuite with PilotFixture:
       binding("ctrl+b", "drop focus")(clearFocus()),
       binding("ctrl+r", "read the focused key") { keyUnderFocus = focusedKey },
       binding("ctrl+g", "hide the email field")(showEmail.set(false)),
-      binding("ctrl+u", "show the email field again")(showEmail.set(true)),
+      binding("ctrl+l", "show the email field again")(showEmail.set(true)),
       binding("ctrl+q", "quit")(quit()),
     )
     // the three services are `protected` on TuiApp, so the "not running" test reaches them through the app itself
@@ -162,7 +162,7 @@ final class ImperativeFocusSpec extends AnyFunSuite with PilotFixture:
     val pilot = start(app)
     pilot.pressKey(KeyCode.Char('e'), KeyModifiers.Ctrl).waitForIdle() // focus the email field by key
     pilot.pressKey(KeyCode.Char('g'), KeyModifiers.Ctrl).waitForIdle() // it disappears for a frame
-    pilot.pressKey(KeyCode.Char('u'), KeyModifiers.Ctrl).waitForIdle() // and comes back
+    pilot.pressKey(KeyCode.Char('l'), KeyModifiers.Ctrl).waitForIdle() // and comes back
     pilot.pressKey(KeyCode.Char('r'), KeyModifiers.Ctrl).waitForIdle()
     assert(app.keyUnderFocus.contains("email"))
     pilot.typeText("back").waitForIdle()

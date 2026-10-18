@@ -826,13 +826,24 @@ private[dsl] trait ElementFactories:
   def directoryTree(state: w.DirectoryTreeState): DirectoryTreeElement =
     DirectoryTreeElement(state)
 
-  /** A multi-line editor over caller-owned [[w.TextAreaState]], with undo (`Ctrl+Z`) and redo (`Ctrl+Y`).
+  /** A multi-line editor over caller-owned [[w.TextAreaState]]: selection, word motion, clipboard, kill ring, undo
+    * (`Ctrl+Z`) and redo (`Ctrl+Shift+Z`), and incremental search (`Ctrl+F`). `options` carries the widget's knobs —
+    * `lexer`, soft `wrap`, `lineNumbers` — which the `.lexer(…)`, `.wrap` and `.lineNumbers` builders also set.
     *
     * Create the state once outside `view`, as for [[input]]; it is render-thread-only, and writing to it from outside
     * an event handler does not by itself schedule a frame.
     */
-  def textArea(state: w.TextAreaState): TextAreaElement =
-    TextAreaElement(state)
+  def textArea(state: w.TextAreaState, options: w.TextAreaOptions = w.TextAreaOptions()): TextAreaElement =
+    TextAreaElement(state, options)
+
+  /** The LLM-CLI prompt over caller-owned [[PromptComposerState]]: a soft-wrapping multi-line draft where `Enter`
+    * submits — `onSubmit` receives the text with paste placeholders expanded — and `Shift+Enter` / `Alt+Enter` insert a
+    * newline. `Up`/`Down` at the first/last line recall history, `Ctrl+R` searches it, a dim suggestion from history is
+    * accepted with `Tab` or `Right`, and `/` (at the start) or `@` (at a word start) open a popup fed by the state's
+    * async, debounced completion provider. A large paste shows as `[Pasted N lines]`.
+    */
+  def promptComposer(state: PromptComposerState)(onSubmit: String => Unit)(using ReactiveScope): PromptComposerElement =
+    PromptComposerElement.tracked(state, onSubmit)
 
   /** A focusable button; `action` runs on Enter or Space while focused, or on a click. The body is by-name, so it is
     * evaluated when the button is pressed rather than when the view is built.

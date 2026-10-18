@@ -25,8 +25,8 @@ final class LayerFocusSpec extends AnyFunSuite with PilotFixture:
     val otherFirst                                = TextInputState()
     override def bindings: KeyBindings            = KeyBindings(
       binding("ctrl+o", "open the dialog")(pushScreen(Screen(dialog))),
-      binding("ctrl+w", "swap the dialog for another")(replaceScreen(Screen(otherDialog))),
-      binding("ctrl+z", "close the dialog")(popScreen()),
+      binding("ctrl+t", "swap the dialog for another")(replaceScreen(Screen(otherDialog))),
+      binding("ctrl+b", "close the dialog")(popScreen()),
       binding("ctrl+q", "quit")(quit()),
     )
     def view(using ReactiveScope, Theme): Element =
@@ -84,7 +84,7 @@ final class LayerFocusSpec extends AnyFunSuite with PilotFixture:
     pilot.pressKey(KeyCode.Char('o'), KeyModifiers.Ctrl).waitForIdle()
     pilot.pressKey(KeyCode.Tab).typeText("second").waitForIdle() // move around inside the dialog
     assert(app.dialogSecond.value == "second")
-    pilot.pressKey(KeyCode.Char('z'), KeyModifiers.Ctrl).waitForIdle()
+    pilot.pressKey(KeyCode.Char('b'), KeyModifiers.Ctrl).waitForIdle()
     pilot.typeText("!").waitForIdle()
     assert(app.three.value == "!")                               // back on the base field, not on the base's first one
     assert(app.one.value == "")
@@ -98,7 +98,7 @@ final class LayerFocusSpec extends AnyFunSuite with PilotFixture:
     val pilot = start(app)
     pilot.pressKey(KeyCode.Char('o'), KeyModifiers.Ctrl).waitForIdle()
     pilot.pressKey(KeyCode.Tab).waitForIdle() // focus the dialog's *second* field
-    pilot.pressKey(KeyCode.Char('w'), KeyModifiers.Ctrl).waitForIdle()
+    pilot.pressKey(KeyCode.Char('t'), KeyModifiers.Ctrl).waitForIdle()
     pilot.typeText("x").waitForIdle()
     assert(app.otherFirst.value == "x")
     quitApp(pilot)
@@ -134,7 +134,7 @@ final class LayerFocusSpec extends AnyFunSuite with PilotFixture:
     pilot.pressKey(KeyCode.Escape).waitForIdle()                    // palette closes
     pilot.typeText("still").waitForIdle()
     assert(app.dialogSecond.value == "still") // back inside the dialog, where the palette found it
-    pilot.pressKey(KeyCode.Char('z'), KeyModifiers.Ctrl).waitForIdle()
+    pilot.pressKey(KeyCode.Char('b'), KeyModifiers.Ctrl).waitForIdle()
     pilot.typeText("home").waitForIdle()
     assert(app.three.value == "home")
     quitApp(pilot)
