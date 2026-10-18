@@ -437,6 +437,17 @@ object Theme:
   /** Every built-in theme, in the order a theme switcher would offer them; `Theme.parse`'s `extends` names these. */
   val presets: Seq[Theme] = Seq(Dark, Light, HighContrast, Dracula, Catppuccin, Nord, Gruvbox, Solarized, Ansi16)
 
+  /** Reads a theme file — the `key = value` format [[ThemeFile]] describes — so an end user can restyle an app without
+    * recompiling it. A setting the file leaves out keeps the base theme's (see `extends`); a malformed line is a
+    * [[ThemeError]] carrying its line number, never an exception.
+    */
+  def parse(text: String): Either[ThemeError, Theme] = ThemeFile.parse(text)
+
+  /** Writes `theme` as a theme file that [[parse]] reads back as an equal theme: every setting spelled out, components
+    * one line per state. The one field that is not written is a loading `fillRamp`, which is code rather than a style.
+    */
+  def render(theme: Theme): String = ThemeFile.render(theme)
+
   /** "Whichever of [[Light]] and [[Dark]] matches the terminal" — the default `TuiApp.theme` since 0.20.0.
     *
     * A placeholder rather than a palette of its own: `TuiApp` recognises this exact value (by identity) and resolves it
