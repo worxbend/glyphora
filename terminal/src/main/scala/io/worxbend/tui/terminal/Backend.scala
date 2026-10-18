@@ -18,6 +18,14 @@ import scala.util.control.NonFatal
   *
   * `draw` flushes only the cells that changed since the previous `draw` call (diff-based updates); the first call after
   * construction, or after the buffer area changes, flushes everything.
+  *
+  * '''Threading and ownership.''' A backend belongs to the one loop that drives it, and every member runs on that
+  * loop's render thread — the thread that calls [[readEvent]], and is therefore the one reader of the input stream —
+  * with three exceptions that exist precisely so other threads can reach it: [[wake]], [[requestFullRedraw]] and
+  * [[emergencyRestore]] are safe from any thread. Nothing else is synchronised: a second thread calling `draw` tears
+  * the frame on the wire, and one calling `readEvent` interleaves its reads into sequences the terminal never sent. The
+  * per-member notes below ("Must run on the render thread", "Safe from any thread") are instances of this rule, not
+  * exceptions to it.
   */
 trait Backend:
   def size: Either[BackendError, Size]
@@ -237,8 +245,9 @@ trait Backend:
     * treated as "poll once": the underlying JLine reader treats a non-positive timeout as an unbounded blocking read,
     * so a zero here would wedge the event loop until the user happened to press a key.
     *
-    * `Right(None)` covers both an elapsed timeout and input that decoded to nothing (a device-attributes reply, a torn
-    * sequence) — callers must treat it as "no event this round", never as end-of-input.
+    * `Right(None)` covers an elapsed timeout, input that decoded to nothing (a device-attributes reply, a torn
+    * sequence) and a read cut short by [[wake]] — callers must treat it as "no event this round", never as
+    * end-of-input. Render thread only: this is the one reader of the input stream.
     */
   def readEvent(timeout: Duration): Either[BackendError, Option[Event]]
 
@@ -253,8 +262,9 @@ trait Backend:
   /** Restores the terminal by the shortest path available, for callers that may be racing the backend's own teardown.
     *
     * Unlike `close()` this makes no attempt to be tidy and keeps no state: it exists for a JVM shutdown hook, where the
-    * normal machinery may already have been torn down underneath it. Must be idempotent and must never throw. The
-    * default is a no-op for backends with no real terminal to restore.
+    * normal machinery may already have been torn down underneath it. Must be idempotent, must never throw, and — a
+    * shutdown hook is never the render thread — must be safe from any thread. The default is a no-op for backends with
+    * no real terminal to restore.
     */
   def emergencyRestore(): Unit = ()
 

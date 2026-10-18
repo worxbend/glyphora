@@ -2,6 +2,7 @@ package io.worxbend.tui.terminal
 
 import io.worxbend.tui.core.{Event, KeyEvent, Size}
 
+import scala.annotation.nowarn
 import scala.concurrent.duration.DurationInt
 
 import org.scalatest.funsuite.AnyFunSuite
@@ -22,15 +23,23 @@ final class CapabilityNegotiationSpec extends AnyFunSuite:
     * query it does not implement with nothing at all.
     */
   test("everything except an explicit denial counts as enabled"):
-    val unknown = TerminalCapabilities.unknown
     // the rule read off the state itself, which is the spelling the backend uses
     assert(Support.Unknown.usable)
     assert(Support.Yes.usable)
     assert(!Support.No.usable)
-    // the retained `TerminalCapabilities.enabled` forwarder answers the same question, for 0.13.0 callers
-    assert(unknown.enabled(Support.Unknown))
-    assert(unknown.enabled(Support.Yes))
-    assert(!unknown.enabled(Support.No))
+    assert(TerminalCapabilities.unknown.synchronizedOutput.usable)
+
+  /** The 0.13.0 forwarder, called on purpose. This is the first `@nowarn` in the repository: `-deprecation -Werror`
+    * would otherwise fail the build on the very call this exists to make, and a test that cannot call the deprecated
+    * shim cannot prove it still delegates. It is scoped to this one method so nothing else can call the shim unnoticed.
+    */
+  @nowarn("cat=deprecation")
+  private def shimAnswers(support: Support): Boolean = TerminalCapabilities.unknown.enabled(support)
+
+  test("the deprecated TerminalCapabilities.enabled forwarder still answers what usable answers"):
+    assert(shimAnswers(Support.Unknown) == Support.Unknown.usable)
+    assert(shimAnswers(Support.Yes) == Support.Yes.usable)
+    assert(shimAnswers(Support.No) == Support.No.usable)
 
   test("a fresh value has established nothing"):
     assert(TerminalCapabilities.unknown == TerminalCapabilities())

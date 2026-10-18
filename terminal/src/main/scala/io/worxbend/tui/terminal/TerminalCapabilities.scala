@@ -36,10 +36,11 @@ final case class TerminalCapabilities(
     focusReporting: Support = Support.Unknown,
 ):
 
-  /** Whether a feature in state `support` should be used. Prefer `support.usable`, which asks the state itself rather
-    * than routing the question through an unrelated capability value; this is kept for source compatibility with 0.13.0
-    * and answers exactly the same question.
+  /** Whether a feature in state `support` should be used. Write `support.usable`, which asks the state itself rather
+    * than routing the question through an unrelated capability value; this forwarder is kept for source compatibility
+    * with 0.13.0, answers exactly the same question, and is deprecated so a caller is told to move before it goes.
     */
+  @deprecated("use Support.usable", since = "0.19.0")
   def enabled(support: Support): Boolean = support.usable
 
 object TerminalCapabilities:
