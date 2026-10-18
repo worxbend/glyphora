@@ -71,6 +71,9 @@ private[dsl] object ResponsivePass:
           // suppression runs in TuiApp.effectiveView, before this pass, so a branch that did not exist yet when the
           // modal was composed has to inherit its node's suppression here or it rejoins the tab order and the router
           responsive.resolvedAt(if responsive.props.inert then FocusPass.suppressFocus(branch) else branch)
+      case lazyList: LazyListElement     =>
+        val built = lazyList.builtFor(size.height)
+        built.withChildren(built.children.map(resolveAt(_, size, NestingLimit)))
       case other                         =>
         other.withChildren(other.children.map(resolveAt(_, size, NestingLimit)))
 

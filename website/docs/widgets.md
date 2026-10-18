@@ -947,6 +947,43 @@ Directory links are followed, even outside the root; this is a browser, not a
 sandbox. Acquired identities prevent ancestor cycles while leaving sibling aliases
 browsable. All snapshot types and `TaskScope` are available from the DSL import.
 
+### A virtual list of elements
+
+`list(...)` draws strings and lines; when every row is a whole element — a card, a
+row with a button in it — and there are thousands of them, use
+`lazyList(count, itemHeight, state)(i => element)`. It builds, decorates and paints
+only the items on screen plus one either side, so the frame costs a screenful
+whatever `count` is, where `scrollView(column(rows.map(card)*))` builds and measures
+every card on every frame.
+
+```scala
+val rows = LazyListState()
+
+def view(using ReactiveScope, Theme): Element =
+  panel("Events")(
+    lazyList(events.size, 2, rows) { i =>
+      val event = events(i)
+      column(text(event.title).bold, text(event.detail).dim).key(s"event-${event.id}")
+    }
+  )
+```
+
+Every item is `itemHeight` rows tall. While the list is focused Up/Down move the
+selection, Home/End jump to the ends and PageUp/PageDown move a page; the wheel
+moves it on hover and a press selects the item under the pointer. `rows.selected`
+and `rows.offset` are the caller's to read and write, like a `ListState`'s, and a
+write made outside an event handler is drawn on the next loop iteration.
+
+Items are ordinary elements: a button in one takes a Tab stop, a focused input in
+one drives the terminal caret. Give anything focusable a `.key(...)`, because an
+unkeyed focusable is identified by its tab position and that shifts as items
+scroll in and out. Hooks inside an item are scoped by its index.
+
+Inside a `scrollView` the list measures as `count * itemHeight` rows and builds
+only the items the window shows. After a jump of more than a row the newly shown
+items are blank for one frame while the next frame builds them; a one-row scroll
+is covered by the overscan.
+
 ### Tab bars
 
 `tabs(titles, selected)` draws a one-row bar of titles with the chosen one
@@ -2527,7 +2564,7 @@ The internal tiers document dependency order, not quality:
    spinner, animated text, marquee, skeleton, indeterminate bar, big text, notice,
    badge, tooltip, dialog, markdown, syntax highlighter.
 4. **Application-scale state** — data table, directory tree, text area, log, log
-   console, error boundary, diff view, menu, paginator, scroll view, image, links, date and time
+   console, error boundary, diff view, menu, paginator, scroll view, lazy list, image, links, date and time
   pickers, colour picker, tree table, hex viewer, and inspect.
 
 Every built-in has render-to-`Buffer` tests. Interactive DSL wrappers additionally

@@ -347,6 +347,25 @@ private[dsl] trait ElementFactories:
   def list(items: Seq[String | Line | Text], state: w.ListState): ListElement =
     ListElement(items, state)
 
+  /** A virtual list of `count` items, `itemHeight` rows each, over caller-owned [[w.LazyListState]]: `item(i)` is
+    * called only for the items on screen plus one either side, so `lazyList(100000, 1, state)(row)` costs a screenful
+    * per frame, not a hundred thousand elements.
+    *
+    * {{{
+    * val rows = LazyListState()
+    * def view(using ReactiveScope, Theme): Element =
+    *   lazyList(log.size, 1, rows)(i => text(log(i)))
+    * }}}
+    *
+    * Unlike `scrollView(column(items*))`, nothing outside the window is built, measured, decorated or painted. Items
+    * are real elements — key the focusable ones (`.key(s"row-$id")`) so focus follows them as the window moves. Each
+    * item's hooks are scoped by its index. The state follows the same ownership rules as [[list]]'s; see
+    * [[LazyListElement]] for scrolling, selection and how it behaves inside a `scrollView`.
+    */
+  def lazyList(count: Int, itemHeight: Int, state: w.LazyListState)(item: Int => Element): LazyListElement =
+    val build = ViewState.deferred((range: Range) => range.map(i => ViewState.scopeIfActive(s"lazyList:$i")(item(i))))
+    LazyListElement(math.max(0, count), math.max(1, itemHeight), build, state)
+
   /** A collapsible tree over caller-owned [[w.TreeState]] — same state ownership rules as [[list]]. */
   def tree(nodes: Seq[w.TreeNode], state: w.TreeState[?]): TreeElement =
     TreeElement(nodes, state)
