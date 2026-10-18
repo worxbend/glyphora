@@ -31,6 +31,16 @@ private[dsl] trait ElementFactories:
     */
   def text(content: String): TextElement = TextElement(content)
 
+  /** A block of text that already carries its own styles — a `markup"…"` literal, the output of `Text.fromAnsi`, or a
+    * [[Text]] assembled from spans — laid out exactly as [[text]] lays out a plain string: one row per line, clipped at
+    * the area's edges unless `.wrapped`, positioned with `.centered` / `.rightAligned`, and claiming the box its rows
+    * measure so it sits in a `column` beside plain text without taking the leftover rows.
+    *
+    * The element's own style (`.dim`, `.fg(...)`) goes *underneath* the text's: a span that chose a colour keeps it and
+    * picks up only what it left unset, which is the direction a theme colour travels. See [[RichTextElement]].
+    */
+  def text(content: Text): RichTextElement = RichTextElement(content)
+
   /** One terminal row assembled from differently-styled runs:
     *
     * {{{
