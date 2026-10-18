@@ -171,6 +171,49 @@ for fifteen seconds, and nothing here drops a slow response that arrives after a
 one. [Live data & background work](./live-data) covers both, plus where the poller must
 be started from.
 
+## Show a subprocess's coloured output in a log
+
+A build tool or a test runner colours its output with SGR escape sequences. Fed to a
+`log` as plain strings they arrive as stray characters; fed through `AnsiParser` they
+arrive as the styled lines the tool meant:
+
+```scala
+private val output = LogState(maxLines = 5000)
+
+private def runBuild(): Unit =
+  val owner  = RenderThread.capture()           // on the render thread, before the worker starts
+  val parser = AnsiParser()                     // one parser per stream; it keeps the style across chunks
+  Async.run {
+    val process = ProcessBuilder("./mill", "__.compile").redirectErrorStream(true).start()
+    val reader  = process.inputReader()
+    val chunk   = new Array[Char](4096)
+    var read    = reader.read(chunk)
+    while read >= 0 do
+      val lines = parser.feed(String(chunk, 0, read))
+      if lines.nonEmpty then
+        val _ = owner.execute { lines.foreach(output.append); requestRedraw() }
+      read = reader.read(chunk)
+    process.waitFor()
+  } { _ =>
+    output.append(parser.finish())              // the unterminated last line, if the tool left one
+    requestRedraw()
+  }
+
+def buildView(using ReactiveScope, Theme): Element = log(output).fill
+```
+
+The reader runs on the worker; every `LogState.append` runs on the render thread through
+the captured loop, and the `requestRedraw()` beside it is what puts the new lines on
+screen, because `LogState` is a plain mutable object the reactive layer cannot see. The
+parser is touched by one thread at a time — the worker while reading, the render thread
+for the final `finish()` once the worker has returned — which is the ownership it asks
+for. A chunk boundary can fall anywhere, inside an escape sequence included; the parser
+puts the pieces back together the way a terminal would. Force the tool's colours on when
+it checks for a TTY (`--color=always`, `FORCE_COLOR=1`), since a pipe reports none.
+
+For a one-shot result rather than a stream, `Text.fromAnsi(wholeOutput)` is the same
+parser run once, and `text(...)` shows the result.
+
 ## Sort, filter, and select tabular data
 
 > This recipe shows a `DataTable` over rows that do not change. When the rows are

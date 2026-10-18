@@ -124,6 +124,7 @@ export io.worxbend.tui.macros.{Codec, DerivedField, FieldValidation, FormSpec}
 // writes a widget, not to whoever writes a view. Widget authors already import `io.worxbend.tui.core`.
 export io.worxbend.tui.core.{
   Alignment,
+  AnsiParser,
   Buffer,
   Cell,
   Color,
@@ -207,6 +208,18 @@ val Borders: io.worxbend.tui.widgets.Borders.type = io.worxbend.tui.widgets.Bord
   */
 extension (inline sc: StringContext)
   inline def key(inline args: Any*): KeyEvent = ${ io.worxbend.tui.core.KeySpecLiteral.expand('sc, 'args) }
+
+/** `markup"[bold red]error[/] in [link=$url]$file[/]"` — a [[Text]] written as a literal with inline style tags, the
+  * tag names and their nesting checked by the compiler.
+  *
+  * Forwarded here for the same mechanical reason as [[key]]: an extension method on `StringContext` cannot be
+  * re-exported, and a styled message is written in every app's views. The body is the same macro call `tui-core`
+  * declares, so there is one implementation and not two. Show the result with `text(markup"…")`. The tag vocabulary is
+  * documented on the `markup` interpolator in `io.worxbend.tui.core`; an interpolated value is always text, never
+  * markup.
+  */
+extension (inline sc: StringContext)
+  inline def markup(inline args: Any*): Text = ${ io.worxbend.tui.core.MarkupLiteral.expand('sc, 'args) }
 
 // `AsyncErrorHandler` and `QueuedTaskFailures` are here for the same reason as everything else in this block: they are
 // named by signatures this package already exports. `Async.run`'s `onError` parameter takes an `AsyncErrorHandler`, and
