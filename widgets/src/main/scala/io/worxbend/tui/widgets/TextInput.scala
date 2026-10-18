@@ -19,7 +19,8 @@ import io.worxbend.tui.core.{Buffer, CharWidth, Position, Rect, StatefulWidget, 
   * happens to repaint. Pair the mutation with a `Signal` write, or call `TuiApp.requestRedraw()` from the same
   * render-thread callback that made it.
   */
-final class TextInputState(initial: String = "") extends EditBuffer(initial, multiline = false):
+final class TextInputState(initial: String = "", killRing: KillRing = KillRing())
+    extends EditBuffer(initial, multiline = false, killRing):
 
   private[widgets] var scrollCluster: Int = 0
 
@@ -36,7 +37,8 @@ final class TextInputState(initial: String = "") extends EditBuffer(initial, mul
 /** A single-line text input with horizontal scrolling and an optional visible cursor.
   *
   * The cursor is drawn by styling the cluster under it (or a trailing space) with `cursorStyle` — pass
-  * `showCursor = false` for unfocused inputs so only the focused field shows a cursor.
+  * `showCursor = false` for unfocused inputs so only the focused field shows a cursor. A selection paints in
+  * `selectionStyle`.
   */
 final case class TextInput(
     placeholder: String = "",
@@ -44,6 +46,7 @@ final case class TextInput(
     style: Style = Style.Default,
     cursorStyle: Style = Style.Default.reverse,
     placeholderStyle: Style = Style.Default.dim,
+    selectionStyle: Style = Style.Default.reverse,
 ) extends StatefulWidget[TextInputState]:
 
   def render(area: Rect, buffer: Buffer, state: TextInputState): Unit =
@@ -103,4 +106,6 @@ final case class TextInput(
       style = style,
       cursorStyle = cursorStyle,
       paintEndCell = true,
+      highlights =
+        state.selection.toList.map((from, to) => ClusterRow.Highlight(from.column, to.column, selectionStyle)),
     )

@@ -33,6 +33,60 @@ extension [E <: Element](element: E)
   def caretStyle(style: CaretStyle): element.Self =
     element.withProps(element.props.copy(caretStyle = style))
 
+/** The editing chords every free-text node shares, over the [[w.EditBuffer]] both editor states are:
+  *
+  *   - `Shift` + arrows / `Home` / `End` select; `Ctrl+Left`/`Ctrl+Right` (and `Alt+B`/`Alt+F`) move by word, with
+  *     `Shift` selecting; `Ctrl+Up`/`Ctrl+Down` move by paragraph; `Ctrl+A` selects all
+  *   - `Ctrl+C` / `Ctrl+X` / `Ctrl+V` copy, cut and paste through the app clipboard ([[AppServices.clipboard]]); with
+  *     nothing selected `Ctrl+C` and `Ctrl+X` are left to bubble, so `Ctrl+C` still quits
+  *   - `Ctrl+K` / `Ctrl+U` kill to the end / start of the line, `Ctrl+W` and `Alt+Backspace` kill the word before the
+  *     caret, `Alt+D` the word after it; `Ctrl+Y` yanks the newest kill and `Alt+Y` cycles it through the ring
+  *   - `Ctrl+Z` undoes, `Ctrl+Shift+Z` redoes
+  *
+  * Answers whether the event was one of them.
+  */
+private def editingChords(state: w.EditBuffer)(event: KeyEvent): Boolean =
+  val mods                        = event.modifiers
+  val select                      = mods.hasAny(KeyModifiers.Shift)
+  val ctrl                        = mods.hasAny(KeyModifiers.Ctrl)
+  val alt                         = mods.hasAny(KeyModifiers.Alt)
+  def did(body: => Unit): Boolean =
+    body
+    true
+  event.code match
+    case KeyCode.Left if ctrl            => did(state.moveWordLeft(select))
+    case KeyCode.Right if ctrl           => did(state.moveWordRight(select))
+    case KeyCode.Up if ctrl              => did(state.moveParagraphUp(select))
+    case KeyCode.Down if ctrl            => did(state.moveParagraphDown(select))
+    case KeyCode.Left if select          => did(state.moveLeft(select = true))
+    case KeyCode.Right if select         => did(state.moveRight(select = true))
+    case KeyCode.Up if select            => did(state.moveUp(select = true))
+    case KeyCode.Down if select          => did(state.moveDown(select = true))
+    case KeyCode.Home if select          => did(state.moveHome(select = true))
+    case KeyCode.End if select           => did(state.moveEnd(select = true))
+    case KeyCode.Backspace if alt        => did(state.deleteWordBackward())
+    case KeyCode.Char(c) if ctrl && !alt =>
+      Character.toLowerCase(c) match
+        case 'a'           => did(state.selectAll())
+        case 'c'           => state.selection.isDefined && did(state.copy(AppClipboard.current))
+        case 'x'           => state.selection.isDefined && did(state.cut(AppClipboard.current))
+        case 'v'           => did(state.paste(AppClipboard.current))
+        case 'k'           => did(state.killToEndOfLine())
+        case 'u'           => did(state.killToStartOfLine())
+        case 'w'           => did(state.deleteWordBackward())
+        case 'y'           => did(state.yank())
+        case 'z' if select => did(state.redo())
+        case 'z'           => did(state.undo())
+        case _             => false
+    case KeyCode.Char(c) if alt && !ctrl =>
+      Character.toLowerCase(c) match
+        case 'b' => did(state.moveWordLeft(select))
+        case 'f' => did(state.moveWordRight(select))
+        case 'd' => did(state.deleteWordForward())
+        case 'y' => did(state.yankPop())
+        case _   => false
+    case _                               => false
+
 /** Single-line text input. Editing state (value + cursor) is app-owned; editing keys are handled by the built-in
   * handler while focused, and any consumed key triggers a redraw.
   */
@@ -64,7 +118,7 @@ final case class InputElement(
       case KeyCode.Char(c) if isPlainTyping(event) =>
         state.insert(Character.toString(c))
         true
-      case _                                       => cursorKeys(state)(event)
+      case _                                       => editingChords(state)(event) || cursorKeys(state)(event)
 
 /** A text input with a live suggestion dropdown: typing filters `suggestions` (subsequence match), Up/Down move the
   * highlight, Enter accepts it into the input and fires `onAccept`.
@@ -268,8 +322,9 @@ final case class TemplateInputElement(
     slotKinds.exists((marker, accepts) => slot == marker && accepts(codePoint))
 
 /** Multi-line editor element. While focused it consumes printable characters, Enter (newline), Backspace, Delete,
-  * arrows, Home/End, Ctrl+Z (undo) and Ctrl+Y (redo) — Tab stays free for focus traversal. A bracketed paste lands as
-  * one edit, with carriage returns stripped.
+  * arrows, Home/End and the shared editing chords ([[editingChords]]: selection, word motion, clipboard, kill ring,
+  * `Ctrl+Z` undo, `Ctrl+Shift+Z` redo) — Tab stays free for focus traversal. A bracketed paste lands as one edit, with
+  * carriage returns stripped.
   */
 final case class TextAreaElement(
     state: w.TextAreaState,
@@ -292,25 +347,23 @@ final case class TextAreaElement(
   private[dsl] def withProps(props: ElementProps): TextAreaElement           = copy(props = props)
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
     Some(
-      keys {
-        case KeyEvent(KeyCode.Char('z'), modifiers) if modifiers.hasAny(KeyModifiers.Ctrl) => state.undo()
-        case KeyEvent(KeyCode.Char('y'), modifiers) if modifiers.hasAny(KeyModifiers.Ctrl) => state.redo()
-        case event @ KeyEvent(KeyCode.Char(c), _) if isPlainTyping(event)                  =>
+      (editingChords(state)(_)).orElse(keys {
+        case event @ KeyEvent(KeyCode.Char(c), _) if isPlainTyping(event) =>
           state.insert(Character.toString(c))
-        case KeyEvent(KeyCode.Enter, _)                                                    =>
+        case KeyEvent(KeyCode.Enter, _)                                   =>
           state.newline()
-        case KeyEvent(KeyCode.Backspace, _)                                                =>
+        case KeyEvent(KeyCode.Backspace, _)                               =>
           state.backspace()
-        case KeyEvent(KeyCode.Delete, _)                                                   => state.delete()
-        case KeyEvent(KeyCode.Left, _)                                                     =>
+        case KeyEvent(KeyCode.Delete, _)                                  => state.delete()
+        case KeyEvent(KeyCode.Left, _)                                    =>
           state.moveLeft()
-        case KeyEvent(KeyCode.Right, _)                                                    =>
+        case KeyEvent(KeyCode.Right, _)                                   =>
           state.moveRight()
-        case KeyEvent(KeyCode.Up, _)                                                       => state.moveUp()
-        case KeyEvent(KeyCode.Down, _)                                                     =>
+        case KeyEvent(KeyCode.Up, _)                                      => state.moveUp()
+        case KeyEvent(KeyCode.Down, _)                                    =>
           state.moveDown()
-        case KeyEvent(KeyCode.Home, _)                                                     =>
+        case KeyEvent(KeyCode.Home, _)                                    =>
           state.moveHome()
-        case KeyEvent(KeyCode.End, _)                                                      => state.moveEnd()
-      }
+        case KeyEvent(KeyCode.End, _)                                     => state.moveEnd()
+      })
     )

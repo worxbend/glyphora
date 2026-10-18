@@ -18,7 +18,8 @@ import io.worxbend.tui.core.{Buffer, Position, Rect, StatefulWidget, Style}
   * happens to repaint. Pair the mutation with a `Signal` write, or call `TuiApp.requestRedraw()` from the same
   * render-thread callback that made it.
   */
-final class TextAreaState(initial: String = "") extends EditBuffer(initial, multiline = true):
+final class TextAreaState(initial: String = "", killRing: KillRing = KillRing())
+    extends EditBuffer(initial, multiline = true, killRing):
 
   private[widgets] var scrollRow: Int = 0
 
