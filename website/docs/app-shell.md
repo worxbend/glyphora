@@ -1261,24 +1261,17 @@ throwable is rethrown only after cleanup, with later failures suppressed on it.
 
 ### Ask for a frame
 
-A `Signal` write schedules its own redraw, and an event handler that returns `true`
-already asks for one. Neither covers state the reactive layer cannot see: the
-caller-owned widget states (`ListState`, `TextInputState`, `DataTableState`, `LogState`)
-are plain mutable objects, so
+A `Signal` write schedules its own redraw, an event handler that returns `true`
+already asks for one, and so does a mutation of a caller-owned widget state painted on
+the last frame: `ListState`, `TextInputState`, `DataTableState`, `LogState` and the rest
+are `Versioned`, and the app compares their versions on every loop iteration, so
 
 ```scala
-Async.run(fetchRows())(rows => tableState.rows = rows)
+Async.run(fetchLines())(lines => lines.foreach(logState.append))
 ```
 
-updates the table correctly and still leaves the previous frame on screen until the
-user happens to press a key. `requestRedraw()` asks for the frame that mutation earned:
-
-```scala
-Async.run(fetchRows()) { rows =>
-  tableState.rows = rows
-  requestRedraw()
-}
-```
+is on screen without anything else. `requestRedraw()` is for what none of these see —
+a plain field of your own that the view reads, or a `LogRing` filled by another thread.
 
 The full shell in action is
 [`examples/showcase`](https://github.com/worxbend/glyphora/tree/main/examples/showcase).
@@ -1331,6 +1324,13 @@ instance and are not synchronised. And a focus change takes effect on the *next*
 because events are routed against the tree the last `render` painted — which is the tree
 the person at the terminal is looking at. Any loop that redraws after handling an event
 never notices.
+
+A widget state written between frames — `state.insert(...)` from a continuation, not an
+event — is noticed by `host.pollStates()`: it answers `true` when a state painted on the
+last frame has been mutated since, and invalidates the view through its `ReactiveScope`
+the way a signal write would. Ask it once per loop iteration, after running queued work
+and before deciding whether to draw. Lifetime hooks start their effects after each
+`render`'s paint; `host.reset()` cancels them.
 
 `TuiApp` itself uses the same view session: hooks, responsive resolution, focus decoration
 and deferred portal painting run exactly once per frame in both hosts. `useState` and
