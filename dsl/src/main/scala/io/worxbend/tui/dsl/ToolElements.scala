@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{KeyCode, KeyEvent, KeyModifiers, MouseEventKind, Style, Widget}
+import io.worxbend.tui.core.{Color, KeyCode, KeyEvent, KeyModifiers, MouseEventKind, Style, Widget}
 import io.worxbend.tui.widgets as w
 
 /** A prototyping stand-in: a dashed box with `label` centred in it and the size the layout actually gave it written
@@ -133,3 +133,46 @@ final case class RangeSliderElement(
 
   /** Columns the end caps and one thumb take off the draggable track. */
   private val ChromeWidth = 3
+
+/** A 256-colour palette grid over a caller-owned [[w.ColorPickerState]]. While focused, the arrows move the cursor
+  * swatch and Enter or Space chooses it, recording it in `state.chosen` and handing the `Color.Indexed` to `onSelect`.
+  * A click on a swatch moves the cursor there and chooses it. Claims the 36×17 box the grid and its caption measure.
+  */
+final case class ColorPickerElement(
+    state: w.ColorPickerState,
+    onSelect: Color => Unit,
+    props: ElementProps = ElementProps(focusable = true),
+) extends Element:
+  type Self = ColorPickerElement
+  override def debugName: String                                             = "colorPicker"
+  private def picker: w.ColorPicker                                          = w.ColorPicker(style = props.style)
+  def widget: Widget                                                         =
+    val current = picker
+    (area, buffer) => current.render(area, buffer, state)
+  private[dsl] def withProps(props: ElementProps): ColorPickerElement        = copy(props = props)
+  private[dsl] override def claim: SizeClaim                                 =
+    (picker.widthAt(0), picker.heightAt(0)) match
+      case (Some(width), Some(height)) => SizeClaim.box(width, height)
+      case _                           => SizeClaim.Fill
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
+    Some(
+      keys {
+        case KeyEvent(KeyCode.Left, _)                      => state.moveLeft()
+        case KeyEvent(KeyCode.Right, _)                     => state.moveRight()
+        case KeyEvent(KeyCode.Up, _)                        => state.moveUp()
+        case KeyEvent(KeyCode.Down, _)                      => state.moveDown()
+        case KeyEvent(KeyCode.Enter | KeyCode.Char(' '), _) => onSelect(state.choose())
+      }
+    )
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
+    Some { (event, area) =>
+      val row    = event.position.y - area.y
+      val column = (event.position.x - area.x) / 2
+      val hit    = w.ColorPicker.Grid.lift(row).flatMap(_.lift(column)).filter(_ => event.position.x >= area.x)
+      (event.kind, hit) match
+        case (MouseEventKind.Down, Some(index)) =>
+          state.moveTo(index)
+          onSelect(state.choose())
+          true
+        case _                                  => false
+    }

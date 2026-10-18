@@ -2210,6 +2210,25 @@ to the upper one and Shift+Tab back; Tab from the upper thumb is not consumed, s
 moves on to the next control and nobody gets stuck inside the slider. A press on the
 track moves whichever thumb is nearer, and dragging keeps moving it.
 
+### Choosing a colour
+
+`colorPicker(state, onSelect)` lays the 256 xterm colours out as a grid — the
+sixteen system colours in two rows, the 6×6×6 cube in twelve rows of eighteen (two
+rows per red level), the 24-step grey ramp in two rows — each swatch two cells of its
+own background, with a caption naming the cursor's index and approximate RGB value:
+
+```scala
+private val accent = ColorPickerState(initial = 33)
+
+colorPicker(accent, color => theme.set(Theme.Dark.withAccent(Style.Default.withFg(color))))
+```
+
+Arrows move the `[]` cursor, Enter or a click chooses. The value is a
+`Color.Indexed`, so it draws exactly as the swatch looked on any 256-colour
+terminal; `state.chosen` keeps it for the app to read. The grid measures 36×17
+(`ColorPicker(showCaption = false)` drops the caption row) and the node claims exactly
+that box.
+
 ## Drop to a raw Widget
 
 The DSL is not a separate renderer. Any core `Widget` can become a leaf:

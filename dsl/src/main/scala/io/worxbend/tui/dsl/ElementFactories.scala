@@ -1010,3 +1010,13 @@ private[dsl] trait ElementFactories:
     */
   def rangeSlider(state: w.RangeSliderState, onChange: (Int, Int) => Unit = (_, _) => ()): RangeSliderElement =
     RangeSliderElement(state, onChange)
+
+  /** A grid of the 256 xterm colours — the system sixteen, the 6×6×6 cube and the grey ramp — with a caption naming the
+    * cursor's index and RGB value. Arrows move, Enter (or a click) chooses: the `Color.Indexed` lands in `state.chosen`
+    * and in `onSelect`. See [[w.ColorPicker]].
+    */
+  def colorPicker(
+      state: w.ColorPickerState,
+      onSelect: io.worxbend.tui.core.Color => Unit = _ => (),
+  ): ColorPickerElement =
+    ColorPickerElement(state, onSelect)

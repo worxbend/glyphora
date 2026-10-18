@@ -12,7 +12,7 @@ import java.time.{LocalDate, LocalTime}
 final class ToolElementsPilotSpec extends AnyFunSuite with PilotFixture:
 
   private def startApp(view0: ReactiveScope ?=> Element): Pilot =
-    val backend = HeadlessBackend(Size(40, 10))
+    val backend = HeadlessBackend(Size(40, 20))
     val testApp = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = view0
@@ -59,4 +59,14 @@ final class ToolElementsPilotSpec extends AnyFunSuite with PilotFixture:
     assert(state.high == 70)
     pilot.pressKey(KeyCode.Tab).typeText("x").waitForIdle()
     assert(other.value == "x")
+    quitApp(pilot)
+
+  test("colorPicker: walking to the bright-red swatch and pressing Enter emits Color.Indexed(196)"):
+    val state  = ColorPickerState()
+    var chosen = Option.empty[Color]
+    val pilot  = startApp(colorPicker(state, color => chosen = Some(color)))
+    (1 to 12).foreach(_ => pilot.pressKey(KeyCode.Down))
+    pilot.pressKey(KeyCode.Enter).waitForIdle()
+    assert(chosen.contains(Color.Indexed(196)))
+    assert(pilot.screenText.contains("196  #ff0000"))
     quitApp(pilot)
