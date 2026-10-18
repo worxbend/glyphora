@@ -37,6 +37,10 @@ private[dsl] trait DecoratingElement extends Element:
   private[dsl] override def intrinsicHeight(width: Int): Option[Int] =
     constrainedHeight(inner.intrinsicHeight(width))
 
+  /** @see [[intrinsicHeight]] */
+  private[dsl] override def intrinsicWidth(height: Int): Option[Int] =
+    constrainedWidth(inner.intrinsicWidth(height))
+
 /** Wraps a focusable element during the focus pass so its rendered area is recorded for click-to-focus hit-testing. */
 private[dsl] final case class TrackedElement(inner: Element, index: Int, tracker: FocusTracker)
     extends DecoratingElement:

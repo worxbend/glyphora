@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Constraint, GlyphSupport, KeyEvent, MouseEvent, Style}
+import io.worxbend.tui.core.{CrossAlign, Constraint, GlyphSupport, KeyEvent, MouseEvent, Style}
 import io.worxbend.tui.terminal.PointerShape
 
 /** The focus bookkeeping the framework writes and an application only reads.
@@ -46,6 +46,10 @@ final case class FocusState private[dsl] (
   * `pointerShape` is the mouse pointer `.pointer(shape)` asked for over this element — an *explicit* request, which
   * wins over the default an interactive node declares through `Element.pointerShape` and, unlike that default, also
   * covers the node's children. `None` means "whatever the node itself says".
+  *
+  * `alignSelf` is where `.alignSelf(...)` places this element across its container's axis — see
+  * [[io.worxbend.tui.core.CrossAlign]]; `None` takes the container's own alignment. `ensureVisible` is what
+  * `.ensureVisible` sets: an enclosing `scrollView` scrolls to keep this element on screen.
   */
 final case class ElementProps(
     style: Style = Style.Default,
@@ -61,6 +65,8 @@ final case class ElementProps(
     glyphs: GlyphSupport = GlyphSupport.Full,
     caretStyle: CaretStyle = CaretStyle.Both,
     pointerShape: Option[PointerShape] = None,
+    alignSelf: Option[CrossAlign] = None,
+    ensureVisible: Boolean = false,
 ):
 
   /** Whether this element is the one the focus pass marked — where keystrokes go this frame. */

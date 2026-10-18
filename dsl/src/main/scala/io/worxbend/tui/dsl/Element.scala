@@ -120,10 +120,34 @@ trait Element:
     * measures as unmeasurable. Only what to do with *no* constraint differs per node, and that is `fallback`.
     */
   private[dsl] final def constrainedHeight(fallback: => Option[Int]): Option[Int] =
-    props.constraint match
-      case Some(Constraint.Length(cells)) => Some(cells)
-      case Some(_)                        => None
-      case None                           => fallback
+    Element.constrainedSize(props.constraint, fallback)
+
+  /** The columns this element needs at `height`, when knowable — what a `flow` lays its children out by, what an
+    * `.auto` child of a `row` is sized to, and what `.alignSelf` centres by. `None` means "unmeasurable", never "zero
+    * columns".
+    *
+    * The same three sources [[intrinsicHeight]] consults, one axis over: an explicit `.length(n)` (see
+    * [[constrainedWidth]]), then the widget's own [[Measured.widthAt]] — which for text is its display width through
+    * `CharWidth` — then this node's default [[claim]]. Containers override with the arithmetic over their children.
+    */
+  private[dsl] def intrinsicWidth(height: Int): Option[Int] =
+    constrainedWidth(measuredWidth(height).orElse(claimedWidth))
+
+  /** [[constrainedHeight]] for the horizontal axis: the same policy, so a node answers both questions alike. */
+  private[dsl] final def constrainedWidth(fallback: => Option[Int]): Option[Int] =
+    Element.constrainedSize(props.constraint, fallback)
+
+  /** What the widget says about its own width, or nothing when it cannot say. */
+  private def measuredWidth(height: Int): Option[Int] =
+    widget match
+      case measured: Measured => measured.widthAt(height)
+      case _                  => None
+
+  /** The columns this node's default claim fixes, when the claim fixes one at all. */
+  private def claimedWidth: Option[Int] =
+    claim.horizontal match
+      case Constraint.Length(cells) => Some(cells)
+      case _                        => None
 
   /** What the widget says about its own content, or nothing when it cannot say. */
   private def measuredHeight(width: Int): Option[Int] =
@@ -138,10 +162,27 @@ trait Element:
       case _                        => None
 
   private[dsl] final def layoutItem(direction: Direction): w.LayoutItem =
-    w.LayoutItem(props.constraint.getOrElse(claim.along(direction)), widget)
+    w.LayoutItem(props.constraint.getOrElse(claim.along(direction)), widget, props.alignSelf)
 
 /** Every element factory, in one place: `Element.text(...)`, `Element.panel(...)`, and so on. The methods themselves
   * live in [[ElementFactories]] — see there for why — and the package re-exports all of them, so an application that
   * wrote `import io.worxbend.tui.dsl.*` just writes `text(...)`.
   */
-object Element extends ElementFactories
+object Element extends ElementFactories:
+
+  /** The measurement policy behind [[Element.constrainedHeight]] and [[Element.constrainedWidth]].
+    *
+    * `.length(n)` is the caller's own answer. `.auto` asks for the content's size, so it measures as the content does
+    * (`fallback`). A `Bounded` constraint measures as its base, clamped into its bounds — `.auto.maxSize(30)` is the
+    * content's size but no more than 30, and `.fill.minSize(5)` stays unmeasurable because its base is. Every other
+    * explicit constraint is the container's decision and measures as unmeasurable. No constraint at all is `fallback`.
+    */
+  private[dsl] def constrainedSize(constraint: Option[Constraint], fallback: => Option[Int]): Option[Int] =
+    constraint match
+      case Some(Constraint.Length(cells))           => Some(cells)
+      case Some(Constraint.Auto)                    => fallback
+      case Some(Constraint.Bounded(min, max, base)) =>
+        val floor = math.max(0, min)
+        constrainedSize(Some(base), fallback).map(size => math.max(floor, math.min(math.max(floor, max), size)))
+      case Some(_)                                  => None
+      case None                                     => fallback

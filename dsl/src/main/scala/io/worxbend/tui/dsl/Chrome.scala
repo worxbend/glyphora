@@ -173,6 +173,9 @@ final case class DismissibleOverlayElement(
   private[dsl] override def intrinsicHeight(width: Int): Option[Int] =
     constrainedHeight(content.intrinsicHeight(width))
 
+  private[dsl] override def intrinsicWidth(height: Int): Option[Int] =
+    constrainedWidth(content.intrinsicWidth(height))
+
   /** With no bounds recorded there is nothing to compare the press against, so every press that reached this node —
     * which only happens when no control of the dialog took it — is treated as outside, the pre-recording behaviour.
     */

@@ -65,6 +65,10 @@ final case class ResponsiveElement(
   private[dsl] override def intrinsicHeight(width: Int): Option[Int] =
     constrainedHeight(resolved.flatMap(_.intrinsicHeight(width)))
 
+  /** @see [[intrinsicHeight]] */
+  private[dsl] override def intrinsicWidth(height: Int): Option[Int] =
+    constrainedWidth(resolved.flatMap(_.intrinsicWidth(height)))
+
 object ResponsiveElement:
   /** Capture the declaration's hook scope once. Case-class copies retain the already captured builder. */
   def apply(

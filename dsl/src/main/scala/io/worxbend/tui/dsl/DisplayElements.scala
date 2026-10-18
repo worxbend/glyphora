@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Alignment, CharWidth, Constraint, Flex, Line, Span, Style, Text, Widget}
+import io.worxbend.tui.core.{Alignment, Constraint, Flex, Line, Span, Style, Text, Widget}
 import io.worxbend.tui.runtime.{LogLevel, LogRecord, LogRing}
 import io.worxbend.tui.widgets.{TableCell, TableRow}
 import io.worxbend.tui.widgets as w
@@ -61,16 +61,14 @@ final case class TextElement(
 
   private[dsl] def withProps(props: ElementProps): TextElement = copy(props = props)
 
-  /** A clipping paragraph claims the exact box its unwrapped lines measure, in display columns. A wrapping one claims
-    * the container's full width instead: its height is a function of the width it ends up with, which the layout solver
-    * has not decided yet, so the rows are left to `intrinsicHeight` (which asks the paragraph itself, through
-    * `Measured`, once a width exists).
+  /** A clipping paragraph claims the exact box its unwrapped lines measure, in display columns — which is what its
+    * paragraph answers through `Measured`, so the claim asks it rather than measuring the lines a second time. A
+    * wrapping one claims the container's full width instead: its height is a function of the width it ends up with,
+    * which the layout solver has not decided yet, so the rows are left to `intrinsicHeight` (which asks the paragraph
+    * itself, through `Measured`, once a width exists).
     */
   private[dsl] override def claim: SizeClaim =
-    if overflow.wraps then SizeClaim.Fill
-    else
-      val lines = Text.splitLines(content)
-      SizeClaim.box(lines.map(CharWidth.of).maxOption.getOrElse(0), lines.length)
+    if overflow.wraps then SizeClaim.Fill else SizeClaim.Measured
 
 /** One terminal row of differently-styled runs — the mixed-style counterpart of [[TextElement]].
   *
@@ -107,8 +105,10 @@ final case class LineElement(spans: Seq[Span], align: Option[Alignment] = None, 
   /** This row pinned to the right edge, which is what a column of numbers wants. */
   def rightAligned: LineElement = aligned(Alignment.Right)
 
-  /** Exactly one row, and exactly as wide as the spans measure — in display columns, via `CharWidth`. */
-  private[dsl] override def claim: SizeClaim = SizeClaim.box(spans.map(_.width).sum, 1)
+  /** Exactly one row, and exactly as wide as the spans measure — in display columns, via `CharWidth` — which is the box
+    * its one-line paragraph answers through `Measured`.
+    */
+  private[dsl] override def claim: SizeClaim = SizeClaim.Measured
 
 /** A one-row filled bar with a caption over it; the caption defaults to the percentage.
   *
@@ -191,11 +191,10 @@ final case class BadgeElement(
 
   private[dsl] def withProps(props: ElementProps): BadgeElement = copy(props = props)
 
-  /** One row, and exactly as wide as the badge paints itself — asking the widget is what keeps the claimed box from
-    * drifting away from the drawn one.
+  /** One row, and exactly as wide as the badge paints itself — the widget's own `Measured` box, so the claimed box
+    * cannot drift away from the drawn one.
     */
-  private[dsl] override def claim: SizeClaim =
-    w.Badge(label, variant).widthAt(1).fold(SizeClaim.OneRow)(width => SizeClaim.box(width, 1))
+  private[dsl] override def claim: SizeClaim = SizeClaim.Measured
 
 /** A one-row dense line chart of recent values. */
 final case class SparklineElement(

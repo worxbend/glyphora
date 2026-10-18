@@ -37,8 +37,9 @@ final class TextElementSpec extends AnyFunSuite:
     assert(lines(text(accented).wrapped, 2, 2) == Seq("aé", "b"))
 
   test("a clipping text claims the exact box its longest line measures"):
-    val claim = text("ab\ncdef").claim
-    assert(claim.horizontal == Constraint.Length(4) && claim.vertical == Constraint.Length(2))
+    val element = text("ab\ncdef")
+    assert(element.claim == SizeClaim.Measured)
+    assert(element.intrinsicWidth(2).contains(4) && element.intrinsicHeight(4).contains(2))
 
   test("a wrapping text claims the container's width rather than its unwrapped one"):
     val claim = text("a very long single line of prose").wrapped.claim
