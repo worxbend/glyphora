@@ -228,12 +228,14 @@ final class ViewportCostSpec extends AnyFunSuite:
     assert(state.offset == 9990, "the window still lands where ScrollWindow.offsetFor puts it")
     assert(trimmedLines(buffer).last == "> item 9999", "the same window renders, selection included")
 
-  test("ListView still materializes per-item heights when a multi-row item needs them"):
-    val data  = Vector.tabulate(100)(i =>
+  test("ListView scrolls a list with a multi-row item by rows, measured in the same single walk"):
+    val data   = Vector.tabulate(100)(i =>
       if i == 50 then Text(Seq(Line.raw("tall"), Line.raw("tall2"))) else Line.raw(s"item $i")
     )
-    val items = CountingSeq(data)
-    val state = ListState(selected = Some(50))
-    ListView(items).render(Rect(0, 0, 20, 3), Buffer(Rect(0, 0, 20, 3)), state)
-    assert(items.mapped == 1, "the row-counting branch must build the heights it scrolls by")
+    val items  = CountingSeq(data)
+    val state  = ListState(selected = Some(50))
+    val buffer = Buffer(Rect(0, 0, 20, 3))
+    ListView(items).render(Rect(0, 0, 20, 3), buffer, state)
+    assert(items.mapped == 0, "the heights are measured in the one walk that also settles uniformity, not by a map")
     assert(state.offset == 49, "the tall item's last row is what the window scrolls to show")
+    assert(trimmedLines(buffer) == Seq("  item 49", "> tall", "  tall2"))

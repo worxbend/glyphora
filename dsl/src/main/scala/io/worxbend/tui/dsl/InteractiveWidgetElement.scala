@@ -26,7 +26,8 @@ final case class InteractiveWidgetElement[S](
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = InteractiveWidgetElement[S]
-  def widget: Widget = build(state, InteractiveContext(style, props.focused, props.focusStyle))
+  override def debugName: String = "interactiveWidget"
+  def widget: Widget             = build(state, InteractiveContext(style, props.focused, props.focusStyle))
   private[dsl] def withProps(props: ElementProps): InteractiveWidgetElement[S] = copy(props = props)
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]       = Some(key => handlers.onKey(state, key))
   private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler]   =

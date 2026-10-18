@@ -115,3 +115,26 @@ final class DropdownSpec extends AnyFunSuite:
     state.openAt(0)
     assert(dropdown.heightAt(20).contains(1))
     assert(dropdown.openHeight == 6) // three options, two borders, and the closed row
+
+  test("the popup alone can be drawn at any rectangle, for a host that floats it over the frame"):
+    // the DSL node floats the list through a portal rather than stacking it under the row, so the list has to be
+    // drawable on its own — here three rows below where the closed row would be, with a blank row in between
+    val state  = DropdownState()
+    state.openAt(2)
+    val buffer = Buffer(Rect(0, 0, 20, 8))
+    dropdown.renderPopup(Rect(0, 2, 20, 5), buffer, state)
+    val lines  = trimmedLines(buffer)
+    assert(lines.head.isEmpty && lines(1).isEmpty) // nothing drawn above the popup: no closed row, no border
+    assert(lines(2).startsWith("╭") && lines(2).endsWith("╮"))
+    assert(lines(3).contains("apple"))
+    assert(lines(5).contains("cherry"))
+    assert(lines(6).startsWith("╰"))
+    assert(buffer.get(2, 5).style.modifiers.hasAny(io.worxbend.tui.core.Modifiers.Reverse)) // the highlight on cherry
+
+  test("the popup draws nothing for an empty option list or an empty area"):
+    val state  = DropdownState()
+    state.openAt(0)
+    val buffer = Buffer(Rect(0, 0, 20, 8))
+    Dropdown(Seq.empty, 0).renderPopup(Rect(0, 1, 20, 5), buffer, state)
+    dropdown.renderPopup(Rect(0, 1, 0, 5), buffer, state)
+    assert(trimmedLines(buffer).forall(_.isEmpty))

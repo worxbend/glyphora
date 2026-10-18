@@ -60,6 +60,20 @@ trait Element:
   /** Framework paste behavior: how a bracketed paste lands in this element while focused. */
   private[dsl] def builtinPasteHandler: Option[BuiltinPasteHandler] = None
 
+  /** Whether this node paints nothing of its own and only arranges, spaces or stacks its children — a `row`, a
+    * `column`, a `spacer`, a `layers`. The click-outside backdrop uses it to tell a press on a dialog's border or
+    * caption (drawn by something) from a press on the blank cells a placement row leaves around the dialog (drawn by
+    * nothing): see `dismissibleOverlay`. Every node that draws a glyph, a border or a fill keeps the default.
+    */
+  private[dsl] def layoutOnly: Boolean = false
+
+  /** The factory-style name of this node — `panel`, `button`, `scrollView` — for the element-tree snapshot and any
+    * other diagnostic that has to say what a node *is* without reflecting over its class. Every node type declares its
+    * own; a decorator answers with the name of the node it wraps. The default is only there so a node added without one
+    * still renders — `ElementTreeSnapshotSpec` fails the build until the override is written.
+    */
+  def debugName: String = "element"
+
   /** The space this element claims inside a container when the user set nothing explicit — one-row widgets claim one
     * row vertically but their natural width (or a fill) horizontally.
     */

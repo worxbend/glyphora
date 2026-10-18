@@ -459,25 +459,31 @@ the key bindings, so an element that wants `Esc` for itself still gets it and th
 stays open.
 
 A click is resolved against the topmost thing under the pointer, so a press on any of the
-dialog's own controls goes to that control and the dialog stays open. "Outside" here means
-"on no control of the dialog", which is not quite the same as "outside its frame": a press
-on a plain border or on a caption lands on no control, so it counts as outside. A dialog
-that wants its whole frame to be inert says so in one line, by consuming presses at its
-root:
+dialog's own controls goes to that control and the dialog stays open. A press that lands
+on no control is then judged by where the frame painted things: the app records the
+painted rect of every node while a click-outside modal is up, and a press on any node of
+the dialog that *draws* something — its panel border, its title, a label inside it — is
+inside the dialog and is absorbed, while a press that lands only on nodes that arrange
+space and draw nothing — the `row`, `column` and `spacer`s `centered(...)` places the
+dialog with, a dimmed `backdrop` — is outside it and closes it. "Outside" therefore means
+what the user sees: outside the dialog's frame, border included.
+
+A dialog made of nodes that own blank cells without drawing them — a borderless `column`
+of labels — can still absorb every press that lands on it by consuming presses at its
+root, exactly as before:
 
 ```scala
-panel("Really?")(body).onMouseEvent(_ => true)
+column(text("Really?"), button("OK")(ok())).onMouseEvent(_ => true)
 ```
-
-A geometric test is deliberately not attempted, because nothing in the tree records where
-a dialog was *placed* — placement is spacers around a sized node — so the rectangle would
-have to be guessed, and a wrong guess closes a dialog the user is still using.
 
 The layer underneath a modal stays inert throughout, as it always has: it receives no
 key and no mouse event, so nothing down there reacts to the click that dismissed the
 dialog on top of it. `dismissibleOverlay(content)(onOutsidePress)` is the same backdrop as
 a plain element builder, for a dialog an application layers itself rather than pushing as
-a screen.
+a screen; its presence in the tree is what switches bounds recording on, so the very first
+frame of a hand-layered overlay on a real terminal still judges by "on no control" until
+the next frame is painted. See [Mouse](mouse.md#a-click-outside-a-dialog) for the delivery
+rules this rests on.
 
 ### Keys that belong to one screen
 

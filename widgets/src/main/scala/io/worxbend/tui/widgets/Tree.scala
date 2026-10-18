@@ -7,19 +7,30 @@ import scala.collection.mutable
 /** A node of a [[Tree]]: a label plus child nodes. */
 final case class TreeNode(label: String, children: Seq[TreeNode] = Seq.empty)
 
-/** Caller-owned tree state: which branch paths are expanded, the selected path, and the scroll offset. Paths address
-  * nodes by child index at each level (`Seq(1, 0)` = second root's first child).
+/** Caller-owned tree state: which branches are expanded, the selected node, and the scroll offset.
+  *
+  * `K` is how the state names a node. The positional state `TreeState()` names it by *path* — the child index at each
+  * level, `Seq(1, 0)` for the second root's first child — which is right for a tree that never changes shape and wrong
+  * for one that does: refresh the nodes with a reordered copy and the same path points at a different node, so the
+  * reader's expansion and highlight land on strangers. A keyed state, `TreeState.keyed(_.label)` or
+  * [[TreeState.byLabelPath]], names a node by something the node itself carries, so expansion and selection follow the
+  * node across a refresh the way a [[DataTableState]] selection follows its [[KeyedRow]] key. Keys are compared with
+  * `==` and must be unique within the tree: when two nodes share one, the first in view order is the one navigation
+  * treats as selected, and both wear the highlight.
   *
   * Render-thread-only, and mutating it does not by itself schedule a frame. This is a plain mutable object, invisible
   * to the reactive layer: a background result written straight into it stays off screen until something unrelated
   * happens to repaint. Pair the mutation with a `Signal` write, or call `TuiApp.requestRedraw()` from the same
   * render-thread callback that made it.
+  *
+  * @tparam K
+  *   the key type; `Seq[Int]` — the node's path — for the positional `TreeState()`
   */
-final class TreeState:
-  private var cached: Option[(Seq[TreeNode], Tree.View)] = None
-  val expanded: mutable.Set[Seq[Int]]                    = new TreeExpansion(() => cached = None)
-  var selected: Option[Seq[Int]]                         = None
-  var offset: Int                                        = 0
+final class TreeState[K] private (keyOf: (Seq[TreeNode], Seq[Int]) => K):
+  private var cached: Option[(Seq[TreeNode], Tree.View[K])] = None
+  val expanded: mutable.Set[K]                              = new TreeExpansion(() => cached = None)
+  var selected: Option[K]                                   = None
+  var offset: Int                                           = 0
 
   def selectNext(nodes: Seq[TreeNode]): Unit =
     moveSelection(nodes, +1)
@@ -27,84 +38,116 @@ final class TreeState:
   def selectPrevious(nodes: Seq[TreeNode]): Unit =
     moveSelection(nodes, -1)
 
-  /** Expands a collapsed selected branch, collapses an expanded one; leaves are untouched. */
+  /** Expands a collapsed selected branch, collapses an expanded one; leaves are untouched, and so is a selection that
+    * names no visible row.
+    */
   def toggle(nodes: Seq[TreeNode]): Unit =
-    val _ = view(nodes)
-    selected.foreach { path =>
-      Tree.nodeAt(nodes, path).foreach { node =>
-        if node.children.nonEmpty then if expanded.contains(path) then expanded -= path else expanded += path
-      }
+    val visible = view(nodes)
+    selected.flatMap(visible.indices.get).map(visible.rows(_)).foreach { row =>
+      if row.isBranch then if expanded.contains(row.key) then expanded -= row.key else expanded += row.key
     }
 
   private def moveSelection(nodes: Seq[TreeNode], delta: Int): Unit =
     val visible = view(nodes)
     if visible.rows.nonEmpty then
-      selected = Selection.by(selected.flatMap(visible.indices.get), visible.rows.size, delta).map(visible.rows(_).path)
+      selected = Selection.by(selected.flatMap(visible.indices.get), visible.rows.size, delta).map(visible.rows(_).key)
 
   /** One current source identity and expansion generation, owned by the caller rather than the widget description. */
-  private[widgets] def view(nodes: Seq[TreeNode]): Tree.View =
+  private[widgets] def view(nodes: Seq[TreeNode]): Tree.View[K] =
     val visible = cachedView(nodes)
     if visible.rows.isEmpty then
       selected = None
       offset = 0
     visible
 
-  private def cachedView(nodes: Seq[TreeNode]): Tree.View =
+  private def cachedView(nodes: Seq[TreeNode]): Tree.View[K] =
     cached match
       case Some((source, visible)) if source eq nodes => visible
       case _                                          =>
-        val rows                                                  = Vector.newBuilder[Tree.Row]
-        def walk(siblings: Seq[TreeNode], prefix: Seq[Int]): Unit =
+        val rows = Vector.newBuilder[Tree.Row[K]]
+        def walk(siblings: Seq[TreeNode], ancestors: Vector[TreeNode], prefix: Seq[Int]): Unit =
           siblings.iterator.zipWithIndex.foreach { (node, index) =>
-            val path = prefix :+ index
-            rows += Tree.Row(path, node)
-            if expanded.contains(path) then walk(node.children, path)
+            val path  = prefix :+ index
+            val chain = ancestors :+ node
+            val key   = keyOf(chain, path)
+            rows += Tree.Row(path, key, node)
+            if expanded.contains(key) then walk(node.children, chain, path)
           }
-        walk(nodes, Seq.empty)
-        val entries                                               = rows.result()
-        val visible = Tree.View(entries, entries.iterator.zipWithIndex.map { (row, index) => row.path -> index }.toMap)
+        walk(nodes, Vector.empty, Seq.empty)
+        val entries                                                                            = rows.result()
+        // the first row carrying a key is the one it resolves to, so a duplicated key cannot make navigation jump
+        val indices                                                                            =
+          entries.iterator.zipWithIndex.foldLeft(Map.empty[K, Int]) { case (acc, (row, index)) =>
+            if acc.contains(row.key) then acc else acc.updated(row.key, index)
+          }
+        val visible = Tree.View(entries, indices)
         cached = Some((nodes, visible))
         visible
 
+object TreeState:
+
+  /** The positional state: a node is named by its path, the child index at each level, so `state.expanded += Seq(0)`
+    * expands the first root. The right choice for a tree whose shape is fixed; see [[keyed]] for one that is refreshed.
+    */
+  def apply(): TreeState[Seq[Int]] = new TreeState((_, path) => path)
+
+  /** A state that names a node by `key(node)` — `TreeState.keyed(_.label)` for a tree whose labels are unique — so that
+    * expansion and selection survive a refresh that reorders or inserts nodes. Mirrors [[DataTableState.keyed]]. Starts
+    * out exactly as [[apply]] does: nothing expanded, nothing selected, scrolled to the top.
+    */
+  def keyed[K](key: TreeNode => K): TreeState[K] = new TreeState((chain, _) => key(chain.last))
+
+  /** A state keyed by the labels from the root down to the node — `Seq("src", "README.md")` — for the file-like tree
+    * where labels repeat across branches but are unique among siblings. The usual answer when [[keyed]] by label alone
+    * would collide.
+    */
+  def byLabelPath: TreeState[Seq[String]] = new TreeState((chain, _) => chain.map(_.label))
+
 /** A collapsible tree with keyboard-driven selection: branch markers (`▸` collapsed, `▾` expanded), two-column
   * indentation per depth, and ListView-style scroll-to-selection.
+  *
+  * Works with any [[TreeState]] whatever its key type: the widget only ever asks the state which of its own rows are
+  * expanded and selected.
   */
 final case class Tree(
     nodes: Seq[TreeNode],
     style: Style = Style.Default,
     highlightStyle: Style = Style.Default.reverse,
-) extends StatefulWidget[TreeState]:
+) extends StatefulWidget[TreeState[?]]:
 
-  def render(area: Rect, buffer: Buffer, state: TreeState): Unit =
-    if !area.isEmpty then
-      val visible       = state.view(nodes)
-      val selectedIndex = state.selected.flatMap(visible.indices.get)
-      state.offset = TreeRows.render(
-        area,
-        buffer,
-        visible.rows,
-        state.offset,
-        selectedIndex,
-        row => state.selected.contains(row.path),
-        rowText(_, state),
-        style,
-        highlightStyle,
-      )
+  def render(area: Rect, buffer: Buffer, state: TreeState[?]): Unit =
+    if !area.isEmpty then paint(area, buffer, state)
 
-  private def rowText(row: Tree.Row, state: TreeState): String =
+  /** The render body, with the state's key type captured once so rows and selection are compared as the same `K`. */
+  private def paint[K](area: Rect, buffer: Buffer, state: TreeState[K]): Unit =
+    val visible       = state.view(nodes)
+    val selectedIndex = state.selected.flatMap(visible.indices.get)
+    state.offset = TreeRows.render(
+      area,
+      buffer,
+      visible.rows,
+      state.offset,
+      selectedIndex,
+      row => state.selected.contains(row.key),
+      rowText(_, state),
+      style,
+      highlightStyle,
+    )
+
+  private def rowText[K](row: Tree.Row[K], state: TreeState[K]): String =
     val marker =
       if !row.isBranch then "  "
-      else if state.expanded.contains(row.path) then "▾ "
+      else if state.expanded.contains(row.key) then "▾ "
       else "▸ "
     val indent = "  ".repeat(row.path.size - 1)
     indent + marker + row.node.label
 
 object Tree:
 
-  private[widgets] final case class Row(path: Seq[Int], node: TreeNode):
+  private[widgets] final case class Row[K](path: Seq[Int], key: K, node: TreeNode):
     // Only painted rows need a marker; collapsed offscreen lazy children must stay unevaluated.
     lazy val isBranch: Boolean = node.children.nonEmpty
-  private[widgets] final case class View(rows: Vector[Row], indices: Map[Seq[Int], Int])
+  private[widgets] final case class View[K](rows: Vector[Row[K]], indices: Map[K, Int])
 
   /** Depth-first paths of every node whose ancestors are all expanded. */
   def visiblePaths(nodes: Seq[TreeNode], expanded: Set[Seq[Int]]): Seq[Seq[Int]] =

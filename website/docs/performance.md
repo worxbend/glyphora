@@ -24,9 +24,10 @@ output has the same shape and two runs diff cleanly in a terminal.
 ```bash
 ./mill widgets.test.runMain io.worxbend.tui.widgets.RenderLoopBench
 ./mill terminal.test.runMain io.worxbend.tui.terminal.FramePipelineBench
+./mill dsl.test.runMain io.worxbend.tui.dsl.ElementHostBench
 ```
 
-Neither prints anything but a table. Neither asserts anything, and neither is run by any
+None prints anything but a table. None asserts anything, and none is run by any
 suite — the last section says why.
 
 ## What each row means
@@ -52,6 +53,18 @@ diff and the encode over each:
 The encode rows are measured at two color depths, because `ColorDepth.TrueColor` and
 `ColorDepth.Ansi16` emit different sequences for the same style, and the per-run style
 handling is exactly where that shows.
+
+`ElementHostBench` renders one frame of a hundred-node element tree — chrome bars, a keyed
+form, meters, a forty-row `scrollView` — through an `ElementHost` (resolve, focus pass,
+paint) at two sizes, with per-node **bounds recording** off and on. The gap between the
+two rows is what `boundsOf(key)`, the element-tree snapshot and the click-outside backdrop
+cost per frame: a wrapper per node plus one bounds entry each. On a loaded 16-core x86-64
+machine under glyphora 0.20.0 the gap at 80x24 was indistinguishable from the run-to-run
+noise (which was itself about 2x), and at 200x50 it read between +13% and +56% of the
+frame with the configurations timed in the order least favourable to recording. That is
+why recording is off by default on a real terminal and switched on only by something that
+reads it — a headless run, the first `boundsOf` call, a click-outside modal — and why the
+number is worth re-measuring on a quiet machine before deciding it is too dear to leave on.
 
 ## Reference numbers
 
@@ -111,6 +124,51 @@ one retained frame forever for every redraw.
 A fix's elapsed-time ceiling is the share of the workload it removes. A path responsible
 for 5% of runtime cannot buy more than a 5% runtime reduction even if eliminated
 completely. A shorter isolated benchmark is not an end-to-end speedup claim.
+
+## Lists and tables over large data
+
+The three collection widgets virtualise their rows — they paint the window and nothing
+else — and 0.20.0 closes the gaps where per-frame work still grew with the data rather
+than with the viewport. Each one is pinned by a test that counts the rows a widget asked
+for, in the style `ViewportCostSpec` set.
+
+**`ListView` measures its items once per sequence.** The widget has to learn whether
+every item is one row high — a `Text` item can take several — and used to find out with
+a full `forall` on every frame, and `heightAt` summed every item on every call. The
+measurement is now taken once and remembered on the `ListState`, keyed by the *identity*
+of the `items` sequence, the way `TreeState` and `DataTableState` already remember their
+flattened rows and filtered views. A frame over an unchanged reference reads only the
+rows it draws (`ListViewCostSpec`: a 100 000-item list is touched at most viewport + 2
+times after its first frame), and a second `heightAt` on the same widget value costs
+nothing. So:
+
+- keep the sequence between frames — a `Signal[Vector[String]]` does this for you —
+  and replace it, rather than mutating it in place, when the data changes;
+- a sequence mutated under the same reference is still drawn correctly — the widget
+  re-measures when the count changes or a drawn item's height disagrees with what it
+  remembered — but an off-screen item that changed height is not noticed until it
+  scrolls into view;
+- prefer an `IndexedSeq` (`Vector`, `ArraySeq`): the visible window is then read by
+  position, so a window deep inside a long list costs the window and not the offset.
+  A `List` is walked from the front, which is the cost its own `iterator.drop` carries.
+
+**`TreeState` keyed by identity** (`TreeState.keyed(_.label)`, `TreeState.byLabelPath`)
+flattens the visible rows once per node sequence and expansion change, like the positional
+state always did, and because expansion and selection name the node rather than its row,
+a refresh that reorders the nodes does not cost the reader their place. See
+[Lists and navigation](./widgets#lists-and-navigation) in the catalog.
+
+**`DataTable` over a `TableRows` provider.** For data too large or too remote to hold —
+a million records behind a query — implement `TableRows[K]` with `count` and `apply(i)`
+and pass it where the row sequence goes; a provider *is* a `Seq[KeyedRow[K]]`, so a
+plain `Vector` needs no adapter. The table reads only the body window, the selected
+row (one read, to confirm the key still sits where it did), and the rows of the current
+page (`DataTableLazyRowsSpec`: a 1 000 000-row provider is asked for at most body + 2
+rows per frame). Two costs remain with the caller: `state.sort` and `state.filter`
+walk every row, because they are defined on the cells the table draws — sort and filter
+at the source and leave both unset — and `selectKey` scans for a key, which is as
+expensive as the provider makes `apply`. Replace the provider instance (or call
+`state.invalidate()`) when its contents change: the memoised view is keyed by identity.
 
 ## Why none of this is a CI gate
 

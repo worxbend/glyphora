@@ -1,6 +1,6 @@
 package io.worxbend.tui.testsupport
 
-import io.worxbend.tui.core.{Event, KeyModifiers, MouseButton, MouseEvent, MouseEventKind, Position, Size, Style}
+import io.worxbend.tui.core.{Event, KeyModifiers, MouseButton, MouseEvent, MouseEventKind, Position, Rect, Size, Style}
 import io.worxbend.tui.runtime.{EventOutcome, Frame, TerminalRunner}
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -205,4 +205,22 @@ final class PilotEventPostingSpec extends AnyFunSuite:
           MouseEvent(Position(3, 3), MouseEventKind.Moved, KeyModifiers.None, MouseButton.Unknown),
         )
       )
+    finally pilot.close()
+
+  test("click(rect) and hover(rect) aim at the rect's centre, and an empty rect fails rather than pressing its origin"):
+    val observed = Observed()
+    val pilot    = start(observed, consumeInterrupt = false)
+    try
+      pilot.waitForIdle()
+      pilot.click(Rect(4, 0, 10, 2)).hover(Rect(0, 1, 3, 1)).waitForIdle()
+      val kinds   = observed.mice.get().map(event => (event.kind, event.position))
+      assert(
+        kinds == Seq(
+          (MouseEventKind.Down, Position(9, 1)),
+          (MouseEventKind.Up, Position(9, 1)),
+          (MouseEventKind.Moved, Position(1, 1)),
+        )
+      )
+      val failure = intercept[AssertionError](pilot.click(Rect(3, 1, 0, 1)))
+      assert(failure.getMessage.contains("empty rect"))
     finally pilot.close()
