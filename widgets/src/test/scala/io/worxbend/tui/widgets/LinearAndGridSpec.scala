@@ -26,19 +26,23 @@ final class LinearAndGridSpec extends AnyFunSuite:
 
   // ---------------------------------------------------------------- linear: purity and bounds
 
+  test("LinearSpinnerOptions() draws exactly what the bare constructor drew"):
+    assert(LinearSpinner(300.millis) == LinearSpinner(300.millis, LinearSpinnerOptions()))
+    assert(cells(LinearSpinner(300.millis), 16, 1) == cells(LinearSpinner(300.millis, LinearSpinnerOptions()), 16, 1))
+
   test("a linear spinner is a pure function of elapsed time"):
     LinearPath.values.foreach: path =>
-      val spinner = LinearSpinner(500.millis, path = path)
+      val spinner = LinearSpinner(500.millis, LinearSpinnerOptions(path = path))
       assert(cells(spinner, 16, 1) == cells(spinner, 16, 1))
 
   /** The widget clips itself to one cell of thickness before drawing, so a caller who hands it a tall rect gets a row
     * rather than a smeared block.
     */
   test("a linear spinner occupies exactly one row or one column"):
-    val horizontal = rendered(LinearSpinner(400.millis, axis = LinearAxis.Horizontal), 12, 4)
+    val horizontal = rendered(LinearSpinner(400.millis, LinearSpinnerOptions(axis = LinearAxis.Horizontal)), 12, 4)
     assert((0 until 12).forall(x => (1 until 4).forall(y => horizontal.get(x, y).symbol == " ")))
 
-    val vertical = rendered(LinearSpinner(400.millis, axis = LinearAxis.Vertical), 6, 8)
+    val vertical = rendered(LinearSpinner(400.millis, LinearSpinnerOptions(axis = LinearAxis.Vertical)), 6, 8)
     assert((1 until 6).forall(x => (0 until 8).forall(y => vertical.get(x, y).symbol == " ")))
 
   test("a linear spinner never writes outside its rect"):
@@ -56,15 +60,18 @@ final class LinearAndGridSpec extends AnyFunSuite:
           Seq(0, 1, 2).foreach: size =>
             Seq(-3, 0, 1, 99).foreach: trailSlots =>
               val spinner =
-                LinearSpinner(250.millis, axis = axis, path = path, flow = flow, trailSlots = trailSlots)
+                LinearSpinner(
+                  250.millis,
+                  LinearSpinnerOptions(axis = axis, path = path, flow = flow, trailSlots = trailSlots),
+                )
               assert(rendered(spinner, size, size).area == Rect(0, 0, size, size))
 
   test("a zero period parks the head instead of dividing by zero"):
-    val parked = LinearSpinner(500.millis, period = Duration.Zero)
+    val parked = LinearSpinner(500.millis, LinearSpinnerOptions(period = Duration.Zero))
     assert(cells(parked, 12, 1) == cells(parked.copy(elapsed = 4.seconds), 12, 1))
 
   test("a NaN rail reads as an empty track rather than poisoning every slot"):
-    val spinner = LinearSpinner(300.millis, rail = Double.NaN)
+    val spinner = LinearSpinner(300.millis, LinearSpinnerOptions(rail = Double.NaN))
     assert(cells(spinner, 12, 1).nonEmpty)
 
   // ---------------------------------------------------------------- linear: the motion
@@ -72,7 +79,9 @@ final class LinearAndGridSpec extends AnyFunSuite:
   test("every path and flow animates"):
     LinearPath.values.foreach: path =>
       LinearFlow.values.foreach: flow =>
-        val frames = (0 until 24).map(s => cells(LinearSpinner(at(s, 24), path = path, flow = flow), 16, 1)).distinct
+        val frames = (0 until 24)
+          .map(s => cells(LinearSpinner(at(s, 24), LinearSpinnerOptions(path = path, flow = flow)), 16, 1))
+          .distinct
         assert(frames.size > 1, s"$path/$flow never moved")
 
   /** One period is one full cycle: a whole traverse for a wrap, a round trip for a bounce. That is the same contract
@@ -80,8 +89,8 @@ final class LinearAndGridSpec extends AnyFunSuite:
     */
   test("one period is exactly one cycle for both paths"):
     LinearPath.values.foreach: path =>
-      val start = cells(LinearSpinner(0.millis, path = path), 16, 1)
-      val after = cells(LinearSpinner(Period, path = path), 16, 1)
+      val start = cells(LinearSpinner(0.millis, LinearSpinnerOptions(path = path)), 16, 1)
+      val after = cells(LinearSpinner(Period, LinearSpinnerOptions(path = path)), 16, 1)
       assert(start == after, s"$path did not return after one period")
 
   /** A bounce has no dwell frame at the turn: the extreme slots are visited once per cycle, the interior twice. A stall
@@ -89,37 +98,48 @@ final class LinearAndGridSpec extends AnyFunSuite:
     */
   test("a bounce does not stall at the turn"):
     val samples = 48
-    val frames  = (0 until samples).map(s => cells(LinearSpinner(at(s, samples), path = LinearPath.Bounce), 16, 1))
+    val frames  = (0 until samples).map(s =>
+      cells(LinearSpinner(at(s, samples), LinearSpinnerOptions(path = LinearPath.Bounce)), 16, 1)
+    )
     val repeats = frames.sliding(2).count(pair => pair.head == pair(1))
     assert(repeats <= samples / 8, s"the bounce repeated a frame $repeats times out of $samples")
 
   test("the two flows are genuinely different animations"):
     LinearPath.values.foreach: path =>
       val forward  =
-        (0 until 12).map(s => cells(LinearSpinner(at(s, 12), path = path, flow = LinearFlow.Forward), 16, 1))
+        (0 until 12).map(s =>
+          cells(LinearSpinner(at(s, 12), LinearSpinnerOptions(path = path, flow = LinearFlow.Forward)), 16, 1)
+        )
       val backward =
-        (0 until 12).map(s => cells(LinearSpinner(at(s, 12), path = path, flow = LinearFlow.Backward), 16, 1))
+        (0 until 12).map(s =>
+          cells(LinearSpinner(at(s, 12), LinearSpinnerOptions(path = path, flow = LinearFlow.Backward)), 16, 1)
+        )
       assert(forward != backward, s"$path ignored its flow")
 
   /** A solid trail is a uniform window; a comet grades away from the head. The distinction has to be visible in the
     * styles, or the two enum cases are the same thing under different names.
     */
   test("solid and comet trails render differently"):
-    val solid = cells(LinearSpinner(300.millis, trail = LinearTrail.Solid, trailSlots = 6), 16, 1)
-    val comet = cells(LinearSpinner(300.millis, trail = LinearTrail.Comet, trailSlots = 6), 16, 1)
+    val solid = cells(LinearSpinner(300.millis, LinearSpinnerOptions(trail = LinearTrail.Solid, trailSlots = 6)), 16, 1)
+    val comet = cells(LinearSpinner(300.millis, LinearSpinnerOptions(trail = LinearTrail.Comet, trailSlots = 6)), 16, 1)
     assert(solid != comet)
 
   test("a longer trail lights more of the track"):
     def lit(slots: Int): Int =
-      val buffer = rendered(LinearSpinner(300.millis, trailSlots = slots, rail = 0.0, style = Style.Default.dim), 20, 1)
+      val buffer = rendered(
+        LinearSpinner(300.millis, LinearSpinnerOptions(trailSlots = slots, rail = 0.0, style = Style.Default.dim)),
+        20,
+        1,
+      )
       (0 until 20).count(x => buffer.get(x, 0).symbol.trim.nonEmpty)
     assert(lit(8) >= lit(2))
 
   test("every resolution draws a track, and the cell resolution uses the marker"):
     Seq(CanvasResolution.Braille, CanvasResolution.HalfBlock).foreach: resolution =>
-      val drawn = cells(LinearSpinner(300.millis, resolution = resolution), 12, 1)
+      val drawn = cells(LinearSpinner(300.millis, LinearSpinnerOptions(resolution = resolution)), 12, 1)
       assert(drawn.exists(_._1.trim.nonEmpty), s"$resolution drew nothing")
-    val ascii = cells(LinearSpinner(300.millis, resolution = CanvasResolution.Cell, marker = "="), 12, 1)
+    val ascii =
+      cells(LinearSpinner(300.millis, LinearSpinnerOptions(resolution = CanvasResolution.Cell, marker = "=")), 12, 1)
     assert(ascii.exists(_._1 == "="))
 
   // ---------------------------------------------------------------- spinner grid

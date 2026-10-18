@@ -132,7 +132,7 @@ final class AllWidgetsDegenerateSpec extends AnyFunSuite:
   private val cases: Seq[(String, () => Widget)] = Seq(
     "AnimatedText" -> (() => AnimatedText("hello world", 250.millis)),
     "Badge"        -> (() => Badge("new")),
-    "BarChart"     -> (() => BarChart(Seq("a" -> 3L, "b" -> 7L, "c" -> 5L), showValues = true)),
+    "BarChart"     -> (() => BarChart(Seq("a" -> 3L, "b" -> 7L, "c" -> 5L), BarChartOptions(showValues = true))),
     "BigText"      -> (() => BigText("AB")),
     "Block"        -> (() => Block(Seq(BlockTitle.top(Line.raw("p")), BlockTitle.bottom(Line.raw("f"))))),
     "Button"       -> (() => Button("ok")),

@@ -39,7 +39,7 @@ final class CalendarSpec extends AnyFunSuite:
 
   test("a date named in dayStyles is drawn with that style layered over the calendar's"):
     val marked = Map(LocalDate.of(2026, 7, 2) -> Style.Default.bold)
-    val buffer = rendered(Calendar(2026, 7, dayStyles = marked), 20, 8)
+    val buffer = rendered(Calendar(2026, 7, options = CalendarOptions(dayStyles = marked)), 20, 8)
     // 2026-07-01 is a Wednesday, so the 2nd sits in the Th column (x = 9..10) on the first grid row
     assert(buffer.get(10, 2).symbol == "2")
     assert(buffer.get(10, 2).style.modifiers.hasAny(Modifiers.Bold))
@@ -47,77 +47,85 @@ final class CalendarSpec extends AnyFunSuite:
 
   test("dates in other months are ignored, so one map can be shared across grids"):
     val marked = Map(LocalDate.of(2026, 8, 2) -> Style.Default.bold)
-    val buffer = rendered(Calendar(2026, 7, dayStyles = marked), 20, 8)
+    val buffer = rendered(Calendar(2026, 7, options = CalendarOptions(dayStyles = marked)), 20, 8)
     assert(buffer.get(10, 2).symbol == "2")
     assert(!buffer.get(10, 2).style.modifiers.hasAny(Modifiers.Bold))
 
   test("the selection is layered over a marked day, so the cursor stays visible"):
     val marked = Map(LocalDate.of(2026, 7, 1) -> Style.Default.bold)
-    val buffer = rendered(Calendar(2026, 7, selected = Some(1), dayStyles = marked), 20, 8)
+    val buffer = rendered(Calendar(2026, 7, selected = Some(1), options = CalendarOptions(dayStyles = marked)), 20, 8)
     assert(buffer.get(7, 2).style.modifiers.hasAny(Modifiers.Reverse))
     assert(buffer.get(7, 2).style.modifiers.hasAny(Modifiers.Bold))
 
   test("switching the title off frees its row instead of blanking it"):
-    val lines = trimmedLines(rendered(Calendar(2026, 7, showTitle = false), 20, 8))
+    val lines = trimmedLines(rendered(Calendar(2026, 7, options = CalendarOptions(showTitle = false)), 20, 8))
     assert(lines(0) == "Mo Tu We Th Fr Sa Su")
     assert(lines(1) == "       1  2  3  4  5")
 
   test("with neither header the grid starts on the first row of the area"):
-    val calendar = Calendar(2026, 7, showTitle = false, showWeekdays = false)
+    val calendar = Calendar(2026, 7, options = CalendarOptions(showTitle = false, showWeekdays = false))
     val lines    = trimmedLines(rendered(calendar, 20, 6))
     assert(lines(0) == "       1  2  3  4  5")
     assert(lines(4).startsWith("27 28 29 30 31"))
 
   test("a Sunday-first week moves both the header and the day numbers"):
-    val lines = trimmedLines(rendered(Calendar(2026, 7, firstDayOfWeek = DayOfWeek.SUNDAY), 20, 8))
+    val lines =
+      trimmedLines(rendered(Calendar(2026, 7, options = CalendarOptions(firstDayOfWeek = DayOfWeek.SUNDAY)), 20, 8))
     assert(lines(1) == "Su Mo Tu We Th Fr Sa")
     // 2026-07-01 is a Wednesday: the fourth column when the week starts on Sunday, the third when it starts on Monday
     assert(lines(2) == "          1  2  3  4")
 
   test("a week starting mid-week still lands every day in the right column"):
-    val lines = trimmedLines(rendered(Calendar(2026, 7, firstDayOfWeek = DayOfWeek.SATURDAY), 20, 8))
+    val lines =
+      trimmedLines(rendered(Calendar(2026, 7, options = CalendarOptions(firstDayOfWeek = DayOfWeek.SATURDAY)), 20, 8))
     assert(lines(1) == "Sa Su Mo Tu We Th Fr")
     assert(lines(2) == "             1  2  3")
 
   test("the locale sets the language of the month name and the weekday abbreviations"):
-    val lines = trimmedLines(rendered(Calendar(2026, 7, locale = Locale.FRENCH), 20, 8))
+    val lines = trimmedLines(rendered(Calendar(2026, 7, options = CalendarOptions(locale = Locale.FRENCH)), 20, 8))
     assert(lines(0).toLowerCase(Locale.ROOT).contains("juil"))
     assert(lines(1).startsWith("lu"))
 
   test("a locale whose abbreviations are wide characters keeps the columns aligned"):
-    val lines = trimmedLines(rendered(Calendar(2026, 7, locale = Locale.JAPANESE), 20, 8))
+    val lines = trimmedLines(rendered(Calendar(2026, 7, options = CalendarOptions(locale = Locale.JAPANESE)), 20, 8))
     // each abbreviation is one character occupying two columns, so the header is still 7 * 3 - 1 columns wide
     assert(CharWidth.of(lines(1)) == 20)
     assert(lines(2) == "       1  2  3  4  5")
 
   test("the selection follows the configured start of the week"):
-    val buffer = rendered(Calendar(2026, 7, selected = Some(1), firstDayOfWeek = DayOfWeek.SUNDAY), 20, 8)
+    val buffer = rendered(
+      Calendar(2026, 7, selected = Some(1), options = CalendarOptions(firstDayOfWeek = DayOfWeek.SUNDAY)),
+      20,
+      8,
+    )
     // the 1st is a Wednesday, the fourth Sunday-first column, so its two cells are x = 9..10
     assert(buffer.get(10, 2).style.modifiers.hasAny(Modifiers.Reverse))
     assert(!buffer.get(7, 2).style.modifiers.hasAny(Modifiers.Reverse))
 
   test("surrounding days fill the leading and trailing cells of the grid"):
-    val lines = trimmedLines(rendered(Calendar(2026, 7, showSurroundingDays = true), 20, 8))
+    val lines = trimmedLines(rendered(Calendar(2026, 7, options = CalendarOptions(showSurroundingDays = true)), 20, 8))
     // June 2026 ends on Tuesday the 30th, so the two cells before Wednesday the 1st are the 29th and the 30th
     assert(lines(2) == "29 30  1  2  3  4  5")
     // July ends on a Friday; the last row is completed with the 1st and 2nd of August
     assert(lines(6) == "27 28 29 30 31  1  2")
 
   test("surrounding days are dimmed and days of the month are not"):
-    val buffer = rendered(Calendar(2026, 7, showSurroundingDays = true), 20, 8)
+    val buffer = rendered(Calendar(2026, 7, options = CalendarOptions(showSurroundingDays = true)), 20, 8)
     assert(buffer.get(0, 2).style.modifiers.hasAny(Modifiers.Dim))
     assert(!buffer.get(7, 2).style.modifiers.hasAny(Modifiers.Dim))
 
   test("a surrounding day sharing a number with the selected day is not highlighted"):
     // 2026-08-01 trails July's grid, and the 1st of July is selected
-    val buffer = rendered(Calendar(2026, 7, selected = Some(1), showSurroundingDays = true), 20, 8)
+    val buffer =
+      rendered(Calendar(2026, 7, selected = Some(1), options = CalendarOptions(showSurroundingDays = true)), 20, 8)
     assert(buffer.get(16, 6).symbol == "1")
     assert(!buffer.get(16, 6).style.modifiers.hasAny(Modifiers.Reverse))
     assert(buffer.get(7, 2).style.modifiers.hasAny(Modifiers.Reverse))
 
   test("dayStyles reach surrounding days too, so a marked date shows in either month"):
     val marked = Map(LocalDate.of(2026, 8, 1) -> Style.Default.bold)
-    val buffer = rendered(Calendar(2026, 7, showSurroundingDays = true, dayStyles = marked), 20, 8)
+    val buffer =
+      rendered(Calendar(2026, 7, options = CalendarOptions(showSurroundingDays = true, dayStyles = marked)), 20, 8)
     assert(buffer.get(16, 6).style.modifiers.hasAny(Modifiers.Bold))
 
   test("no surrounding days are drawn when the switch is off"):
@@ -128,7 +136,11 @@ final class CalendarSpec extends AnyFunSuite:
   test("a month with no room before it draws no leading days rather than failing"):
     // the very first month LocalDate can represent has no previous month to borrow days from; starting the week on a
     // Tuesday puts that month's 1st in the last column, so all six leading cells would have to come from before it
-    val calendar = Calendar(Year.MIN_VALUE, 1, firstDayOfWeek = DayOfWeek.TUESDAY, showSurroundingDays = true)
+    val calendar = Calendar(
+      Year.MIN_VALUE,
+      1,
+      options = CalendarOptions(firstDayOfWeek = DayOfWeek.TUESDAY, showSurroundingDays = true),
+    )
     val lines    = trimmedLines(rendered(calendar, 20, 8))
     assert(lines(2) == "                   1")
 
@@ -141,5 +153,11 @@ final class CalendarSpec extends AnyFunSuite:
     val arabicIndic = Locale.forLanguageTag("ar-SA-u-nu-arab")
     val expectedOne = String.format(arabicIndic, "%2d", 1)
     assert(expectedOne != " 1", "the test locale must actually use non-ASCII digits, or this proves nothing")
-    val lines       = trimmedLines(rendered(Calendar(2026, 7, locale = arabicIndic), 20, 8))
+    val lines       = trimmedLines(rendered(Calendar(2026, 7, options = CalendarOptions(locale = arabicIndic)), 20, 8))
     assert(lines.exists(_.contains(expectedOne)))
+
+  test("CalendarOptions() draws exactly what the bare constructor drew"):
+    assert(Calendar(2026, 7, Some(14)) == Calendar(2026, 7, Some(14), CalendarOptions()))
+    assert(
+      rendered(Calendar(2026, 7, Some(14)), 20, 8) == rendered(Calendar(2026, 7, Some(14), CalendarOptions()), 20, 8)
+    )

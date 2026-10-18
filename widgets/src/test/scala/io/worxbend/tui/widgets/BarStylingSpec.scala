@@ -22,11 +22,13 @@ final class BarStylingSpec extends AnyFunSuite:
   test("a bar chart restyles only the bars the override names"):
     val chart  = BarChart(
       Seq(("a", 2), ("b", 8), ("c", 2)),
-      barWidth = 1,
-      barGap = 1,
-      max = Some(8),
-      barStyle = Base,
-      barStyleFor = overLimit(4),
+      BarChartOptions(
+        barWidth = 1,
+        barGap = 1,
+        max = Some(8),
+        barStyle = Base,
+        barStyleFor = overLimit(4),
+      ),
     )
     val buffer = rendered(chart, 5, 3)
 
@@ -35,7 +37,8 @@ final class BarStylingSpec extends AnyFunSuite:
     assert(buffer.get(4, 1).style == Base, "a bar under the limit was restyled")
 
   test("an override that sets only a colour keeps the rest of the bar's style"):
-    val chart  = BarChart(Seq(("a", 8)), barWidth = 1, max = Some(8), barStyle = Base, barStyleFor = overLimit(0))
+    val chart  =
+      BarChart(Seq(("a", 8)), BarChartOptions(barWidth = 1, max = Some(8), barStyle = Base, barStyleFor = overLimit(0)))
     val buffer = rendered(chart, 1, 2)
 
     val style = buffer.get(0, 0).style
@@ -45,9 +48,9 @@ final class BarStylingSpec extends AnyFunSuite:
 
   test("restyling changes no glyph and moves no bar"):
     val data    = Seq[(String, Long)](("a", 2), ("b", 8), ("c", 5))
-    val plain   = rendered(BarChart(data, barWidth = 1, barGap = 1, max = Some(8)), 5, 3)
+    val plain   = rendered(BarChart(data, BarChartOptions(barWidth = 1, barGap = 1, max = Some(8))), 5, 3)
     val painted = rendered(
-      BarChart(data, barWidth = 1, barGap = 1, max = Some(8), barStyleFor = overLimit(4)),
+      BarChart(data, BarChartOptions(barWidth = 1, barGap = 1, max = Some(8), barStyleFor = overLimit(4))),
       5,
       3,
     )
@@ -57,9 +60,9 @@ final class BarStylingSpec extends AnyFunSuite:
 
   test("an override that answers None everywhere draws the identical chart"):
     val data    = Seq[(String, Long)](("a", 2), ("b", 8))
-    val plain   = rendered(BarChart(data, barWidth = 1, barGap = 1, barStyle = Base), 3, 3)
+    val plain   = rendered(BarChart(data, BarChartOptions(barWidth = 1, barGap = 1, barStyle = Base)), 3, 3)
     val painted = rendered(
-      BarChart(data, barWidth = 1, barGap = 1, barStyle = Base, barStyleFor = (_, _) => None),
+      BarChart(data, BarChartOptions(barWidth = 1, barGap = 1, barStyle = Base, barStyleFor = (_, _) => None)),
       3,
       3,
     )
@@ -71,12 +74,14 @@ final class BarStylingSpec extends AnyFunSuite:
     // three bars two columns wide with a gap need eight columns; five columns hold two of them
     val chart = BarChart(
       Seq(("a", 8), ("b", 8), ("c", 8)),
-      barWidth = 2,
-      barGap = 1,
-      max = Some(8),
-      barStyleFor = (index, _) =>
-        asked += index
-        None,
+      BarChartOptions(
+        barWidth = 2,
+        barGap = 1,
+        max = Some(8),
+        barStyleFor = (index, _) =>
+          asked += index
+          None,
+      ),
     )
     val _     = rendered(chart, 5, 2)
 
@@ -85,13 +90,15 @@ final class BarStylingSpec extends AnyFunSuite:
   test("a horizontal chart restyles the bar and leaves the gutter label alone"):
     val chart  = BarChart(
       Seq(("cpu", 8)),
-      barWidth = 1,
-      max = Some(8),
-      barStyle = Base,
-      labelStyle = Style.Default.dim,
-      direction = Direction.Horizontal,
-      barHeight = 1,
-      barStyleFor = overLimit(0),
+      BarChartOptions(
+        barWidth = 1,
+        max = Some(8),
+        barStyle = Base,
+        labelStyle = Style.Default.dim,
+        direction = Direction.Horizontal,
+        barHeight = 1,
+        barStyleFor = overLimit(0),
+      ),
     )
     val buffer = rendered(chart, 8, 1)
 

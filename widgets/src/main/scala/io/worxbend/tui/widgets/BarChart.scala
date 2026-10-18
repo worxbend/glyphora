@@ -2,52 +2,83 @@ package io.worxbend.tui.widgets
 
 import io.worxbend.tui.core.{Alignment, Buffer, CharWidth, Direction, Rect, Style, Widget}
 
-/** Bars with labels, one per `(label, value)`, scaled against `max` (defaulting to the data's maximum) and topped with
-  * a partial block glyph for sub-cell precision.
+/** Everything about a [[BarChart]] that is not the data: the layout, the scale, the numbers beside the bars, and how
+  * all of it is styled and drawn.
   *
-  * `direction` picks the layout. `Vertical` — the default, and what this widget has always done — draws upright bars
-  * `barWidth` columns wide with their labels on the row underneath, so each name has only as many columns as its bar.
-  * `Horizontal` draws the bars rightwards, `barHeight` rows tall, and reserves a gutter down the left edge for the
-  * labels: that is the layout to reach for when the category names are long, because a name in the gutter has a whole
-  * strip of columns to itself instead of being truncated to a bar's width.
-  *
-  * `showValues` writes each bar's number beside the bar: above an upright bar, to the right of a sideways one. It is
-  * written next to the bar rather than inside it because a [[io.worxbend.tui.core.Buffer]] cell holds one style, so a
-  * number drawn on top of a filled bar would take the bar's colours and could vanish into them. A number with no room —
-  * a bar already at the top of the area, or wider than the space left beside it — is left out rather than truncated,
-  * because half a number reads as a different number. `valueFormat` turns the value into that text, which is where a
-  * unit or a thousands separator goes.
+  * Bundled rather than listed on [[BarChart]] itself because the list had grown to twelve optional knobs. Every field
+  * keeps the default it had as a `BarChart` constructor parameter, so `BarChartOptions()` is exactly the chart the bare
+  * constructor drew.
   *
   * @param direction
   *   picks the layout — `Vertical` (the default) draws upright bars with their labels on the row underneath,
-  *   `Horizontal` draws bars rightwards with the labels in a gutter down the left edge. `barHeight`, which only the
-  *   horizontal layout reads, sits beside it.
-  *
-  * `barSet` swaps the glyphs the bars are drawn from — [[BarSet.Ascii]] for a terminal with no block elements,
-  * [[BarSet.Solid]] or [[BarSet.Halves]] for blunter bars, or a set of your own. Its `empty` glyph, if it has one, also
-  * fills the cells above each bar, which is how the chart gets a visible track behind every bar.
-  *
-  * `barStyleFor` restyles individual bars — `(_, value) => Option.when(value > limit)(Style.Default.withFg(Color.Red))`
-  * paints the bars over a limit red and leaves the rest alone. It is handed the bar's index in `data` and its value,
-  * and what it returns is patched over `barStyle`, so an override setting only a colour keeps the rest. It colours the
-  * bar and nothing else: the label under it and the number beside it keep `labelStyle` and `valueStyle`, because those
-  * are text a reader has to be able to read whatever the bar is doing. See [[BarStyling]].
+  *   `Horizontal` draws bars rightwards with the labels in a gutter down the left edge
+  * @param barHeight
+  *   rows per bar; read by the horizontal layout only
+  * @param barWidth
+  *   columns per bar; read by the vertical layout only, where it is also all the room a label gets
+  * @param barGap
+  *   blank columns (rows, sideways) between neighbouring bars
+  * @param max
+  *   the top of the scale; `None` — the default — scales against the largest value in the data, so the tallest bar
+  *   always reaches the edge of the area
+  * @param showValues
+  *   writes each bar's number beside the bar: above an upright bar, to the right of a sideways one. Written next to the
+  *   bar rather than inside it because a [[io.worxbend.tui.core.Buffer]] cell holds one style, so a number on top of a
+  *   filled bar would take the bar's colours and could vanish into them. A number with no room — a bar already at the
+  *   top of the area, or wider than the space left beside it — is left out rather than truncated, because half a number
+  *   reads as a different number
+  * @param valueFormat
+  *   turns a value into the text `showValues` writes, which is where a unit or a thousands separator goes
+  * @param barStyle
+  *   the style every bar is drawn in unless `barStyleFor` says otherwise
+  * @param labelStyle
+  *   the style of the category labels
+  * @param valueStyle
+  *   the style of the numbers `showValues` writes
+  * @param barStyleFor
+  *   restyles individual bars — `(_, value) => Option.when(value > limit)(Style.Default.withFg(Color.Red))` paints the
+  *   bars over a limit red and leaves the rest alone. It is handed the bar's index in `data` and its value, and what it
+  *   returns is patched over `barStyle`, so an override setting only a colour keeps the rest. It colours the bar and
+  *   nothing else: the label under it and the number beside it keep `labelStyle` and `valueStyle`, because those are
+  *   text a reader has to be able to read whatever the bar is doing. See [[BarStyling]]
+  * @param barSet
+  *   the glyphs the bars are drawn from — [[BarSet.Ascii]] for a terminal with no block elements, [[BarSet.Solid]] or
+  *   [[BarSet.Halves]] for blunter bars, or a set of your own. Its `empty` glyph, if it has one, also fills the cells
+  *   above each bar, which is how the chart gets a visible track behind every bar
   */
-final case class BarChart(
-    data: Seq[(String, Long)],
+final case class BarChartOptions(
     direction: Direction = Direction.Vertical,
     barHeight: Int = 1,
     barWidth: Int = 3,
     barGap: Int = 1,
     max: Option[Long] = None,
+    showValues: Boolean = false,
+    valueFormat: Long => String = _.toString,
     barStyle: Style = Style.Default,
     labelStyle: Style = Style.Default,
-    barSet: BarSet = BarSet.Eighths,
-    showValues: Boolean = false,
     valueStyle: Style = Style.Default,
-    valueFormat: Long => String = _.toString,
     barStyleFor: (Int, Long) => Option[Style] = BarStyling.NoOverride,
+    barSet: BarSet = BarSet.Eighths,
+)
+
+/** Bars with labels, one per `(label, value)`, scaled against `options.max` (defaulting to the data's maximum) and
+  * topped with a partial block glyph for sub-cell precision.
+  *
+  * `options.direction` picks the layout. `Vertical` — the default, and what this widget has always done — draws upright
+  * bars `barWidth` columns wide with their labels on the row underneath, so each name has only as many columns as its
+  * bar. `Horizontal` draws the bars rightwards, `barHeight` rows tall, and reserves a gutter down the left edge for the
+  * labels: that is the layout to reach for when the category names are long, because a name in the gutter has a whole
+  * strip of columns to itself instead of being truncated to a bar's width.
+  *
+  * Everything past the data — the layout, the scale, the numbers beside the bars, the styles and the glyph set — rides
+  * in `options`; see [[BarChartOptions]] for what each knob does.
+  */
+final case class BarChart(
+    data: Seq[(String, Long)],
+    options: BarChartOptions = BarChartOptions(),
 ) extends Widget:
+
+  import options.*
 
   def render(area: Rect, buffer: Buffer): Unit = direction match
     case Direction.Vertical   => renderVertical(area, buffer)

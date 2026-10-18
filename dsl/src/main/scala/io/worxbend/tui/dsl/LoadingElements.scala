@@ -265,7 +265,18 @@ final case class LinearSpinnerElement(
   type Self = LinearSpinnerElement
 
   def widget: Widget =
-    w.LinearSpinner(elapsed, railStyle, headStyle.patch(props.style), axis, path, flow, trail, period = period)
+    w.LinearSpinner(
+      elapsed,
+      w.LinearSpinnerOptions(
+        axis = axis,
+        path = path,
+        flow = flow,
+        trail = trail,
+        period = period,
+        style = railStyle,
+        headStyle = headStyle.patch(props.style),
+      ),
+    )
 
   /** Runs the track down a column instead of along a row. */
   def vertical: LinearSpinnerElement = copy(axis = w.LinearAxis.Vertical)

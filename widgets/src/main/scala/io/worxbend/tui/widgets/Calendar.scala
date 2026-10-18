@@ -6,37 +6,44 @@ import java.time.format.TextStyle as JTextStyle
 import java.time.{DayOfWeek, LocalDate, Year, YearMonth}
 import java.util.Locale
 
-/** A month grid: an optional title row, an optional weekday header, and the day numbers, with an optional highlighted
-  * day.
+/** Everything about a [[Calendar]] that is not the month or the selected day: which headers are shown, how the week
+  * runs, the language, the surrounding days, and the styles.
   *
-  * `showTitle` and `showWeekdays` do more than blank a row — the row is not reserved at all, so a grid with neither
-  * header starts its first week on the very first row of the area and needs two rows fewer. That is what makes a bare
-  * month grid usable in a narrow sidebar.
+  * Bundled rather than listed on [[Calendar]] itself because the list had grown to ten optional knobs. Every field
+  * keeps the default it had as a `Calendar` constructor parameter, so `CalendarOptions()` is exactly the grid the bare
+  * constructor drew.
   *
-  * `showSurroundingDays` fills the leading and trailing cells of the grid with the days of the months either side,
-  * drawn in `surroundingStyle` (dimmed by default) so they read as context rather than as part of this month. They are
-  * never selectable: `selected` names a day of the month being shown.
-  *
-  * `firstDayOfWeek` decides which weekday the leftmost column is, so a US-facing application asks for
-  * `DayOfWeek.SUNDAY` and gets a Sunday-first grid with the day numbers moved to match. `locale` decides the language
-  * of the month name and the weekday abbreviations. It defaults to `Locale.ENGLISH` rather than to `Locale.getDefault`,
-  * deliberately: a widget whose output depends on the machine it runs on cannot be tested by comparing frames, and a
-  * caller who wants the machine's locale can pass `Locale.getDefault` and mean it.
-  *
-  * `dayStyles` gives individual dates their own appearance — a date with an appointment, a public holiday, today, every
-  * day of a streak. It is keyed by `java.time.LocalDate` rather than by day-of-month so a caller can hold one map
-  * across several months and hand the same value to each grid. A date's style is layered over the calendar's `style`,
-  * and `highlightStyle` is layered over that in turn, so the cursor stays visible wherever it lands: a marked day that
-  * is also the selected day reads as selected first.
-  *
-  * Needs 20 columns (seven three-column day slots, the last one two wide) and one row per header shown plus one row per
-  * week the month touches — so up to 8 rows with both headers, and up to 6 with neither. Overflow clips like everything
-  * else.
+  * @param showTitle
+  *   whether the `July 2026` row is drawn. Switched off, the row is not reserved at all, so the first week moves up —
+  *   which is what makes a bare month grid usable in a narrow sidebar
+  * @param showWeekdays
+  *   whether the `Mo Tu We …` row is drawn; switched off, its row goes to the grid too
+  * @param firstDayOfWeek
+  *   the weekday of the leftmost column, so a US-facing application asks for `DayOfWeek.SUNDAY` and gets a Sunday-first
+  *   grid with the day numbers moved to match
+  * @param locale
+  *   the language of the month name and the weekday abbreviations. `Locale.ENGLISH` rather than `Locale.getDefault`,
+  *   deliberately: a widget whose output depends on the machine it runs on cannot be tested by comparing frames, and a
+  *   caller who wants the machine's locale can pass `Locale.getDefault` and mean it
+  * @param showSurroundingDays
+  *   fills the leading and trailing cells of the grid with the days of the months either side, drawn in
+  *   `surroundingStyle` so they read as context rather than as part of this month. They are never selectable:
+  *   `selected` names a day of the month being shown
+  * @param style
+  *   the style of the day numbers of the month shown
+  * @param headerStyle
+  *   the style of the title and the weekday row
+  * @param highlightStyle
+  *   layered over the selected day's style, last, so the cursor stays visible wherever it lands
+  * @param surroundingStyle
+  *   the style of the surrounding days — dimmed by default
+  * @param dayStyles
+  *   gives individual dates their own appearance — a date with an appointment, a public holiday, today, every day of a
+  *   streak. Keyed by `java.time.LocalDate` rather than by day-of-month so a caller can hold one map across several
+  *   months and hand the same value to each grid. A date's style is layered over the calendar's `style`, and
+  *   `highlightStyle` over that in turn: a marked day that is also the selected day reads as selected first
   */
-final case class Calendar(
-    year: Int,
-    month: Int,
-    selected: Option[Int] = None,
+final case class CalendarOptions(
     showTitle: Boolean = true,
     showWeekdays: Boolean = true,
     firstDayOfWeek: DayOfWeek = DayOfWeek.MONDAY,
@@ -47,7 +54,27 @@ final case class Calendar(
     highlightStyle: Style = Style.Default.reverse,
     surroundingStyle: Style = Style.Default.dim,
     dayStyles: Map[LocalDate, Style] = Map.empty,
+)
+
+/** A month grid: an optional title row, an optional weekday header, and the day numbers, with an optional highlighted
+  * day.
+  *
+  * `year` and `month` (1–12) name the month; `selected` names a day of that month to draw in the highlight style.
+  * Everything else — which headers are shown, how the week runs, the language, the surrounding days and the styles —
+  * rides in `options`; see [[CalendarOptions]] for what each knob does.
+  *
+  * Needs 20 columns (seven three-column day slots, the last one two wide) and one row per header shown plus one row per
+  * week the month touches — so up to 8 rows with both headers, and up to 6 with neither. Overflow clips like everything
+  * else.
+  */
+final case class Calendar(
+    year: Int,
+    month: Int,
+    selected: Option[Int] = None,
+    options: CalendarOptions = CalendarOptions(),
 ) extends Widget:
+
+  import options.*
 
   def render(area: Rect, buffer: Buffer): Unit =
     if !area.isEmpty then

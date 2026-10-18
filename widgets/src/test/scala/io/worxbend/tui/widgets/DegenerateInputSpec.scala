@@ -73,7 +73,8 @@ final class DegenerateInputSpec extends AnyFunSuite:
   test("a bar chart with a negative gap stays inside its rect"):
     val buf = buffer(20, 4)
     (0 until 10).foreach(x => buf.set(x, 1, Cell("#", Style.Default)))
-    BarChart(Seq("" -> 5L, "" -> 5L, "" -> 5L), barWidth = 3, barGap = -5).render(Rect(10, 0, 10, 4), buf)
+    BarChart(Seq("" -> 5L, "" -> 5L, "" -> 5L), BarChartOptions(barWidth = 3, barGap = -5))
+      .render(Rect(10, 0, 10, 4), buf)
     // only the ten columns to the *left* of the chart's rect are under test; the chart owns everything from 10 on
     assert(line(buf, 1).take(10) == "##########", s"columns left of the area were overwritten: '${line(buf, 1)}'")
 

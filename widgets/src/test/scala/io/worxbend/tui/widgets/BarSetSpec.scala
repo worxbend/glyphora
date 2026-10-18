@@ -13,7 +13,7 @@ final class BarSetSpec extends AnyFunSuite:
     assert(BarSet.Eighths.empty.isEmpty)
     assert(BlockLadder.Eighths == BarSet.Eighths.eighths)
     assert(Sparkline(Seq(1L)).barSet == BarSet.Eighths)
-    assert(BarChart(Seq(("a", 1L))).barSet == BarSet.Eighths)
+    assert(BarChart(Seq(("a", 1L))).options.barSet == BarSet.Eighths)
 
   test("a set must have exactly one glyph per eighth"):
     assertThrows[IllegalArgumentException](BarSet(Vector("#")))
@@ -63,7 +63,7 @@ final class BarSetSpec extends AnyFunSuite:
 
   test("a bar chart honours the set across the full width of a wide bar"):
     val rows = trimmedLines(
-      rendered(BarChart(Seq(("a", 4L)), barWidth = 3, max = Some(4L), barSet = BarSet.Ascii), 4, 2)
+      rendered(BarChart(Seq(("a", 4L)), BarChartOptions(barWidth = 3, max = Some(4L), barSet = BarSet.Ascii)), 4, 2)
     )
     assert(rows == Seq("###", " a"))
 

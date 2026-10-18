@@ -249,11 +249,11 @@ private[dsl] trait ElementFactories:
     * Bars are scaled against the largest value in `data`, so the tallest always reaches the top of the area; the top of
     * each bar uses a partial block glyph for sub-cell precision. `showValues = true` writes each bar's number on the
     * row above it, so a reader gets the magnitude and not only the comparison; a number with no room there, or wider
-    * than its own bar, is left out rather than truncated. See [[w.BarChart]] for the styling, gap and number-format
-    * knobs.
+    * than its own bar, is left out rather than truncated. See [[w.BarChartOptions]] for the styling, gap and
+    * number-format knobs.
     */
   def barChart(data: Seq[(String, Long)], barWidth: Int = 3, showValues: Boolean = false): WidgetElement =
-    WidgetElement(w.BarChart(data, barWidth = barWidth, showValues = showValues))
+    WidgetElement(w.BarChart(data, w.BarChartOptions(barWidth = barWidth, showValues = showValues)))
 
   /** [[barChart(data:Seq*]] with one bar allowed to look different from the rest.
     *
@@ -278,7 +278,9 @@ private[dsl] trait ElementFactories:
       barStyleFor: (Int, Long) => Option[Style],
       showValues: Boolean,
   ): WidgetElement =
-    WidgetElement(w.BarChart(data, barWidth = barWidth, showValues = showValues, barStyleFor = barStyleFor))
+    WidgetElement(
+      w.BarChart(data, w.BarChartOptions(barWidth = barWidth, showValues = showValues, barStyleFor = barStyleFor))
+    )
 
   /** The same bars laid on their side: one per `(label, value)`, growing rightwards, `barHeight` rows thick, with the
     * labels right-aligned in a gutter down the left edge.
@@ -287,7 +289,7 @@ private[dsl] trait ElementFactories:
     * "authentication" under a three-column bar becomes "aut"; here the names get a strip of their own — up to half the
     * width — and the bars take the rest. A name still too long for the gutter keeps its beginning, which is the part
     * that identifies the category. `showValues = true` writes each bar's number in the track just past the bar's end.
-    * See [[w.BarChart]] for the scale, gap and styling knobs.
+    * See [[w.BarChartOptions]] for the scale, gap and styling knobs.
     */
   def horizontalBarChart(
       data: Seq[(String, Long)],
@@ -295,7 +297,10 @@ private[dsl] trait ElementFactories:
       showValues: Boolean = false,
   ): WidgetElement =
     WidgetElement(
-      w.BarChart(data, direction = Direction.Horizontal, barHeight = barHeight, showValues = showValues)
+      w.BarChart(
+        data,
+        w.BarChartOptions(direction = Direction.Horizontal, barHeight = barHeight, showValues = showValues),
+      )
     )
 
   /** An x/y plot of one or more [[w.Dataset]]s with axes, over an explicit world window.
@@ -352,7 +357,8 @@ private[dsl] trait ElementFactories:
     )
 
   /** A month grid for `month` (1–12) of `year`, weeks starting Monday, with `selected` (a day of the month)
-    * highlighted. Needs 20 columns and up to 8 rows; anything smaller clips. See [[w.Calendar]].
+    * highlighted. Needs 20 columns and up to 8 rows; anything smaller clips. See [[w.Calendar]], and
+    * [[w.CalendarOptions]] for the header, week-start, locale and styling knobs.
     */
   def calendar(year: Int, month: Int, selected: Option[Int] = None): WidgetElement =
     WidgetElement(w.Calendar(year, month, selected))
