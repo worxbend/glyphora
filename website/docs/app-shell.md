@@ -311,6 +311,15 @@ override def bindings = KeyBindings(
 )
 ```
 
+### Sequences, modes and user keymaps
+
+A binding's spec may be a sequence — `binding("g g", "go to top")(…)`,
+`binding("ctrl+k ctrl+s", "save all")(…)`, `binding("<leader> f", "find file")(…)` —
+with a which-key popup listing the possible continuations while one is half typed.
+Bindings can be grouped into vim-style modes with `KeyBindings.modes`, and every binding
+— including the framework's own Tab, Ctrl+P and Ctrl+C — has an id a user keymap file
+rebinds. All of that is on [Key sequences, modes and keymaps](./keybindings).
+
 Focused/local handlers run before global bindings. Use local `.onKey(...)` for
 behavior owned by one element, and app bindings for commands meaningful everywhere.
 

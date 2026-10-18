@@ -12,8 +12,9 @@ import scala.jdk.CollectionConverters.*
   * the first frame. Nothing caught it because published prose is not compiled.
   *
   * This suite extracts every `binding("…", …)` spec from the Markdown that ships to the site and the Wiki and asserts
-  * it parses. It is a spec-level check, not a compile of the snippets, so it cannot catch every documentation defect —
-  * but the class of defect it does catch is the one that reached users.
+  * it parses — as a `KeySequence`, the vocabulary `binding` reads, so `"g g"` is as valid as `"q"`. It is a spec-level
+  * check, not a compile of the snippets, so it cannot catch every documentation defect — but the class of defect it
+  * does catch is the one that reached users.
   */
 final class DocumentedKeySpecSpec extends AnyFunSuite:
 
@@ -48,8 +49,8 @@ final class DocumentedKeySpecSpec extends AnyFunSuite:
     assert(found.nonEmpty, "found no documented bindings — the extraction pattern or the doc paths are wrong")
 
     val broken = found.collect:
-      case (page, spec) if KeyEvent.parse(spec).isLeft =>
-        s"$page: binding(\"$spec\") -> ${KeyEvent.parse(spec).left.getOrElse("")}"
+      case (page, spec) if KeySequence.parse(spec).isLeft =>
+        s"$page: binding(\"$spec\") -> ${KeySequence.parse(spec).left.getOrElse("")}"
     assert(broken.isEmpty, s"documented key specs that throw at declaration time:\n${broken.mkString("\n")}")
 
   /** The specific specs the counter app in the README and the getting-started guide declares. Pinned by value so a

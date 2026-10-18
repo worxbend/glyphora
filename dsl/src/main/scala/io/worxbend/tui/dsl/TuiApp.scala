@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{ColorScheme, Effect, Event, KeyCode, KeyEvent, KeyModifiers, Position, Rect, Size, Widget}
+import io.worxbend.tui.core.{ColorScheme, Effect, Event, KeyCode, KeyEvent, Position, Rect, Size, Widget}
 import io.worxbend.tui.runtime.{
   CaptureStdio,
   Cleanup,
@@ -242,6 +242,13 @@ trait TuiApp:
     * only ever appears in an app whose bindings declare sequences, because only those can leave a prefix pending.
     */
   def whichKey: Boolean = true
+
+  /** The keys the framework handles once nothing else claimed them — focus traversal, the command palette, quit, the
+    * modal close — and the PageUp/PageDown step, each rebindable through a user keymap:
+    * `override def frameworkKeys = FrameworkKeys.default.rebind(userKeymap)`. Read for every key that reaches that
+    * stage, on the render thread.
+    */
+  def frameworkKeys: FrameworkKeys = FrameworkKeys.default
 
   private lazy val keyModeSignal: Signal[ModeId] = Signal(bindings.modes.headOption.getOrElse(ModeId.Default))
 
@@ -878,7 +885,7 @@ trait TuiApp:
         key.code == KeyCode.Escape || routeFresh(key, run, handle)
 
   private def routeFresh(key: KeyEvent, run: RunState, handle: RunnerHandle): Boolean =
-    val consumed = run.host.dispatchKey(key)
+    val consumed = FrameworkKeys.currentPageStep.withValue(frameworkKeys.pageStep)(run.host.dispatchKey(key))
     val bound    = !consumed && !palette.isOpenNow && dispatchBinding(key)
     if consumed || bound then true else handleFrameworkKey(key, run.tracker, handle)
 
@@ -902,20 +909,19 @@ trait TuiApp:
     * without going through a signal; opening the palette and quitting each schedule their own redraw.
     */
   private def handleFrameworkKey(key: KeyEvent, tracker: FocusTracker, handle: RunnerHandle): Boolean =
-    key match
-      case KeyEvent(KeyCode.Tab, modifiers) if modifiers.hasAny(KeyModifiers.Shift)      => tracker.focusPrevious()
-      case KeyEvent(KeyCode.Tab, _)                                                      => tracker.focusNext()
-      case KeyEvent(KeyCode.Char('p'), modifiers)
-          if modifiers.hasAny(KeyModifiers.Ctrl) && activeBindingsNow.bindings.nonEmpty && !palette.isOpenNow =>
-        openPalette()
-        false
-      case KeyEvent(KeyCode.Char('c'), modifiers) if modifiers.hasAny(KeyModifiers.Ctrl) =>
-        handle.quit()
-        false
-      case KeyEvent(KeyCode.Escape, _) if topScreenClosesOnEscape                        =>
-        popScreen()
-        false
-      case _                                                                             => false
+    val keys = frameworkKeys
+    if keys.fires(keys.focusPrevious, key) then tracker.focusPrevious()
+    else if keys.fires(keys.focusNext, key) then tracker.focusNext()
+    else if keys.fires(keys.commandPalette, key) && activeBindingsNow.bindings.nonEmpty && !palette.isOpenNow then
+      openPalette()
+      false
+    else if keys.fires(keys.quit, key) then
+      handle.quit()
+      false
+    else if keys.fires(keys.closeModal, key) && topScreenClosesOnEscape then
+      popScreen()
+      false
+    else false
 
   /** Whether the screen on top of the stack is a modal that asked to be closed by `Esc`.
     *

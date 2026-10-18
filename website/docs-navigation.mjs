@@ -33,6 +33,7 @@ export const docsNavigation = [
     collapsed: false,
     items: [
       'app-shell',
+      'keybindings',
       'forms-and-validation',
       'async-and-timers',
       'motion',
