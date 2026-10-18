@@ -57,6 +57,7 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
   @volatile private var lastTitle: Option[String]     = None
   @volatile private var caret: Option[Position]       = None
   @volatile private var inlineRows                    = 0
+  @volatile private var keptRows: Option[Int]         = None
   private val caretMoveCounter                        = AtomicLong(0)
   private val appendedLineCounter                     = AtomicLong(0)
   private val drawCounter                             = AtomicLong(0)
@@ -151,6 +152,10 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
 
   override def reserveInlineRows(rows: Int): Either[BackendError, Unit] =
     attempt(Op.ReserveInlineRows) { inlineRows = math.max(0, rows) }
+
+  override def keepInlineRows(rows: Int): Either[BackendError, Unit] =
+    keptRows = Some(math.max(0, rows))
+    Right(())
 
   /** Records the requested pointer shape, unless the capabilities a test installed deny pointer shapes — the same gate
     * the JLine backend applies before writing OSC 22, so a test can see that a denied terminal is never asked.
@@ -548,6 +553,10 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
 
   /** How many rows an inline run reserved on the primary screen; `0` for a full-screen run. */
   def reservedInlineRows: Int = inlineRows
+
+  /** How many rows of its inline strip the run asked a close to keep ([[keepInlineRows]]), or `None` if it never asked.
+    */
+  def keptInlineRows: Option[Int] = keptRows
 
   /** The text most recently sent to the clipboard via [[copyToClipboard]], if any. */
   def clipboardContents: Option[String] = lastClipboard

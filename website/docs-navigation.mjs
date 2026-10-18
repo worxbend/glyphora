@@ -40,6 +40,7 @@ export const docsNavigation = [
       'motion',
       'cookbook',
       'print-mode',
+      'prompts',
     ],
   },
   {

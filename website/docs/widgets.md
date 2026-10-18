@@ -21,7 +21,7 @@ Use this page to choose a widget and understand its state model. The
 | Collect input | `input`, `checkbox`, `toggle`, `select`, `button` | `radioGroup`, `slider`, `rangeSlider`, `datePicker`, `timePicker`, `colorPicker`, `textArea`, `autocomplete`, `filePicker`, `selectionList`, `focusGroup`, `Form` |
 | Show a metric | `gauge`, `sparkline` | `lineGauge`, `dualSparkline`, `barChart`, `horizontalBarChart` |
 | Plot data | `chart`, `pieChart`, `heatmap` | `stackedBarChart`, `canvas`, `calendar` |
-| Communicate progress | `spinner`, `progressBar`, `orbitSpinner`, `skeleton`, `indeterminateBar` | `marquee`, `animatedText`, effects, toasts |
+| Communicate progress | `spinner`, `progressBar`, `multiProgress`, `orbitSpinner`, `skeleton`, `indeterminateBar` | `marquee`, `animatedText`, effects, toasts |
 | Report an outcome | `notice`, `badge` | toasts, dialogs |
 | Structure an app | `scaffold`, `topBar`, `sidebar`, `statusBar` | screens, menus, command palette, dialogs, `paginator` |
 
@@ -1913,6 +1913,9 @@ forever instead, whether anything is moving or not.
   step;
 - `progressBar(ratio)`, `progressBar(done, total)` and `gauge(ratio)` show bounded
   progress;
+- `multiProgress(tasks, columns)` shows several caller-owned `ProgressTask`s as aligned
+  rows of `ProgressColumn`s — label, bar, percentage, ETA, rate, bytes, elapsed — see
+  [Prompts and progress](./prompts#multi-task-progress);
 - toasts, splash screens, and post-render effects live in the app/runtime layer.
 
 Every animation is a pure function of elapsed time, so each of these has a

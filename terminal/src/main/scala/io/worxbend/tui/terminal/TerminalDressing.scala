@@ -79,7 +79,13 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
     */
   private def parkBelowInlineFrame(): Either[BackendError, Unit] =
     backend.size.flatMap { size =>
-      backend.writeRaw(AnsiSequences.moveTo(0, math.max(0, size.height - 1)) + "\r\n")
+      backend.inlineKept.filter(_ < backend.inlineRows) match
+        // a run that asked to keep fewer rows than it reserved (`keepInlineRows`): the rows below the kept ones are
+        // blank in its last frame, so the shell's next output starts on the first of them rather than below the strip
+        case Some(kept) =>
+          val top = math.max(0, size.height - backend.inlineRows)
+          backend.writeRaw(AnsiSequences.moveTo(0, math.min(size.height - 1, top + kept)))
+        case None       => backend.writeRaw(AnsiSequences.moveTo(0, math.max(0, size.height - 1)) + "\r\n")
     }
 
   /** Restores what [[releaseTerminal]] undressed. Same two callers, same two threads, same monitor.

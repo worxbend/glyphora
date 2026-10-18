@@ -63,6 +63,8 @@ final class JLine3Backend private (
   // how many rows an inline run reserved on the primary screen, so the dressing choreography can park the cursor below
   // the frame such a run leaves behind
   @volatile private[terminal] var inlineRows                      = 0
+  // how many of those rows the run asked a close to keep (`keepInlineRows`); `None` keeps them all
+  @volatile private[terminal] var inlineKept: Option[Int]         = None
 
   /** The terminal modes [[TerminalDressing]] found active when SIGTSTP handed the terminal back, so SIGCONT can put
     * them back. Written and read on JLine's signal-dispatch thread alone.
@@ -345,6 +347,10 @@ final class JLine3Backend private (
         requestFullRedraw()
       }
 
+  override def keepInlineRows(rows: Int): Either[BackendError, Unit] =
+    inlineKept = Some(math.max(0, rows))
+    Right(())
+
   def leaveAlternateScreen(): Either[BackendError, Unit] =
     Backend.attempt {
       write(AnsiSequences.LeaveAlternateScreen)
@@ -562,7 +568,9 @@ final class JLine3Backend private (
   def close(): Either[BackendError, Unit] =
     val released     = dressing.releaseTerminal()
     // Unlike a temporary handover, close owes no future inline parking after a successful release.
-    if released.failure.isEmpty then inlineRows = 0
+    if released.failure.isEmpty then
+      inlineRows = 0
+      inlineKept = None
     val titleFailure = titleStack.release()
     val closed       = Backend.attempt(terminal.close())
     // first failure wins, but by this line everything has been attempted either way — stopping early would leave the

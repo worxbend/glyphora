@@ -725,6 +725,28 @@ private[dsl] trait ElementFactories:
   def progressBar(current: Int, total: Int)(using Theme): ProgressBarElement =
     progressBar(if total <= 0 then 0.0 else current.toDouble / total)
 
+  /** Rich-style multi-task progress: one row per caller-owned [[w.ProgressTask]], each the same `columns`
+    * ([[w.ProgressColumn.Default]] is label, bar, percentage, ETA). Times come from each task's own clock; while a task
+    * is unfinished the node requests animation ticks so the spinner, elapsed and ETA columns move.
+    */
+  def multiProgress(tasks: Seq[w.ProgressTask], columns: Seq[w.ProgressColumn] = w.ProgressColumn.Default)(using
+      theme: Theme,
+      scope: ReactiveScope,
+  ): MultiProgressElement =
+    if tasks.exists(task => task.isStarted && !task.isFinished) then
+      val _ = AnimationClock.elapsed // subscribes this view to the animation clock, which is what asks for ticks
+    LateBinding.themed(theme) { theme =>
+      MultiProgressElement(
+        tasks,
+        columns,
+        w.MultiProgressOptions(
+          descriptionStyle = Some(theme.loading.label),
+          fillStyle = theme.loading.fill,
+          trackStyle = theme.loading.track,
+        ),
+      )
+    }
+
   /** A text field with a filtered suggestion list under it; `onAccept` fires with the chosen suggestion.
     *
     * `suggestions` is the full candidate list — the element filters it against what has been typed, so the caller does

@@ -308,6 +308,15 @@ Every card the same `.length`, every row the same height, and a missing reading 
 `—` inside its card. The trap is `.fill` on a variable number of children: the layout
 then changes shape every time a sensor drops a sample.
 
+## Track several tasks at once
+
+`multiProgress(tasks, columns)` draws one row per caller-owned `ProgressTask` — label,
+bar, percentage and ETA by default, with elapsed time, rate, bytes, a remaining count and
+a spinner as further `ProgressColumn`s. The tasks are watched, so posting
+`task.advance(n)` back to the render thread repaints the rows without a signal. The
+column catalogue and the clock that makes an ETA testable are in
+[Prompts and progress](./prompts#multi-task-progress).
+
 ## Where to go next
 
 - [Live data & background work](./live-data) — where the numbers come from, and how to
