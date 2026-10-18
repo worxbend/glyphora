@@ -19,6 +19,8 @@ import io.worxbend.tui.terminal.ScriptedInput.{Esc, NothingAvailable, csi, decod
 
 import java.io.InterruptedIOException
 
+import scala.collection.mutable.ArrayBuffer
+
 /** Regressions for input-decoding defects found by terminal-level audit.
   *
   * The common thread: a sequence the decoder does not understand must be *dropped*, never reported as a keypress.
@@ -230,31 +232,17 @@ final class InputDecoderRegressionSpec extends AnyFunSuite:
     assert(impatient.decode(1).isEmpty)
 
   /** `wake()` interrupts the render thread through JLine's reader, which answers a blocked read with an
-    * `InterruptedIOException` — including a read parked *inside* a sequence. The scan used to let that unwind out of
-    * `decode`, aborting the caller with an error `decode` never promised; it is Torn now, exactly as a timeout would
-    * tear the sequence, and the decoder stays usable.
+    * `InterruptedIOException` — including a read parked *inside* a sequence. The scan used to read that as a tear and
+    * drop the sequence, and the bytes still buffered then arrived as literal keys (`5`, `A`). An interrupt says nothing
+    * about the bytes in flight, so the consumed prefix is re-queued instead and the next decode re-parses the sequence
+    * whole: Ctrl+Up arrives as Ctrl+Up.
     */
-  test("an interrupt landing mid-sequence tears it instead of unwinding out of decode"):
+  test("an interrupt landing mid-sequence re-queues the prefix and the next decode reports the whole key"):
     // Ctrl+Up arrives as `ESC[1;5A`; the interrupt lands between the parameters and the final byte
-    val script = Seq(Esc, '['.toInt, '1'.toInt, ';'.toInt, '5'.toInt, 'A'.toInt)
-    var reads  = 0
-    var tape   = script
-    val input  = InputDecoder { _ =>
-      reads += 1
-      // the interrupt fires *instead of* the fifth read's answer: the byte that read was waiting on is still buffered,
-      // so the tape only advances when a character is actually handed back. Past the end, a quiet terminal:
-      // NothingAvailable, never an exception
-      if reads == 5 then throw new InterruptedIOException()
-      else if tape.isEmpty then NothingAvailable
-      else
-        val c = tape.head
-        tape = tape.tail
-        c
-    }
-    assert(input.decode(10).isEmpty) // torn by the interrupt, dropped — and answered instead of thrown
-    // what stayed buffered is not part of a sequence any more; it decodes on its own, as literals
-    assert(input.decode(10).contains(Event.Key(KeyEvent.char('5'))))
-    assert(input.decode(10).contains(Event.Key(KeyEvent.char('A'))))
+    val tape  = WakingTape(Seq(Esc, '['.toInt, '1'.toInt, ';'.toInt, '5'.toInt, 'A'.toInt), interruptAt = Set(5))
+    val input = InputDecoder(tape.read)
+    assert(input.decode(10).isEmpty) // the wake: answered as "no event", not thrown — and nothing consumed is lost
+    assert(input.decode(10).contains(Event.Key(KeyEvent(KeyCode.Up, KeyModifiers.Ctrl))))
     assert(input.decode(10).isEmpty) // and the interrupt was not mistaken for end of input
 
   test("a runaway parameter string is abandoned instead of looping forever"):
@@ -364,3 +352,113 @@ final class InputDecoderRegressionSpec extends AnyFunSuite:
   test("a parameter-less sequence names nothing rather than defaulting its parameters"):
     dropped(csi("~")*)
     dropped(csi("u")*)
+
+  // ---------------------------------------------------------------- wakes inside a sequence (R2-01)
+
+  /** A scripted reader that a wake interrupts: `script` characters are handed out one per read, and a read whose
+    * 1-based index is in `interruptAt` throws `InterruptedIOException` *instead of* answering — the byte it was waiting
+    * on stays on the tape, exactly as JLine leaves a buffered character in place when `wake()` interrupts the parked
+    * read. Past the end of the tape, a quiet terminal: `NothingAvailable`, never an exception. `asked` records the
+    * timeout each read was given.
+    */
+  private final class WakingTape(script: Seq[Int], interruptAt: Set[Int]):
+    private var tape      = script
+    private var reads     = 0
+    val asked             = ArrayBuffer.empty[Long]
+    val read: Long => Int = timeout =>
+      reads += 1
+      asked += timeout
+      if interruptAt.contains(reads) then throw new InterruptedIOException("wake")
+      else if tape.isEmpty then NothingAvailable
+      else
+        val c = tape.head
+        tape = tape.tail
+        c
+
+  private val escape = Some(Event.Key(KeyEvent.of(KeyCode.Escape)))
+
+  /** What `decode` answers over `calls` successive calls against a tape a wake interrupts at the named reads. */
+  private def wakingDecodes(calls: Int, interruptAt: Set[Int])(chars: Int*): List[Option[Event]] =
+    val input = InputDecoder(WakingTape(chars, interruptAt).read)
+    List.fill(calls)(input.decode(10))
+
+  test("a wake while waiting for the byte after ESC reports Escape on the next decode"):
+    // the wake lands in the escape window; the `ESC` already read used to be gone with it, and the keypress with it
+    assert(wakingDecodes(3, interruptAt = Set(2))(Esc) == List(None, escape, None))
+
+  test("ESC, wake, x reports Alt+x"):
+    // a binding on a bare `x` — a quit key, say — used to fire instead of the `alt+x` the user pressed
+    assert(
+      wakingDecodes(2, interruptAt = Set(2))(Esc, 'x'.toInt) ==
+        List(None, Some(Event.Key(KeyEvent(KeyCode.Char('x'), KeyModifiers.Alt))))
+    )
+
+  test("a wake between the halves of a surrogate pair still reports the code point"):
+    assert(
+      wakingDecodes(2, interruptAt = Set(2))(0xd83d, 0xde00) ==
+        List(None, Some(Event.Key(KeyEvent(KeyCode.Char(0x1f600), KeyModifiers.None))))
+    )
+
+  test("ESC, wake, high surrogate, wake, low surrogate reports Alt + the code point"):
+    // the second wake lands with two characters consumed — `ESC` and the high surrogate — and both must come back, in
+    // order, so the Alt modifier survives alongside the recombined character
+    assert(
+      wakingDecodes(3, interruptAt = Set(2, 4))(Esc, 0xd83d, 0xde00) ==
+        List(None, None, Some(Event.Key(KeyEvent(KeyCode.Char(0x1f600), KeyModifiers.Alt))))
+    )
+
+  test("a wake inside a skipped OSC never dispatches its tail, and the key after the terminator decodes normally"):
+    // an OSC 11 background-colour reply; the wake lands five bytes in. The skip used to abort with the interrupt, and
+    // the rest of the reply — `q` included — was typed into whatever had focus, with the BEL arriving as Ctrl+G
+    val reply = Seq(Esc, ']'.toInt) ++ "11;rgb:0000/0000/0000q".map(_.toInt) :+ 7
+    val got   = wakingDecodes(4, interruptAt = Set(6))((reply :+ 'k'.toInt)*)
+    assert(got == List(None, None, Some(Event.Key(KeyEvent.char('k'))), None))
+
+  test("a wake inside SS3 (ESC O, wake, A) reports Up"):
+    assert(
+      wakingDecodes(2, interruptAt = Set(3))(Esc, 'O'.toInt, 'A'.toInt) == List(
+        None,
+        Some(Event.Key(KeyEvent.of(KeyCode.Up))),
+      )
+    )
+
+  test("a wake inside an X10 mouse report reports the click"):
+    val report = Seq(Esc, '['.toInt, 'M'.toInt, 32 + 0, 32 + 33, 32 + 33)
+    assert(
+      wakingDecodes(2, interruptAt = Set(5))(report*) ==
+        List(None, Some(Event.Mouse(MouseEvent(Position(32, 32), MouseEventKind.Down, KeyModifiers.None))))
+    )
+
+  /** The escape window must not restart on every resumption, or an app whose wakes arrive closer together than the
+    * window — a 60 fps ticker — would re-queue a bare Escape forever. The resumed read gets what was left of the
+    * interrupted one's budget, and once that is spent the Escape is reported without asking the reader again.
+    */
+  test("a bare ESC interrupted by wakes every 10 ms is reported as Escape once the 50 ms window has elapsed"):
+    var now     = 0L
+    var reads   = 0
+    val asked   = ArrayBuffer.empty[Long]
+    val input   = InputDecoder(
+      read = timeout =>
+        reads += 1
+        if reads == 1 then Esc
+        else
+          asked += timeout
+          now += 10L * 1_000_000L // the wake lands 10 ms into the wait
+          throw new InterruptedIOException("wake")
+      ,
+      nanoTime = () => now,
+    )
+    val results = List.fill(6)(input.decode(10))
+    assert(results.take(5).forall(_.isEmpty), results.toString)
+    assert(results(5) == escape, results.toString)
+    assert(asked.toList == List(50L, 40L, 30L, 20L, 10L)) // each resumption asks only for what is left of the window
+    assert(reads == 6) // the sixth decode reported Escape without a further read: the budget was spent
+
+  test("a wake inside a control string does not reset its length cap"):
+    // 4300 payload bytes and no terminator; the wake lands after 4000 of them. The skip gives up at 4096 consumed
+    // bytes — as it does without a wake — so exactly the 204 bytes past the cap surface as keys, not 300 and not none
+    val payload = Seq.fill(4300)('a'.toInt)
+    val input   = InputDecoder(WakingTape(Seq(Esc, ']'.toInt) ++ payload, interruptAt = Set(4003)).read)
+    val keys    = List.fill(4500)(input.decode(10)).collect { case Some(Event.Key(key)) => key }
+    assert(keys.size == 4300 - 4096, s"${keys.size} keys surfaced")
+    assert(keys.forall(_ == KeyEvent.char('a')))

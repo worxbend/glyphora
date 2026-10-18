@@ -3,23 +3,38 @@ package io.worxbend.tui.terminal
 import io.worxbend.tui.core.{Buffer, Event, Position, Size, Widget}
 
 import java.util.concurrent.{ConcurrentHashMap, LinkedBlockingQueue, TimeUnit}
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicLong}
 import scala.concurrent.duration.Duration
 
 /** An in-memory [[Backend]] for headless end-to-end testing: renders into a retained snapshot instead of a TTY and
   * reads synthetic events posted by the test driver.
   *
   * Thread contract: the runner calls `readEvent`/`draw` on the render thread while a test thread posts events and
-  * inspects `lastDrawn` — hence the blocking queue and volatile snapshot.
+  * inspects `lastDrawn` — hence the blocking queue and volatile snapshot. [[wake]] interrupts a parked `readEvent`
+  * exactly as the JLine backend's does, so a `Pilot` works with any `tickRate`.
   *
   * Every operation succeeds unless a test says otherwise through [[failNext]], which is the seam that makes the
   * `Either[BackendError, A]` half of [[Backend]] reachable from above this module.
   */
 final class HeadlessBackend(initialSize: Size) extends Backend:
 
-  import HeadlessBackend.Op
+  import HeadlessBackend.{Op, PollSliceMillis}
 
-  private val events                                           = LinkedBlockingQueue[Event]()
+  /** Posted events (`Some`) and wake tokens (`None`), in the order they were asked for. A token is how [[wake]] ends a
+    * parked read without the app ever seeing an event it did not receive; see [[woken]] for why there is at most one.
+    */
+  private val events = LinkedBlockingQueue[Option[Event]]()
+
+  /** How many posted events are waiting to be read. Kept apart from `events.size()` so wake tokens never inflate
+    * [[pendingEvents]], which `Pilot.waitForIdle` requires to reach zero.
+    */
+  private val postedCounter = AtomicInteger(0)
+
+  /** Whether a wake token is already queued and unread. [[wake]] offers a token only on a `false → true` transition and
+    * [[readEvent]] clears it when it consumes the token, so a burst of wakes with nobody reading costs one spurious
+    * loop iteration rather than one per wake — the same coalescing `EventPump` does for the JLine backend.
+    */
+  private val woken                                            = AtomicBoolean(false)
   @volatile private var terminalSize                           = initialSize
   // no device to ask, so nothing is known about pixels until a test says otherwise — see `pixelsTo`
   @volatile private var pixelSize: Option[Size]                = None
@@ -142,21 +157,45 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
     // still a defect when a test has armed this read to fail
     Backend.requirePositiveTimeout(timeout)
     attempt(Op.ReadEvent) {
-      val polled =
-        if timeout.isFinite then Option(events.poll(timeout.toMillis, TimeUnit.MILLISECONDS))
+      // A finite wait is sliced to at most `PollSliceMillis`, so an idle app with a long tick rate still produces the
+      // idle reads `Pilot.waitForIdle` waits for. An early `Right(None)` is what `Backend.readEvent` already permits,
+      // and the runner's tick schedule is clock-driven, so the extra slices manufacture no ticks. The infinite wait
+      // has no slice to fall back on: only a posted event or a wake token ends it.
+      val taken: Option[Option[Event]] =
+        if timeout.isFinite then Option(events.poll(math.min(timeout.toMillis, PollSliceMillis), TimeUnit.MILLISECONDS))
         else Some(events.take())
-      if polled.isEmpty then
-        val _ = idleReadCounter.incrementAndGet()
-      polled
+      taken match
+        case Some(Some(event)) =>
+          val _ = postedCounter.decrementAndGet()
+          Some(event)
+        case Some(None)        =>
+          woken.set(false) // the token is consumed, so the next wake may queue another
+          countIdleRead()
+          None
+        case None              =>
+          countIdleRead()
+          None
     }
 
-  /** Records the wake so tests can assert that queued render-thread work asked for one.
+  /** Counts a read that produced no event while nothing was posted — a timed-out slice or a wake token that found the
+    * queue empty. Counting only timeouts would freeze [[idleReads]] in any app whose wakes arrive faster than a slice
+    * (a 60 fps ticker, a repeating `Async`), and every `Pilot.waitForIdle` would run to its deadline.
+    */
+  private def countIdleRead(): Unit =
+    if postedCounter.get() == 0 then
+      val _ = idleReadCounter.incrementAndGet()
+
+  /** Cuts an in-flight [[readEvent]] short, as `JLine3Backend.wake` interrupts its blocking read, and records the wake
+    * so tests can assert that queued render-thread work asked for one.
     *
-    * Deliberately does not disturb the event queue: headless reads use short timeouts, so waiting one out costs
-    * nothing, and injecting a synthetic event to break the poll would show up as input the app never received.
+    * The wake is a token on the event queue — `None`, where a posted event is `Some` — so the parked read returns
+    * `Right(None)` at once without the app seeing an event it never received. At most one token is queued at a time
+    * (see [[woken]]). Honouring the wake is what lets queued render-thread work, `Pilot.close()` and
+    * `Pilot.waitForIdle()` proceed promptly under any `tickRate` instead of waiting out the whole poll.
     */
   override def wake(): Unit =
     val _ = wakeCounter.incrementAndGet()
+    if woken.compareAndSet(false, true) then events.put(None)
 
   /** Counts the request rather than acting on it: this backend keeps whole frames instead of diffing against a
     * baseline, so there is nothing here to invalidate — but a test above `terminal` still needs to see that the app
@@ -310,7 +349,9 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
     val _ = armedFailures.put(op, error)
 
   /** Queues a synthetic event for the runner to read. Safe from any thread. */
-  def postEvent(event: Event): Unit = events.put(event)
+  def postEvent(event: Event): Unit =
+    val _ = postedCounter.incrementAndGet()
+    events.put(Some(event))
 
   /** Feeds raw terminal input through the *production* [[InputDecoder]] and queues whatever it decodes.
     *
@@ -341,11 +382,12 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
         case Some(event) => postEvent(event)
         case None        => ()
       // Re-checked after every decode, event or not. A decoded event does not end the drain — the decoder may still
-      // hold a pushed-back character — and an undecodable sequence yields no event but may have consumed only part of
+      // hold a pending character — and an undecodable sequence yields no event but may have consumed only part of
       // the input. `ESC [ ESC` ends that way: the torn CSI hands the trailing `ESC` back, and only the next decode
       // turns it into the Escape keypress a real terminal would have delivered. The test has to run after a decoded
-      // event too, or a decoder that keeps answering once the script has run dry would spin forever.
-      draining = remaining.hasNext || decoder.hasPushback
+      // event too, or a decoder that keeps answering once the script has run dry would spin forever. The read function
+      // above never throws `InterruptedIOException`, so none of the decoder's wake-resumable states is reachable here.
+      draining = remaining.hasNext || decoder.hasPending
 
   /** Sets the pixel size [[windowSize]] reports, or clears it with `None`.
     *
@@ -366,10 +408,13 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
   /** How many frames have been flushed. */
   def drawCount: Long = drawCounter.get()
 
-  /** How many reads timed out with an empty queue — each one means the runner went idle. */
+  /** How many reads produced no event while nothing was posted — a timed-out poll slice, or a wake that found the queue
+    * empty. Each one means the runner looked at an empty queue, which is what `Pilot.waitForIdle` waits for.
+    */
   def idleReads: Long = idleReadCounter.get()
 
-  def pendingEvents: Int = events.size()
+  /** How many posted events the runner has not read yet. Wake tokens are not events and are never counted here. */
+  def pendingEvents: Int = postedCounter.get()
 
   /** How many times the app suspended the terminal (see [[suspend]]). */
   def suspendCount: Long = suspendCounter.get()
@@ -456,6 +501,12 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
   def titleContents: Option[String] = lastTitle
 
 object HeadlessBackend:
+
+  /** The longest one [[HeadlessBackend.readEvent]] blocks before answering `Right(None)` on an empty queue, however
+    * long the caller's timeout. Short enough that `Pilot.waitForIdle` sees an idle read well inside its deadline on an
+    * app with a multi-second tick rate; long enough that an idle runner is not spinning.
+    */
+  private val PollSliceMillis: Long = 25L
 
   /** Which [[HeadlessBackend]] operation [[HeadlessBackend.failNext]] arms to fail.
     *

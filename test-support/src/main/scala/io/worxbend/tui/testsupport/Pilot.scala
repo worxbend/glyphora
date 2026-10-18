@@ -374,9 +374,10 @@ final class Pilot private (
     val _      = clock.advance(delta)
     waitForDraws(before + draws)
 
-  /** Waits until the app has consumed every posted event and gone idle (an empty-queue read timeout), or the app thread
-    * has exited. Throws on deadline overrun — an assertion failure, not a modeled error. An app thread that died from a
-    * throwable is not an exit: this fails with that throwable as the cause.
+  /** Waits until the app has consumed every posted event and gone idle — an empty-queue read, meaning a timed-out poll
+    * slice or a wake that found nothing posted; see `HeadlessBackend.idleReads` — or the app thread has exited. Throws
+    * on deadline overrun — an assertion failure, not a modeled error. An app thread that died from a throwable is not
+    * an exit: this fails with that throwable as the cause.
     */
   def waitForIdle(timeout: FiniteDuration = Pilot.DefaultTimeout): Pilot =
     val deadline         = Deadline.now + timeout

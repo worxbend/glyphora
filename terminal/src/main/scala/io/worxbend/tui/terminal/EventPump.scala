@@ -60,8 +60,10 @@ private[terminal] final class EventPump(decoder: InputDecoder):
     // announcing. That is exactly the latency `wake()` exists to remove.
     try if woken.getAndSet(false) then Right(None) else Right(decoder.decode(JLine3Backend.readTimeoutMillis(timeout)))
     catch
-      // A paste retains its progress and yields None; a CSI scan tears its sequence. Other interrupted reads reach
-      // this boundary, where a wake is also "nothing arrived", never an I/O failure.
+      // The decoder keeps every interrupted sequence for itself — a paste or a control-string skip retains its
+      // progress, a half-read sequence re-queues its prefix — so the only interrupt that reaches this boundary is one
+      // on the read of an event's first byte, where nothing was consumed and a wake is also "nothing arrived", never an
+      // I/O failure.
       case _: InterruptedIOException => Right(None)
       case NonFatal(error)           => Left(BackendError.Io(error))
     finally

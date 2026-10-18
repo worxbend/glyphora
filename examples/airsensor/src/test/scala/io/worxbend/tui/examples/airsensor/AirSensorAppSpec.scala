@@ -85,7 +85,12 @@ final class AirSensorAppSpec extends AnyFunSuite:
       pilot.waitUntil("the poll timer to deliver a second reading")(app.history.peek.sizeIs >= 2)
 
       assert(app.history.peek.take(2) == Vector(clean, foul))
-      assert(backend.drawCount > drawsBefore) // the timer alone drove repaints
+      // The reading is written to `history` on the render thread a moment *before* the frame that shows it is drawn, and
+      // this thread can observe the write in that moment — so the repaint is a second thing to wait for, exactly as the
+      // class note says, not something to assert the instant the data is visible. Until `HeadlessBackend.wake()`
+      // interrupted the read, a continuation waited out the poll (the whole 250 ms tick) and `waitForIdle` above returned
+      // with a frame still owed, which kept `drawsBefore` one behind and hid the race.
+      pilot.waitUntil("the timer-driven repaint")(backend.drawCount > drawsBefore) // the timer alone drove repaints
       assert(pilot.screenText.contains("History · last"))
 
       pilot.press("q")

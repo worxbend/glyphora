@@ -4,6 +4,7 @@ import io.worxbend.tui.core.{Event, KeyCode, KeyEvent, KeyModifiers, Position, S
 
 import java.io.InterruptedIOException
 
+import scala.collection.mutable.ArrayDeque
 import scala.concurrent.duration.Duration
 
 /** Decodes terminal input bytes into [[Event]]s: printable keys, control keys, ANSI CSI/SS3 escape sequences for
@@ -25,13 +26,25 @@ import scala.concurrent.duration.Duration
   * that timed out mid-flight — decodes to `None` and is dropped. It must never be reported as a key: synthesizing an
   * `Escape` from unparsed bytes means a capability probe silently closes the user's dialog.
   *
-  * An instance is **not** thread-safe: it owns a shared read cursor and one character of pushback, so exactly one
+  * An instance is **not** thread-safe: it owns a shared read cursor and a buffer of pending characters, so exactly one
   * reading thread may call `decode`. Two threads calling it at once interleave their reads into sequences neither of
-  * them sent, and the single pushback slot can hand one thread's character to the other. `JLine3Backend` upholds this
-  * by only ever decoding from the thread parked in its blocking read.
+  * them sent, and the pending buffer can hand one thread's characters to the other. `JLine3Backend` upholds this by
+  * only ever decoding from the thread parked in its blocking read.
+  *
+  * A `wake()` — the interrupt `JLine3Backend` uses to pull the render thread out of a blocking read, which JLine's
+  * reader surfaces as an `InterruptedIOException` — consumes no character and yields without converting remaining text
+  * into keys. One that lands while a sequence is half read re-queues everything of it consumed so far (`ESC`, `ESC O`,
+  * `ESC [ 1 ; 5`, a high surrogate), so the next `decode` re-parses the sequence whole once the rest arrives; one that
+  * lands inside a control string being skipped leaves the skip resumable, so no part of a reply is ever dispatched as a
+  * keypress. A re-queued `ESC` does not restart the escape window: the resumed read is given what was left of the
+  * interrupted read's budget, so a lone Escape is reported once `escapeTimeoutMillis` has elapsed however often the
+  * wakes come. A *timeout* — as opposed to a wake — still tears the sequence exactly as it always did, because a
+  * timeout says the rest never came where a wake says nothing about the bytes still in flight.
   *
   * `escapeTimeoutMillis` bounds how long the decoder waits for the rest of a sequence after `ESC`. It also decides how
   * long a lone `ESC` takes to report; raise it on high-latency links where a real `ESC [ A` can arrive split.
+  * `nanoTime` is the monotonic clock every deadline here is measured against — the reply round trips' and the escape
+  * window's. It is injectable so a test can move it by hand; production code leaves it on `System.nanoTime`.
   *
   * An `ESC` always *starts* a sequence, so one arriving mid-sequence aborts whatever was being read (ECMA-48 says so,
   * and every terminal relies on it). The decoder hands that `ESC` back rather than consuming it, which means two
@@ -41,12 +54,38 @@ import scala.concurrent.duration.Duration
 private[terminal] final class InputDecoder(
     read: Long => Int,
     escapeTimeoutMillis: Long = InputDecoder.DefaultEscapeTimeoutMillis,
+    nanoTime: () => Long = () => System.nanoTime(),
 ):
 
   import InputDecoder.*
 
-  /** One character of lookahead, so a speculative read can be undone instead of swallowing input. */
-  private var pushedBack = NoChar
+  /** Characters already taken from the reader that the next reads must see again, in wire order.
+    *
+    * Two things put characters here. A speculative read that turns out to belong to the *next* sequence is pushed back
+    * — an `ESC` arriving mid-CSI, the non-surrogate after a lone high surrogate. And a `wake()` interrupt that lands
+    * while a sequence is half read re-queues everything of that sequence consumed so far, so the next [[decode]]
+    * re-parses the whole sequence once the rest arrives instead of the prefix being lost and the remainder delivered as
+    * literal keystrokes. Bounded by [[InputDecoder.PendingCapacity]]: the longest prefix a sequence can re-queue is the
+    * CSI introducer plus [[InputDecoder.MaxParamLength]] parameter characters, and exceeding the bound is a programmer
+    * error in this class, never something input can cause.
+    */
+  private val pending = ArrayDeque.empty[Int]
+
+  /** When the read a wake interrupted would have given up, carried to the read that resumes it.
+    *
+    * A re-queued prefix is consumed without touching the reader, so the first reader read of the next [[decode]] is the
+    * very read the wake cut short; it gets the *remaining* budget of that read rather than a fresh escape window.
+    * Without this a lone `ESC` under wakes arriving closer together than `escapeTimeoutMillis` — a 60 fps ticker —
+    * would be re-queued forever and never reported; with it the Escape is reported once the window has elapsed, even if
+    * every read inside it was interrupted. See [[nextInSequence]].
+    */
+  private var carriedDeadline: Option[Long] = None
+
+  /** A control-string skip in progress, kept across wakes exactly as [[paste]] is. See [[skipControlString]]. */
+  private var controlString: Option[ControlStringSkip] = None
+
+  /** An overrun CSI scan still discarding towards its final byte when a wake landed. See [[scanCsi]]. */
+  private var csiOverrun: Option[CsiProgress] = None
 
   /** Whether the stream has already reported end of file.
     *
@@ -130,13 +169,21 @@ private[terminal] final class InputDecoder(
   private def decodeOnce(timeoutMillis: Long): Option[Event] =
     if ended then Some(Event.EndOfInput)
     else if paste.nonEmpty then paste.flatMap(decodePaste)
+    else if controlString.nonEmpty then controlString.flatMap(resumeControlString)
+    else if csiOverrun.nonEmpty then csiOverrun.flatMap(resumeCsiOverrun)
     else
       val first = next(timeoutMillis)
       if first == EndOfStream then
         ended = true
         Some(Event.EndOfInput)
       else if first < 0 then None
-      else decodeFirst(first)
+      else
+        // A wake that interrupts a read *inside* the sequence `first` opened has re-queued everything consumed so far
+        // by the time it unwinds to here — see `pending` — so nothing is lost and the next decode re-parses it. An
+        // interrupt on the read of `first` itself is left to the caller: nothing was consumed, and `EventPump` already
+        // reads it as "nothing arrived".
+        try decodeFirst(first)
+        catch case _: InterruptedIOException => None
 
   /** Reads the terminal's reply to a Device Status Report, giving up after `timeout`.
     *
@@ -204,13 +251,13 @@ private[terminal] final class InputDecoder(
     */
   private def awaitReply[A](timeout: Duration, arrived: () => Option[A]): Option[A] =
     val unbounded = !timeout.isFinite || timeout.toMillis >= InputDecoder.MaxWaitMillis
-    val deadline  = if unbounded then Long.MaxValue else System.nanoTime() + timeout.toMillis * NanosPerMilli
-    while arrived().isEmpty && (unbounded || System.nanoTime() < deadline) do
+    val deadline  = if unbounded then Long.MaxValue else nanoTime() + timeout.toMillis * NanosPerMilli
+    while arrived().isEmpty && (unbounded || nanoTime() < deadline) do
       // an unbounded wait still reads in bounded steps, so the loop keeps its shape and each read has a sane timeout
       // to hand the terminal
       val remaining =
         if unbounded then InputDecoder.UnboundedPollMillis
-        else math.max(1L, (deadline - System.nanoTime()) / NanosPerMilli)
+        else math.max(1L, (deadline - nanoTime()) / NanosPerMilli)
       decodeOnce(remaining).foreach(defer)
     arrived()
 
@@ -250,11 +297,13 @@ private[terminal] final class InputDecoder(
     * The reader hands back UTF-16 code units, so an astral character (any emoji) arrives as two surrogates; reporting
     * them separately would deliver two unpaired halves that corrupt whatever string they land in. A surrogate that
     * turns out to have no partner is dropped for the same reason: half a character is not a keypress, and the byte that
-    * followed it is pushed back so the next `decode` still sees it.
+    * followed it is pushed back so the next `decode` still sees it. A wake while waiting for the low half re-queues the
+    * high one (and [[decodeEscape]] the `ESC` before it, when there was one), so the pair is recombined on the next
+    * decode instead of being lost.
     */
   private def printable(first: Int, modifiers: KeyModifiers): Option[Event] =
     if Character.isHighSurrogate(first.toChar) then
-      val low = next(escapeTimeoutMillis)
+      val low = requeuingOnWake(first)(nextInSequence())
       if low >= 0 && Character.isLowSurrogate(low.toChar) then
         key(KeyCode.Char(Character.toCodePoint(first.toChar, low.toChar)), modifiers)
       else
@@ -265,14 +314,17 @@ private[terminal] final class InputDecoder(
 
   /** A lone ESC is the Escape key; ESC `[`/`O` opens a control sequence; ESC `]`/`P`/`_` opens a terminal reply; ESC
     * plus anything else is Alt plus whatever that byte decodes to on its own.
+    *
+    * On a wake anywhere inside the sequence the `ESC` goes back to the front of [[pending]], ahead of whatever the body
+    * re-queued, and the next decode re-parses the sequence against the remaining escape window ([[carriedDeadline]]).
     */
-  private def decodeEscape(): Option[Event] = decodeEscapeBody(next(escapeTimeoutMillis))
+  private def decodeEscape(): Option[Event] = requeuingOnWake(Esc)(decodeEscapeBody(nextInSequence()))
 
   /** The body of [[decodeEscape]], taking the character after the `ESC` as an argument rather than reading it.
     *
-    * Split out so [[skipControlString]] can re-dispatch a character it has already consumed. It cannot push that
-    * character back, because the `ESC` that preceded it is gone by then and the single pushback slot holds one
-    * character, not two.
+    * Split out so [[skipControlString]] can re-dispatch a character it has already consumed — the one that ended a
+    * truncated reply by opening a new sequence — and have the decode that was skipping the reply answer for that
+    * sequence, which is the ordering the truncated-reply regressions pin.
     */
   private def decodeEscapeBody(byte: Int): Option[Event] =
     byte match
@@ -300,40 +352,74 @@ private[terminal] final class InputDecoder(
     *
     * A truncated reply — one whose `ESC` opens a new sequence instead of the `ESC \` terminator — is *not* dropped: the
     * character after that `ESC` is re-dispatched through [[decodeEscapeBody]] and whatever it decodes to is returned
-    * from here. Pushing it back instead would lose the `ESC` (the pushback slot holds one character), and the sequence
-    * it opened would then be delivered as ordinary keystrokes, where a `q` quits and an Enter submits.
+    * from here, so the sequence it opened is never delivered as ordinary keystrokes, where a `q` quits and an Enter
+    * submits.
+    *
+    * The payload is unbounded, so a wake cannot re-queue it. The skip is resumable instead, exactly as a paste is: the
+    * terminator state and the `consumed` budget behind [[MaxControlStringLength]] survive the wake, and the next
+    * [[decode]] keeps discarding until the terminator, the cap, or permanent end of file before it reads anything as a
+    * key. Nothing of a reply may ever be dispatched as a keypress; a cap that restarted on every wake would also let a
+    * wake-happy app skip without end.
     */
   private def skipControlString(): Option[Event] =
-    var consumed              = 0
-    var done                  = false
+    val skip = ControlStringSkip()
+    controlString = Some(skip)
+    resumeControlString(skip)
+
+  /** Continues `skip` until the terminator, the length cap, a timeout, or the next wake — see [[skipControlString]]. */
+  private def resumeControlString(skip: ControlStringSkip): Option[Event] =
     var result: Option[Event] = None
-    while !done && consumed < MaxControlStringLength do
-      val c = next(escapeTimeoutMillis)
-      consumed += 1
-      if c < 0 || c == Bel then done = true
-      else if c == Esc then
-        val terminator = next(escapeTimeoutMillis)
-        done = true
-        // `ESC \` ends the string and means nothing else; anything else after the ESC is a new sequence that has to be
-        // decoded here. A timed-out read stays `None`: turning a truncated reply into an `Escape` is exactly the
-        // invented keypress this class promises never to report.
-        if terminator >= 0 && terminator != '\\' then result = decodeEscapeBody(terminator)
-    result
+    try
+      while controlString.nonEmpty && skip.consumed < MaxControlStringLength do
+        if skip.afterEsc then
+          val terminator = nextInSequence()
+          controlString = None
+          // `ESC \` ends the string and means nothing else; anything else after the ESC is a new sequence that has to be
+          // decoded here. A timed-out read stays `None`: turning a truncated reply into an `Escape` is exactly the
+          // invented keypress this class promises never to report. A wake inside *that* sequence has re-queued what it
+          // consumed by the time it reaches here; the `ESC` that opened it goes back in front, and the next decode
+          // re-parses it whole.
+          if terminator >= 0 && terminator != '\\' then
+            result =
+              try decodeEscapeBody(terminator)
+              catch
+                case _: InterruptedIOException =>
+                  requeue(Seq(Esc))
+                  None
+        else
+          val c = nextInSequence()
+          skip.consumed += 1
+          if c < 0 || c == Bel then controlString = None
+          else if c == Esc then skip.afterEsc = true
+      if skip.consumed >= MaxControlStringLength then controlString = None
+      result
+    catch
+      // the wake consumed no character: the skip, its terminator state and its length budget stay exactly as they are,
+      // and the next decode resumes discarding before it reads anything as a key
+      case _: InterruptedIOException => result
+
+  /** Mutable progress of a control-string skip, confined to the decoder's one reading thread and retained only until
+    * the string ends. `consumed` is the budget behind [[MaxControlStringLength]]; a wake leaves it where it was.
+    */
+  private final class ControlStringSkip:
+    var consumed = 0
+    var afterEsc = false
 
   /** CSI sequences: parameters (digits, `;`, `:` and the private `<`/`>`/`=`/`?` prefixes) then a final byte in
     * 0x40-0x7E. [[scanCsi]] reads the sequence off the wire and says how it ended; only a complete one becomes an
     * event, because a torn or oversized sequence must never be turned into an invented key.
     */
   private def decodeCsi(): Option[Event] =
-    scanCsi() match
+    scanCsi(CsiProgress()) match
       case CsiScan.Complete(params, finalByte) => decodeCsiFinal(params, finalByte)
       case CsiScan.Torn | CsiScan.Overrun      => None
 
   /** Reads the body of a CSI sequence — everything after the `ESC [` introducer — and names how it ended.
     *
-    * Called only from [[decodeCsi]], on the same thread as [[decode]], because it advances the decoder's shared read
-    * cursor (and therefore its one-character pushback slot). It never decides what a sequence *means*; it only hands
-    * back the parameters and the final byte, or the reason there are none.
+    * Called from [[decodeCsi]] with a fresh `progress`, and from [[resumeCsiOverrun]] with one a wake left behind, on
+    * the same thread as [[decode]], because it advances the decoder's shared read cursor (and therefore its pending
+    * buffer). It never decides what a sequence *means*; it only hands back the parameters and the final byte, or the
+    * reason there are none.
     *
     * The three outcomes:
     *   - [[CsiScan.Complete]] — a final byte in 0x40-0x7E arrived with the parameters intact.
@@ -346,36 +432,57 @@ private[terminal] final class InputDecoder(
     * that budget on some terminals and stopping mid-sequence left the remaining parameter digits in the buffer to be
     * decoded as keystrokes at startup. [[MaxSequenceLength]] is the backstop that keeps that resynchronization from
     * running forever: reached only once the parameter budget has already overflowed, it abandons the read outright.
+    *
+    * A wake is not a tear. While the parameters are intact it re-queues `[` and every parameter character read so far
+    * (the `ESC` is [[decodeEscape]]'s to re-queue) and lets the interrupt unwind, so the next decode re-parses the
+    * whole sequence; once they have overrun there is nothing trustworthy to re-queue, so the scan is parked in
+    * [[csiOverrun]] and the next decode resumes discarding towards the final byte instead of reading the rest as
+    * keystrokes.
     */
-  private def scanCsi(): CsiScan =
-    val params = StringBuilder()
+  private def scanCsi(progress: CsiProgress): CsiScan =
+    var result: CsiScan = CsiScan.Torn
+    var done            = false
+    while !done do
+      try
+        val c = nextInSequence()
+        progress.consumed += 1
+        if c < 0 then done = true // Torn: the read timed out (or hit end of file) before the final byte
+        else if c == Esc then
+          // an ESC means the sequence in flight was torn off by a new one; hand it back so the next `decode` re-parses
+          // it rather than consuming the new sequence's `[` as this one's final byte
+          pushBack(c)
+          done = true
+        else if c >= 0x40 && c <= 0x7e then
+          result = if progress.overrun then CsiScan.Overrun else CsiScan.Complete(progress.params.result(), c)
+          done = true
+        else if progress.params.length < MaxParamLength then progress.params.append(c.toChar)
+        else if progress.consumed >= MaxSequenceLength then
+          result = CsiScan.Overrun // not a sequence at all: stop looking for a final byte
+          done = true
+        else progress.overrun = true // parameters are being dropped; the scan continues so the stream stays aligned
+      catch
+        case wake: InterruptedIOException =>
+          if progress.overrun then
+            csiOverrun = Some(progress)
+            done = true
+          else
+            requeue('['.toInt +: progress.params.toSeq.map(_.toInt))
+            throw wake
+    result
 
-    // `overrun` records that parameters have been dropped; the scan continues so the stream stays aligned
-    @annotation.tailrec
-    def scan(consumed: Int, overrun: Boolean): CsiScan =
-      // An InterruptedIOException is `wake()`'s interrupt reaching a read parked inside a sequence (JLine's reader
-      // converts the interrupt into one and throws it). The read was cut short exactly as a timeout cuts it short, so
-      // the sequence is Torn for the same reason and with the same consequences; letting the exception unwind out of
-      // `decode` instead aborted the whole decode with an error `decode`'s contract never throws — the reply round
-      // trips drive `decodeOnce` and would surface the interrupt as a spurious I/O failure.
-      val c    =
-        try next(escapeTimeoutMillis)
-        catch case _: InterruptedIOException => -1 // read the interrupt as "nothing arrived", like a timeout
-      val read = consumed + 1
-      if c < 0 then CsiScan.Torn
-      else if c == Esc then
-        // an ESC means the sequence in flight was torn off by a new one; hand it back so the next `decode` re-parses it
-        // rather than consuming the new sequence's `[` as this one's final byte
-        pushBack(c)
-        CsiScan.Torn
-      else if c >= 0x40 && c <= 0x7e then if overrun then CsiScan.Overrun else CsiScan.Complete(params.result(), c)
-      else if params.length < MaxParamLength then
-        params.append(c.toChar)
-        scan(read, overrun)
-      else if read >= MaxSequenceLength then CsiScan.Overrun // not a sequence at all: stop looking for a final byte
-      else scan(read, overrun = true)
+  /** Picks an overrun scan up where a wake left it. It can only end Torn or Overrun, and neither is an event. */
+  private def resumeCsiOverrun(progress: CsiProgress): Option[Event] =
+    csiOverrun = None // re-installed by the scan if another wake lands before the final byte
+    val _ = scanCsi(progress)
+    None
 
-    scan(consumed = 0, overrun = false)
+  /** Mutable progress of one CSI scan, confined to the decoder's one reading thread. It outlives the scan only when a
+    * wake lands after the parameters overran — see [[csiOverrun]].
+    */
+  private final class CsiProgress:
+    val params   = StringBuilder()
+    var consumed = 0
+    var overrun  = false
 
   /** Dispatches a complete CSI sequence to its decoding tier: mouse report, terminal reply, or key.
     *
@@ -746,7 +853,7 @@ private[terminal] final class InputDecoder(
     * terminal happens to speak.
     */
   private def decodeSs3(): Option[Event] =
-    next(escapeTimeoutMillis) match
+    requeuingOnWake('O'.toInt)(nextInSequence()) match
       case 'P' => key(KeyCode.F(1))
       case 'Q' => key(KeyCode.F(2))
       case 'R' => key(KeyCode.F(3))
@@ -789,11 +896,16 @@ private[terminal] final class InputDecoder(
     * replacement character standing in for a coordinate byte.
     */
   private def decodeX10Mouse(): Option[Event] =
-    val button = next(escapeTimeoutMillis)
-    val column = next(escapeTimeoutMillis)
-    val row    = next(escapeTimeoutMillis)
-    if button < 0 || column < 0 || row < 0 then None
-    else MouseReports.x10(button, column, row)
+    // the `CSI M` introducer is already consumed when this runs, so each read re-queues it along with the bytes read so
+    // far (and `decodeEscape` adds the `ESC`): a wake between the coordinates re-parses the whole report next time
+    val button = requeuingOnWake('['.toInt, 'M'.toInt)(nextInSequence())
+    if button < 0 then None
+    else
+      val column = requeuingOnWake('['.toInt, 'M'.toInt, button)(nextInSequence())
+      if column < 0 then None
+      else
+        val row = requeuingOnWake('['.toInt, 'M'.toInt, button, column)(nextInSequence())
+        if row < 0 then None else MouseReports.x10(button, column, row)
 
   /** xterm modifier parameter: `code - 1` is a bitmask of shift/alt/ctrl.
     *
@@ -809,24 +921,70 @@ private[terminal] final class InputDecoder(
   private def key(code: KeyCode, modifiers: KeyModifiers = KeyModifiers.None): Option[Event] =
     Some(Event.Key(KeyEvent(code, modifiers)))
 
+  /** The character an event starts with: a pending one when there is one, else a read bounded by the caller's timeout.
+    */
   private def next(timeoutMillis: Long): Int =
-    if pushedBack >= 0 then
-      val c = pushedBack
-      pushedBack = NoChar
-      c
-    else read(timeoutMillis)
+    if pending.nonEmpty then pending.removeHead() else read(timeoutMillis)
 
-  /** Whether a character read speculatively is waiting to be decoded again.
+  /** The next character *inside* a sequence: a pending one when there is one, else a read that waits out the escape
+    * window — or what is left of it, when a wake cut this same read short a moment ago ([[carriedDeadline]]).
+    *
+    * Once that budget is spent it answers [[ReadExpired]] without reading at all, which is what lets a lone `ESC` be
+    * reported however often the wakes come. A wake that lands here records the deadline for the resumed read before the
+    * interrupt unwinds; the budget is rounded up to whole milliseconds so a resumption never asks for zero.
+    */
+  private def nextInSequence(): Int =
+    if pending.nonEmpty then pending.removeHead()
+    else
+      val deadline  = carriedDeadline.getOrElse(nanoTime() + escapeTimeoutMillis * NanosPerMilli)
+      carriedDeadline = None
+      val nanosLeft = deadline - nanoTime()
+      if nanosLeft <= 0 then ReadExpired
+      else
+        try read((nanosLeft + NanosPerMilli - 1) / NanosPerMilli)
+        catch
+          case wake: InterruptedIOException =>
+            carriedDeadline = Some(deadline)
+            throw wake
+
+  /** Runs `body`; if a wake interrupts a read inside it, hands `consumed` — this layer's share of the sequence's prefix
+    * — back to the front of [[pending]] before letting the interrupt unwind to [[decodeOnce]].
+    *
+    * Layers nest: the innermost reader re-queues its own bytes first, and each enclosing layer puts its bytes in front
+    * of them, so the prefix comes back in wire order — `decodeEscape` contributes the `ESC`, `scanCsi` the `[` and the
+    * parameters, `printable` the high surrogate. A layer that instead leaves a resumable state behind (a control-string
+    * skip, an overrun scan) swallows the interrupt itself and never reaches here.
+    */
+  private def requeuingOnWake[A](consumed: Int*)(body: => A): A =
+    try body
+    catch
+      case wake: InterruptedIOException =>
+        requeue(consumed)
+        throw wake
+
+  /** Whether the decoder still holds something the next [[decode]] will act on without a new character arriving: a
+    * pending character, a control-string skip or an overrun scan in progress, or an escape window a wake cut short.
     *
     * A caller that drives the decoder from a finite script — [[HeadlessBackend.postInput]] — cannot tell from its own
     * script iterator whether the decoder is done: a CSI torn off by a fresh `ESC` hands that `ESC` back, so the last
-    * character of the script can still be inside the decoder after the iterator has run dry. A blocking reader never
-    * needs this, because it simply reads again.
+    * character of the script can still be inside the decoder after the iterator has run dry. It decides from this
+    * alone, so every resumable state has to be visible here. A blocking reader never needs this, because it simply
+    * reads again. The headless read function never throws `InterruptedIOException`, which is what makes the resumable
+    * states reachable only through the JLine pump.
     */
-  private[terminal] def hasPushback: Boolean = pushedBack >= 0
+  private[terminal] def hasPending: Boolean =
+    pending.nonEmpty || controlString.nonEmpty || csiOverrun.nonEmpty || carriedDeadline.nonEmpty
+
+  /** Puts `consumed` at the front of [[pending]], in order, to be read again before anything else. */
+  private def requeue(consumed: Seq[Int]): Unit =
+    if pending.length + consumed.length > PendingCapacity then
+      throw IllegalStateException(
+        s"InputDecoder re-queued ${pending.length + consumed.length} characters, more than any sequence can consume"
+      )
+    pending.prependAll(consumed)
 
   private def pushBack(c: Int): Unit =
-    if c >= 0 then pushedBack = c
+    if c >= 0 then requeue(Seq(c))
 
 private[terminal] object InputDecoder:
 
@@ -881,7 +1039,6 @@ private[terminal] object InputDecoder:
     */
   private[terminal] val ReadExpired = -2
 
-  private val NoChar             = -1
   private val Bel                = 7
   private val Esc                = 0x1b
   private val PasteTimeoutMillis = 200L
@@ -923,6 +1080,12 @@ private[terminal] object InputDecoder:
 
   /** The same bound for a control string, whose payload (a colour, a title, a graphics acknowledgement) is short. */
   private val MaxControlStringLength = 4096
+
+  /** The most characters the pending buffer may hold: the longest prefix a wake can re-queue is `[` plus
+    * [[MaxParamLength]] parameter characters behind the `ESC`, and the pushback of a single torn-off `ESC` on top of
+    * that. Anything past it is a defect in this class, so the bound is enforced with a throw rather than a drop.
+    */
+  private val PendingCapacity = MaxParamLength + 8
 
   /** How many events may wait in the `deferred` queue before the oldest start being dropped.
     *
