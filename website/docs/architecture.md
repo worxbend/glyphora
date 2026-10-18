@@ -367,7 +367,12 @@ The mid-level framework tier:
   `RunnerConfig` is an immutable value: start from `RunnerConfig.Default` (or the
   named-argument `RunnerConfig(...)`) and add `withTickRate(100.millis)`,
   `withMouseCapture`, `withKeyEventTypes`, `withOnFrame(...)`,
-  `withViewport(Viewport.Inline(3))`; each Boolean and `Option` has a `without*` twin.
+  `withViewport(Viewport.Inline(3))`, `withCaptureStdio(CaptureStdio.PrintAbove)`; each
+  Boolean and `Option` has a `without*` twin.
+- **`CaptureStdio` / `LogRing` / `JulBridge`** — what the run does with
+  `System.out`/`System.err`, a thread-safe bounded ring of `LogRecord`s, and the
+  `java.util.logging.Handler` that feeds it (a handler, not a `System.LoggerFinder`, so
+  no `ServiceLoader` under native-image).
 - **`Stopwatch` / `Timer` / `TickDriven`** — caller-owned tick clocks, the thing
   that supplies the `elapsed` `tui-core`'s motion values are pure functions of.
 

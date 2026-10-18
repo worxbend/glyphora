@@ -4,6 +4,9 @@ import io.worxbend.tui.core.{Position, Rect, Widget}
 import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets as w
 
+import java.util.logging.{Level, Logger}
+import scala.util.control.NonFatal
+
 /** A node that wraps exactly one other node and is transparent to everything but rendering.
   *
   * Props, children, measurement, and all three built-in handlers delegate to [[inner]]; a decorator only has to say how
@@ -113,3 +116,52 @@ private[dsl] final case class PointerElement(inner: Element, pointerId: Int, tra
   private[dsl] def withProps(props: ElementProps): PointerElement                = copy(inner = inner.withProps(props))
   private[dsl] override def withChildren(children: Seq[Element]): PointerElement =
     copy(inner = inner.withChildren(children))
+
+/** Confines a failing subtree to its own area: `errorBoundary(fallback)(subtree)`.
+  *
+  * The view is the app's own code, and a throwable out of it ends the run as `RunnerError.Handler` — correctly, since
+  * an app that cannot draw a frame has no defined next frame. But one widget fed a bad value should not take the whole
+  * screen down with it. This node catches a non-fatal throwable at either moment the subtree can fail: while it is
+  * *built* (`subtree` is by-name and evaluated here, once per element) and while it is *painted* (the inner widget's
+  * `render`). Either way `fallback(error)` is painted in the area the subtree was given — on top of a cleared area, so
+  * a half-drawn widget leaves no debris — and the failure is logged at `SEVERE` on the `io.worxbend.tui.dsl` logger,
+  * where a `JulBridge` ring and a `logConsole` can show it. Nothing is remembered between frames: the view is rebuilt
+  * on the next redraw and the subtree gets to try again, so a failure that was transient heals on its own.
+  *
+  * Transparent otherwise, like every decorator: a healthy subtree measures, focuses and routes events as itself. Fatal
+  * throwables (`OutOfMemoryError`, `InterruptedException`) are not caught.
+  */
+final case class ErrorBoundaryElement(
+    build: () => Element,
+    fallback: Throwable => Element,
+) extends DecoratingElement:
+  type Self = ErrorBoundaryElement
+
+  /** The subtree, or the fallback when building it threw. Evaluated once, on first use, on the render thread. */
+  lazy val inner: Element =
+    try build()
+    catch
+      case NonFatal(error) =>
+        ErrorBoundaryElement.report("building", error)
+        fallback(error)
+
+  def widget: Widget =
+    (area, buffer) =>
+      try inner.widget.render(area, buffer)
+      catch
+        case NonFatal(error) =>
+          ErrorBoundaryElement.report("painting", error)
+          w.Clear().render(area, buffer)
+          fallback(error).widget.render(area, buffer)
+
+  private[dsl] def withProps(props: ElementProps): ErrorBoundaryElement =
+    copy(build = () => inner.withProps(props))
+
+  private[dsl] override def withChildren(children: Seq[Element]): Element =
+    children.headOption.fold(this)(child => copy(build = () => child))
+
+private object ErrorBoundaryElement:
+  private val log = Logger.getLogger("io.worxbend.tui.dsl")
+
+  private def report(phase: String, error: Throwable): Unit =
+    log.log(Level.SEVERE, s"errorBoundary: the subtree threw while $phase; painting the fallback instead", error)

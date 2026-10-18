@@ -1,10 +1,12 @@
 package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Alignment, CharWidth, Constraint, Flex, Line, Span, Style, Text, Widget}
+import io.worxbend.tui.runtime.{LogLevel, LogRecord, LogRing}
 import io.worxbend.tui.widgets.{TableCell, TableRow}
 import io.worxbend.tui.widgets as w
 
-import java.time.LocalTime
+import java.time.{LocalTime, ZoneId}
+import java.time.format.DateTimeFormatter
 
 /** A block of plain text; one row per newline-separated line.
   *
@@ -432,6 +434,73 @@ final case class CanvasElement(
   def braille: CanvasElement = copy(resolution = w.CanvasResolution.Braille)
 
   private[dsl] def withProps(props: ElementProps): CanvasElement = copy(props = props)
+
+/** The tail of a [[LogRing]], one record per row, filtered by level and logger prefix and drawn through the `Log`
+  * widget — the console an app shows when the user presses the key it bound for it.
+  *
+  * Each row is `HH:mm:ss LEVEL logger message`, the time and logger in the theme's `muted`, the level in `warning` or
+  * `error` for those two severities, and a record's throwable appended as ` (Class: message)` — the class and message,
+  * never the stack trace, which belongs in a file. The console always follows the tail: it shows the newest records
+  * that fit, and there is no scroll state to own, so a view may build one per frame. The ring is read once per render,
+  * as a snapshot, and it is thread-safe, so records appended from a worker thread show up on the next frame without any
+  * marshalling — a frame that must happen *because* a record arrived is still the app's to request.
+  *
+  * `.minLevel(level)` hides everything below `level`; `.loggerPrefix("app.net")` keeps records from that logger and its
+  * children (the prefix is matched at a `.` boundary, so `app` does not match `apple`); `.zone(zone)` chooses the zone
+  * the timestamp is rendered in, the system default unless said otherwise.
+  */
+final case class LogConsoleElement(
+    ring: LogRing,
+    minimumLevel: LogLevel,
+    prefix: String,
+    zone: ZoneId,
+    warningStyle: Style,
+    errorStyle: Style,
+    mutedStyle: Style,
+    props: ElementProps = ElementProps(),
+) extends Element:
+  type Self = LogConsoleElement
+  override def debugName: String = "logConsole"
+
+  /** Hides records below `level`. */
+  def minLevel(level: LogLevel): LogConsoleElement = copy(minimumLevel = level)
+
+  /** Keeps records from logger `prefix` and its children only; the empty string keeps every logger. */
+  def loggerPrefix(prefix: String): LogConsoleElement = copy(prefix = prefix)
+
+  /** The zone timestamps are rendered in. */
+  def zone(zone: ZoneId): LogConsoleElement = copy(zone = zone)
+
+  def widget: Widget =
+    (area, buffer) =>
+      val rows = ring.snapshot.filter(matches)
+      if !area.isEmpty && rows.nonEmpty then
+        val state = w.LogState(rows.size)
+        rows.foreach(record => state.append(row(record)))
+        w.Log(props.style).render(area, buffer, state)
+
+  private def matches(record: LogRecord): Boolean =
+    record.level.atLeast(minimumLevel) &&
+      (prefix.isEmpty || record.logger == prefix || record.logger.startsWith(prefix + "."))
+
+  private def row(record: LogRecord): Line =
+    val level    = record.level match
+      case LogLevel.Trace   => Span("TRACE", mutedStyle)
+      case LogLevel.Debug   => Span("DEBUG", mutedStyle)
+      case LogLevel.Info    => Span("INFO ", Style.Default)
+      case LogLevel.Warning => Span("WARN ", warningStyle)
+      case LogLevel.Error   => Span("ERROR", errorStyle)
+    val time     = LogConsoleElement.TimeFormat.format(record.instant.atZone(zone))
+    val failure  = record.throwable.map(error => Span(s" ($error)", mutedStyle)).toSeq
+    val message  = Span(record.message, Style.Default)
+    val logger   = Span(record.logger, mutedStyle)
+    val separate = Span.raw(" ")
+    Line(Seq(Span(time, mutedStyle), separate, level, separate, logger, separate, message) ++ failure)
+
+  private[dsl] def withProps(props: ElementProps): LogConsoleElement = copy(props = props)
+
+object LogConsoleElement:
+  private val TimeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
 
 /** A block of text that already carries its own styles, laid out the way [[TextElement]] lays out a plain string.
   *

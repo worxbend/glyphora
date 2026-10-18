@@ -283,11 +283,21 @@ detected and what follows the ceiling.
 
 ## Debug output destroys the live UI
 
-Ordinary `println` writes into the terminal glyphora is repainting. Use a `Log`
-widget, write to a file, or call `printAbove(...)` from a handler to add durable lines
-to scrollback without corrupting the frame. When the line needs styling — a coloured
-log level, a bold prefix — use `insertBefore(height) { (area, buffer) => ... }`, which
-inserts a drawn block instead of stripped text.
+It no longer should, under `TuiApp`: since 0.20.0 `System.out`/`System.err` and Scala's
+`println` are captured for the duration of the run and each line is written into the
+scrollback above the UI through `printAbove`, with anything still buffered flushed to the
+real streams once the terminal is restored. See
+[Where `println` goes](./app-shell#where-println-goes) for the `CaptureStdio` policy —
+`Off` to leave the streams alone, `Console(ring)` to collect them for a `logConsole`.
+
+If output still lands on the frame, it is reaching the terminal by another path: a
+`PrintStream` the code captured before the run started (`val out = System.out` in a
+constructor), a native library writing to file descriptor 1 directly, or a bare
+`TerminalRunner`, which captures nothing unless its `RunnerConfig` says
+`withCaptureStdio(...)`. For output the app wants to be durable, `printAbove(...)` is
+still the explicit way; when the line needs styling — a coloured log level, a bold
+prefix — use `insertBefore(height) { (area, buffer) => ... }`, which inserts a drawn
+block instead of stripped text.
 
 ## Still stuck?
 

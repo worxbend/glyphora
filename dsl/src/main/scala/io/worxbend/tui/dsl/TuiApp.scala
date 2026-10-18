@@ -2,6 +2,7 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{ColorScheme, Effect, Event, KeyCode, KeyEvent, KeyModifiers, Position, Rect, Size, Widget}
 import io.worxbend.tui.runtime.{
+  CaptureStdio,
   Cleanup,
   EventOutcome,
   Frame,
@@ -17,6 +18,7 @@ import io.worxbend.tui.runtime.{
 import io.worxbend.tui.terminal.{Backend, BackendError, ColorDepth, HeadlessBackend, JLine3Backend, PointerShape}
 import io.worxbend.tui.widgets.NoticeLevel
 
+import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
@@ -363,6 +365,10 @@ trait TuiApp:
     def requestRedraw(): Unit                                                       = TuiApp.this.requestRedraw()
     def copyToClipboard(text: String): Unit                                         = TuiApp.this.copyToClipboard(text)
     def quit(): Unit                                                                = TuiApp.this.quit()
+    def editExternally(initial: String, suffix: String): Option[String]             =
+      ExternalEditor.edit(ExternalEditor.command(editorEnvironment), initial, suffix, body => suspend(body))
+    def openInEditor(path: Path, line: Option[Int]): Unit                           =
+      ExternalEditor.open(ExternalEditor.command(editorEnvironment), path, line, body => suspend(body))
     def desktop(title: String, body: String): Unit                = TuiApp.this.notifyDesktop(title, body)
     def colorScheme: Reactive[ColorScheme]                        = colorSchemeSignal
     def taskbarProgress(progress: Reactive[Option[Double]]): Unit = TuiApp.this.taskbarProgress(progress)
@@ -480,6 +486,11 @@ trait TuiApp:
   protected final def suspend(body: => Unit): Unit =
     activeHandle.get().foreach(_.suspend(body))
 
+  /** Where `editExternally` and `openInEditor` read `VISUAL` and `EDITOR` from: the process environment, unless a test
+    * or a host embedding the app points them at an editor of its own choosing.
+    */
+  protected def editorEnvironment: Map[String, String] = sys.env
+
   /** Prints `lines` into the terminal scrollback above the live UI (durable after the app exits) — a `tea.Println`
     * equivalent for surfacing occasional log output. Call from an event handler.
     */
@@ -582,7 +593,10 @@ trait TuiApp:
           throw error
     TerminalRunner(
       backend,
-      runConfig,
+      // the app default for stdio: a `println` lands above the UI rather than on it. Only a config that left the field
+      // unset takes it, so `RunnerConfig(tickRate = …)` keeps the capture and `.withCaptureStdio(CaptureStdio.Off)`
+      // is how an app declines it
+      runConfig.captureStdio.fold(runConfig.withCaptureStdio(CaptureStdio.PrintAbove))(_ => runConfig),
       nanoTime,
       redrawRequested = () => run.invalidated,
       onStop = () => stopRun(run, scope),
