@@ -5,6 +5,8 @@ import io.worxbend.tui.widgets.{MarkdownTheme, SyntaxTheme}
 
 import org.scalatest.funsuite.AnyFunSuite
 
+import scala.util.chaining.scalaUtilChainingOps
+
 /** Covers the shape [[Theme]] took when it stopped being a `case class`: a `final class` with a private constructor, a
   * companion `apply` that keeps every named-argument construction compiling, one `with*` builder per field, structural
   * equality over every field and a `toString` that is the theme's name. The builders are the customisation path the
@@ -51,6 +53,7 @@ final class ThemeBuildersSpec extends AnyFunSuite:
       markdown = markdown,
       syntax = syntax,
       glyphs = glyphs,
+      components = base.components,
     )
 
   test("every with* builder round-trips its field"):
@@ -97,6 +100,8 @@ final class ThemeBuildersSpec extends AnyFunSuite:
       .withMarkdown(light.markdown)
       .withSyntax(light.syntax)
       .withGlyphs(light.glyphs)
+      .withoutComponents
+      .pipe(start => light.components.foldLeft(start)((theme, entry) => theme.withComponent(entry._1, entry._2)))
     assert(twin == light)
     assert(twin.hashCode == light.hashCode)
     assert(twin ne light, "a chain of builders builds a new value; equality here must be structural, not reference")
@@ -104,6 +109,7 @@ final class ThemeBuildersSpec extends AnyFunSuite:
     val dark           = Theme.Dark
     val variants       = Seq(
       dark.withName("other"),
+      dark.withComponent(InputRole, StateStyles(base = magenta)),
       dark.withPrimary(magenta),
       dark.withAccent(magenta),
       dark.withMuted(magenta),
@@ -170,7 +176,9 @@ final class ThemeBuildersSpec extends AnyFunSuite:
     assert(Theme.Dark.withName("mine").toString == "Theme(mine)")
 
   test("the presets and the ambient given are unchanged"):
-    assert(summon[Theme] eq Theme.Dark)
+    // equal to Dark, but its own instance: that is how a themed factory tells "no theme in scope" from `using Dark`
+    assert(summon[Theme] == Theme.Dark)
+    assert(summon[Theme] ne Theme.Dark)
     assert(Seq(Theme.Dark, Theme.Light, Theme.HighContrast).map(_.name) == Seq("dark", "light", "high-contrast"))
     assert(Seq(Theme.Dark, Theme.Light, Theme.HighContrast).forall(_.glyphs == GlyphSupport.Full))
 

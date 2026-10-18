@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Color, Flex, KeyCode, Modifiers}
+import io.worxbend.tui.core.{Flex, KeyCode}
 import io.worxbend.tui.runtime.ReactiveScope
 
 import org.scalatest.funsuite.AnyFunSuite
@@ -73,23 +73,7 @@ final class GrammarSpec extends AnyFunSuite:
     el.props.onKey.foreach(h => { h(Key.Up); h(Key.Down) })
     assert(up && down)
 
-  test("withStyle pushes a default style onto the subtree, but a child's own style wins"):
-    val tree     = withStyle(_.withFg(Color.Red))(row(text("a").fg(Color.Green), text("b")))
-    val children = tree.children
-    assert(children(0).props.style.fg.contains(Color.Green)) // child override survives
-    assert(children(1).props.style.fg.contains(Color.Red)) // inherited default
-
-  test("withStyle unions modifiers down the tree"):
-    val tree = withStyle(_.bold)(column(text("a"), text("b")))
-    assert(tree.children.forall(_.props.style.modifiers.hasAny(Modifiers.Bold)))
-
-  /** A `Style` records the modifiers it was asked to turn off, which is the only way a single child can opt out of a
-    * style its ancestor pushed down: without the record, `notBold` would be indistinguishable from "said nothing".
-    */
-  test("a child can opt out of an inherited modifier with the matching not-builder"):
-    val tree = withStyle(_.bold)(column(text("headline"), text("footnote").styled(_.notBold)))
-    assert(tree.children(0).props.style.modifiers.hasAny(Modifiers.Bold))
-    assert(!tree.children(1).props.style.modifiers.hasAny(Modifiers.Bold))
+  // withStyle's cascade is specified in StyleCascadeSpec, by what it paints rather than by the props it rewrote
 
   /** The annotations are the assertion: the flex helpers hand back the container's own type, so the result can be read
     * for `flex`/`spacing` without a cast, and `text("x").center` no longer compiles at all.

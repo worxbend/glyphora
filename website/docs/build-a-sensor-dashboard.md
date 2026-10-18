@@ -514,7 +514,7 @@ bar. Now the card, and the row of four:
       text(band.label).styled(_.patch(band.style)).length(1),
       progressBar(metric.ratio(reading)).bare.ramp(ColorRamp.Traffic).length(1),
       text(s"of ${metric.scaleText}").dim.length(1),
-    ).styled(_.patch(band.style))
+    ).frameStyle(_.patch(band.style))
 ```
 
 Point `body`'s `Some(reading)` branch at `cards(reading)` and run: four bordered
@@ -650,7 +650,7 @@ temperature and one part per million of CO2 are not the same size of change:
       ).length(1),
       progressBar(metric.ratio(reading)).bare.ramp(ColorRamp.Traffic).length(1),
       text(s"of ${metric.scaleText}").dim.length(1),
-    ).styled(_.patch(band.style))
+    ).frameStyle(_.patch(band.style))
 ```
 
 Add the same to the hero row — `val trend = trendOf(Metric.Aqi)` and a

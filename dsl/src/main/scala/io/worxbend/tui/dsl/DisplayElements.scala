@@ -274,8 +274,8 @@ final case class TableElement(
   type Self = TableElement
   override def debugName: String = "table"
   def widget: Widget             =
-    // every argument by name, so that this call deliberately stopping at `style` — leaving `headerStyle` and
-    // `footerStyle` at their defaults — is visible, and a new `ofStrings` parameter cannot slide into the wrong slot
+    // every argument by name, so that a new `ofStrings` parameter cannot slide into the wrong slot; the header takes the
+    // theme's `"table.header"` component when it has one, and the widget's own bold otherwise
     w.Table.ofStrings(
       rows = rows,
       widths = widths,
@@ -284,6 +284,8 @@ final case class TableElement(
       columnSpacing = columnSpacing,
       flex = flex,
       style = props.style,
+      headerStyle =
+        StateStyles.stated(props.focusState.theme.style(TableHeaderRole.styleName)).getOrElse(Style.Default.bold),
     )
 
   /** This table rebuilt with the leftover width placed differently.

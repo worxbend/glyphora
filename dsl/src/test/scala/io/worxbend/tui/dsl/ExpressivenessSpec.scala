@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Color, Modifiers}
+import io.worxbend.tui.core.{Color, Modifiers, Style}
 import io.worxbend.tui.testsupport.BufferAssertions.{rendered, trimmedLines}
 
 import org.scalatest.funsuite.AnyFunSuite
@@ -33,15 +33,29 @@ final class ExpressivenessSpec extends AnyFunSuite:
     assert(lines.last.endsWith("3 items┘"))
 
   test("titleStyle colours the caption and leaves the border alone"):
-    val element = panel("Errors")(text("x")).fg(Color.Blue).titleStyle(_.withFg(Color.Red))
+    val element = panel("Errors")(text("x")).frameStyle(Style.fg(Color.Blue)).titleStyle(_.withFg(Color.Red))
     val buffer  = rendered(element.widget, 12, 3)
     assert(buffer.get(1, 0).style.fg.contains(Color.Red))  // the "E" of the title
     assert(buffer.get(0, 0).style.fg.contains(Color.Blue)) // the top-left corner glyph
     assert(buffer.get(0, 1).style.fg.contains(Color.Blue)) // the left border
 
-  test("without a titleStyle the caption still follows the element style"):
-    val buffer = rendered(panel("Errors")(text("x")).fg(Color.Blue).widget, 12, 3)
+  test("without a titleStyle the caption follows the frame style"):
+    val buffer = rendered(PanelElement(Some("Errors"), Seq(text("x"))).frameStyle(_.withFg(Color.Blue)).widget, 12, 3)
     assert(buffer.get(1, 0).style.fg.contains(Color.Blue))
+
+  test("frameStyle colours the border; style colours the content and leaves the border alone"):
+    val element = panel("x")(text("body")).frameStyle(Style.fg(Color.Red)).style(Style.fg(Color.Green))
+    val buffer  = rendered(element.widget, 12, 3)
+    assert(buffer.get(0, 0).style.fg.contains(Color.Red))   // corner
+    assert(buffer.get(0, 1).style.fg.contains(Color.Red))   // left border
+    assert(buffer.get(1, 1).style.fg.contains(Color.Green)) // the "b" of the body
+    assert(buffer.get(8, 1).style.fg.contains(Color.Green)) // a blank content cell nobody else styled
+
+  test("a child's own style wins over the panel's content style"):
+    val element = panel("x")(text("body").fg(Color.Yellow)).fg(Color.Green)
+    val buffer  = rendered(element.widget, 12, 3)
+    assert(buffer.get(1, 1).style.fg.contains(Color.Yellow))
+    assert(buffer.get(0, 1).style.fg.contains(Theme.Dark.border.fg.getOrElse(Color.Reset)))
 
   test("line renders differently-styled runs in one row"):
     val element = line("Status: ".styled(identity), "OK".styled(_.withFg(Color.Green)))

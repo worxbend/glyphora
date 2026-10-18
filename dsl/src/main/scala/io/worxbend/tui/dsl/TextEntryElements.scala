@@ -18,7 +18,7 @@ private def singleLineText(text: String): String = text.replace("\r", "").replac
   * caret style paints — the one place that rule is spelled, so every input node agrees with [[reportCaret]].
   */
 private def focusedInput(props: ElementProps, placeholder: String = ""): w.TextInput =
-  w.TextInput(placeholder, showCursor = props.focused && props.caretStyle.paints, style = props.style)
+  w.TextInput(placeholder, showCursor = props.focused && props.caretStyle.paints, style = componentStyled(props))
 
 /** Hands the caret cell to the frame's [[CaretRegister]] when this node is the focused one and its caret style moves
   * the terminal cursor. Called from inside the node's render, after the widget painted, with the widget's own answer.
@@ -97,6 +97,7 @@ final case class InputElement(
 ) extends Element:
   type Self = InputElement
   override def debugName: String                                             = "input"
+  private[dsl] override def componentRole: Option[ComponentRole]             = Some(InputRole)
   override def pointerShape: Option[PointerShape]                            = textPointer(props)
   def widget: Widget                                                         =
     val input = focusedInput(props, placeholder)
@@ -131,7 +132,8 @@ final case class AutocompleteElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = AutocompleteElement
-  override def debugName: String = "autocomplete"
+  override def debugName: String                                 = "autocomplete"
+  private[dsl] override def componentRole: Option[ComponentRole] = Some(InputRole)
 
   /** Caps how many matches the dropdown shows at once. */
   def maxSuggestions(count: Int): AutocompleteElement = copy(maxSuggestions = count)
@@ -212,8 +214,9 @@ final case class NumberInputElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = NumberInputElement
-  override def debugName: String                  = "numberInput"
-  override def pointerShape: Option[PointerShape] = textPointer(props)
+  override def debugName: String                                 = "numberInput"
+  private[dsl] override def componentRole: Option[ComponentRole] = Some(InputRole)
+  override def pointerShape: Option[PointerShape]                = textPointer(props)
 
   /** Also accepts a single decimal point. */
   def decimal: NumberInputElement = copy(format = NumberFormat.Decimal)
@@ -264,6 +267,7 @@ final case class TemplateInputElement(
 ) extends Element:
   type Self = TemplateInputElement
   override def debugName: String                                             = "templateInput"
+  private[dsl] override def componentRole: Option[ComponentRole]             = Some(InputRole)
   override def pointerShape: Option[PointerShape]                            = textPointer(props)
   def widget: Widget                                                         =
     val input = focusedInput(props, placeholder = template)
@@ -337,8 +341,9 @@ final case class TextAreaElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = TextAreaElement
-  override def debugName: String                  = "textArea"
-  override def pointerShape: Option[PointerShape] = textPointer(props)
+  override def debugName: String                                 = "textArea"
+  private[dsl] override def componentRole: Option[ComponentRole] = Some(InputRole)
+  override def pointerShape: Option[PointerShape]                = textPointer(props)
 
   /** Highlights the lines through `lexer` — see `TextAreaOptions.lexer`. */
   def lexer(lexer: w.Lexer): TextAreaElement = copy(options = options.copy(lexer = Some(lexer)))
@@ -363,7 +368,11 @@ final case class TextAreaElement(
   }
   def widget: Widget                                                         =
     val editor =
-      w.TextArea(showCursor = props.focused && props.caretStyle.paints, style = props.style, options = options)
+      w.TextArea(
+        showCursor = props.focused && props.caretStyle.paints,
+        style = componentStyled(props),
+        options = options,
+      )
     (area, buffer) =>
       editor.render(area, buffer, state)
       reportCaret(props, editor.caretAt(area, state))

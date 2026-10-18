@@ -67,6 +67,7 @@ final case class PanelElement(
     borderType: w.BorderType = w.BorderType.Plain,
     titleBottom: Option[String] = None,
     titleStyle: Option[Style] = None,
+    frameStyle: Style = Style.Default,
     padding: w.Padding = w.Padding.zero,
     spacing: Int = 0,
     flex: Flex = Flex.Start,
@@ -88,29 +89,33 @@ final case class PanelElement(
       blockTitles,
       borders,
       padding,
-      borderStyle = props.style,
+      borderStyle = frameStyle,
       borderType = borderType.degraded(props.glyphs),
       mergeBorders = mergeBorders,
     )
 
   def widget: Widget =
     (area, buffer) =>
-      val framed = block
+      val framed  = block
       framed.render(area, buffer)
-      w.Column(columnItems(children), spacing, flex).render(framed.inner(area), buffer)
+      val inner   = framed.inner(area)
+      w.Column(columnItems(children), spacing, flex).render(inner, buffer)
+      // the content style goes *under* whatever the children drew, as `withStyle` does: a child's own colour wins,
+      // and a cell nobody styled — a gap between children, the background — takes the panel's
+      val content = props.style
+      if content != Style.Default then buffer.mapStyle(inner)(content.patch)
 
   def withFlex(mode: Flex): PanelElement    = copy(flex = mode)
   def withSpacing(cells: Int): PanelElement = copy(spacing = math.max(0, cells))
 
   /** The captions handed to `w.Block`.
     *
-    * The titles and the border are styled separately — `titleStyle` when the caller set one, the element's own style
-    * otherwise — so `panel("Errors")(...).fg(Color.Red)` reddens the frame and `.titleStyle(_.withFg(Color.Red))`
-    * reddens only the name. Passing one style for both, as this node used to, made the second of those impossible to
-    * express.
+    * The titles and the border are styled separately — `titleStyle` when the caller set one, the frame style otherwise
+    * — so `panel("Errors")(...).frameStyle(_.withFg(Color.Red))` reddens the frame and `.titleStyle(_.withFg(...))`
+    * only the name. The element's own `style` is neither: it is the *content* style, as on every other node.
     */
   private def blockTitles: Seq[w.BlockTitle] =
-    val captionStyle = titleStyle.getOrElse(props.style)
+    val captionStyle = titleStyle.getOrElse(frameStyle)
     title.map(text => w.BlockTitle.top(Line.styled(text, captionStyle), titleAlignment)).toSeq ++
       titleBottom.map(text => w.BlockTitle.bottom(Line.styled(text, captionStyle), titleBottomAlignment)).toSeq ++
       extraTitles
@@ -146,9 +151,18 @@ final case class PanelElement(
     */
   def borderless: PanelElement = copy(borders = w.Borders.None)
 
-  /** Styles the captions independently of the border, which keeps the element's own style. */
+  /** Styles the captions independently of the border. */
   def titleStyle(transform: Style => Style): PanelElement =
-    copy(titleStyle = Some(transform(titleStyle.getOrElse(props.style))))
+    copy(titleStyle = Some(transform(titleStyle.getOrElse(frameStyle))))
+
+  /** The style the border is drawn in, replacing the theme's `border` — `.frameStyle(Style.fg(Color.Red))`. The
+    * element's own `style` (`.fg(...)`, `.bold`, `.styled(...)`) is the *content* style, layered under the children, as
+    * on every other node; before 0.20.0 it was the border, which this replaces.
+    */
+  def frameStyle(style: Style): PanelElement = copy(frameStyle = style)
+
+  /** The border style rebuilt from the current one — `.frameStyle(_.bold)` keeps the theme's colour and adds bold. */
+  def frameStyle(transform: Style => Style): PanelElement = copy(frameStyle = transform(frameStyle))
 
   /** Blank cells between the border and the children, per side. */
   def padded(cells: w.Padding): PanelElement = copy(padding = cells)
