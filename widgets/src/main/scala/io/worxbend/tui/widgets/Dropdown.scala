@@ -121,10 +121,19 @@ final case class Dropdown(
   def render(area: Rect, buffer: Buffer, state: DropdownState): Unit =
     if !area.isEmpty then
       renderClosedRow(area, buffer, state)
-      if state.open && options.nonEmpty && area.height > 1 then
+      if state.open && area.height > 1 then
         val height = math.min(popupHeight, area.height - 1)
-        Menu(options.map(label => MenuEntry.Item(label)), style, highlightStyle, borderType = borderType)
-          .render(Rect(area.x, area.y + 1, area.width, height), buffer, state.menu)
+        renderPopup(Rect(area.x, area.y + 1, area.width, height), buffer, state)
+
+  /** The option list alone, drawn to fill `area`, for a host that floats the popup over the frame rather than stacking
+    * it under the row — the DSL's `dropdown` hands this to a portal placed under (or, near the bottom edge, above) the
+    * closed row. [[render]] draws its own popup through this, so the two are one picture. Draws nothing for an empty
+    * option list or an empty area, and ignores `state.open`: whoever calls this has decided the list shows.
+    */
+  def renderPopup(area: Rect, buffer: Buffer, state: DropdownState): Unit =
+    if !area.isEmpty && options.nonEmpty then
+      Menu(options.map(label => MenuEntry.Item(label)), style, highlightStyle, borderType = borderType)
+        .render(area, buffer, state.menu)
 
   /** The always-visible row: an open/closed glyph, then the option in force.
     *

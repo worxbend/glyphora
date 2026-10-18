@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{KeyCode, KeyEvent, MouseEvent, MouseEventKind, Rect, Text, Widget}
+import io.worxbend.tui.core.{Buffer, KeyCode, KeyEvent, MouseEvent, MouseEventKind, Rect, Text, Widget}
 import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets as w
 
@@ -59,25 +59,30 @@ final case class SelectElement(
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
     Some(stepsWrapping(options.size, selected, onSelect))
 
-/** A collapsed option chooser: one row showing the option in force, and, while open, the whole option list beneath it
-  * as a bordered popup.
+/** A collapsed option chooser: one row showing the option in force, and, while open, the whole option list floating
+  * beneath it as a bordered popup.
   *
   * The difference from [[SelectElement]] is what happens with a long list. `select` steps one option per keystroke and
   * never shows more than the current one, so choosing the thirtieth of forty options takes thirty keystrokes and the
   * user cannot see what they are choosing between. A dropdown shows the list.
   *
   * Keys while focused. Closed: Enter, Space or Down opens the list. Open: Up/Down move the highlight, Enter commits it
-  * through `onSelect`, Escape closes without changing anything. Note that an open dropdown *consumes* Escape — an app
-  * that binds Escape globally will not see it while a list is showing, which is the same bargain any modal makes and
-  * the reason the highlight is not the committed value.
+  * through `onSelect`, Escape closes without changing anything, and Tab closes it on its way to the next control. Note
+  * that an open dropdown *consumes* Escape — an app that binds Escape globally will not see it while a list is showing,
+  * which is the same bargain any modal makes and the reason the highlight is not the committed value.
   *
-  * A click on the closed row opens the list; a click on an option commits it; a click on the row while open closes it
-  * again. The wheel moves the highlight.
+  * A click on the closed row opens the list; a click on an option commits it; a click anywhere else — the row itself
+  * included — closes the list without committing, and is spent on that: the control under the pointer does not also
+  * receive it. The wheel over the list moves the highlight.
   *
-  * The popup is drawn inside the node's own area, not floated over the screen, so while it is open the node claims
-  * `1 + popup` rows and the layout around it moves down. That is what makes it work inside any panel or column today,
-  * with no overlay machinery; the visible cost is that a dropdown near the bottom of a short area gets a clipped list
-  * rather than one that opens upwards.
+  * The list is drawn through the frame root, the way [[PortalElement]] draws, so the node claims one row whether the
+  * list is open or not and nothing around it moves when it opens. The popup sits under the row when the frame has room
+  * for it there and above the row when it does not, and is clipped to the frame — never to the panel or pane the row
+  * sits in. Rendered outside a host, with no frame root to float through, the list paints in place under the row,
+  * clipped only by the buffer.
+  *
+  * `floating` is the framework's slot: the focus pass hands back the decorated scrim and list nodes through it, so the
+  * mouse router can find the list where it was painted. Application code never sets it.
   */
 final case class DropdownElement(
     options: Seq[String],
@@ -86,20 +91,61 @@ final case class DropdownElement(
     onSelect: Int => Unit,
     maxVisibleRows: Int = 8,
     props: ElementProps = ElementProps(focusable = true),
+    floating: Seq[Element] = Seq.empty,
 ) extends Element:
   type Self = DropdownElement
 
-  def widget: Widget =
-    val dropdown = w.Dropdown(options, selected, maxVisibleRows, focusStyled(props), props.focusStyle)
-    (area, buffer) => dropdown.render(area, buffer, state)
+  private def dropdownWidget: w.Dropdown =
+    w.Dropdown(options, selected, maxVisibleRows, focusStyled(props), props.focusStyle)
 
-  private[dsl] def withProps(props: ElementProps): DropdownElement = copy(props = props)
-
-  /** One row when closed; the row plus the popup when open. The claim changes with the state on purpose — that is how
-    * the container above makes room for the list on the frame it opens.
+  /** While the list shows: the click-outside scrim and then the list, in paint order, so the list is painted last and
+    * wins the pointer over the scrim. Both are children for event routing only — the node paints them itself, through
+    * the portal queue, because where they go is only known at render time.
     */
-  private[dsl] override def claim: SizeClaim =
-    if state.open then SizeClaim.rows(w.Dropdown(options, selected, maxVisibleRows).openHeight) else SizeClaim.OneRow
+  override def children: Seq[Element] =
+    if floating.nonEmpty then floating
+    else if state.open && options.nonEmpty then
+      Seq(DropdownScrimElement(state), DropdownPopupElement(dropdownWidget, options, state, onSelect))
+    else Seq.empty
+
+  def widget: Widget =
+    val dropdown = dropdownWidget
+    (area, buffer) =>
+      dropdown.render(Rect(area.x, area.y, area.width, 1), buffer, state)
+      children match
+        case Seq(scrim, popup) if !props.inert => floatList(area, buffer, dropdown.popupHeight, scrim, popup)
+        case _                                 => ()
+
+  /** Places the list under the row, or above it when the frame has less room below than the list needs — whichever side
+    * has more room when neither fits, clipped to that room — and hands scrim and list to the frame root.
+    *
+    * The arithmetic runs in screen space, because room is a property of the frame, and is converted back to this node's
+    * own coordinates on the way out: [[PortalQueue.offer]] translates a *local* rectangle, and translation is a pure
+    * offset, so the difference between the node's screen rectangle and its local one is the shift to undo.
+    */
+  private def floatList(area: Rect, buffer: Buffer, popupRows: Int, scrim: Element, popup: Element): Unit =
+    val screen     = FrameCoordinates.translate(area)
+    // no frame root: there is nothing to run out of room against, so the list opens below as it always did
+    val frame      = FrameCoordinates.frameBoundary.getOrElse(Rect(screen.x, screen.y, area.width, 1 + popupRows))
+    val roomBelow  = frame.bottom - (screen.y + 1)
+    val roomAbove  = screen.y - frame.y
+    val opensBelow = roomBelow >= popupRows || roomBelow >= roomAbove
+    val height     = math.min(popupRows, if opensBelow then roomBelow else roomAbove)
+    if height > 0 then
+      val top    = if opensBelow then screen.y + 1 else screen.y - height
+      val shiftX = screen.x - area.x
+      val shiftY = screen.y - area.y
+      val target = Rect(area.x, top - shiftY, area.width, height)
+      if PortalQueue.isCollecting then
+        PortalQueue.offer(frame.offset(-shiftX, -shiftY), scrim)
+        PortalQueue.offer(target, popup)
+      else popup.widget.render(target, buffer)
+
+  private[dsl] def withProps(props: ElementProps): DropdownElement                = copy(props = props)
+  private[dsl] override def withChildren(children: Seq[Element]): DropdownElement = copy(floating = children)
+
+  /** One row, open or closed: the list floats over the frame, so the container above never makes room for it. */
+  private[dsl] override def claim: SizeClaim = SizeClaim.OneRow
 
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     = Some(handleKey)
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] = Some(handleMouse)
@@ -121,6 +167,11 @@ final case class DropdownElement(
         case KeyEvent(KeyCode.Up, _)                        =>
           state.selectPrevious(options)
           true
+        // closed, and deliberately *not* consumed: focus traversal still happens, so the list never stays floating
+        // over a control that has the keyboard
+        case KeyEvent(KeyCode.Tab, _)                       =>
+          state.close()
+          false
         case _                                              => false
 
   /** Anything else is left alone while closed, so Tab still reaches focus traversal and an app binding still sees its
@@ -133,7 +184,11 @@ final case class DropdownElement(
         true
       case _                                                                                 => false
 
+  /** The row's own mouse behaviour. A press on the row opens the list; while the list shows, the scrim is what the
+    * router finds under the pointer everywhere but on the list, so a press here only ever means "open".
+    */
   private def handleMouse(event: MouseEvent, area: Rect): Boolean =
+    val _ = area
     event.kind match
       case MouseEventKind.ScrollUp if state.open   =>
         state.selectPrevious(options)
@@ -141,27 +196,75 @@ final case class DropdownElement(
       case MouseEventKind.ScrollDown if state.open =>
         state.selectNext(options)
         true
-      case MouseEventKind.Down                     => handlePress(event.position.y - area.y)
+      case MouseEventKind.Down                     =>
+        if state.open then state.close() else if options.nonEmpty then state.openAt(selected)
+        true
       case _                                       => false
 
-  /** Rows of an open dropdown above the first option: the closed row and the popup's top border. */
-  private val PopupHeaderRows = 2
+/** The floating option list of an open [[DropdownElement]]: the popup alone, drawn through the frame root at the
+  * rectangle the dropdown chose for it, with the mouse behaviour that used to belong to the popup rows of the node — a
+  * press on an option commits it and closes the list, the wheel moves the highlight. Not focusable: the keyboard stays
+  * with the row.
+  *
+  * Built by the dropdown each frame it is open, never by application code; `w.Dropdown` is passed in so the list is
+  * drawn with the row's own styles.
+  */
+private[dsl] final case class DropdownPopupElement(
+    dropdown: w.Dropdown,
+    options: Seq[String],
+    state: w.DropdownState,
+    onSelect: Int => Unit,
+    props: ElementProps = ElementProps(),
+) extends Element:
+  type Self = DropdownPopupElement
+  def widget: Widget = (area, buffer) => dropdown.renderPopup(area, buffer, state)
+  private[dsl] def withProps(props: ElementProps): DropdownPopupElement      = copy(props = props)
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] = Some(handleMouse)
 
-  /** `offsetY` is how many rows below the node's own top the press landed. Row 0 is the closed row; the popup starts at
-    * row 1, and its first option is at row 2 because row 1 is the popup's top border. Which option a painted row holds
-    * is the state's own arithmetic — `highlightAt` adds the popup's scroll offset.
+  /** Rows of the popup above its first option: the top border. */
+  private val PopupHeaderRows = 1
+
+  /** The popup's top and bottom border rows together — the rows of its area that hold no option. */
+  private val PopupBorderRows = 2
+
+  /** The border rows are consumed and commit nothing; a press on an option row commits the option that row shows, which
+    * is the state's own arithmetic — `highlightAt` adds the list's scroll offset.
     */
-  private def handlePress(offsetY: Int): Boolean =
-    if offsetY == 0 then
-      if state.open then state.close() else if options.nonEmpty then state.openAt(selected)
-      true
-    else if state.open then
-      state.highlightAt(offsetY - PopupHeaderRows, options.size).foreach { row =>
-        onSelect(row)
+  private def handleMouse(event: MouseEvent, area: Rect): Boolean =
+    event.kind match
+      case MouseEventKind.ScrollUp   =>
+        state.selectPrevious(options)
+        true
+      case MouseEventKind.ScrollDown =>
+        state.selectNext(options)
+        true
+      case MouseEventKind.Down       =>
+        val row = event.position.y - area.y - PopupHeaderRows
+        if row >= 0 && row < area.height - PopupBorderRows then
+          state.highlightAt(row, options.size).foreach { index =>
+            onSelect(index)
+            state.close()
+          }
+        true
+      case _                         => false
+
+/** The invisible, frame-sized layer an open [[DropdownElement]] floats under its list: it paints nothing and exists so
+  * that a press anywhere outside the list closes the list — and goes no further, the way a click outside a menu is
+  * spent on dismissing it. Painted before the list, so the list wins the pointer on its own cells. Everything but a
+  * press is declined, so the wheel still reaches whatever scrolls beneath.
+  */
+private[dsl] final case class DropdownScrimElement(state: w.DropdownState, props: ElementProps = ElementProps())
+    extends Element:
+  type Self = DropdownScrimElement
+  def widget: Widget                                                         = (_, _) => ()
+  private[dsl] def withProps(props: ElementProps): DropdownScrimElement      = copy(props = props)
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] = Some { (event, _) =>
+    event.kind match
+      case MouseEventKind.Down =>
         state.close()
-      }
-      true
-    else false
+        true
+      case _                   => false
+  }
 
 /** Mutually exclusive options: Up/Down move the selection while focused. */
 final case class RadioGroupElement(

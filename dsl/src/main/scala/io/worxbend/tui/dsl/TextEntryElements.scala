@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{CharWidth, KeyCode, KeyEvent, KeyModifiers, Rect, Widget}
+import io.worxbend.tui.core.{CharWidth, KeyCode, KeyEvent, KeyModifiers, Position, Rect, Widget}
 import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets as w
 
@@ -14,6 +14,25 @@ enum NumberFormat:
 /** Single-line editors preserve pasted words without retaining terminal control line breaks. */
 private def singleLineText(text: String): String = text.replace("\r", "").replace("\n", " ")
 
+/** The single-line widget a text node draws with: the painted cursor shows only while the node is focused *and* its
+  * caret style paints — the one place that rule is spelled, so every input node agrees with [[reportCaret]].
+  */
+private def focusedInput(props: ElementProps, placeholder: String = ""): w.TextInput =
+  w.TextInput(placeholder, showCursor = props.focused && props.caretStyle.paints, style = props.style)
+
+/** Hands the caret cell to the frame's [[CaretRegister]] when this node is the focused one and its caret style moves
+  * the terminal cursor. Called from inside the node's render, after the widget painted, with the widget's own answer.
+  */
+private def reportCaret(props: ElementProps, cell: => Option[Position]): Unit =
+  if props.focused && props.caretStyle.moves then cell.foreach(CaretRegister.report)
+
+/** Which of the two carets a focused text node shows — see [[CaretStyle]]. Defined for every element so that the
+  * builder chains like any other, but read only by the text-entry nodes; on anything else it is inert.
+  */
+extension [E <: Element](element: E)
+  def caretStyle(style: CaretStyle): element.Self =
+    element.withProps(element.props.copy(caretStyle = style))
+
 /** Single-line text input. Editing state (value + cursor) is app-owned; editing keys are handled by the built-in
   * handler while focused, and any consumed key triggers a redraw.
   */
@@ -25,8 +44,10 @@ final case class InputElement(
   type Self = InputElement
   override def pointerShape: Option[PointerShape]                            = textPointer(props)
   def widget: Widget                                                         =
-    val input = w.TextInput(placeholder, showCursor = props.focused, style = props.style)
-    (area, buffer) => input.render(area, buffer, state)
+    val input = focusedInput(props, placeholder)
+    (area, buffer) =>
+      input.render(area, buffer, state)
+      reportCaret(props, input.caretAt(area, state))
   private[dsl] def withProps(props: ElementProps): InputElement              = copy(props = props)
   private[dsl] override def claim: SizeClaim                                 = SizeClaim.OneRow
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     = Some(handleKey)
@@ -74,9 +95,11 @@ final case class AutocompleteElement(
   def widget: Widget                                                         =
     val visible   = matches
     val highlight = highlightedIndex(visible)
-    val input     = w.TextInput(showCursor = props.focused, style = props.style)
+    val input     = focusedInput(props)
     (area, buffer) =>
-      input.render(Rect(area.x, area.y, area.width, 1), buffer, state.input)
+      val row = Rect(area.x, area.y, area.width, 1)
+      input.render(row, buffer, state.input)
+      reportCaret(props, input.caretAt(row, state.input))
       visible.zipWithIndex.foreach { (candidate, index) =>
         val rowStyle = if index == highlight && props.focused then focusStyled(props) else props.style.dim
         buffer.setString(area.x + 2, area.y + 1 + index, candidate, rowStyle)
@@ -139,8 +162,10 @@ final case class NumberInputElement(
   def decimal: NumberInputElement = copy(format = NumberFormat.Decimal)
 
   def widget: Widget                                                     =
-    val input = w.TextInput(showCursor = props.focused, style = props.style)
-    (area, buffer) => input.render(area, buffer, state)
+    val input = focusedInput(props)
+    (area, buffer) =>
+      input.render(area, buffer, state)
+      reportCaret(props, input.caretAt(area, state))
   private[dsl] def withProps(props: ElementProps): NumberInputElement    = copy(props = props)
   private[dsl] override def claim: SizeClaim                             = SizeClaim.OneRow
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler] = Some(handleKey)
@@ -183,8 +208,10 @@ final case class TemplateInputElement(
   type Self = TemplateInputElement
   override def pointerShape: Option[PointerShape]                            = textPointer(props)
   def widget: Widget                                                         =
-    val input = w.TextInput(placeholder = template, showCursor = props.focused, style = props.style)
-    (area, buffer) => input.render(area, buffer, state)
+    val input = focusedInput(props, placeholder = template)
+    (area, buffer) =>
+      input.render(area, buffer, state)
+      reportCaret(props, input.caretAt(area, state))
   private[dsl] def withProps(props: ElementProps): TemplateInputElement      = copy(props = props)
   private[dsl] override def claim: SizeClaim                                 = SizeClaim.OneRow
   private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler] = Some { text =>
@@ -253,8 +280,10 @@ final case class TextAreaElement(
     else false
   }
   def widget: Widget                                                         =
-    val editor = w.TextArea(showCursor = props.focused, style = props.style)
-    (area, buffer) => editor.render(area, buffer, state)
+    val editor = w.TextArea(showCursor = props.focused && props.caretStyle.paints, style = props.style)
+    (area, buffer) =>
+      editor.render(area, buffer, state)
+      reportCaret(props, editor.caretAt(area, state))
   private[dsl] def withProps(props: ElementProps): TextAreaElement           = copy(props = props)
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
     Some(
