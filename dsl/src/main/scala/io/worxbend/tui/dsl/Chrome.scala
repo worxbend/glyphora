@@ -35,9 +35,13 @@ def statusBar(hints: Seq[(String, String)])(using theme: Theme): Element =
   val row     = Element.row(Element.spacer(1), Element.text(content).styled(_ => theme.surface).fill)
   FilledElement(row, theme.surface).length(1)
 
-/** Status bar fed directly from the app's declared [[KeyBindings]]. */
+/** Status bar fed directly from the app's declared [[KeyBindings]]: the live hints, led by the current mode as
+  * `[normal]` when the bindings declare modes and by the pending prefix as `g …` while a key sequence is half typed.
+  */
 def statusBar(bindings: KeyBindings)(using Theme): Element =
-  statusBar(bindings.hints)
+  val mode    = Option.when(bindings.modes.nonEmpty)(bindings.mode).flatten.map(id => (s"[$id]", ""))
+  val pending = bindings.pending.map(prefix => (s"${prefix.spelling} …", ""))
+  statusBar(mode.toSeq ++ pending.toSeq ++ bindings.hints)
 
 /** Which edge of the content a [[Sidebar]] sits against. */
 enum Side:
@@ -81,15 +85,21 @@ private val MaxHelpKeyColumn = 24
 
 /** A centered help dialog listing every hinted binding — render it last (over the view) while visible. */
 def helpOverlay(bindings: KeyBindings, title: String = "Help")(using theme: Theme): Element =
+  // bindings with modes list every mode, each under a `name:` heading, after the mode-less ones — the overlay is where
+  // a user learns what the other modes do, so it is not narrowed to the live one the way the status bar is
+  val sections = bindings.helpSections
+  val rows     = sections.flatMap(_._2)
   // display columns, not UTF-16 lengths: a binding labelled with a CJK or emoji key otherwise asks for fewer cells
   // than it renders into and the second column stops lining up
-  val width  = bindings.hints
+  val width    = rows
     .map((key, description) => CharWidth.of(key) + CharWidth.of(description) + HelpColumnGap)
     .maxOption
     .getOrElse(4)
-  val column = math.min(width, MaxHelpKeyColumn)
-  val lines  = bindings.hints.map { (key, description) =>
-    key + " " * math.max(0, column - CharWidth.of(key)) + description
+  val column   = math.min(width, MaxHelpKeyColumn)
+  val lines    = sections.flatMap { (heading, hints) =>
+    heading.map(mode => s"$mode:").toSeq ++ hints.map { (key, description) =>
+      key + " " * math.max(0, column - CharWidth.of(key)) + description
+    }
   }
   Element.widget(
     w.Dialog(title, Text.raw(lines.mkString("\n")), buttons = Seq.empty, style = theme.primary)

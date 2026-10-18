@@ -209,6 +209,15 @@ final class KeyBindings private (
   def hints: Seq[(String, String)] =
     active.filter(_.showInHints).map(bound => (bound.label, bound.description))
 
+  /** Every hinted binding grouped for the help overlay: the mode-less ones first under no heading, then each mode's
+    * under its id. Without modes this is one untitled section holding exactly [[hints]].
+    */
+  def helpSections: Seq[(Option[ModeId], Seq[(String, String)])] =
+    def rows(of: Seq[KeyBinding]) = of.filter(_.showInHints).map(bound => (bound.label, bound.description))
+    val global                    = rows(bindings.filter(_.mode.isEmpty))
+    val modal                     = modes.map(id => (Some(id), rows(bindings.filter(_.mode.contains(id)))))
+    (if global.nonEmpty || modes.isEmpty then Seq((None, global)) else Seq.empty) ++ modal
+
   /** These bindings followed by `other`'s. The left side shadows the right for a key both declare; the combination is
     * not re-checked for collisions, so a screen's `"g"` may shadow an app's `"g g"` while the screen is up.
     */

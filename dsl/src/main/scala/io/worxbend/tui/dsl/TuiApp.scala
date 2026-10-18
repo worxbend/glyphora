@@ -390,6 +390,7 @@ trait TuiApp:
     def colorScheme: Reactive[ColorScheme]                        = colorSchemeSignal
     def taskbarProgress(progress: Reactive[Option[Double]]): Unit = TuiApp.this.taskbarProgress(progress)
     def clearTaskbarProgress(): Unit                              = TuiApp.this.clearTaskbarProgress()
+    def keyMode: Signal[ModeId]                                   = keyModeSignal
 
   /** Just this app's toast stack, for a helper that notifies and does nothing else. The same object as [[services]]. */
   protected final def notifications: Notifications = services
