@@ -300,8 +300,9 @@ private[dsl] trait ElementFactories:
   /** A single-line text field over caller-owned [[w.TextInputState]], showing `placeholder` while empty.
     *
     * Create the state once, outside `view` — a `TextInputState()` built inside the view is a new empty editor on every
-    * frame, which is the "my input keeps resetting" bug. It is render-thread-only, and writing to it from outside an
-    * event handler does not by itself schedule a frame: see [[w.TextInputState]].
+    * frame, which is the "my input keeps resetting" bug. It is render-thread-only; a write made on that thread outside
+    * an event handler is drawn on the next loop iteration, because the node watches its version: see
+    * [[w.TextInputState]].
     *
     * Editing keys (typing, arrows, Home/End, Backspace/Delete) are handled while focused; `Enter` is left unconsumed so
     * the enclosing app can decide what submitting means.
@@ -324,8 +325,8 @@ private[dsl] trait ElementFactories:
   /** A scrollable single-selection list over caller-owned [[w.ListState]].
     *
     * The state must be created once, outside `view` — a `ListState` built inside the view would be a fresh one every
-    * frame and the selection would never move. It is a plain mutable object read and written on the render thread only,
-    * and mutating it does not by itself schedule a frame: see [[w.ListState]].
+    * frame and the selection would never move. It is read and written on the render thread only, and a mutation made
+    * there outside an event handler is drawn on the next loop iteration: see [[w.ListState]].
     *
     * The selected row is drawn in the app [[Theme]]'s `focus` style, which the focus pass stamps onto every element —
     * focused or not — so a list keeps the app's highlight even while the keyboard is somewhere else.
@@ -831,6 +832,29 @@ private[dsl] trait ElementFactories:
       MarkdownStreamElement(stream, theme.markdown, w.MarkdownOptions(), Some(scroll), ElementProps(focusable = true))
     }
 
+  /** A diff pane over `patch` — `Patch.parse(gitDiffOutput)` or `Patch.of(before, after)` — with file and hunk headers,
+    * line numbers on both sides and the changed words of a replaced line emphasised. `state` is caller-owned like any
+    * scroll state: create it once outside `view`. Focusable; `n`/`]` and `p`/`[` step through hunks, the arrows, Page
+    * keys, Home/End and the wheel scroll. Added lines draw in the theme's `success` style, removed ones in `error`,
+    * hunk headers in `accent` and line numbers in `muted`; `.split`, `.contextLines(n)` and `.lexer(…)` adjust the
+    * view. See [[DiffViewElement]].
+    */
+  def diffView(patch: w.Patch, state: w.DiffViewState)(using theme: Theme): DiffViewElement =
+    DiffViewElement(
+      patch,
+      state,
+      w.DiffViewOptions(
+        insertedStyle = theme.success,
+        deletedStyle = theme.error,
+        fileHeaderStyle = theme.primary.bold,
+        hunkHeaderStyle = theme.accent,
+        lineNumberStyle = theme.muted,
+        collapsedStyle = theme.muted.italic,
+        syntaxTheme = theme.syntax,
+      ),
+      ElementProps(focusable = true),
+    )
+
   /** A sortable, filterable, pageable table: `table` is the data and column definitions, `state` is the view over it.
     *
     * The state must be created once outside `view` — it holds the sort, the substring filter, the selection and the
@@ -871,8 +895,8 @@ private[dsl] trait ElementFactories:
     * (`Ctrl+Z`) and redo (`Ctrl+Shift+Z`), and incremental search (`Ctrl+F`). `options` carries the widget's knobs —
     * `lexer`, soft `wrap`, `lineNumbers` — which the `.lexer(…)`, `.wrap` and `.lineNumbers` builders also set.
     *
-    * Create the state once outside `view`, as for [[input]]; it is render-thread-only, and writing to it from outside
-    * an event handler does not by itself schedule a frame.
+    * Create the state once outside `view`, as for [[input]]; it is render-thread-only, and a write made on that thread
+    * outside an event handler is drawn on the next loop iteration.
     */
   def textArea(state: w.TextAreaState, options: w.TextAreaOptions = w.TextAreaOptions()): TextAreaElement =
     TextAreaElement(state, options)
@@ -927,7 +951,7 @@ private[dsl] trait ElementFactories:
     * corrupt anything: too small and the tail is unreachable, too large and the view scrolls past the end into blanks.
     *
     * The [[w.ScrollViewState]] holds the offset and is caller-owned: create it once outside `view`. It is
-    * render-thread-only, and writing to it does not by itself schedule a frame.
+    * render-thread-only; a write made on that thread is drawn on the next loop iteration.
     */
   def scrollView(
       content: Element,

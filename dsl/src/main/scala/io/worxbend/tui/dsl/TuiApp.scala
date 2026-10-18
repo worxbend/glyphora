@@ -47,8 +47,8 @@ private val DefaultToastDuration: FiniteDuration = 3.seconds
   * Lifecycle: [[onStart]] runs on the render thread before the first frame — start pollers and timers there — and
   * [[onStop]] runs on every exit path, which is where they are cancelled. A screen has the same pair of its own,
   * `Screen.onEnter`/`Screen.onLeave`, for work that belongs to a subtree rather than to the whole app. Between the two,
-  * [[requestRedraw]] schedules a frame for state the reactive layer cannot see, such as a mutable widget state filled
-  * in by a background result.
+  * [[requestRedraw]] schedules a frame for state the reactive layer cannot see, such as a plain field of the app's own
+  * filled in by a background result (widget states are versioned and watched, and need no such call).
   *
   * Running it: the trait supplies `main`, so `object MyApp extends TuiApp` is already a runnable program. Reach for
   * [[run]] directly only when the app is started from code that owns the process (an existing `main`, a launcher), and

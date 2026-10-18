@@ -186,6 +186,13 @@ final class VersionedStatesSpec extends AnyFunSuite:
       "finish"               -> (_.finish()),
       "clear"                -> (_.clear()),
     ),
+    row("DiffViewState", DiffViewState())(
+      "offset ="             -> (_.offset = 2),
+      "scrollUp"             -> (state => { state.offset = 3; state.scrollUp() }),
+      "scrollDown"           -> (state => { state.lastContentHeight = 10; state.scrollDown() }),
+      "first"                -> (_.first()),
+      "last"                 -> (_.last()),
+    ),
     row("DirectoryTreeState", DirectoryTreeState(Paths.get(".")))(
       "selected ="           -> (_.selected = Some(Paths.get("."))),
       "offset ="             -> (_.offset = 1),

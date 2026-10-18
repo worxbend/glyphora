@@ -24,6 +24,7 @@ export Element.{
   dataTable,
   datePicker,
   dialog,
+  diffView,
   directoryTree,
   dock,
   dropdown,
@@ -402,6 +403,15 @@ export io.worxbend.tui.widgets.{
   TreeNode,
   TreeState,
   TreeTable,
+  Patch,
+  PatchError,
+  FilePatch,
+  Hunk,
+  DiffLine,
+  DiffLayout,
+  DiffView,
+  DiffViewOptions,
+  DiffViewState,
 }
 
 /** The shape of an app's `view` (and any sub-view helper): a computation, run under a tracking [[ReactiveScope]] *and*
