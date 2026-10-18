@@ -26,7 +26,26 @@ trait Effect:
       case finite: FiniteDuration => elapsed >= finite
       case _                      => false
 
+  /** This effect confined to the cells `filter` accepts — see [[Effect.filtered]]. */
+  final def filtered(filter: CellFilter): Effect = Effect.filtered(filter)(this)
+
 object Effect:
+
+  /** `effect` confined to the cells `filter` accepts: every cell the filter rejects is put back exactly as it was
+    * rendered once `effect` has run. The filter is asked about the cell as rendered, before `effect` touched it, so
+    * `filtered(CellFilter.fg(Color.Red))(fadeOut(…))` keeps fading the red text however dark it has become.
+    *
+    * Costs one snapshot of the buffer per frame. The duration is `effect`'s.
+    */
+  def filtered(filter: CellFilter)(effect: Effect): Effect =
+    new Effect:
+      def duration: Duration                                                 = effect.duration
+      def process(elapsed: FiniteDuration, buffer: Buffer, area: Rect): Unit =
+        val rendered = buffer.snapshot
+        effect.process(elapsed, buffer, area)
+        area.foreachPosition: (x, y) =>
+          val cell = rendered.get(x, y)
+          if !filter.matches(cell, x, y, area) then buffer.set(x, y, cell)
 
   /** Content fades up from the background: cell colors interpolate from black to their rendered values. */
   def fadeIn(duration: FiniteDuration, easing: Easing = Easing.QuadOut): Effect =
