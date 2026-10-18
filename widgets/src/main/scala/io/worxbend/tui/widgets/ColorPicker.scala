@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, Color, Measured, Rect, StatefulWidget, Style}
+import io.worxbend.tui.core.{Buffer, Color, Measured, Rect, StatefulWidget, Style, VersionedState}
 
 import java.util.Locale
 
@@ -9,33 +9,46 @@ import java.util.Locale
   * The cursor moves over [[ColorPicker.Grid]], so Up/Down keep the column where the row is long enough and clamp to the
   * row's last swatch where it is not, and no move wraps.
   *
-  * Render-thread-only, and mutating it does not by itself schedule a frame; the DSL's `colorPicker` node mutates it
-  * from its key handler, which repaints.
+  * Render-thread-only. Every mutation raises `version` (see [[io.worxbend.tui.core.Versioned]]), so a write made
+  * outside the event path is painted too, with no `Signal` write.
   *
   * @param initial
   *   the xterm palette index the cursor starts on, clamped to `0..255`
   */
-final class ColorPickerState(initial: Int = 0):
+final class ColorPickerState(initial: Int = 0) extends VersionedState:
   private var row: Int    = 0
   private var column: Int = 0
   moveTo(initial)
 
   /** The colour last confirmed with [[choose]]; `None` until one is. */
-  var chosen: Option[Color] = None
+  def chosen: Option[Color] = chosenValue
+
+  def chosen_=(value: Option[Color]): Unit =
+    chosenValue = value
+    touch()
+
+  private var chosenValue: Option[Color] = None
 
   /** The xterm palette index under the cursor. */
   def index: Int = ColorPicker.Grid(row)(column)
 
-  def moveLeft(): Unit  = column = math.max(0, column - 1)
-  def moveRight(): Unit = column = math.min(ColorPicker.Grid(row).size - 1, column + 1)
-  def moveUp(): Unit    = moveRow(-1)
-  def moveDown(): Unit  = moveRow(1)
+  def moveLeft(): Unit =
+    column = math.max(0, column - 1)
+    touch()
+
+  def moveRight(): Unit =
+    column = math.min(ColorPicker.Grid(row).size - 1, column + 1)
+    touch()
+
+  def moveUp(): Unit   = moveRow(-1)
+  def moveDown(): Unit = moveRow(1)
 
   /** Puts the cursor on palette index `target`, clamped to `0..255` — where a click on a swatch lands. */
   def moveTo(target: Int): Unit =
     val entry = math.max(0, math.min(255, target))
     row = ColorPicker.Grid.indexWhere(_.contains(entry))
     column = ColorPicker.Grid(row).indexOf(entry)
+    touch()
 
   /** Confirms the cursor's swatch: records it in [[chosen]] and returns it. */
   def choose(): Color =
@@ -46,6 +59,7 @@ final class ColorPickerState(initial: Int = 0):
   private def moveRow(delta: Int): Unit =
     row = math.max(0, math.min(ColorPicker.Grid.size - 1, row + delta))
     column = math.min(column, ColorPicker.Grid(row).size - 1)
+    touch()
 
 /** A palette grid over the 256 xterm colours: the sixteen system colours, the 6×6×6 cube, and the 24-step grey ramp,
   * each swatch two cells wide in its own background, with `[]` on the cursor's swatch and an optional caption row under

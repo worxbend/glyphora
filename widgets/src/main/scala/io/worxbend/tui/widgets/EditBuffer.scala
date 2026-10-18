@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.Text
+import io.worxbend.tui.core.{Text, VersionedState}
 
 import java.text.BreakIterator
 import java.util.Locale
@@ -22,10 +22,10 @@ import java.util.Locale
   * deleting or pasting replaces it. Word motion uses Unicode word boundaries (`java.text.BreakIterator`). Cut, copy and
   * paste go through a [[Clipboard]] the caller supplies; kills go into `killRing`, which several buffers may share.
   *
-  * Render-thread-only, and mutating it does not by itself schedule a frame: pair a mutation made outside an event
-  * handler with a `Signal` write or `TuiApp.requestRedraw()`.
+  * Render-thread-only. Every edit and caret move raises [[version]] (see [[io.worxbend.tui.core.Versioned]]), which is
+  * how the DSL notices a mutation made outside an event handler and paints it without a `Signal` write.
   */
-abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRing):
+abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRing) extends VersionedState:
 
   private var lines: Fragment.Lines        = linesOf(initial)
   private var head: TextPosition           = TextPosition(lines.size - 1, lines.last.size)
@@ -222,7 +222,9 @@ abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRin
     moveTo(endOfText, select = true)
 
   /** Drops the selection, leaving the caret where it is. */
-  def clearSelection(): Unit = anchor = None
+  def clearSelection(): Unit =
+    anchor = None
+    touch()
 
   /** Puts the caret at `position`, clamped into the text; with `select`, the selection stretches from where it was
     * anchored (or from the old caret) to there.
@@ -233,6 +235,7 @@ abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRin
     history.breakGroup()
     last = LastCommand.Other
     head = clamp(position)
+    touch()
 
   // --- internals -------------------------------------------------------------------------------------------------
 
@@ -244,6 +247,7 @@ abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRin
     anchor = None
     last = LastCommand.Other
     head = clamp(position)
+    touch()
 
   private def deleteSelection(): Boolean =
     selection match

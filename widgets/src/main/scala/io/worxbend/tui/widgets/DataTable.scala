@@ -15,6 +15,7 @@ import io.worxbend.tui.core.{
   Span,
   StatefulWidget,
   Style,
+  VersionedState,
 }
 
 /** Which way a [[DataTable]] column is sorted. */
@@ -55,20 +56,37 @@ final case class Paging(size: Int, page: Int)
   * instance belongs to one [[DataTable]] shape, which is how it was already used — sharing a state between tables with
   * different row data never meant anything.
   *
-  * Render-thread-only, and mutating it does not by itself schedule a frame. This is a plain mutable object, invisible
-  * to the reactive layer: a background result written straight into it stays off screen until something unrelated
-  * happens to repaint. Pair the mutation with a `Signal` write, or call `TuiApp.requestRedraw()` from the same
-  * render-thread callback that made it.
+  * Render-thread-only. Every mutation raises `version` (see [[io.worxbend.tui.core.Versioned]]), so a DSL node that
+  * paints this state notices a write made outside the event path — a background result applied on the render thread —
+  * and schedules the frame that shows it, with no `Signal` write and no `requestRedraw()`.
   *
   * @tparam K
   *   the key type of the table's [[KeyedRow]]s; `Int` — the row's original position, which is what
   *   [[DataTable.fromStrings]] keys by — for a table built from plain text rows, whose state is still spelled
   *   `DataTableState()` (see the companion).
   */
-final class DataTableState[K]:
-  var sort: Option[ColumnSort] = None
-  var offset: Int              = 0
-  var paging: Option[Paging]   = None
+final class DataTableState[K] extends VersionedState:
+  def sort: Option[ColumnSort] = sortValue
+
+  def sort_=(value: Option[ColumnSort]): Unit =
+    sortValue = value
+    touch()
+
+  private var sortValue: Option[ColumnSort] = None
+  def offset: Int                           = offsetValue
+
+  def offset_=(value: Int): Unit =
+    offsetValue = value
+    touch()
+
+  private var offsetValue: Int = 0
+  def paging: Option[Paging]   = pagingValue
+
+  def paging_=(value: Option[Paging]): Unit =
+    pagingValue = value
+    touch()
+
+  private var pagingValue: Option[Paging] = None
 
   /** The selected view row, or `None` for no selection.
     *
@@ -81,6 +99,7 @@ final class DataTableState[K]:
   def selected_=(index: Option[Int]): Unit =
     selectedValue = index
     selectedRowKey = None
+    touch()
 
   private var selectedValue: Option[Int] = None
 
@@ -94,7 +113,13 @@ final class DataTableState[K]:
     * two together identify one cell. Nothing is drawn for it unless the widget was given a `columnHighlightStyle` or a
     * `cellHighlightStyle`, so a table that does not want a column cursor is unaffected by its existence.
     */
-  var selectedColumn: Option[Int] = None
+  def selectedColumn: Option[Int] = selectedColumnValue
+
+  def selectedColumn_=(value: Option[Int]): Unit =
+    selectedColumnValue = value
+    touch()
+
+  private var selectedColumnValue: Option[Int] = None
 
   /** The substring rows are filtered by, or `""` for no filter. Read-only: change it through [[setFilter]], which is
     * the only place that also resets the selection and the scroll to match the new result set.
@@ -132,7 +157,9 @@ final class DataTableState[K]:
     * Replacing the immutable row sequence automatically refreshes the view, even at the same length. This is an
     * explicit escape hatch for caller-defined sequences with externally changing contents; it preserves selection.
     */
-  def invalidate(): Unit = view = None
+  def invalidate(): Unit =
+    view = None
+    touch()
 
   private var view: Option[(DataTableState.ViewKey, Seq[KeyedRow[K]])] = None
 
@@ -153,6 +180,7 @@ final class DataTableState[K]:
     */
   def setFilter(text: String): Unit =
     filterText = text
+    touch()
     selected = None
     offset = 0
 

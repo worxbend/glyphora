@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, CharWidth, Rect, StatefulWidget, Style}
+import io.worxbend.tui.core.{Buffer, CharWidth, Rect, StatefulWidget, Style, VersionedState}
 
 import java.time.LocalTime
 import java.util.Locale
@@ -15,20 +15,33 @@ enum TimeField:
   * is `00:00` and one hour down from `00:30` is `23:30` — the clock-face reading of "up", not a field that wraps on its
   * own while the others stand still.
   *
-  * Render-thread-only, and mutating it does not by itself schedule a frame; see [[DatePickerState]].
+  * Render-thread-only. Every mutation raises `version` (see [[io.worxbend.tui.core.Versioned]]), so a write made
+  * outside the event path is painted too, with no `Signal` write.
   *
   * @param initial
   *   the starting time; its nanoseconds are dropped, and its seconds too when `withSeconds` is off
   * @param withSeconds
   *   whether the picker has a seconds field. Without it the time is `hh:mm` and focus moves between two fields
   */
-final class TimePickerState(initial: LocalTime, val withSeconds: Boolean = true):
+final class TimePickerState(initial: LocalTime, val withSeconds: Boolean = true) extends VersionedState:
 
   /** The time shown. */
-  var time: LocalTime = if withSeconds then initial.withNano(0) else initial.withSecond(0).withNano(0)
+  def time: LocalTime = timeValue
+
+  def time_=(value: LocalTime): Unit =
+    timeValue = value
+    touch()
+
+  private var timeValue: LocalTime = if withSeconds then initial.withNano(0) else initial.withSecond(0).withNano(0)
 
   /** The field the arrows change. */
-  var field: TimeField = TimeField.Hour
+  def field: TimeField = fieldValue
+
+  def field_=(value: TimeField): Unit =
+    fieldValue = value
+    touch()
+
+  private var fieldValue: TimeField = TimeField.Hour
 
   /** The fields this picker has, in focus order. */
   def fields: Seq[TimeField] = if withSeconds then TimeField.values.toSeq else Seq(TimeField.Hour, TimeField.Minute)

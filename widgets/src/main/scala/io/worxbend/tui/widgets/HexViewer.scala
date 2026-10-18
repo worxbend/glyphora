@@ -1,22 +1,34 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, Measured, Rect, StatefulWidget, Style}
+import io.worxbend.tui.core.{Buffer, Measured, Rect, StatefulWidget, Style, VersionedState}
 
 import java.util.Locale
 
 /** Caller-owned state of a [[HexViewer]]: the selected byte and the first row on screen.
   *
   * The selection is a byte offset into the data; the scroll offset is a row index the viewer re-derives on every frame
-  * so the selection stays visible, the way a [[ListView]]'s does. Render-thread-only, and mutating it does not by
-  * itself schedule a frame; the DSL's `hexViewer` node mutates it from its key handler, which repaints.
+  * so the selection stays visible, the way a [[ListView]]'s does. Render-thread-only; every mutation raises `version`
+  * (see [[io.worxbend.tui.core.Versioned]]), so a write made outside the event path is painted too.
   */
-final class HexViewerState:
+final class HexViewerState extends VersionedState:
 
   /** The selected byte's offset, or `None` before anything is selected. */
-  var selected: Option[Int] = None
+  def selected: Option[Int] = selectedValue
+
+  def selected_=(value: Option[Int]): Unit =
+    selectedValue = value
+    touch()
+
+  private var selectedValue: Option[Int] = None
 
   /** The first row drawn; written back by the viewer on each frame. */
-  var offset: Int = 0
+  def offset: Int = offsetValue
+
+  def offset_=(value: Int): Unit =
+    offsetValue = value
+    touch()
+
+  private var offsetValue: Int = 0
 
   /** Selects the byte at `index`, clamped to `0 until size`; an empty buffer clears the selection. */
   def select(index: Int, size: Int): Unit =

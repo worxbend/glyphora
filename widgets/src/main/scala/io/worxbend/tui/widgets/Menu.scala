@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, CharWidth, Measured, Rect, StatefulWidget, Style}
+import io.worxbend.tui.core.{Buffer, CharWidth, Measured, Rect, StatefulWidget, Style, VersionedState}
 
 /** One entry in a [[Menu]]: either a row the user can land on, or a rule that divides two groups of them.
   *
@@ -30,12 +30,28 @@ enum MenuEntry:
   * separators or all disabled — [[Menu.render]] normalizes to it, and the widget then paints no highlight at all. Owned
   * by whoever constructs it and read by the render thread, like every other widget state in this module.
   *
-  * Render-thread-only, and mutating it does not by itself schedule a frame. This is a plain mutable object, invisible
-  * to the reactive layer: a background result written straight into it stays off screen until something unrelated
-  * happens to repaint. Pair the mutation with a `Signal` write, or call `TuiApp.requestRedraw()` from the same
-  * render-thread callback that made it.
+  * Render-thread-only. Every mutation raises `version` (see [[io.worxbend.tui.core.Versioned]]), so a DSL node that
+  * paints this state notices a write made outside the event path — a background result applied on the render thread —
+  * and schedules the frame that shows it, with no `Signal` write and no `requestRedraw()`.
   */
-final class MenuState(var selected: Option[Int] = None, var offset: Int = 0):
+final class MenuState private (initialSelected: Option[Int], initialOffset: Int) extends VersionedState:
+
+  private var selectedValue: Option[Int] = initialSelected
+  private var offsetValue: Int           = initialOffset
+
+  /** The highlighted entry, or `None`. */
+  def selected: Option[Int] = selectedValue
+
+  def selected_=(value: Option[Int]): Unit =
+    selectedValue = value
+    touch()
+
+  /** The first entry on screen. */
+  def offset: Int = offsetValue
+
+  def offset_=(value: Int): Unit =
+    offsetValue = value
+    touch()
 
   /** Moves the highlight to the next selectable entry, wrapping past the last one; a no-op when nothing is selectable.
     *
@@ -61,6 +77,13 @@ final class MenuState(var selected: Option[Int] = None, var offset: Int = 0):
   private[widgets] def normalize(items: Seq[MenuEntry]): Unit =
     if !selected.flatMap(items.lift).exists(_.selectable) then
       selected = Some(items.indexWhere(_.selectable)).filter(_ >= 0)
+
+object MenuState:
+
+  /** A menu state with `selected` highlighted and scrolled to `offset` — see [[ListState.apply]] for why this is the
+    * companion's `apply` rather than the constructor.
+    */
+  def apply(selected: Option[Int] = None, offset: Int = 0): MenuState = new MenuState(selected, offset)
 
 /** A vertical menu / dropdown / context menu rendered as a bordered popup.
   *

@@ -14,10 +14,9 @@ import io.worxbend.tui.core.{Buffer, CharWidth, Position, Rect, StatefulWidget, 
   * columns wide but still fills a whole `Cell`, so storing one desynchronises the backend's cursor model from the
   * terminal's.
   *
-  * Render-thread-only, and mutating it does not by itself schedule a frame. This is a plain mutable object, invisible
-  * to the reactive layer: a background result written straight into it stays off screen until something unrelated
-  * happens to repaint. Pair the mutation with a `Signal` write, or call `TuiApp.requestRedraw()` from the same
-  * render-thread callback that made it.
+  * Render-thread-only. Every mutation raises `version` (see [[io.worxbend.tui.core.Versioned]]), so a DSL node that
+  * paints this state notices a write made outside the event path — a background result applied on the render thread —
+  * and schedules the frame that shows it, with no `Signal` write and no `requestRedraw()`.
   */
 final class TextInputState(initial: String = "", killRing: KillRing = KillRing())
     extends EditBuffer(initial, multiline = false, killRing):
