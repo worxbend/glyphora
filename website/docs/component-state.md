@@ -77,22 +77,34 @@ val rows = useSignal(0)
 if expanded.get then row(rows) else spacer
 ```
 
-## `keyed` for anything built in a loop
+## `each` for anything built in a loop
 
 Elements built by a `map` all share one call site, so they would all share one set of
-slots. `keyed` gives each iteration an identity of its own:
+slots. `each` gives each iteration an identity of its own — the same key it stamps on
+the row for focus is the scope its hooks live in:
 
 ```scala
-column(projects.get.map(project => keyed(project.id)(projectCard(project)))*)
+column(each(projects.get)(_.id)(projectCard)*)
 ```
 
 Key by the item's own identity, never by its index. An index renumbers the survivors
 when an item is removed, which hands each of them their former neighbour's state — the
 classic symptom being a list where deleting the middle row makes the row below it
-inherit the deleted one's expanded/collapsed setting.
+inherit the deleted one's expanded/collapsed setting. Reorder the items and both the
+highlight and every row's `useSignal`/`useState` travel with the item.
+
+`keyed(key)(body)` is the same scope on its own, for a loop `each` does not fit — a
+`map` that produces something other than one element per item, say — and for giving a
+single reusable component two separately-stateful instances by hand:
+
+```scala
+column(projects.get.map(project => keyed(project.id)(projectCard(project)))*)
+```
 
 Keys only have to be unique among siblings. A key is one step in a path, so the same
-key under two different parents is two different places.
+key under two different parents is two different places. Before 0.20.0, `each` set only
+the focus key and rows needed `keyed` as well — see the migration notes in
+[Versioning](./versioning).
 
 ## Lifetime
 

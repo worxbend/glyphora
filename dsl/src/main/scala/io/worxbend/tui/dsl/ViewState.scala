@@ -19,8 +19,9 @@ import scala.collection.mutable
   * The identity of a call site is the chain of enclosing [[keyed]] scopes plus the position of the call within its
   * scope. That is what makes the one rule worth memorising: **a view must reach the same hook calls in the same order
   * every frame**. A hook behind an `if` that flips changes the positions of everything after it, and the state shifts
-  * between call sites. Building elements in a loop needs [[keyed]] around the loop body, keyed by the item's own
-  * identity (its id, not its index), so that adding or removing an item does not renumber its neighbours. Declaring a
+  * between call sites. Building elements in a loop needs an identity per iteration, keyed by the item's own identity
+  * (its id, not its index), so that adding or removing an item does not renumber its neighbours: `each` provides it
+  * together with the focus key, and [[keyed]] is the same scope on its own for a loop `each` does not fit. Declaring a
   * responsive builder reserves one position; its delayed hooks run in a child scope captured at that declaration.
   * Reusing the same responsive value in multiple places gives each occurrence its own positional child scope.
   *
@@ -195,6 +196,17 @@ object ViewState:
           active.get() match
             case Some(currentStore) => currentStore.resume(captured)(build(input))
             case None               => build(input)
+
+  /** The hook-identity half of `each`: a keyed scope when a view is being evaluated, and a plain call otherwise.
+    *
+    * Unlike [[keyed]] this does not insist on a view, because `each` is also a plain element builder — construction
+    * tests and helpers call it with no store installed, and an identity that nothing will ever look up again costs
+    * nothing to skip.
+    */
+  private[dsl] def scopeIfActive[A](key: String)(body: => A): A =
+    active.get() match
+      case Some(store) => store.scoped(key)(body)
+      case None        => body
 
   /** Evaluates `body` with `store` installed as the one hooks attach to. */
   private[dsl] def during[A](store: ViewState)(body: => A): A =

@@ -96,18 +96,30 @@ private[dsl] trait ElementFactories:
     * It returns a `Seq[Element]`, not a container, so it splices into whichever container the call site wants:
     * `column(each(…)*)`, `row(each(…)*)`, `panel("Processes")(each(…)*)`.
     *
+    * The same key is also the identity of the hooks `render` calls: `render` runs inside `keyed(key)`, so a row that
+    * declares `useSignal`/`useState` keeps its own state across insertions and reorders without a second `keyed` of its
+    * own. One key, one identity, for focus and for state alike — the two used to be separate mechanisms that could
+    * disagree. (Before 0.20.0 the hooks under `each` were positional; see the 0.20.0 migration notes.)
+    *
     * Keys must be unique within one frame — use something that identifies the item (a database id, a process id, a file
     * path), not its index, which is the positional identity this exists to replace. Two children sharing a key
     * re-anchor focus to the first of them.
     */
   def each[A](items: Seq[A])(keyOf: A => String)(render: A => Element): Seq[Element] =
-    items.map(item => render(item).key(keyOf(item)))
+    items.map { item =>
+      val itemKey: String = keyOf(item)
+      ViewState.scopeIfActive(itemKey)(render(item)).key(itemKey)
+    }
 
   /** [[each]] with a `prefix` on every key, for two keyed lists in one view whose key functions would otherwise collide
-    * — two panes both keyed by a row number, say. The prefix and the key are joined with a colon.
+    * — two panes both keyed by a row number, say. The prefix and the key are joined with a colon, for the focus key and
+    * the hook scope alike.
     */
   def each[A](items: Seq[A], prefix: String)(keyOf: A => String)(render: A => Element): Seq[Element] =
-    items.map(item => render(item).key(s"$prefix:${keyOf(item)}"))
+    items.map { item =>
+      val itemKey: String = s"$prefix:${keyOf(item)}"
+      ViewState.scopeIfActive(itemKey)(render(item)).key(itemKey)
+    }
 
   /** Flexible blank space (fills what siblings leave over). */
   def spacer: SpacerElement = SpacerElement()
