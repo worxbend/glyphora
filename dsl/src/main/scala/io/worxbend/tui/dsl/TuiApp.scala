@@ -218,12 +218,27 @@ trait TuiApp:
     */
   protected final def activeBindings(using scope: ReactiveScope): KeyBindings =
     merged(screenStack.top(using scope))
+      .snapshot(keyModeSignal.get(using scope), pendingKeys.signal.get(using scope).map(_.sequence))
 
   /** [[activeBindings]] read without subscribing: the spelling for the event path, which must not add a dependency to
     * whatever view happens to be recomputing. Dispatch, the `Ctrl+P` gate and the command palette all read this one
     * accessor, so they cannot disagree about which keys exist.
     */
-  private def activeBindingsNow: KeyBindings = merged(screenStack.topNow)
+  private def activeBindingsNow: KeyBindings =
+    merged(screenStack.topNow).snapshot(keyModeSignal.peek, pendingKeys.current.map(_.sequence))
+
+  /** How long a started key sequence waits for its next key before it is dropped — `g` of `g g` pressed and then
+    * nothing. Checked on every tick; a run with no `config.tickRate` borrows ambient ticks while a prefix is pending.
+    */
+  def sequenceTimeout: FiniteDuration = 1.second
+
+  /** The mode the app's [[bindings]] dispatch in — see `KeyBindings.modes`. Starts at the first declared mode (or
+    * `ModeId.Default` for bindings with no modes); a binding switches it with `keyMode.set(ModeId("insert"))`.
+    * Render-thread only, like every `Signal`.
+    */
+  protected final def keyMode: Signal[ModeId] = keyModeSignal
+
+  private lazy val keyModeSignal: Signal[ModeId] = Signal(bindings.modes.headOption.getOrElse(ModeId.Default))
 
   /** The screen's bindings followed by the app's, minus any app binding the screen has completely taken over.
     *
@@ -241,7 +256,7 @@ trait TuiApp:
       // every one of its keys" and was dropped for as long as any screen was on the stack. A binding with no trigger
       // cannot be shadowed by anything, because there is nothing to shadow.
       val shadowed = (app: KeyBinding) => app.triggers.nonEmpty && app.triggers.forall(claimed.contains)
-      screen.bindings ++ KeyBindings(bindings.bindings.filterNot(shadowed)*)
+      screen.bindings ++ bindings.filter(!shadowed(_))
     }
 
   /** An intro screen shown before the first `view` render — see [[SplashScreen]]. Any key skips it. */
@@ -813,7 +828,7 @@ trait TuiApp:
         terminalSizeSignal.set(Size(area.width, area.height))
         onResize(size)
         true
-      case Event.Tick                       => handleTick(run)
+      case Event.Tick                       => handleTick(run) | pendingKeys.expire(sequenceTimeout)
     if redraw then EventOutcome.Redraw else EventOutcome.Ignored
 
   private def handleTick(run: RunState): Boolean =
@@ -836,9 +851,39 @@ trait TuiApp:
     * framework's own keys.
     */
   private def routeKey(key: KeyEvent, run: RunState, handle: RunnerHandle): Boolean =
+    pendingKeys.current match
+      case Some(prefix) => continueSequence(prefix, key, run, handle)
+      case None         => routeFresh(key, run, handle)
+
+  /** A key arriving while a sequence is pending goes to the sequence first — the user has started typing a binding, so
+    * the focused element does not get to swallow the rest of it. A key that continues nothing drops the prefix; `Esc`
+    * is consumed as the cancel, anything else is routed afresh as if no prefix had been typed.
+    */
+  private def continueSequence(prefix: PendingPrefix, key: KeyEvent, run: RunState, handle: RunnerHandle): Boolean =
+    activeBindingsNow.dispatch(prefix.keys, key) match
+      case KeyMatch.Fired         =>
+        pendingKeys.clear()
+        true
+      case KeyMatch.Pending(keys) =>
+        pendingKeys.start(keys)
+        true
+      case KeyMatch.NoMatch       =>
+        pendingKeys.clear()
+        key.code == KeyCode.Escape || routeFresh(key, run, handle)
+
+  private def routeFresh(key: KeyEvent, run: RunState, handle: RunnerHandle): Boolean =
     val consumed = run.host.dispatchKey(key)
-    val bound    = !consumed && !palette.isOpenNow && activeBindingsNow.handle(key)
+    val bound    = !consumed && !palette.isOpenNow && dispatchBinding(key)
     if consumed || bound then true else handleFrameworkKey(key, run.tracker, handle)
+
+  /** A key no element consumed, offered to the bindings: it fires one, or starts a sequence and waits. */
+  private def dispatchBinding(key: KeyEvent): Boolean =
+    activeBindingsNow.dispatch(Vector.empty, key) match
+      case KeyMatch.Fired         => true
+      case KeyMatch.Pending(keys) =>
+        pendingKeys.start(keys)
+        true
+      case KeyMatch.NoMatch       => false
 
   /** The last stage: the keys the framework reserves for itself once nothing else claimed the event — `Tab` /
     * `Shift+Tab` focus traversal, `Ctrl+P` for the command palette, `Ctrl+C` to quit, and `Esc` when the modal on top
@@ -981,7 +1026,9 @@ trait TuiApp:
   private val toasts: ToastStack       = ToastStack(runClock.now)
   private val palette: CommandPalette  = CommandPalette(() => activeBindingsNow)
   private val effects: EffectStack     = EffectStack(runClock.now)
-  private val ambientTicker            = AmbientTicker(effects, toasts, () => requestRedraw())
+  private val pendingKeys: PendingKeys = PendingKeys(runClock.now)
+  private val ambientTicker            =
+    AmbientTicker(effects, toasts, () => requestRedraw(), pendingKeys, () => sequenceTimeout)
   private val activeHandle             = AtomicReference[Option[RunnerHandle]](None)
 
   /** The running invocation's focus tracker, so [[focusTo]] and [[clearFocus]] can reach it. `None` outside a run,
