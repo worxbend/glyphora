@@ -991,3 +991,15 @@ private[dsl] trait ElementFactories:
     */
   def placeholder(label: String)(using theme: Theme): PlaceholderElement =
     PlaceholderElement(label, theme.accent, ElementProps(style = theme.muted))
+
+  /** An interactive month grid over a caller-owned cursor: arrows move a day or a week, PageUp/PageDown a month, `t`
+    * jumps to today, and Enter chooses the cursor's date, recording it in `state.selected` and handing it to
+    * `onSelect`. Keep the state in a field: it holds the cursor between frames. See [[w.DatePicker]].
+    */
+  def datePicker(state: w.DatePickerState, onSelect: java.time.LocalDate => Unit = _ => ()): DatePickerElement =
+    DatePickerElement(state, onSelect)
+
+  /** A one-row `hh:mm:ss` field over a caller-owned time: Left/Right pick the field, Up/Down step the time by it and
+    * wrap past midnight. Read the value back from `state.time`. See [[w.TimePicker]].
+    */
+  def timePicker(state: w.TimePickerState): TimePickerElement = TimePickerElement(state)

@@ -2155,6 +2155,39 @@ An area under three cells either way drops the frame and keeps the label and siz
 The widget behind it, `Placeholder(label, style, labelStyle, borderType)`, takes any
 `BorderType`.
 
+### Picking a date or a time
+
+`datePicker(state, onSelect)` is the interactive form of `calendar`: the grid shows
+whichever month the cursor is in, so moving past the last day of a month simply
+turns the page.
+
+```scala
+import java.time.{LocalDate, LocalTime}
+
+private val due  = DatePickerState(LocalDate.now())
+private val time = TimePickerState(LocalTime.of(9, 0), withSeconds = false)
+private val chosen = Signal(Option.empty[LocalDate])
+
+def view(using ReactiveScope, Theme): Element =
+  column(
+    datePicker(due, date => chosen.set(Some(date))),
+    timePicker(time),
+  )
+```
+
+| Key | `datePicker` | `timePicker` |
+|---|---|---|
+| Left / Right | one day back / forward | previous / next field |
+| Up / Down | one week back / forward | step the time by the focused field |
+| PageUp / PageDown | one month back / forward | — |
+| `t` | jump to today | — |
+| Enter / Space | choose the cursor's date (`state.selected`, `onSelect`) | — |
+
+A time step moves the whole clock and wraps round midnight, so one minute up from
+`23:59` is `00:00`. `DatePickerState(initial, today)` takes the clock `t` reads, so a
+test can pin it; the widgets behind the nodes, `DatePicker(options, selectedStyle)`
+and `TimePicker(style, highlightStyle)`, take a `CalendarOptions` and plain styles.
+
 ## Drop to a raw Widget
 
 The DSL is not a separate renderer. Any core `Widget` can become a leaf:
