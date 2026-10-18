@@ -16,12 +16,16 @@ package io.worxbend.tui.core
   * bordered blocks come to share one border line instead of drawing two adjacent ones. `between` takes precedence over
   * `spacing` when it is set, and `spacing` is what every layout that has not heard of `between` keeps using.
   *
+  * Across the axis it does not split, every segment spans the whole area unless [[crossAlign]] says otherwise: the
+  * measuring overload of [[split]] takes each segment's cross size and places it by that mode, and a segment whose
+  * content cannot be measured stretches whatever the mode — see [[CrossAlign]].
+  *
   * A `final class` with a private constructor rather than a `case class`, because new constraint or flex behaviour is
   * expected to add fields here. A case class rewrites `apply`, `copy` and `unapply` on every new field, and a consumer
   * compiled against the old shape fails with `NoSuchMethodError`; here the compatibility surface is
-  * [[Layout.horizontal]], [[Layout.vertical]] and the builders [[withSpacing]], [[withFlex]], [[spaced]] and
-  * [[withoutBetween]], all of which a new field leaves untouched. There is no `copy` and no pattern extractor; equality
-  * and `hashCode` are structural over every field.
+  * [[Layout.horizontal]], [[Layout.vertical]] and the builders [[withSpacing]], [[withFlex]], [[withCrossAlign]],
+  * [[spaced]] and [[withoutBetween]], all of which a new field leaves untouched. There is no `copy` and no pattern
+  * extractor; equality and `hashCode` are structural over every field.
   */
 final class Layout private (
     val direction: Direction,
@@ -29,6 +33,7 @@ final class Layout private (
     val spacing: Int,
     val flex: Flex,
     val between: Option[Spacing],
+    val crossAlign: CrossAlign,
 ):
 
   /** [[spacing]] as the layout actually spends it, when no [[between]] was given. */
@@ -42,15 +47,32 @@ final class Layout private (
     */
   private val step: Int = between.map(_.signed).getOrElse(gap)
 
-  def split(area: Rect): Seq[Rect] =
+  def split(area: Rect): Seq[Rect] = split(area, _ => None)
+
+  /** [[split]] with the content's own sizes along the axis: `sizes(i)` is how many cells segment `i` needs — a
+    * [[Measured]] widget's `heightAt(area.width)` in a vertical layout, its `widthAt(area.height)` in a horizontal one
+    * — or `None` when it cannot say. Only segments constrained [[Constraint.Auto]] read it; a `None` there is laid out
+    * as a `Fill(1)`, never as zero. The plain [[split]] is this with nothing measured.
+    */
+  def split(area: Rect, sizes: Int => Option[Int]): Seq[Rect] =
     if constraints.isEmpty then Seq.empty
     else
       val total     = axisExtent(area)
       // a negative step is an overlap, which hands the solver *more* room than the axis has, because the segments will
       // be laid down sharing cells rather than each taking their own
       val available = math.max(0, CellCount.clamp(total.toLong - step.toLong * (constraints.size - 1)))
-      val sizes     = LayoutSolver.solve(constraints, available)
-      layOutSegments(area, sizes, total)
+      val solved    = LayoutSolver.solve(constraints, available, sizes)
+      layOutSegments(area, solved, total)
+
+  /** [[split]] with both measurements: `sizes` along the axis, as above, and `crossSizes(i)` the cells segment `i`
+    * needs across it — a `Measured` widget's `widthAt` in a vertical layout, `heightAt` in a horizontal one. Each
+    * segment is then placed across the axis by [[crossAlign]]; under `Stretch`, or when `crossSizes` answers `None`, it
+    * spans the whole area as the two-argument `split` leaves it.
+    */
+  def split(area: Rect, sizes: Int => Option[Int], crossSizes: Int => Option[Int]): Seq[Rect] =
+    val segments = split(area, sizes)
+    if crossAlign == CrossAlign.Stretch then segments
+    else segments.zipWithIndex.map((segment, index) => crossAlign.place(segment, direction, crossSizes(index)))
 
   /** [[split]], plus the `segments.size + 1` *spacer* rectangles the layout left between and around those segments.
     *
@@ -219,22 +241,28 @@ final class Layout private (
   /** This layout with `spacing` replaced by an explicit [[Spacing]], so `Layout.horizontal(4, 4).spaced(Overlap(1))`
     * reads at the call site as what it does.
     */
-  def spaced(spacing: Spacing): Layout = new Layout(direction, constraints, this.spacing, flex, Some(spacing))
+  def spaced(spacing: Spacing): Layout =
+    new Layout(direction, constraints, this.spacing, flex, Some(spacing), crossAlign)
 
   /** This layout with no explicit [[between]], so [[spacing]] is what it spends between segments again. The way back
     * from [[spaced]] — and the call that makes a later [[withSpacing]] take effect on a layout that was `spaced`.
     */
-  def withoutBetween: Layout = new Layout(direction, constraints, spacing, flex, None)
+  def withoutBetween: Layout = new Layout(direction, constraints, spacing, flex, None, crossAlign)
 
   /** This layout with `cells` empty cells between adjacent segments (negative is treated as zero, as for the field).
     *
     * An explicit [[between]] keeps precedence: `layout.spaced(x).withSpacing(n)` still spends `x`, and `n` is unused
     * until [[withoutBetween]] clears it. `spaced(Spacing.Gap(n))` is the spelling that overrides a `between` in place.
     */
-  def withSpacing(cells: Int): Layout = new Layout(direction, constraints, cells, flex, between)
+  def withSpacing(cells: Int): Layout = new Layout(direction, constraints, cells, flex, between, crossAlign)
 
   /** This layout placing its segments by `flex` — see [[Flex]] for the six modes. */
-  def withFlex(flex: Flex): Layout = new Layout(direction, constraints, spacing, flex, between)
+  def withFlex(flex: Flex): Layout = new Layout(direction, constraints, spacing, flex, between, crossAlign)
+
+  /** This layout placing its segments across its axis by `align` — read by the three-argument [[split]] only, since the
+    * others have no cross sizes to place.
+    */
+  def withCrossAlign(align: CrossAlign): Layout = new Layout(direction, constraints, spacing, flex, between, align)
 
   /** Structural equality over every field, reference equality tried first. */
   override def equals(other: Any): Boolean =
@@ -242,7 +270,7 @@ final class Layout private (
       case that: Layout =>
         (this eq that) ||
         (direction == that.direction && spacing == that.spacing && flex == that.flex && between == that.between &&
-          constraints == that.constraints)
+          crossAlign == that.crossAlign && constraints == that.constraints)
       case _            => false
 
   /** Hashes every field [[equals]] compares. */
@@ -251,15 +279,21 @@ final class Layout private (
     hash = 31 * hash + constraints.hashCode()
     hash = 31 * hash + spacing
     hash = 31 * hash + flex.hashCode()
-    31 * hash + between.hashCode()
+    hash = 31 * hash + between.hashCode()
+    31 * hash + crossAlign.hashCode()
 
-  /** Every field, named, in constructor order — what a failed assertion over two layouts has to show. */
+  /** Every field, named, in constructor order — what a failed assertion over two layouts has to show. `crossAlign` is
+    * printed only when it is not the default `Stretch`, so the text of every layout written before it existed is
+    * unchanged.
+    */
   override def toString: String =
-    s"Layout($direction, $constraints, spacing=$spacing, flex=$flex, between=$between)"
+    val cross = if crossAlign == CrossAlign.Stretch then "" else s", crossAlign=$crossAlign"
+    s"Layout($direction, $constraints, spacing=$spacing, flex=$flex, between=$between$cross)"
 
 object Layout:
 
-  /** A layout from its fields — `spacing`, `flex` and `between` default to no gap, [[Flex.Start]] and none.
+  /** A layout from its fields — `spacing`, `flex`, `between` and `crossAlign` default to no gap, [[Flex.Start]], none
+    * and [[CrossAlign.Stretch]].
     *
     * This is a construction convenience, not the compatibility surface. Adding a field changes its descriptor and
     * renumbers its default-argument getters, so a consumer compiled against `Layout(direction, constraints, spacing =
@@ -273,7 +307,17 @@ object Layout:
       spacing: Int = 0,
       flex: Flex = Flex.Start,
       between: Option[Spacing] = None,
-  ): Layout = new Layout(direction, constraints, spacing, flex, between)
+      crossAlign: CrossAlign = CrossAlign.Stretch,
+  ): Layout = new Layout(direction, constraints, spacing, flex, between, crossAlign)
+
+  /** The 0.19.0 arity, kept default-free so code compiled against it keeps running — see the note on [[apply]]. */
+  def apply(
+      direction: Direction,
+      constraints: Seq[Constraint],
+      spacing: Int,
+      flex: Flex,
+      between: Option[Spacing],
+  ): Layout = new Layout(direction, constraints, spacing, flex, between, CrossAlign.Stretch)
 
   /** Constraint shorthand: a plain `Int` means `Length(cells)`, a `Double` means a fraction of the whole (`0.5` →
     * `Percentage(50)`, truncating — use `Constraint.Ratio` when exact thirds matter), and any `Constraint` passes

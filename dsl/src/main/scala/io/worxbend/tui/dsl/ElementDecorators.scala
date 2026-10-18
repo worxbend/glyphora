@@ -38,6 +38,10 @@ private[dsl] trait DecoratingElement extends Element:
   private[dsl] override def intrinsicHeight(width: Int): Option[Int] =
     constrainedHeight(inner.intrinsicHeight(width))
 
+  /** @see [[intrinsicHeight]] */
+  private[dsl] override def intrinsicWidth(height: Int): Option[Int] =
+    constrainedWidth(inner.intrinsicWidth(height))
+
 /** Wraps a focusable element during the focus pass so its rendered area is recorded for click-to-focus hit-testing. */
 private[dsl] final case class TrackedElement(inner: Element, index: Int, tracker: FocusTracker)
     extends DecoratingElement:
@@ -52,6 +56,8 @@ private[dsl] final case class TrackedElement(inner: Element, index: Int, tracker
   def widget: Widget                                                             =
     (area, buffer) =>
       tracker.record(index, area)
+      // the focused element tells an enclosing scrollView where it landed, so the view can keep it on screen
+      if inner.props.focused then RevealProbe.focused(index, area)
       inner.widget.render(area, buffer)
   private[dsl] def withProps(props: ElementProps): TrackedElement                = copy(inner = inner.withProps(props))
   private[dsl] override def withChildren(children: Seq[Element]): TrackedElement =
@@ -166,3 +172,21 @@ private object ErrorBoundaryElement:
 
   private def report(phase: String, error: Throwable): Unit =
     log.log(Level.SEVERE, s"errorBoundary: the subtree threw while $phase; painting the fallback instead", error)
+
+/** Wraps an element marked `.ensureVisible` during the focus pass, so the area it is handed is reported to the
+  * enclosing `scrollView` through [[RevealProbe]]. `id` identifies the request across frames — the element's focus key
+  * when it has one, its position in the decorated tree otherwise. Transparent otherwise, like [[TrackedElement]], whose
+  * `children` rule it shares for the same reason.
+  */
+private[dsl] final case class RevealElement(inner: Element, id: String) extends DecoratingElement:
+  type Self = RevealElement
+  override def debugName: String      = inner.debugName
+  override def children: Seq[Element] = inner.children
+
+  def widget: Widget                                                            =
+    (area, buffer) =>
+      RevealProbe.visible(id, area)
+      inner.widget.render(area, buffer)
+  private[dsl] def withProps(props: ElementProps): RevealElement                = copy(inner = inner.withProps(props))
+  private[dsl] override def withChildren(children: Seq[Element]): RevealElement =
+    copy(inner = inner.withChildren(children))

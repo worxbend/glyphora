@@ -65,6 +65,10 @@ final case class ResponsiveElement(
   private[dsl] override def intrinsicHeight(width: Int): Option[Int] =
     constrainedHeight(resolved.flatMap(_.intrinsicHeight(width)))
 
+  /** @see [[intrinsicHeight]] */
+  private[dsl] override def intrinsicWidth(height: Int): Option[Int] =
+    constrainedWidth(resolved.flatMap(_.intrinsicWidth(height)))
+
 object ResponsiveElement:
   /** Capture the declaration's hook scope once. Case-class copies retain the already captured builder. */
   def apply(
@@ -77,24 +81,31 @@ object ResponsiveElement:
   *
   * `contentHeight` is the caller's own measurement; `None` means "measure the content each frame", which is what the
   * two-argument `scrollView(content, state)` factory asks for.
+  *
+  * The view keeps what matters on screen by itself. When focus moves onto a child outside the window, or a child marked
+  * `.ensureVisible` appears, the view scrolls just far enough to show it — on the same frame, by painting the content a
+  * second time at the new offset — and records the request in `state`, so a child that *stays* focused or marked does
+  * not drag the view back after the reader scrolls away. A mark wins over focus; `.followFocus(false)` turns
+  * focus-following off. Only the innermost scroll view around a child acts on its request.
   */
 final case class ScrollViewElement(
     content: Element,
     contentHeight: Option[Int],
     state: w.ScrollViewState,
+    followsFocus: Boolean = true,
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = ScrollViewElement
-  override def debugName: String                                                    = "scrollView"
-  override def children: Seq[Element]                                               = Seq(content)
-  def widget: Widget                                                                =
+  override def debugName: String      = "scrollView"
+  override def children: Seq[Element] = Seq(content)
+  def widget: Widget                  =
     (area, buffer) =>
       // `area.height` is the last resort, and it is a lie the caller cannot see: content that reports no height
       // measures as exactly one viewport tall, the offset clamps to zero, and everything below the fold becomes
       // unreachable rather than merely mis-scrolled. There is no better answer at render time — the content has
       // already been asked — so the fix belongs upstream: give the content a `.length(n)`, pass `contentHeight`, or
       // make its widget answer `Measured.heightAt`.
-      val rows =
+      val rows     =
         contentHeight
           .filter(_ > 0)
           .getOrElse(content.intrinsicHeight(math.max(1, area.width - 1)).getOrElse(area.height))
@@ -103,7 +114,30 @@ final case class ScrollViewElement(
       content match
         case viewport: ScrollViewportElement => viewport.publishScreenArea(area)
         case _                               => ()
-      w.ScrollView(content.widget, rows).render(area, buffer, state)
+      val view     = w.ScrollView(content.widget, rows)
+      val portals  = PortalQueue.mark
+      val requests = RevealRequests(followsFocus)
+      RevealProbe.collecting(requests)(view.render(area, buffer, state))
+      requests.chosen match
+        case None             => state.revealedRequest = None
+        case Some((id, rect)) =>
+          // act on a request once, when it appears: acting on it every frame would pin the view and undo every
+          // scroll the reader makes while the same element stays focused or marked
+          if !state.revealedRequest.contains(id) then
+            state.revealedRequest = Some(id)
+            val before = state.offset
+            state.reveal(rect.y, rect.height)
+            // painted again in the same frame, so the request is honoured on the frame it was made; the portals the
+            // first pass queued are dropped so they are not drawn twice
+            if state.offset != before then
+              PortalQueue.rollback(portals)
+              RevealProbe.collecting(RevealRequests(followsFocus))(view.render(area, buffer, state))
+
+  /** Whether this view scrolls to keep its focused child on screen — on by default. Moving focus with Tab onto a child
+    * below or above the window scrolls just far enough to show it; turn it off for a view whose offset the app drives
+    * itself.
+    */
+  def followFocus(enabled: Boolean): ScrollViewElement                              = copy(followsFocus = enabled)
   private[dsl] def withProps(props: ElementProps): ScrollViewElement                = copy(props = props)
   private[dsl] override def withChildren(children: Seq[Element]): ScrollViewElement =
     copy(content = children.headOption.getOrElse(content))

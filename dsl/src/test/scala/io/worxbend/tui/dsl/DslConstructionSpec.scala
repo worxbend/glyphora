@@ -45,8 +45,10 @@ final class DslConstructionSpec extends AnyFunSuite:
     assert(text("x").maxSize(9).props.constraint.contains(Constraint.Max(9)))
 
   test("text claims one row per line by default; containers fill"):
-    assert(text("a\nb").claim.vertical == Constraint.Length(2))
-    assert(text("ab\nwide line").claim.horizontal == Constraint.Length(9))
+    // the claim is the paragraph's own measured box (`Constraint.Auto` both ways), not a box recomputed by the node
+    assert(text("a\nb").claim == SizeClaim.Measured)
+    assert(text("a\nb").intrinsicHeight(20).contains(2))
+    assert(text("ab\nwide line").intrinsicWidth(2).contains(9))
     assert(row().claim.vertical == Constraint.Fill(1))
     assert(spacer(2).props.constraint.contains(Constraint.Length(2)))
 

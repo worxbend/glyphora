@@ -32,6 +32,28 @@ final class ScrollViewState:
   def scrollTo(row: Int): Unit =
     offset = math.max(0, math.min(maxOffset, row))
 
+  /** Scrolls as little as possible to bring content rows `top` until `top + height` into view: a range below the window
+    * ends at its bottom edge, a range above it starts at its top edge, and a range already visible changes nothing. A
+    * range taller than the viewport is left alone while any of it is in view — it cannot fit, and jumping to its first
+    * row would yank away the part the reader is looking at (a click into a tall pane focuses it) — and otherwise shows
+    * its first row. Clamped into the scrollable range like every other move, and — like them — a no-op before the first
+    * render has recorded the viewport.
+    *
+    * This replaces the hand-written `scrollTo` arithmetic a view used to do to keep a selection on screen; the DSL's
+    * `scrollView` calls it for the focused child and for elements marked `.ensureVisible`.
+    */
+  def reveal(top: Int, height: Int): Unit =
+    val bottom   = top + math.max(0, height)
+    val overlaps = top < offset + lastViewportHeight && bottom > offset
+    if height > lastViewportHeight && overlaps then ()
+    else if top < offset then scrollTo(top)
+    else if bottom > offset + lastViewportHeight then scrollTo(math.min(top, bottom - lastViewportHeight))
+
+  /** The identity of the last visibility request the DSL's `scrollView` acted on, so a request that persists across
+    * frames scrolls once rather than pinning the view; `None` once no request is present. Written only by the DSL.
+    */
+  private[tui] var revealedRequest: Option[String] = None
+
   def scrollUp(count: Int = 1): Unit =
     scrollBy(-count)
 
