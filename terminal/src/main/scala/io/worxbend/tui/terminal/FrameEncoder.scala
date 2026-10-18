@@ -13,8 +13,12 @@ import io.worxbend.tui.core.{Buffer, Cell, CharWidth, Color, Modifiers, Style, U
   *
   * `colorDepth` decides how a [[io.worxbend.tui.core.Style]]'s colours are written; it is fixed for the lifetime of the
   * encoder because it is a property of the terminal.
+  *
+  * Visible to the whole `io.worxbend.tui` tree rather than to this package alone, because `runtime.AsciicastRecorder`
+  * writes the very same frame diffs into a recording — the encoders stay here, in `terminal`, and the tiers above call
+  * them. It is still not published API: nothing outside this repository can name it.
   */
-private[terminal] final class FrameEncoder(colorDepth: ColorDepth):
+private[tui] final class FrameEncoder(colorDepth: ColorDepth):
 
   /** The cell-level ANSI for everything that differs between `previous` and `next`, in row-major order.
     *
@@ -292,9 +296,9 @@ private[terminal] final class FrameEncoder(colorDepth: ColorDepth):
 
 /** The two whole-frame encodings that leave the backend: what print mode and a no-TTY run write to standard output.
   *
-  * The class above is package-private because the diff encoder's contract (`previous` is what the terminal shows) only
-  * holds inside a backend. These two have no such precondition — a buffer in, text out, callable from any thread — so
-  * they are the public face of the encoder, and the one place outside `tui-terminal` reaches it from.
+  * The class above is not published API: the diff encoder's contract (`previous` is what the terminal shows) only holds
+  * inside a backend or a recorder that tracks what was written. These two have no such precondition — a buffer in, text
+  * out, callable from any thread — so they are the published face of the encoder.
   */
 object FrameEncoder:
 

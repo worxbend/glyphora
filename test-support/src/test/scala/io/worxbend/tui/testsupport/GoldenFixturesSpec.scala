@@ -35,13 +35,23 @@ final class GoldenFixturesSpec extends AnyFunSuite:
       assert(GoldenFixtures.orphans(resources(workspace), sources(workspace)).isEmpty)
     }
 
-  test("only .txt files under golden count as fixtures"):
+  test("only .txt and .ansi files under golden count as fixtures"):
     withWorkspace { workspace =>
       writeFixture(workspace, "kept")
+      Files.writeString(resources(workspace).resolve("golden").resolve("styled.ansi"), "\u001b[0mx\u001b[0m")
       Files.writeString(resources(workspace).resolve("golden").resolve("README.md"), "not a fixture")
-      writeSource(workspace, "KeptSpec.scala", """assertGolden("kept")""")
-      assert(GoldenFixtures.fixtureNames(resources(workspace)) == Set("kept"))
+      writeSource(workspace, "KeptSpec.scala", """assertGolden("kept"); assertGoldenStyled("styled")""")
+      assert(GoldenFixtures.fixtureNames(resources(workspace)) == Set("kept", "styled"))
       GoldenFixtures.assertNoOrphans(resources(workspace), sources(workspace))
+    }
+
+  test("a styled fixture is an orphan unless a styled assertion names it"):
+    withWorkspace { workspace =>
+      val golden = Files.createDirectories(resources(workspace).resolve("golden"))
+      Files.writeString(golden.resolve("stale.ansi"), "\u001b[0mx\u001b[0m")
+      Files.writeString(golden.resolve("live.ansi"), "\u001b[0mx\u001b[0m")
+      writeSource(workspace, "LiveSpec.scala", """GoldenFrames.assertMatchesStyled("live", buffer)""")
+      assert(GoldenFixtures.orphans(resources(workspace), sources(workspace)) == Seq("stale"))
     }
 
   test("a module with no golden directory has no fixtures and no orphans"):
