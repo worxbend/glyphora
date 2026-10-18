@@ -19,6 +19,7 @@ final case class InputElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = InputElement
+  override def debugName: String                                             = "input"
   def widget: Widget                                                         =
     val input = w.TextInput(placeholder, showCursor = props.focused, style = props.style)
     (area, buffer) => input.render(area, buffer, state)
@@ -50,6 +51,7 @@ final case class AutocompleteElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = AutocompleteElement
+  override def debugName: String = "autocomplete"
 
   /** Caps how many matches the dropdown shows at once. */
   def maxSuggestions(count: Int): AutocompleteElement = copy(maxSuggestions = count)
@@ -128,6 +130,7 @@ final case class NumberInputElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = NumberInputElement
+  override def debugName: String = "numberInput"
 
   /** Also accepts a single decimal point. */
   def decimal: NumberInputElement = copy(format = NumberFormat.Decimal)
@@ -175,6 +178,7 @@ final case class TemplateInputElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = TemplateInputElement
+  override def debugName: String                                             = "templateInput"
   def widget: Widget                                                         =
     val input = w.TextInput(placeholder = template, showCursor = props.focused, style = props.style)
     (area, buffer) => input.render(area, buffer, state)
@@ -238,6 +242,7 @@ final case class TextAreaElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = TextAreaElement
+  override def debugName: String                                             = "textArea"
   private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler] = Some { text =>
     if props.focused then
       state.insert(text.replace("\r", ""))

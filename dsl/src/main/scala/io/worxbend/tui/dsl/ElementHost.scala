@@ -109,6 +109,11 @@ final class ElementHost:
     recordBounds = true
     bounds.current.boundsOf(key)
 
+  /** The focus-decorated tree the last [[render]] painted — what events are routed against and what
+    * [[ElementTreeSnapshot]] prints. `None` before the first frame. Render-thread only, like the tree itself.
+    */
+  private[dsl] def decoratedTree: Option[Element] = lastTree
+
   /** Delivers a key to the focused element and the ancestors it bubbles through.
     *
     * `false` means nothing on screen consumed it and the decision is the host's. This method deliberately does not move

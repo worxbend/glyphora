@@ -21,6 +21,7 @@ private[dsl] trait DecoratingElement extends Element:
   private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler] = inner.builtinPasteHandler
   private[dsl] override def claim: SizeClaim                                 = inner.claim
   private[dsl] override def layoutOnly: Boolean                              = inner.layoutOnly
+  override def debugName: String                                             = inner.debugName
 
   /** With no constraint of its own, a decorator measures as whatever it wraps. The trait default cannot serve here: a
     * decorator's own `widget` is a lambda around `inner.widget`, so it is not a [[io.worxbend.tui.core.Measured]] and

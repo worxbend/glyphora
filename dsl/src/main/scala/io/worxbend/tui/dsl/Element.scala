@@ -67,6 +67,13 @@ trait Element:
     */
   private[dsl] def layoutOnly: Boolean = false
 
+  /** The factory-style name of this node — `panel`, `button`, `scrollView` — for the element-tree snapshot and any
+    * other diagnostic that has to say what a node *is* without reflecting over its class. Every node type declares its
+    * own; a decorator answers with the name of the node it wraps. The default is only there so a node added without one
+    * still renders — `ElementTreeSnapshotSpec` fails the build until the override is written.
+    */
+  def debugName: String = "element"
+
   /** The space this element claims inside a container when the user set nothing explicit — one-row widgets claim one
     * row vertically but their natural width (or a fill) horizontally.
     */

@@ -61,6 +61,7 @@ final case class PanelElement(
     props: ElementProps = ElementProps(),
 ) extends FlexContainer:
   type Self = PanelElement
+  override def debugName: String = "panel"
 
   /** The block this panel frames itself with — one value, so `render` and the height measurement below cannot disagree
     * about how many cells the chrome costs.
@@ -216,6 +217,7 @@ final case class RowElement(
     props: ElementProps = ElementProps(),
 ) extends FlexContainer:
   type Self = RowElement
+  override def debugName: String                                             = "row"
   private[dsl] override def layoutOnly: Boolean                              = true
   private def layout: w.Row                                                  =
     val items = children.map { child =>
@@ -249,6 +251,7 @@ final case class ColumnElement(
     props: ElementProps = ElementProps(),
 ) extends FlexContainer:
   type Self = ColumnElement
+  override def debugName: String                = "column"
   private[dsl] override def layoutOnly: Boolean = true
   def widget: Widget                         = w.Column(children.map(_.layoutItem(Direction.Vertical)), spacing, flex)
   def withFlex(mode: Flex): ColumnElement    = copy(flex = mode)
@@ -261,6 +264,7 @@ final case class ColumnElement(
 /** Blank space: flexible by default, fixed once `.length(n)` sets a constraint. */
 final case class SpacerElement(props: ElementProps = ElementProps()) extends Element:
   type Self = SpacerElement
+  override def debugName: String                                 = "spacer"
   private[dsl] override def layoutOnly: Boolean                  = true
   def widget: Widget                                             = w.Spacer
   private[dsl] def withProps(props: ElementProps): SpacerElement = copy(props = props)
@@ -278,6 +282,7 @@ final case class PositionedElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = PositionedElement
+  override def debugName: String                                                    = "positioned"
   private[dsl] override def layoutOnly: Boolean                                     = true
   override def children: Seq[Element]                                               = Seq(content)
   def widget: Widget                                                                =
@@ -315,6 +320,7 @@ final case class PortalElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = PortalElement
+  override def debugName: String                                                = "portal"
   private[dsl] override def layoutOnly: Boolean                                 = true
   override def children: Seq[Element]                                           = Seq(content)
   def widget: Widget                                                            =
@@ -336,6 +342,7 @@ final case class FilledElement(
     override val props: ElementProps = ElementProps(),
 ) extends DecoratingElement:
   type Self = FilledElement
+  override def debugName: String                                                = "filled"
   private[dsl] override def layoutOnly: Boolean                                 = true
   def widget: Widget                                                            =
     (area, buffer) =>
@@ -359,6 +366,7 @@ final case class LayersElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = LayersElement
+  override def debugName: String                                                = "layers"
   private[dsl] override def layoutOnly: Boolean                                 = true
   def widget: Widget                                                            =
     (area, buffer) => children.foreach(_.widget.render(area, buffer))

@@ -25,6 +25,7 @@ final case class ListElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = ListElement
+  override def debugName: String                                             = "list"
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some(wheelScrolls(() => state.selectPrevious(items.size), () => state.selectNext(items.size)))
 
@@ -79,6 +80,7 @@ final case class TreeElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = TreeElement
+  override def debugName: String                                             = "tree"
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some(wheelScrolls(() => state.selectPrevious(nodes), () => state.selectNext(nodes)))
   def widget: Widget                                                         =
@@ -103,6 +105,7 @@ final case class MenuElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = MenuElement
+  override def debugName: String                                             = "menu"
   def widget: Widget                                                         =
     val menu = w.Menu(items, style = props.style, highlightStyle = props.focusStyle)
     (area, buffer) => menu.render(area, buffer, state)
@@ -154,6 +157,7 @@ final case class SelectionListElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = SelectionListElement
+  override def debugName: String                                             = "selectionList"
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some(wheelScrolls(() => state.selectPrevious(items.size), () => state.selectNext(items.size)))
   def widget: Widget                                                         =
@@ -187,6 +191,7 @@ final case class FilePickerElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = FilePickerElement
+  override def debugName: String                                             = "filePicker"
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some(wheelScrolls(() => state.tree.selectPrevious(), () => state.tree.selectNext()))
   def widget: Widget                                                         =
@@ -223,6 +228,7 @@ final case class DirectoryTreeElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = DirectoryTreeElement
+  override def debugName: String                                             = "directoryTree"
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some(wheelScrolls(() => state.selectPrevious(), () => state.selectNext()))
   def widget: Widget                                                         =
@@ -250,6 +256,7 @@ final case class DataTableElement[K](
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = DataTableElement[K]
+  override def debugName: String                                       = "dataTable"
   def widget: Widget                                                   =
     (area, buffer) => table.render(area, buffer, state)
   private[dsl] def withProps(props: ElementProps): DataTableElement[K] = copy(props = props)
@@ -287,6 +294,7 @@ final case class LogElement(
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = LogElement
+  override def debugName: String                                             = "log"
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some(wheelScrolls(() => state.scrollUp(), () => state.scrollDown()))
   def widget: Widget                                                         =

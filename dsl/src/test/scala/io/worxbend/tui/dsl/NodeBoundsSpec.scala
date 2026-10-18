@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Buffer, Rect}
+import io.worxbend.tui.core.{Buffer, Rect, Style}
 import io.worxbend.tui.runtime.ReactiveScope
 
 import org.scalatest.funsuite.AnyFunSuite
@@ -59,3 +59,23 @@ final class NodeBoundsSpec extends AnyFunSuite:
     host.render(Rect(0, 0, 20, 3), buffer(20, 3), Theme.Dark, button("save")(()).key("save"))
     // the root node is handed the whole render area, whatever it would claim inside a container
     assert(host.boundsOf("save").contains(Rect(0, 0, 20, 3)))
+
+  /** How many nodes of a decorated tree carry a bounds wrapper — directly, or under their input wrapper. */
+  private def boundsWrappers(node: Element): Int =
+    val own = node match
+      case _: BoundsElement        => 1
+      case tracked: TrackedElement =>
+        tracked.inner match
+          case _: BoundsElement => 1
+          case _                => 0
+      case pointer: PointerElement =>
+        pointer.inner match
+          case _: BoundsElement => 1
+          case _                => 0
+      case _                       => 0
+    own + node.children.map(boundsWrappers).sum
+
+  test("with recording off the decorated tree carries no bounds wrapper, so a frame allocates nothing for it"):
+    def view: Element = column(text("a"), button("b")(()), scrollView(text("c"), 1, ScrollViewState()))
+    assert(boundsWrappers(FocusPass.decorate(view, FocusTracker(), Style.Default.reverse)) == 0)
+    assert(boundsWrappers(FocusPass.decorate(view, FocusTracker(), Style.Default.reverse, Some(NodeBounds()))) == 5)

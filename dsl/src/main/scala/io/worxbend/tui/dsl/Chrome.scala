@@ -157,6 +157,7 @@ final case class DismissibleOverlayElement(
 ) extends Element
     with BoundsAwareElement:
   type Self = DismissibleOverlayElement
+  override def debugName: String = "dismissibleOverlay"
 
   override def children: Seq[Element] = Seq(content)
 

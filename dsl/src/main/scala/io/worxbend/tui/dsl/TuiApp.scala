@@ -812,6 +812,10 @@ trait TuiApp:
   /** The running invocation's host, so [[boundsOf]] can reach its bounds recorder; `None` outside a run. */
   private val activeHost = AtomicReference[Option[ElementHost]](None)
 
+  /** The running invocation's host for [[ElementTreeSnapshot]], which prints its decorated tree; `None` outside a run.
+    */
+  private[dsl] def currentHost: Option[ElementHost] = activeHost.get()
+
   /** Whether [[boundsOf]] has ever been called on this app — the sticky half of the opt-in, so a run started after the
     * call records from its first frame. Written from whichever thread asked, read on the render thread at run start.
     */
