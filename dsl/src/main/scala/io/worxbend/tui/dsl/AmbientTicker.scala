@@ -13,7 +13,13 @@ private[dsl] final case class AmbientTick(interval: FiniteDuration, cancelable: 
 /** The negotiation between what a frame renders and the repeating tick a run with no `config.tickRate` arms for itself
   * — retargeted after every frame, cancelled on the way out. [[retarget]] explains why the negotiation exists at all.
   */
-private[dsl] final class AmbientTicker(effects: EffectStack, toasts: ToastStack, redraw: () => Unit):
+private[dsl] final class AmbientTicker(
+    effects: EffectStack,
+    toasts: ToastStack,
+    redraw: () => Unit,
+    pendingKeys: PendingKeys = PendingKeys(() => System.nanoTime()),
+    sequenceTimeout: () => FiniteDuration = () => FiniteDuration(1, "s"),
+):
 
   /** Turns this run's own repeating tick on, off, or onto a different interval, according to what the frame just
     * composed actually needs.
@@ -52,7 +58,9 @@ private[dsl] final class AmbientTicker(effects: EffectStack, toasts: ToastStack,
       // separately; the ticker runs at whichever of the two demands is the shorter
       // ...and so does a signal in flight under `animateTo`, which is sampled on the same tick
       val ageing =
-        if !effects.isEmpty || toasts.isLive || SignalMotion.isActive then Some(AnimationClock.DefaultInterval)
+        // a pending key-sequence prefix times out on the tick, so it borrows ticks for as long as it waits
+        if !effects.isEmpty || toasts.isLive || SignalMotion.isActive || pendingKeys.isPending then
+          Some(AnimationClock.DefaultInterval)
         else None
       // the intro is not in the tree either, and it is the one thing here that an app with no `tickRate` of its own
       // cannot animate without ticks; the demand goes away with the frame that ends it
@@ -85,4 +93,5 @@ private[dsl] final class AmbientTicker(effects: EffectStack, toasts: ToastStack,
     // the intro is driven from here for a run that configured no `tickRate`; `advance` is what ends it, and the redraw
     // below is the frame that shows the real view
     val _ = run.splash.advance()
+    val _ = pendingKeys.expire(sequenceTimeout())
     redraw()

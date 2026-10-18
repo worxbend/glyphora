@@ -1,0 +1,9 @@
+editor body
+
+
+                      ┌ctrl+k …───────────┐
+                      │ctrl+s  save all   │
+                      │ctrl+w  close all  │
+                      │z       zen mode   │
+                      └───────────────────┘
+ ctrl+k …   │  ctrl+s save all  │  ctrl+w cl

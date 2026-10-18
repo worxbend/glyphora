@@ -10,8 +10,10 @@ import io.worxbend.tui.widgets as w
 // (and therefore the app) owns — and they are called only from `builtinKeyHandler`/`builtinMouseHandler`, so they run
 // on the render thread like every other part of a frame.
 
-/** How far PageUp/PageDown move a scrollable, in rows. One place to change the page step for every scrollable. */
-private val PageStep = 10
+/** How far PageUp/PageDown move a scrollable, in rows. One place to change the page step for every scrollable: the
+  * running app's `FrameworkKeys.pageStep`, which `TuiApp` installs around each key dispatch (10 outside a run).
+  */
+private def PageStep: Int = FrameworkKeys.currentPageStep.value
 
 /** The divider bounds and keyboard step of every [[SplitPaneElement]]: the split is never driven past these, so neither
   * pane can be collapsed away entirely by a drag or by a held `[`/`]`.

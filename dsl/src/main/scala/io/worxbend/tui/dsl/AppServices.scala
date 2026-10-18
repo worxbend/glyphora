@@ -84,6 +84,12 @@ trait AppServices extends Notifications:
   /** Stops mirroring a progress source and clears whatever the taskbar was showing. */
   def clearTaskbarProgress(): Unit
 
+  /** The key mode the app's bindings dispatch in (see `KeyBindings.modes`): set it from a binding to switch modes —
+    * `keyMode.set(ModeId("insert"))` — and read it from a view to show it. Holds `ModeId.Default` in an app whose
+    * bindings declare no modes. Render-thread only, like every `Signal`.
+    */
+  def keyMode: Signal[ModeId]
+
 object AppServices:
 
   /** Services that do nothing, for building elements outside a running application.
@@ -96,6 +102,8 @@ object AppServices:
     */
   val NoOp: AppServices = new AppServices:
     private val unknownScheme: Signal[ColorScheme]                                  = Signal(ColorScheme.Unknown)
+    private val defaultMode: Signal[ModeId]                                         = Signal(ModeId.Default)
+    def keyMode: Signal[ModeId]                                                     = defaultMode
     def notify(message: String, level: NoticeLevel, duration: FiniteDuration): Unit = ()
     def dismissToasts(): Unit                                                       = ()
     def desktop(title: String, body: String): Unit                                  = ()
