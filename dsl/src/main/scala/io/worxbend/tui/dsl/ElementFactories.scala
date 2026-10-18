@@ -95,6 +95,47 @@ private[dsl] trait ElementFactories:
     */
   def column(children: Element*): ColumnElement = ColumnElement(children)
 
+  /** Children on a grid of `columns` x `rows` tracks with `gap` blank cells between neighbouring tracks:
+    *
+    * {{{
+    * grid(cols = Seq(Constraint.Fill(1), Constraint.Length(30)), rows = Seq(Constraint.Length(3), Constraint.Fill(1)), gap = 1)(
+    *   topBar.span(cols = 2), main.at(1, 0), sidebar.at(1, 1))
+    * }}}
+    *
+    * Children say where they go with `.at(row, col)` and `.span(rows, cols)`, or fill a named area of
+    * `.areas("top top", "main side")` with `.area("top")`; the rest are auto-flowed into the next free cells. See
+    * [[GridElement]].
+    */
+  def grid(cols: Seq[Constraint], rows: Seq[Constraint], gap: Int = 0)(children: Element*): GridElement =
+    GridElement(cols, rows, children, gap, gap)
+
+  /** Children laid out left to right at their natural widths, wrapping onto further lines — tags, chips, button bars.
+    * `gap` blank columns between neighbours, `rowGap` blank rows between lines. See [[FlowElement]].
+    */
+  def flow(gap: Int = 1, rowGap: Int = 0)(children: Element*): FlowElement =
+    FlowElement(children, gap, rowGap)
+
+  /** `center` with panes docked to its edges: `top` and `bottom` across the full width, then `left` and `right` beside
+    * the centre, which takes whatever is left. Sugar over a `column` holding a `row` — the result is that `column`.
+    *
+    * A docked pane with no constraint of its own is `.auto`, sized to what it measures (and a fill when it cannot say);
+    * give it `.length(n)` to fix it. An edge left out is a zero-size spacer and costs nothing.
+    */
+  def dock(
+      top: Element = SpacerElement(ElementProps(constraint = Some(Constraint.Length(0)))),
+      bottom: Element = SpacerElement(ElementProps(constraint = Some(Constraint.Length(0)))),
+      left: Element = SpacerElement(ElementProps(constraint = Some(Constraint.Length(0)))),
+      right: Element = SpacerElement(ElementProps(constraint = Some(Constraint.Length(0)))),
+  )(center: Element): ColumnElement =
+    // the constraint is written through `withProps` rather than the `.auto` / `.fill` extensions: those live beside
+    // the `export Element.{…}` block, and reaching them from here is a cyclic reference
+    def sized(pane: Element, constraint: Constraint): Element =
+      pane.withProps(pane.props.copy(constraint = Some(constraint)))
+    def docked(pane: Element): Element                        =
+      if pane.props.constraint.isEmpty then sized(pane, Constraint.Auto) else pane
+    val middle = RowElement(Seq(docked(left), sized(center, Constraint.Fill(1)), docked(right)))
+    ColumnElement(Seq(docked(top), sized(middle, Constraint.Fill(1)), docked(bottom)))
+
   /** One element per item, each stamped with a `.key` derived from the item itself, so focus follows the *item* across
     * insertions and reorders rather than the screen position it happened to occupy.
     *

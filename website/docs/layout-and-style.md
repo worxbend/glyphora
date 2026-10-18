@@ -45,6 +45,7 @@ explicit constraint only when the surrounding composition needs one.
 | `.fill(2)` | take twice the remaining share of `.fill(1)` | weighted columns |
 | `.minSize(8)` | at least 8 cells when solving | important compact content |
 | `.maxSize(30)` | no more than 30 cells | readable text or narrow controls |
+| `.auto` | exactly what the content measures | labels, badges, a pane as tall as its text |
 
 A percentage takes its share and leaves the rest as free space, which `flex` then
 positions — `row(a.percent(20), b.percent(60))` is 20/60 with a fifth of the axis
@@ -60,6 +61,108 @@ row(
   panel("Timeline")(timeline).fill(2),
   panel("Health")(health).fill(1),
 ).gap(1)
+```
+
+### Size to the content with `.auto`
+
+`.auto` asks the child itself: in a `column` it gets the rows its content measures, in a
+`row` the columns. Text is measured in display columns, so a CJK label or an emoji is
+counted at its real width. A child that cannot measure itself — a chart that fills
+whatever it is given — is laid out as a `.fill` instead, never as zero cells.
+
+```scala
+row(
+  text("Status:").auto,          // exactly 7 columns
+  text(status).fill,
+)
+```
+
+### Bound a size: `.minSize(…).maxSize(…).fill`
+
+On their own, `.minSize(n)` and `.maxSize(n)` are a floor and a cap. Combined with a
+size — in either order — they *bound* that size instead:
+
+```scala
+row(
+  panel("Sidebar")(nav).minSize(20).maxSize(60).fill, // a fill, but 20..60 columns
+  panel("Main")(body).fill,
+)
+```
+
+A bounded child that hits its ceiling stops there and its neighbours share what it
+refused; one pushed below its floor is held at the floor. In core terms this is
+`Constraint.Bounded(min, max, base)`, and `Constraint.Auto` is the measured size;
+`Constraint` gains both cases in 0.20.0, so a `match` over it needs a wildcard.
+
+### Align children across the axis
+
+Every child of a `row` or `column` spans the container's whole cross axis by default —
+a button in a column is as wide as the column. `.alignItems(…)` on the container and
+`.alignSelf(…)` on a child place it by its measured size instead:
+
+```scala
+column(
+  text("Welcome"),
+  button("Continue")(next()),
+  text("v1.4").alignSelf(CrossAlign.End),
+).alignItems(CrossAlign.Center)
+```
+
+The modes are `CrossAlign.Stretch` (the default), `Start`, `Center` and `End`. A child
+that cannot say how wide (or, in a row, how tall) it is keeps stretching.
+
+## Lay out a dashboard on a grid
+
+`grid(cols, rows, gap)(children*)` solves both axes with the same constraints rows and
+columns use. Children say where they go with `.at(row, col)` and how many tracks they
+cover with `.span(rows, cols)`; the rest flow into the next free cells, in reading order.
+
+```scala
+grid(cols = Seq(Constraint.Fill(1), Constraint.Length(30)), rows = Seq(Constraint.Length(3), Constraint.Fill(1)), gap = 1)(
+  topBar.span(cols = 2),
+  main.at(1, 0),
+  sidebar.at(1, 1),
+)
+```
+
+The same layout can be written as a template of named areas — `.areas(…)` on the
+grid, `.area(name)` on each child — where a repeated name spans cells and `.` leaves one
+empty:
+
+```scala
+grid(cols, rows, gap = 1)(
+  topBar.area("top"),
+  main.area("main"),
+  sidebar.area("side"),
+).areas("top top", "main side")
+```
+
+A template whose rows differ in length, or where a name does not cover one filled
+rectangle, throws where it is written. A `Constraint.Auto` track is as big as the
+children sitting in that track alone; `.gaps(columnGap, rowGap)` sets the two gaps
+separately.
+
+## Wrap chips and tags with `flow`
+
+`flow(gap, rowGap)(children*)` lays children left to right at their natural widths and
+wraps when the next one does not fit — tags, badges, a bar of buttons:
+
+```scala
+flow(gap = 1)(tags.map(tag => badge(tag))*)
+```
+
+Widths are display widths, so a CJK tag takes two columns per character. A child that
+cannot say how wide it is takes a line to itself; `.length(n)` on a child fixes its width.
+
+## Dock panes to the edges
+
+`dock(top = …, bottom = …, left = …, right = …)(center)` is sugar for the usual
+`column(top, row(left, center, right), bottom)`: top and bottom span the width, left and
+right sit beside the centre, and the centre takes what is left. Docked panes are `.auto`
+unless they carry a constraint of their own, and any edge can be left out.
+
+```scala
+dock(top = topBar("deployctl"), bottom = statusBar(bindings), left = nav.length(24))(details)
 ```
 
 ## Position content deliberately

@@ -126,6 +126,13 @@ Core structural elements:
 
 - `panel(title)(children*)` / `panel(children*)` — bordered vertical container;
 - `row(children*)` / `column(children*)` — constrained layout containers;
+- `grid(cols, rows, gap)(children*)` — two-axis tracks; children placed with
+  `.at(row, col)`, `.span(rows, cols)` or a named `.areas(…)` template, the rest
+  auto-flowed (see [Lay out a dashboard on a grid](./layout-and-style#lay-out-a-dashboard-on-a-grid));
+- `flow(gap, rowGap)(children*)` — children at their natural widths, wrapping onto
+  further lines: tags, chips, button bars;
+- `dock(top, bottom, left, right)(center)` — panes docked to the edges around a centre
+  that takes the rest;
 - `spacer` / `spacer(cells)` — flexible or fixed blank space;
 - `line(spans*)` — one row carrying several styles (see [Text, documents, and logs](#text-documents-and-logs));
 - `rule(label, borderType)` — horizontal divider, whose weight comes from the same
