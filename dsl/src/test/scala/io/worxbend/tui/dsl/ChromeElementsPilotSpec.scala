@@ -28,3 +28,20 @@ final class ChromeElementsPilotSpec extends AnyFunSuite with PilotFixture:
     pilot.click(1, 0).click(7, 0).click(12, 0).waitForIdle()
     assert(chosen == Vector(0, 4))
     quitApp(pilot)
+
+  test("accordion: opening one section closes the other — a single-open group of collapsibles"):
+    val state = AccordionState()
+    val pilot = startApp(Size(30, 8)) {
+      accordion(state)("General" -> text("name, email"), "Network" -> text("proxy"), "About" -> text("v1"))
+    }
+    assert(pilot.screenLines.take(3).map(_.trim) == Seq("▸ General", "▸ Network", "▸ About"))
+    pilot.press("enter").waitForIdle()
+    assert(state.open.contains(0))
+    assert(pilot.screenText.contains("name, email"))
+    pilot.press("tab", "enter").waitForIdle()
+    assert(state.open.contains(1))
+    assert(!pilot.screenText.contains("name, email"))
+    assert(pilot.screenText.contains("proxy"))
+    pilot.press("enter").waitForIdle()
+    assert(state.open.isEmpty)
+    quitApp(pilot)

@@ -199,6 +199,10 @@ final class VersionedStatesSpec extends AnyFunSuite:
       "expanded +="          -> (state => { val _ = state.expanded += Paths.get(".") }),
       "invalidate"           -> (_.invalidate()),
     ),
+    row("AccordionState", AccordionState())(
+      "open ="               -> (_.open = Some(1)),
+      "toggle"               -> (_.toggle(0)),
+    ),
   )
 
   private def register[S <: Versioned](entry: Row[S]): Unit =

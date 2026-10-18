@@ -5,6 +5,7 @@ import io.worxbend.tui.core.{Color, Constraint, Flex, KeyEvent, MouseEvent, Span
 // One import to rule them all: `import io.worxbend.tui.dsl.*` brings in TuiApp, Element, every factory,
 // the styling/layout extensions, and the core vocabulary the examples need.
 export Element.{
+  accordion,
   animatedText,
   animatedTextAt,
   autocomplete,
@@ -322,6 +323,7 @@ export io.worxbend.tui.widgets.{
   Bounds,
   CanvasResolution,
   ChartOptions,
+  AccordionState,
   ColorPickerState,
   ColorRamp,
   ColumnSort,

@@ -36,3 +36,28 @@ final case class BreadcrumbElement(
         }
       else false
     }
+
+/** A group of `collapsible` sections of which at most one is open — the policy is [[w.AccordionState.toggle]]: opening
+  * a section closes the open one, toggling the open one closes it. Each header is a tab stop that Enter or Space
+  * toggles; a folded body leaves the tab order, exactly as a lone `collapsible`'s does. The open section fills the rows
+  * the headers leave.
+  */
+final case class AccordionElement(content: Element, props: ElementProps = ElementProps()) extends Element:
+  type Self = AccordionElement
+  override def debugName: String                                                   = "accordion"
+  override def children: Seq[Element]                                              = Seq(content)
+  def widget: Widget                                                               = content.widget
+  private[dsl] override def layoutOnly: Boolean                                    = true
+  private[dsl] override def claim: SizeClaim                                       = content.claim
+  private[dsl] def withProps(props: ElementProps): AccordionElement                = copy(props = props)
+  private[dsl] override def withChildren(children: Seq[Element]): AccordionElement =
+    children.headOption.fold(this)(child => copy(content = child))
+
+private[dsl] object AccordionElement:
+
+  /** One `collapsible` per section, wired to the shared state, stacked in a column. */
+  def of(state: w.AccordionState, sections: Seq[(String, Element)]): AccordionElement =
+    val headers = sections.zipWithIndex.map { case ((title, body), index) =>
+      CollapsibleElement(title, body, state.open.contains(index), _ => state.toggle(index))
+    }
+    AccordionElement(ColumnElement(headers))

@@ -2466,6 +2466,28 @@ CJK labels fold at the right column. The fold itself is not clickable. The widge
 the same fold as `segments(width)` and `itemAt(width, x)` for a caller doing its own hit
 testing.
 
+### An accordion
+
+`accordion(state)(sections*)` stacks titled sections of which at most one is open. Each
+header is a `collapsible` — a tab stop that Enter or Space toggles — and opening one
+closes whichever was open:
+
+```scala
+private val settings = AccordionState(open = Some(0))
+
+accordion(settings)(
+  "General" -> generalForm,
+  "Network" -> networkForm,
+  "About"   -> text(s"version $version"),
+)
+```
+
+The open body fills the rows the headers leave, and a folded body leaves the tab order
+just as a lone `collapsible`'s does. The policy lives in `AccordionState.toggle`, so the
+app can open a section itself (`settings.open = Some(2)`) and the next frame shows it.
+Outside the DSL the same picture is the `Accordion(sections, style, openStyle,
+collapsedSymbol, expandedSymbol)` widget over the same state.
+
 ## Drop to a raw Widget
 
 The DSL is not a separate renderer. Any core `Widget` can become a leaf:

@@ -1188,3 +1188,10 @@ private[dsl] trait ElementFactories:
     LateBinding.themed(theme) { theme =>
       BreadcrumbElement(items, onSelect, separatorStyle = theme.muted, currentStyle = theme.accent.bold)
     }
+
+  /** Titled sections of which at most one is open: `accordion(state)("General" -> general, "Network" -> network)`. Each
+    * header is a [[collapsible]] — Enter or Space toggles it — and opening one closes the other; the open body fills
+    * the rows the headers leave. `state` is caller-owned: keep it in a field. See [[w.AccordionState]].
+    */
+  def accordion(state: w.AccordionState)(sections: (String, Element)*): AccordionElement =
+    AccordionElement.of(state, sections)
