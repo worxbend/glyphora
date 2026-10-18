@@ -44,6 +44,11 @@ import scala.concurrent.duration.FiniteDuration
   * `viewport` decides how much of the terminal the run owns — the whole alternate screen (the default), or a strip of
   * rows at the bottom of the primary screen that leaves the shell's own output visible above it. See [[Viewport]].
   *
+  * `captureStdio` decides what happens to `System.out`/`System.err` while the run owns the terminal — see
+  * [[CaptureStdio]]. `None`, the default, leaves the decision to whoever owns the runner: a bare [[TerminalRunner]]
+  * captures nothing, while `TuiApp` captures into `printAbove`. Set it explicitly —
+  * `withCaptureStdio(CaptureStdio.Off)` — to overrule that host default.
+  *
   * `nonInteractive` says what a run does when the process has no terminal to be interactive on — standard output is not
   * a TTY, or `CI` is set. See [[NonInteractivePolicy]]; the default, [[NonInteractivePolicy.Fail]], is the behaviour
   * every release before 0.20.0 had, and the one the CI smoke test of every example relies on.
@@ -65,6 +70,7 @@ final class RunnerConfig private (
     val viewport: Viewport,
     val keyEventTypes: Boolean,
     val onFrameTiming: Option[FrameTiming => Unit],
+    val captureStdio: Option[CaptureStdio],
     val nonInteractive: NonInteractivePolicy,
 ):
 
@@ -115,6 +121,12 @@ final class RunnerConfig private (
   /** No phase timing, and no profiling clock reads. The default. */
   def withoutOnFrameTiming: RunnerConfig = updated(onFrameTiming = None)
 
+  /** What to do with `System.out`/`System.err` during the run — see [[CaptureStdio]] and the class notes. */
+  def withCaptureStdio(mode: CaptureStdio): RunnerConfig = updated(captureStdio = Some(mode))
+
+  /** Back to the host's default: nothing for a bare runner, `printAbove` under `TuiApp`. The default. */
+  def withoutCaptureStdio: RunnerConfig = updated(captureStdio = None)
+
   /** What a run does without a terminal to be interactive on — see [[NonInteractivePolicy]]. */
   def withNonInteractive(policy: NonInteractivePolicy): RunnerConfig = updated(nonInteractive = policy)
 
@@ -126,6 +138,7 @@ final class RunnerConfig private (
       viewport: Viewport = viewport,
       keyEventTypes: Boolean = keyEventTypes,
       onFrameTiming: Option[FrameTiming => Unit] = onFrameTiming,
+      captureStdio: Option[CaptureStdio] = captureStdio,
       nonInteractive: NonInteractivePolicy = nonInteractive,
   ): RunnerConfig =
     new RunnerConfig(
@@ -136,6 +149,7 @@ final class RunnerConfig private (
       viewport,
       keyEventTypes,
       onFrameTiming,
+      captureStdio,
       nonInteractive,
     )
 
@@ -146,7 +160,8 @@ final class RunnerConfig private (
         (this eq that) ||
         (mouseCapture == that.mouseCapture && keyEventTypes == that.keyEventTypes && tickRate == that.tickRate &&
           viewport == that.viewport && onTaskError == that.onTaskError && onFrame == that.onFrame &&
-          onFrameTiming == that.onFrameTiming && nonInteractive == that.nonInteractive)
+          onFrameTiming == that.onFrameTiming && captureStdio == that.captureStdio &&
+          nonInteractive == that.nonInteractive)
       case _                  => false
 
   override def hashCode(): Int =
@@ -157,6 +172,7 @@ final class RunnerConfig private (
     hash = 31 * hash + viewport.hashCode()
     hash = 31 * hash + keyEventTypes.hashCode()
     hash = 31 * hash + onFrameTiming.hashCode()
+    hash = 31 * hash + captureStdio.hashCode()
     31 * hash + nonInteractive.hashCode()
 
   /** Only the fields that differ from [[RunnerConfig.Default]], so the common configuration prints as one short line; a
@@ -171,6 +187,7 @@ final class RunnerConfig private (
       Option.when(viewport != Viewport.Fullscreen)(s"viewport=$viewport"),
       Option.when(keyEventTypes)("keyEventTypes=true"),
       Option.when(onFrameTiming.nonEmpty)("onFrameTiming=<installed>"),
+      captureStdio.map(mode => s"captureStdio=$mode"),
       Option.when(nonInteractive != NonInteractivePolicy.Fail)(s"nonInteractive=$nonInteractive"),
     ).flatten
     if fields.isEmpty then "RunnerConfig.Default" else fields.mkString("RunnerConfig(", ", ", ")")
@@ -194,6 +211,7 @@ object RunnerConfig:
       viewport: Viewport = Viewport.Fullscreen,
       keyEventTypes: Boolean = false,
       onFrameTiming: Option[FrameTiming => Unit] = None,
+      captureStdio: Option[CaptureStdio] = None,
       nonInteractive: NonInteractivePolicy = NonInteractivePolicy.Fail,
   ): RunnerConfig =
     new RunnerConfig(
@@ -204,11 +222,37 @@ object RunnerConfig:
       viewport,
       keyEventTypes,
       onFrameTiming,
+      captureStdio,
       nonInteractive,
     )
 
-  /** The seven-field arity 0.19 compiled against, kept as a default-free overload so a caller built before
-    * `nonInteractive` existed keeps linking — see the note on [[apply]].
+  /** The eight-field arity `apply` had before `nonInteractive` was added, kept default-free so code compiled against it
+    * keeps working — the policy the nine-field `apply` above documents.
+    */
+  def apply(
+      tickRate: Option[FiniteDuration],
+      mouseCapture: Boolean,
+      onTaskError: Option[RenderTaskErrorHandler],
+      onFrame: Option[CompletedFrame => Unit],
+      viewport: Viewport,
+      keyEventTypes: Boolean,
+      onFrameTiming: Option[FrameTiming => Unit],
+      captureStdio: Option[CaptureStdio],
+  ): RunnerConfig =
+    new RunnerConfig(
+      tickRate,
+      mouseCapture,
+      onTaskError,
+      onFrame,
+      viewport,
+      keyEventTypes,
+      onFrameTiming,
+      captureStdio,
+      NonInteractivePolicy.Fail,
+    )
+
+  /** The seven-field arity `apply` had before `captureStdio` was added, kept default-free so code compiled against it
+    * keeps working — the policy the nine-field `apply` above documents.
     */
   def apply(
       tickRate: Option[FiniteDuration],
@@ -227,6 +271,7 @@ object RunnerConfig:
       viewport,
       keyEventTypes,
       onFrameTiming,
+      None,
       NonInteractivePolicy.Fail,
     )
 

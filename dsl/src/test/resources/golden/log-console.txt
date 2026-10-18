@@ -1,0 +1,4 @@
+12:00:01 DEBUG app.boot reading config
+12:00:02 INFO  app.boot listening on 8080
+12:00:03 WARN  app.disk disk almost full
+12:00:04 ERROR net.client refused (java.lang.IllegalStateExc
