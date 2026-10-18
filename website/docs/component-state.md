@@ -77,22 +77,60 @@ val rows = useSignal(0)
 if expanded.get then row(rows) else spacer
 ```
 
-## `keyed` for anything built in a loop
+## `each` for anything built in a loop
 
 Elements built by a `map` all share one call site, so they would all share one set of
-slots. `keyed` gives each iteration an identity of its own:
+slots. `each` gives each iteration an identity of its own — the same key it stamps on
+the row for focus is the scope its hooks live in:
 
 ```scala
-column(projects.get.map(project => keyed(project.id)(projectCard(project)))*)
+column(each(projects.get)(_.id)(projectCard)*)
 ```
 
 Key by the item's own identity, never by its index. An index renumbers the survivors
 when an item is removed, which hands each of them their former neighbour's state — the
 classic symptom being a list where deleting the middle row makes the row below it
-inherit the deleted one's expanded/collapsed setting.
+inherit the deleted one's expanded/collapsed setting. Reorder the items and both the
+highlight and every row's `useSignal`/`useState` travel with the item.
+
+`keyed(key)(body)` is the same scope on its own, for a loop `each` does not fit — a
+`map` that produces something other than one element per item, say — and for giving a
+single reusable component two separately-stateful instances by hand:
+
+```scala
+column(projects.get.map(project => keyed(project.id)(projectCard(project)))*)
+```
 
 Keys only have to be unique among siblings. A key is one step in a path, so the same
-key under two different parents is two different places.
+key under two different parents is two different places. Before 0.20.0, `each` set only
+the focus key and rows needed `keyed` as well — see the migration notes in
+[Versioning](./versioning).
+
+## `memo` for a subtree that is expensive to compose
+
+`memo(deps*)(subtree)` builds the subtree once and hands the same `Element` back on
+every later frame whose deps are `==` to the ones it was built with. It is a hook slot
+like the others — it belongs to its call site and is swept one frame after the call
+stops being reached — and it is for the part of a view that costs real time to
+*compose* (a table over thousands of rows, a rendered markdown document) while the
+frames around it change for other reasons:
+
+```scala
+def view(using ReactiveScope, Theme): Element =
+  column(
+    text(s"tick ${clock.get}"),
+    memo(rows.get, sort.get)(dataTable(columns, rows.peek, widths, sortedBy(sort.peek))).fill,
+  )
+```
+
+The deps are the whole contract. A signal read *inside* the memoised subtree is not
+read on the frames that reuse the cache, so it cannot subscribe them: read every signal
+the subtree depends on in the deps list, and `peek` it inside. The subtree must not own
+hooks either — a `useSignal` inside it is only reached on frames that rebuild, and a
+slot not reached is swept — so keep that state beside the `memo` call and pass it in
+as a dep. Mutable widget states compare by identity, so a `ListState` as a dep never
+triggers a rebuild by itself; put the value that changed in the list instead. In a loop,
+`each` (or `keyed`) gives each row its own cache.
 
 ## Lifetime
 

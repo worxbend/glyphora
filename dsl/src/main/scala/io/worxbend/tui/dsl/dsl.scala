@@ -45,6 +45,7 @@ export Element.{
   markdown,
   marquee,
   marqueeAt,
+  memo,
   menu,
   notice,
   numberInput,
@@ -87,8 +88,11 @@ export Element.{
   tree,
   widget,
 }
-// Form signatures are part of the one-import application surface too.
-export io.worxbend.tui.macros.{DerivedField, FieldValidation, FormSpec}
+// Form signatures are part of the one-import application surface too. `Codec` is the context bound of `persisted`, and
+// an app teaching the derivation about its own type writes `given Codec[Mine] = Codec.atom(...)`, so it is named here;
+// `deriveCodec` stays behind the macros import with `deriveForm`, because `Codec.derived` already summons it for every
+// mirrored type and the explicit form is only ever written beside a type definition.
+export io.worxbend.tui.macros.{Codec, DerivedField, FieldValidation, FormSpec}
 
 // Every core type the exported API's own signatures mention, so a view never needs a second import.
 //
@@ -218,6 +222,7 @@ export io.worxbend.tui.runtime.{
   Derived,
   FrameTiming,
   LatestFrameObserver,
+  Persisted,
   QueuedTaskFailures,
   Reactive,
   ReactiveScope,
@@ -227,6 +232,7 @@ export io.worxbend.tui.runtime.{
   RunnerError,
   Signal,
   SignalEquality,
+  Store,
   TaskScope,
   Viewport,
 }
