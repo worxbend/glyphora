@@ -983,3 +983,11 @@ private[dsl] trait ElementFactories:
     */
   def portal(dx: Int, dy: Int, width: Int, height: Int)(content: Element): PortalElement =
     PortalElement(dx, dy, width, height, content)
+
+  /** A sized, labelled stand-in for content that does not exist yet: a dashed box with `label` centred in it and the
+    * box's own size — `40×12` — written underneath, so the layout can be tuned before the real panels are written. It
+    * fills whatever its container hands out. The frame and size line draw in the theme's muted style, the label in its
+    * accent. See [[w.Placeholder]].
+    */
+  def placeholder(label: String)(using theme: Theme): PlaceholderElement =
+    PlaceholderElement(label, theme.accent, ElementProps(style = theme.muted))

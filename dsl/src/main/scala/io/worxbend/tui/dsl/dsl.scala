@@ -58,6 +58,7 @@ export Element.{
   paginator,
   panel,
   pieChart,
+  placeholder,
   portal,
   positioned,
   progressBar,

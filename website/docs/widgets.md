@@ -2127,6 +2127,34 @@ badge("BETA").fg(Color.Magenta)
 accent and accepts any `.fg(...)`. Both report a `widthAt`, so a caller can size a
 column for them rather than guessing.
 
+## Pickers, inspectors and prototyping
+
+### Placeholders while the layout settles
+
+`placeholder("Sidebar")` stands in for a panel that is not written yet: a dashed
+box with the label centred in it and, underneath, the size the layout actually gave
+it. It fills whatever its container hands out, so tuning a `row(...)` of constraints
+is a matter of reading the numbers, and swapping the placeholder for the real content
+moves nothing around it.
+
+```scala
+row(
+  placeholder("Sidebar").length(24),
+  column(placeholder("Editor").fill, placeholder("Terminal").length(8)),
+)
+```
+
+```text
+┌╌╌╌╌╌╌╌╌╌╌┐
+╎ Sidebar  ╎
+╎   12×4   ╎
+└╌╌╌╌╌╌╌╌╌╌┘
+```
+
+An area under three cells either way drops the frame and keeps the label and size.
+The widget behind it, `Placeholder(label, style, labelStyle, borderType)`, takes any
+`BorderType`.
+
 ## Drop to a raw Widget
 
 The DSL is not a separate renderer. Any core `Widget` can become a leaf:
