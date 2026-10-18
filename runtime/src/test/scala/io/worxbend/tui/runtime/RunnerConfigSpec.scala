@@ -14,6 +14,7 @@ final class RunnerConfigSpec extends AnyFunSuite:
   private val onTaskError: RenderTaskErrorHandler = _ => ()
   private val onFrame: CompletedFrame => Unit     = _ => ()
   private val onFrameTiming: FrameTiming => Unit  = _ => ()
+  private val cast                                = java.nio.file.Path.of("demo.cast")
 
   /** Every field set to something other than its default. */
   private val populated = RunnerConfig(
@@ -24,6 +25,7 @@ final class RunnerConfigSpec extends AnyFunSuite:
     viewport = Viewport.Inline(3),
     keyEventTypes = true,
     onFrameTiming = Some(onFrameTiming),
+    recording = Some(cast),
   )
 
   test("every with* builder round-trips its field from the default configuration"):
@@ -34,6 +36,7 @@ final class RunnerConfigSpec extends AnyFunSuite:
     assert(RunnerConfig.Default.withViewport(Viewport.Inline(3)) == RunnerConfig(viewport = Viewport.Inline(3)))
     assert(RunnerConfig.Default.withKeyEventTypes == RunnerConfig(keyEventTypes = true))
     assert(RunnerConfig.Default.withOnFrameTiming(onFrameTiming) == RunnerConfig(onFrameTiming = Some(onFrameTiming)))
+    assert(RunnerConfig.Default.withRecording(cast) == RunnerConfig(recording = Some(cast)))
 
   test("each builder leaves every other field as it was"):
     assert(populated.withTickRate(1.second).mouseCapture)
@@ -58,6 +61,8 @@ final class RunnerConfigSpec extends AnyFunSuite:
     assert(populated.withoutOnFrame.withOnFrame(onFrame) == populated)
     assert(populated.withoutOnFrameTiming.onFrameTiming.isEmpty)
     assert(populated.withoutOnFrameTiming.withOnFrameTiming(onFrameTiming) == populated)
+    assert(populated.withoutRecording.recording.isEmpty)
+    assert(populated.withoutRecording.withRecording(cast) == populated)
 
   test("equals and hashCode agree on all fields"):
     val twin            = RunnerConfig.Default
@@ -68,6 +73,7 @@ final class RunnerConfigSpec extends AnyFunSuite:
       .withViewport(Viewport.Inline(3))
       .withKeyEventTypes
       .withOnFrameTiming(onFrameTiming)
+      .withRecording(cast)
     assert(twin == populated)
     assert(twin.hashCode == populated.hashCode)
     val variants        = Seq(
@@ -78,6 +84,7 @@ final class RunnerConfigSpec extends AnyFunSuite:
       populated.withViewport(Viewport.Fullscreen),
       populated.withoutKeyEventTypes,
       populated.withOnFrameTiming(_ => ()),
+      populated.withoutRecording,
     )
     for variant <- variants do
       assert(variant != populated, variant.toString)
@@ -112,6 +119,7 @@ final class RunnerConfigSpec extends AnyFunSuite:
         Viewport.Inline(3),
         true,
         Some(onFrameTiming),
+        Some(cast),
       ) == populated
     )
 
