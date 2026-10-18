@@ -18,7 +18,7 @@ import io.worxbend.tui.runtime.{
 }
 import io.worxbend.tui.terminal.{Backend, BackendError, ColorDepth, HeadlessBackend, JLine3Backend, PointerShape}
 import io.worxbend.tui.terminal.MouseCaptureMode
-import io.worxbend.tui.widgets.NoticeLevel
+import io.worxbend.tui.widgets.{Clipboard, NoticeLevel}
 
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
@@ -289,6 +289,12 @@ trait TuiApp:
     */
   protected final def runEffect(effect: Effect): Unit = effects.start(effect)
 
+  /** Starts a post-render [[Effect]] over the whole frame under `key`, replacing the effect already running under that
+    * key — pressing a flash binding twenty times plays one flash, timed from the last press, rather than twenty
+    * stacked. Unkeyed effects and effects under other keys are left running.
+    */
+  protected final def runEffect(key: String, effect: Effect): Unit = effects.start(key, effect)
+
   /** Pushes a screen; modal screens layer over the current view, full screens replace it.
     *
     * During a run, the screen's `Screen.onEnter` runs immediately afterwards, on the render thread, before the frame
@@ -398,6 +404,7 @@ trait TuiApp:
     def openPalette(): Unit                                                         = TuiApp.this.openPalette()
     def closePalette(): Unit                                                        = TuiApp.this.closePalette()
     def runEffect(effect: Effect): Unit                                             = TuiApp.this.runEffect(effect)
+    def runEffect(key: String, effect: Effect): Unit                                = TuiApp.this.runEffect(key, effect)
     def requestRedraw(): Unit                                                       = TuiApp.this.requestRedraw()
     def copyToClipboard(text: String): Unit                                         = TuiApp.this.copyToClipboard(text)
     def quit(): Unit                                                                = TuiApp.this.quit()
@@ -409,6 +416,7 @@ trait TuiApp:
     def colorScheme: Reactive[ColorScheme]                        = colorSchemeSignal
     def taskbarProgress(progress: Reactive[Option[Double]]): Unit = TuiApp.this.taskbarProgress(progress)
     def clearTaskbarProgress(): Unit                              = TuiApp.this.clearTaskbarProgress()
+    override def clipboard: Clipboard                             = appClipboard
     def keyMode: Signal[ModeId]                                   = keyModeSignal
 
   /** Just this app's toast stack, for a helper that notifies and does nothing else. The same object as [[services]]. */
@@ -815,6 +823,19 @@ trait TuiApp:
     */
   private def handleEvent(event: Event, run: RunState, handle: RunnerHandle): EventOutcome =
     activeHandle.set(Some(handle))
+    AppClipboard.during(appClipboard)(dispatchEvent(event, run, handle))
+
+  /** The text-entry nodes' clipboard: OSC 52 out, plus the in-app paste buffer `Ctrl+V` reads — see
+    * [[AppServices.clipboard]].
+    */
+  private lazy val appClipboard: Clipboard = new Clipboard:
+    private var copied: Option[String] = None
+    def copy(text: String): Unit       =
+      copied = Some(text)
+      copyToClipboard(text)
+    def paste(): Option[String]        = copied
+
+  private def dispatchEvent(event: Event, run: RunState, handle: RunnerHandle): EventOutcome =
     val redraw = event match
       case Event.Key(key)                   => handleKey(key, run, handle) || run.invalidated
       case Event.Mouse(mouse)               =>

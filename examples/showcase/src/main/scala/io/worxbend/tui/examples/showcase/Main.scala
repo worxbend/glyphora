@@ -8,7 +8,7 @@ import scala.concurrent.duration.DurationInt
 /** showcase: the app-chrome tour — scaffold with top bar + sidebar + status bar, tabbed pages, theme switching, toasts,
   * a modal screen, and the command palette. Doubles as the manual PTY test bed.
   *
-  * Keys: `ctrl+t` theme · `ctrl+n` toast · `ctrl+o` modal · `ctrl+p` palette · `ctrl+y` copy note · `Tab` focus · `Esc`
+  * Keys: `ctrl+t` theme · `ctrl+n` toast · `ctrl+o` modal · `ctrl+p` palette · `ctrl+e` copy note · `Tab` focus · `Esc`
   * quit.
   */
 class ShowcaseApp extends TuiApp:
@@ -44,7 +44,7 @@ class ShowcaseApp extends TuiApp:
     binding("ctrl+t", "switch theme")(themeIndex.update(index => (index + 1) % themes.size)),
     binding("ctrl+n", "show a toast")(notify("hello from glyphora", NoticeLevel.Success)),
     binding("ctrl+o", "open modal")(openModal()),
-    binding("ctrl+y", "copy note to clipboard") {
+    binding("ctrl+e", "copy note to clipboard") {
       copyToClipboard(noteField.value)
       notify("copied to clipboard", NoticeLevel.Info)
     },

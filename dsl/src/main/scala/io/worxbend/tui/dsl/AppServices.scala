@@ -2,7 +2,7 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{ColorScheme, Effect}
 import io.worxbend.tui.runtime.{Reactive, Signal}
-import io.worxbend.tui.widgets.NoticeLevel
+import io.worxbend.tui.widgets.{Clipboard, NoticeLevel}
 
 import java.nio.file.Path
 import scala.concurrent.duration.FiniteDuration
@@ -49,6 +49,11 @@ trait AppServices extends Notifications:
   /** Starts a post-render [[Effect]] over the frames that follow. */
   def runEffect(effect: Effect): Unit
 
+  /** Starts a post-render [[Effect]] under `key`, replacing the effect already running under that key, if any — so a
+    * binding pressed twenty times plays one flash instead of stacking twenty. The replacement is timed from now.
+    */
+  def runEffect(key: String, effect: Effect): Unit
+
   /** Schedules one frame — for state the reactive layer cannot see, such as a mutable widget state. */
   def requestRedraw(): Unit
 
@@ -57,6 +62,13 @@ trait AppServices extends Notifications:
 
   /** Asks the app to exit cleanly. */
   def quit(): Unit
+
+  /** The app's clipboard as text-entry nodes see it: a copy goes out through OSC 52 *and* into an in-app paste buffer,
+    * and a paste answers that buffer — a terminal never lets an app read the system clipboard, so `Ctrl+V` in a text
+    * node pastes what this app last copied or cut, while the terminal's own paste (bracketed paste) still lands as a
+    * paste event. [[Clipboard.Discard]] unless the services belong to a running app.
+    */
+  def clipboard: Clipboard = Clipboard.Discard
 
   /** Opens the user's editor (`VISUAL`, then `EDITOR`, then `vi`) on a temporary file holding `initial`, with the
     * terminal handed back for the duration, and answers the file's new content — `None` when the editor left it
@@ -115,8 +127,29 @@ object AppServices:
     def openPalette(): Unit                                                         = ()
     def closePalette(): Unit                                                        = ()
     def runEffect(effect: Effect): Unit                                             = ()
+    def runEffect(key: String, effect: Effect): Unit                                = ()
     def requestRedraw(): Unit                                                       = ()
     def copyToClipboard(text: String): Unit                                         = ()
     def quit(): Unit                                                                = ()
     def editExternally(initial: String, suffix: String): Option[String]             = None
     def openInEditor(path: Path, line: Option[Int]): Unit                           = ()
+
+/** The clipboard the focused text node's `Ctrl+C`/`Ctrl+X`/`Ctrl+V` reach: the running app's [[AppServices.clipboard]]
+  * while that app dispatches an event, and outside any app an in-memory one per thread, so an element driven by hand in
+  * a test still copies and pastes between its own fields.
+  *
+  * Thread-scoped like [[CaretRegister]], so two runners in one JVM never share a paste buffer.
+  */
+private[dsl] object AppClipboard:
+
+  private val local: ThreadLocal[Clipboard]             = ThreadLocal.withInitial(() => Clipboard.inMemory())
+  private val installed: ThreadLocal[Option[Clipboard]] = ThreadLocal.withInitial(() => Option.empty[Clipboard])
+
+  def current: Clipboard = installed.get().getOrElse(local.get())
+
+  /** Runs `body` with `clipboard` as [[current]], restoring the previous one afterwards. */
+  def during[A](clipboard: Clipboard)(body: => A): A =
+    val previous = installed.get()
+    installed.set(Some(clipboard))
+    try body
+    finally installed.set(previous)

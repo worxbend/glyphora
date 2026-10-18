@@ -1,0 +1,10 @@
+InspectConfig
+├─ name: "glyphora"
+├─ mode: Prod
+├─ database: InspectDatabase
+│  ├─ host: "db.internal"
+│  ├─ port: 5432
+│  └─ replicas: List("replica-a", "replica-b")
+├─ flags: Map("beta" -> true)
+└─ timeout: None
+

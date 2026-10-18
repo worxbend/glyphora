@@ -10,6 +10,8 @@ import scala.concurrent.duration.FiniteDuration
   *     and the timed [[Effect]]s use it, then hand it to an [[Easing]], which clamps.
   *   - [[stepped]] and [[steppedAtRate]] are the '''looping''' answers: a whole position in `0 until steps` that wraps
   *     round and round forever. The animated widgets (`Marquee`, `IndeterminateBar`, the spinners) use those.
+  *   - [[staggered]] is the '''per-cell''' answer: one cell's own progress through an animation that reaches different
+  *     cells at different times. Every [[Pattern]] is a way of choosing each cell's delay for it.
   *
   * `stepped` is exactly `floor(normalized * steps)` folded into one cycle, only evaluated in integer arithmetic so that
   * a sample taken at an exact fraction of the period lands on the step that fraction names rather than one below it.
@@ -51,3 +53,24 @@ object Progress:
     else
       val advanced = math.floor(elapsed.toNanos / 1e9 * perSecond).toLong
       math.floorMod(advanced, steps.toLong).toInt
+
+  /** One cell's progress through an animation that reaches it late: `progress` is the whole animation's, `delay` in
+    * `[0, 1]` is how far behind the leading cell this one starts, and `softness` (above zero) is how much of the run
+    * each cell's own transition takes — near zero a hard front, `1` a gentle ramp most cells share.
+    *
+    * The answer is clamped to `[0, 1]`. A delay-zero cell starts at `progress = 0`, a delay-one cell finishes exactly
+    * at `progress = 1`, so every cell has finished once the animation has, whatever the delay and softness. `NaN` reads
+    * as zero for every argument, so a degenerate pattern cannot hand an effect an undefined position.
+    */
+  def staggered(progress: Double, delay: Double, softness: Double): Double =
+    val p = unit(progress)
+    val d = unit(delay)
+    // a zero softness would divide by zero; the smallest positive step keeps the front hard without breaking it
+    val s = if softness > MinSoftness then softness else MinSoftness
+    // `p >= 1` short-circuits so float rounding in the ramp can never leave a late cell a hair short of finished
+    if p >= 1.0 then 1.0 else unit((p * (1.0 + s) - d) / s)
+
+  private val MinSoftness = 1e-9
+
+  private def unit(value: Double): Double =
+    if !(value > 0.0) then 0.0 else if value > 1.0 then 1.0 else value

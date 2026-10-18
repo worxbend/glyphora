@@ -128,6 +128,9 @@ private[widgets] object ClusterRow:
     * for whatever is behind it, and paints it only when the cursor is there.
     *
     * `tokenStyles`, when given, holds one syntax style per cluster, patched over `style` (and under `cursorStyle`).
+    *
+    * `highlights` patch cluster ranges (selection, search matches) over the token styles; `until` stops the row before
+    * that cluster index, for a soft-wrapped row that ends mid-line (`clusters.size + 1` lets the end cell in).
     */
   def draw(
       buffer: Buffer,
@@ -142,17 +145,28 @@ private[widgets] object ClusterRow:
       cursorStyle: Style,
       paintEndCell: Boolean,
       tokenStyles: IndexedSeq[Style] = IndexedSeq.empty,
+      highlights: Seq[Highlight] = Nil,
+      until: Int = Int.MaxValue,
   ): Unit =
     var x     = x0
     var index = scroll
-    while index <= clusters.size && x < right do
-      val atEnd     = index == clusters.size
-      val symbol    = if atEnd then " " else clusters(index)
-      val isCursor  = showCursor && index == cursorAt
-      val baseStyle = if index < tokenStyles.size then style.patch(tokenStyles(index)) else style
-      val cellStyle = if isCursor then baseStyle.patch(cursorStyle) else baseStyle
+    while index <= clusters.size && index < until && x < right do
+      val atEnd      = index == clusters.size
+      val symbol     = if atEnd then " " else clusters(index)
+      val isCursor   = showCursor && index == cursorAt
+      val tokenStyle = if index < tokenStyles.size then style.patch(tokenStyles(index)) else style
+      val baseStyle  = highlights.foldLeft(tokenStyle)((current, highlight) =>
+        if !atEnd && highlight.covers(index) then current.patch(highlight.style) else current
+      )
+      val cellStyle  = if isCursor then baseStyle.patch(cursorStyle) else baseStyle
       // the blank past the end is skipped rather than painted when the caller wants whatever is behind it to show
       x =
         if !atEnd || isCursor || paintEndCell then put(buffer, x, y, symbol, cellStyle, right)
         else x + renderedWidth(symbol)
       index += 1
+
+  /** Clusters `[from, until)` of a row painted with `style` patched over — a selection or a search match. Later
+    * highlights patch over earlier ones; the cursor patches over all of them.
+    */
+  final case class Highlight(from: Int, until: Int, style: Style):
+    def covers(index: Int): Boolean = index >= from && index < until

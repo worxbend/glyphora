@@ -867,13 +867,24 @@ private[dsl] trait ElementFactories:
   def directoryTree(state: w.DirectoryTreeState): DirectoryTreeElement =
     DirectoryTreeElement(state)
 
-  /** A multi-line editor over caller-owned [[w.TextAreaState]], with undo (`Ctrl+Z`) and redo (`Ctrl+Y`).
+  /** A multi-line editor over caller-owned [[w.TextAreaState]]: selection, word motion, clipboard, kill ring, undo
+    * (`Ctrl+Z`) and redo (`Ctrl+Shift+Z`), and incremental search (`Ctrl+F`). `options` carries the widget's knobs —
+    * `lexer`, soft `wrap`, `lineNumbers` — which the `.lexer(…)`, `.wrap` and `.lineNumbers` builders also set.
     *
     * Create the state once outside `view`, as for [[input]]; it is render-thread-only, and writing to it from outside
     * an event handler does not by itself schedule a frame.
     */
-  def textArea(state: w.TextAreaState): TextAreaElement =
-    TextAreaElement(state)
+  def textArea(state: w.TextAreaState, options: w.TextAreaOptions = w.TextAreaOptions()): TextAreaElement =
+    TextAreaElement(state, options)
+
+  /** The LLM-CLI prompt over caller-owned [[PromptComposerState]]: a soft-wrapping multi-line draft where `Enter`
+    * submits — `onSubmit` receives the text with paste placeholders expanded — and `Shift+Enter` / `Alt+Enter` insert a
+    * newline. `Up`/`Down` at the first/last line recall history, `Ctrl+R` searches it, a dim suggestion from history is
+    * accepted with `Tab` or `Right`, and `/` (at the start) or `@` (at a word start) open a popup fed by the state's
+    * async, debounced completion provider. A large paste shows as `[Pasted N lines]`.
+    */
+  def promptComposer(state: PromptComposerState)(onSubmit: String => Unit)(using ReactiveScope): PromptComposerElement =
+    PromptComposerElement.tracked(state, onSubmit)
 
   /** A focusable button; `action` runs on Enter or Space while focused, or on a click. The body is by-name, so it is
     * evaluated when the button is pressed rather than when the view is built.
@@ -1069,3 +1080,67 @@ private[dsl] trait ElementFactories:
     */
   def portal(dx: Int, dy: Int, width: Int, height: Int)(content: Element): PortalElement =
     PortalElement(dx, dy, width, height, content)
+
+  /** A sized, labelled stand-in for content that does not exist yet: a dashed box with `label` centred in it and the
+    * box's own size — `40×12` — written underneath, so the layout can be tuned before the real panels are written. It
+    * fills whatever its container hands out. The frame and size line draw in the theme's muted style, the label in its
+    * accent. See [[w.Placeholder]].
+    */
+  def placeholder(label: String)(using theme: Theme): PlaceholderElement =
+    PlaceholderElement(label, theme.accent, ElementProps(style = theme.muted))
+
+  /** An interactive month grid over a caller-owned cursor: arrows move a day or a week, PageUp/PageDown a month, `t`
+    * jumps to today, and Enter chooses the cursor's date, recording it in `state.selected` and handing it to
+    * `onSelect`. Keep the state in a field: it holds the cursor between frames. See [[w.DatePicker]].
+    */
+  def datePicker(state: w.DatePickerState, onSelect: java.time.LocalDate => Unit = _ => ()): DatePickerElement =
+    DatePickerElement(state, onSelect)
+
+  /** A one-row `hh:mm:ss` field over a caller-owned time: Left/Right pick the field, Up/Down step the time by it and
+    * wrap past midnight. Read the value back from `state.time`. See [[w.TimePicker]].
+    */
+  def timePicker(state: w.TimePickerState): TimePickerElement = TimePickerElement(state)
+
+  /** A slider with two thumbs selecting a sub-range of `state.range`: Left/Right move the focused thumb, Tab and
+    * Shift+Tab switch thumbs, and the thumbs never cross or come closer than the state's `minGap`. `onChange` hears the
+    * `(low, high)` pair after each move. See [[w.RangeSlider]].
+    */
+  def rangeSlider(state: w.RangeSliderState, onChange: (Int, Int) => Unit = (_, _) => ()): RangeSliderElement =
+    RangeSliderElement(state, onChange)
+
+  /** A grid of the 256 xterm colours — the system sixteen, the 6×6×6 cube and the grey ramp — with a caption naming the
+    * cursor's index and RGB value. Arrows move, Enter (or a click) chooses: the `Color.Indexed` lands in `state.chosen`
+    * and in `onSelect`. See [[w.ColorPicker]].
+    */
+  def colorPicker(
+      state: w.ColorPickerState,
+      onSelect: io.worxbend.tui.core.Color => Unit = _ => (),
+  ): ColorPickerElement =
+    ColorPickerElement(state, onSelect)
+
+  /** A scrollable `offset | hex | ASCII` dump of `bytes` with a selected byte the arrows move — a row per 16 bytes, the
+    * selection kept on screen. `ArraySeq.unsafeWrapArray(array)` views an `Array[Byte]` without copying. See
+    * [[w.HexViewer]].
+    */
+  def hexViewer(bytes: IndexedSeq[Byte], state: w.HexViewerState): HexViewerElement = HexViewerElement(bytes, state)
+
+  /** A collapsible tree whose rows carry columns — build the [[w.TreeTable]] with the nodes, the column titles, a
+    * `cells` lookup by row key and the column widths. Up/Down select, Enter toggles, Right/Left expand/collapse. The
+    * state is the same [[w.TreeState]] a [[tree]] takes; key it with `TreeState.keyed` so the `cells` lookup and the
+    * expansion follow a node across a refresh.
+    */
+  def treeTable[K](table: w.TreeTable[K], state: w.TreeState[K]): TreeTableElement[K] = TreeTableElement(table, state)
+
+  /** A tree view of any value, for debugging: `inspect(config)` draws a case class, enum, collection or map with
+    * `├─`/`└─` guides, field names in the theme's accent, short all-atom nodes on one row. The description comes from a
+    * `Pretty[A]`, which any case class, enum or sealed hierarchy derives through its `Mirror` — declare a `given
+    * Pretty[A]` beside a type to change (or redact) how it is shown. See [[w.Inspect]].
+    */
+  def inspect[A](value: A)(using pretty: io.worxbend.tui.macros.Pretty[A], theme: Theme): InspectElement =
+    InspectElement(pretty.describe(value, PrettyValueShape), theme.accent, theme.muted)
+
+  /** A scannable QR code for `text` — a URL, a pairing token — drawn two modules per cell in half blocks, dark on light
+    * whatever the terminal's own background. Byte mode, the smallest version from 1 to 10 that fits at `ecc`; longer
+    * text draws `QR: too long`. See [[w.QrCode]].
+    */
+  def qrCode(text: String, ecc: w.QrEcc = w.QrEcc.Medium): QrCodeElement = QrCodeElement(w.QrCode(text, ecc))
