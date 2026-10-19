@@ -2537,7 +2537,7 @@ hexViewer(payload, cursor)
 
 ```text
 00000000  48 65 6c 6c 6f 2c 20 57  6f 72 6c 64 21 0a 54 68  |Hello, World!.Th|
-00000010  69 73 20 69 73 20 67 6c  79 70 68 6f 72 61 2e     |is is glyphora.|
+00000010  69 73 20 69 73 20 67 6c  79 70 68 6f 72 61 2e     |is is glyphora. |
 ```
 
 Left/Right move the selected byte, Up/Down a row, PageUp/PageDown ten rows, Home/End
