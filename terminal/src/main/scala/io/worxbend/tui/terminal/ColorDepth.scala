@@ -25,7 +25,9 @@ object ColorDepth:
 
   /** Resolves the effective color depth from the environment.
     *
-    * Precedence follows the widely-adopted conventions (https://no-color.org and https://bixense.com/clicolors/):
+    * `GLYPHORA_COLOR_DEPTH` (`truecolor`, `256`, `16`, `mono`, `none`) pins the answer outright, ahead of everything
+    * below — the switch for a terminal that misreports itself; see [[EnvironmentOverrides]]. Without it, precedence
+    * follows the widely-adopted conventions (https://no-color.org and https://bixense.com/clicolors/):
     *   1. `NO_COLOR` set to any non-empty value, `CLICOLOR` set to exactly `0`, or `FORCE_COLOR=0` disables color
     *      entirely — unless
     *   2. `CLICOLOR_FORCE` is set to a non-zero value, or `FORCE_COLOR` to anything but `0`, which forces color on even
@@ -42,6 +44,10 @@ object ColorDepth:
     * color on yields the classic sixteen.
     */
   def detect(env: Map[String, String] = sys.env): ColorDepth =
+    EnvironmentOverrides.colorDepth(env).getOrElse(detectUnpinned(env))
+
+  /** [[detect]] without the `GLYPHORA_COLOR_DEPTH` pin. */
+  private def detectUnpinned(env: Map[String, String]): ColorDepth =
     val forceColor = env.get("FORCE_COLOR")
     val forced     = env.get("CLICOLOR_FORCE").exists(value => value.nonEmpty && value != "0") ||
       forceColor.exists(_ != "0")

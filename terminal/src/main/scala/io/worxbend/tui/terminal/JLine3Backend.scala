@@ -111,7 +111,10 @@ final class JLine3Backend private (
   private val fullRedrawRequested = RedrawRequest()
 
   private val frameEncoder  = FrameEncoder(colorDepth)
-  private val decoder       = InputDecoder(timeoutMillis => terminal.reader().read(timeoutMillis))
+  private val decoder       = InputDecoder(
+    timeoutMillis => terminal.reader().read(timeoutMillis),
+    escapeTimeoutMillis = EnvironmentOverrides.escapeDelayMillis(env),
+  )
   private val pump          = EventPump(decoder)
   // `write` is the backend's monitored write, passed the way TitleStack receives it: the collaborators emit through
   // it and so own no writer, no flush and no monitor of their own.
@@ -360,10 +363,15 @@ final class JLine3Backend private (
   def enableMouseCapture(): Either[BackendError, Unit] = enableMouseCapture(MouseCaptureMode.Buttons)
 
   override def enableMouseCapture(mode: MouseCaptureMode): Either[BackendError, Unit] =
-    Backend.attempt {
-      write(AnsiSequences.enableMouseCapture(mode))
-      mouseCaptureActive = Some(mode)
-    }
+    // `GLYPHORA_MOUSE` may hold the capture to buttons or refuse it; refused is still a success, as for an OSC the
+    // terminal cannot show
+    EnvironmentOverrides.mouseMode(mode, env) match
+      case None          => Right(())
+      case Some(allowed) =>
+        Backend.attempt {
+          write(AnsiSequences.enableMouseCapture(allowed))
+          mouseCaptureActive = Some(allowed)
+        }
 
   def disableMouseCapture(): Either[BackendError, Unit] =
     Backend.attempt {
@@ -699,9 +707,11 @@ object JLine3Backend:
       probed: TerminalCapabilities,
       env: Map[String, String],
   ): TerminalCapabilities =
+    val keyboard =
+      if EnvironmentOverrides.legacyKeyboard(env) then probed.copy(kittyKeyboard = Support.No) else probed
     if DesktopNotificationProtocol.insideMultiplexer(env) then
-      probed.copy(pointerShapes = Support.No, desktopNotifications = Support.No, taskbarProgress = Support.No)
-    else probed
+      keyboard.copy(pointerShapes = Support.No, desktopNotifications = Support.No, taskbarProgress = Support.No)
+    else keyboard
 
   /** Opens the process's controlling terminal. Fails with `UnsupportedTerminal` when there is no usable TTY.
     *
