@@ -710,6 +710,31 @@ Three changes reach almost every app, so check them first:
   pixelImage(RgbaImage.fromColors(pixels).toOption.get)
   ```
 
+- **`dataTable` answers the mouse.** A left press on a body row now selects that row (it used to
+  only focus the table), and because the press is consumed, a drag on the table starts a text
+  selection only once it covers two cells rather than from the first cell. An app that selected
+  rows itself in `.onMouseEvent` can drop that code, or return `true` from it to keep its own
+  behaviour; a one-cell drag that used to copy one character now copies nothing.
+- **Picker and toolbar constructors grew.** `ColorPicker` gained `mode` as its *second* parameter
+  (after `showCaption`) and `highlightStyle` / `invalidStyle` at the end, so a positional
+  `ColorPicker(false, style)` must name its style: `ColorPicker(showCaption = false, style =
+  style)`. `DatePickerState` gained `min` and `max` after `today`, `DatePicker` a trailing
+  `disabledStyle`, `Inspect` a trailing `highlightStyle` (and it is now also a
+  `StatefulWidget[InspectState]`). Among the nodes, `ColorPickerElement` gained `mode` and
+  `InspectElement` gained `state` before `props`, and `ToolbarElement`'s first field is now
+  `controls` (its `children` include the overflow popup while it is open), followed by
+  `overflow`; factory calls are unchanged.
+
+  ```scala
+  // before
+  ColorPicker(false, captionStyle)
+  // after
+  ColorPicker(showCaption = false, style = captionStyle)
+  ```
+
+- **A grid move resets a `ColorPickerState`'s RGB fields.** Every arrow move, `moveTo` and click
+  on a swatch refills the R/G/B fields from that swatch and hands the keyboard back to the grid.
+  Palette-mode pickers see no difference.
 - `MarkdownTheme` gained `tableHeader`, `tableBorder` and `taskDone`, `SyntaxTheme` gained
   `inserted` and `deleted`, `Markdown` gained an `options` parameter and `TextArea` an `options`
   parameter — all appended with defaults.

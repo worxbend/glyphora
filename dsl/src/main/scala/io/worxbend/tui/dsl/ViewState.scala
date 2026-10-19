@@ -256,16 +256,16 @@ object ViewState:
     * Per thread, because each `Runner` owns its own render thread and several runners can share a JVM. There is never
     * more than one writer per entry: a view is evaluated on the render thread and nowhere else.
     */
-  private val active: ThreadLocal[Option[ViewState]] = ThreadLocal.withInitial(() => Option.empty[ViewState])
+  private def active: Option[ViewState] = FrameContext.current.viewState
 
   /** Capture lexical hook identity without retaining a run's store. Plain construction stays usable without a view. */
   private[dsl] def deferred[A, B](build: A => B): A => B =
-    active.get() match
+    active match
       case None        => build
       case Some(store) =>
         val captured = store.capture()
         input =>
-          active.get() match
+          active match
             case Some(currentStore) => currentStore.resume(captured)(build(input))
             case None               => build(input)
 
@@ -276,7 +276,7 @@ object ViewState:
     * nothing to skip.
     */
   private[dsl] def scopeIfActive[A](key: String)(body: => A): A =
-    active.get() match
+    active match
       case Some(store) => store.scoped(key)(body)
       case None        => body
 
@@ -290,7 +290,7 @@ object ViewState:
     * and for the same reason: a subtree built outside a view has no frame to be reused on.
     */
   private[dsl] def memoIfActive[A](deps: Seq[Any])(build: () => A): A =
-    active.get() match
+    active match
       case Some(store) =>
         val cell = store.slot(() => MemoCell(deps, build()))
         if cell.deps != deps then
@@ -301,10 +301,11 @@ object ViewState:
 
   /** Evaluates `body` with `store` installed as the one hooks attach to. */
   private[dsl] def during[A](store: ViewState)(body: => A): A =
-    val previous = active.get()
-    active.set(Some(store))
+    val context  = FrameContext.current
+    val previous = context.viewState
+    context.viewState = Some(store)
     try body
-    finally active.set(previous)
+    finally context.viewState = previous
 
   /** The installed store, or a failure explaining what to do instead.
     *
@@ -313,7 +314,7 @@ object ViewState:
     * anonymous slot that nothing would ever reach again.
     */
   private[dsl] def current: ViewState =
-    active.get() match
+    active match
       case Some(store) => store
       case None        =>
         throw new IllegalStateException(

@@ -91,6 +91,38 @@ final class ChromeElementsPilotSpec extends AnyFunSuite with PilotFixture:
     assert(pilot.screenLines.head == "[ New ] [ Open ]   »")
     quitApp(pilot)
 
+  test("toolbar with a state: » opens the hidden controls in a popup; clicking one presses it and closes the menu"):
+    var pressed                      = Vector.empty[String]
+    def tool(label: String): Element = button(label)(pressed :+= label).key(label)
+    val state                        = ToolbarState()
+    val pilot                        = startApp(Size(20, 5)) {
+      column(toolbar(state)(tool("New"), tool("Open"), tool("Save"), tool("Quit")).length(1), text("below"))
+    }
+    assert(pilot.screenLines.head == "[ New ] [ Open ]   »")
+    assert(state.hidden == Seq(2, 3))
+    pilot.click(19, 0).waitForIdle()
+    assert(state.open)
+    GoldenFrames.assertMatches("toolbar-overflow-open", pilot.lastFrame)
+    pilot.click(15, 3).waitForIdle()    // the popup's second control, under its top border: Quit
+    assert(pressed == Vector("Quit"))
+    assert(!state.open)
+    assert(pilot.screenLines(1).stripTrailing == "below")
+    // Quit now has focus, so the strip slid to it and the hidden controls are the ones before it, behind «
+    assert(pilot.screenLines.head.stripTrailing == "« [ Save ] [ Quit ]")
+    pilot.click(19, 0).waitForIdle()    // no » is drawn, so the empty end of the strip opens nothing
+    assert(!state.open)
+    pilot.click(0, 0).waitForIdle()
+    assert(state.open)
+    assert(pilot.screenLines(2).contains("[ New ]"))
+    pilot.click(2, 4).waitForIdle()     // a press outside the popup closes it and presses nothing
+    assert(!state.open)
+    assert(pressed == Vector("Quit"))
+    pilot.click(0, 0).waitForIdle()
+    assert(state.open)
+    pilot.press("escape").waitForIdle() // Esc from the focused control bubbles to the toolbar and closes it
+    assert(!state.open)
+    quitApp(pilot)
+
   test("buttonGroup joins its buttons with dividers"):
     val pilot = startApp(Size(30, 2))(buttonGroup(button("B")(()), button("I")(()), button("U")(())))
     assert(pilot.screenLines.head.stripTrailing == "[ B ]│[ I ]│[ U ]")

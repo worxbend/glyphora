@@ -323,6 +323,7 @@ You do not need custom handlers for common interactions:
 | Element | Mouse behavior |
 |---|---|
 | input, list, select, controls | click focuses; click may position/select/activate |
+| dataTable | click selects the row under the pointer |
 | button, checkbox, toggle | click activates |
 | list, menu, tree, directoryTree, selectionList, filePicker | wheel moves the selection one entry |
 | log, scrollView | wheel changes the offset |
@@ -500,7 +501,11 @@ immediately. A `TuiApp` running with `RunnerConfig(mouse = MouseCaptureMode.Butt
 - the next press anywhere clears it.
 
 A selection starts only from a press no element consumed, so a button inside a
-selectable panel still clicks, and it stays inside the node it started in — dragging
+selectable panel still clicks. The one exception is `dataTable`, whose press selects
+the row under it: there the press still selects the row, and a drag that then covers
+two or more cells (`TextSelection.DragThreshold`) turns into a text selection instead,
+so a click whose pointer drifts one cell is still only a click. A selection stays
+inside the node it started in — dragging
 past the edge clamps to that node's first or last cell. Selection works in whole
 graphemes: a wide character is copied once, never half of it.
 

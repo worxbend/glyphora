@@ -72,13 +72,12 @@ private[dsl] final class RevealPlacements(
   * render threads never share one.
   */
 private[dsl] object RevealProbe:
-  private val stack: ThreadLocal[List[RevealRequests]] = ThreadLocal.withInitial(() => Nil)
-
   def collecting[A](requests: RevealRequests)(body: => A): A =
-    val previous = stack.get()
-    stack.set(requests :: previous)
+    val context  = FrameContext.current
+    val previous = context.reveals
+    context.reveals = requests :: previous
     try body
-    finally if previous.isEmpty then stack.remove() else stack.set(previous)
+    finally context.reveals = previous
 
   val FocusPrefix: String   = "focus:"
   val VisiblePrefix: String = "visible:"
@@ -93,7 +92,7 @@ private[dsl] object RevealProbe:
     * every focusable on every frame, so it is a plain loop over the (usually empty) stack.
     */
   def tracked(index: Int, area: Rect, focused: Boolean): Unit =
-    var remaining = stack.get()
+    var remaining = FrameContext.current.reveals
     var rect      = area
     while remaining.nonEmpty do
       val requests = remaining.head
@@ -103,7 +102,7 @@ private[dsl] object RevealProbe:
 
   /** An element marked `.ensureVisible`, identified by `id`, was handed `area`. */
   def visible(id: String, area: Rect): Unit =
-    var remaining = stack.get()
+    var remaining = FrameContext.current.reveals
     var rect      = area
     while remaining.nonEmpty do
       val requests = remaining.head

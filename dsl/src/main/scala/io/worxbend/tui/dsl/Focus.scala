@@ -557,11 +557,13 @@ private[dsl] object FocusPass:
         case scroll: ScrollViewElement => scroll.state.pendingReveal = gathering.flatMap(_.chosen)
         case _                         => ()
       def rolesOf(node: Element, g: PointerGestures, disabled: Boolean): PointerRoles =
+        val selectable = g.selection.enabled && !unselectable &&
+          (node.props.selectable.contains(true) || TextSelection.selectableByDefault(node))
         PointerRoles(
-          selectable = g.selection.enabled && !unselectable &&
-            (node.props.selectable.contains(true) || TextSelection.selectableByDefault(node)),
+          selectable = selectable,
           drag = if disabled then None else node.props.dragPayload,
           drop = if disabled then None else node.props.dropTarget,
+          dragSelects = selectable && TextSelection.selectsOnDrag(node),
         )
       val roles        =
         gestures.fold(PointerRoles.Empty)(g => if inert then PointerRoles.Empty else rolesOf(element, g, disabled))

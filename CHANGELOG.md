@@ -42,7 +42,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 
 - Pointer capture for drags; `.onMouse(ctx => …)` with `MouseContext`; synthesised `MouseEvent.clickCount`.
 - `RunnerConfig.withMouse(MouseCaptureMode)` — one mouse setting, `Off`, `Buttons` or `AllMotion`; `RunnerHandle.setMouseCaptureMode`.
-- Mouse text selection over `text`, `markdown`, `log`, `logConsole` and tables, copied through OSC 52; `.selectable(…)`, framework key `copy-selection`.
+- Mouse text selection over `text`, `markdown`, `log`, `logConsole` and tables, copied through OSC 52; `.selectable(…)`, framework key `copy-selection`. On a `dataTable` a press selects the row and a drag past two cells selects cell text.
 - Typed drag and drop: `.draggable(payload)`, `.dropTarget[A](accept)(onDrop)`, `DragKey[A]`.
 - Pointer shapes (OSC 22) with `.pointer(PointerShape.…)`.
 
@@ -76,6 +76,11 @@ note in [Versioning & releases](website/docs/versioning.md).
 
 - `datePicker`, `timePicker`, `rangeSlider`, `colorPicker`, `hexViewer`, `treeTable`, `placeholder`, `inspect` (with `Pretty` / `derivePretty`) and `qrCode`.
 - `menuBar`, `contextMenu`, `window` / `windowStack` (windows built by a caller-owned `WindowStack`), `tagInput`, `wizard`, `breadcrumb`, `toolbar`, `buttonGroup` and `accordion` (`AccordionSection`).
+- `timePicker` takes typed digits into the focused field (`TimePickerState.typeDigit`); `datePicker` bounds the cursor with `DatePickerState(…, min, max)`, dims the days outside and chooses a day on click (`DatePicker.dateAt`, `Calendar.dateAt`, `DatePicker.disabledStyle`).
+- `colorPicker(state, onSelect, ColorPickerMode.Rgb)`: three validated R/G/B fields beside the palette, choosing a `Color.Rgb` (`ColorPickerField`, `ColorChannel`, `ColorPickerState.chooseRgb`).
+- Collapsible `inspect(value, state)` over `InspectState`: Enter/Space/click fold a node, Left/Right collapse/expand; `Inspect` also renders as a `StatefulWidget[InspectState]`.
+- `toolbar(state)(buttons*)` over `ToolbarState`: the overflow marker opens the controls that did not fit in a popup; `Toolbar.hidden(width)`.
+- `dataTable` selects the row under a click (`DataTable.rowAt`).
 - `diffView(patch, state)` with `Patch.parse`, `Patch.of` (Myers), `DiffView`, `DiffViewState` (scrolls like `ScrollViewState`, `pageUp`/`pageDown` included).
 - `pixelImage(image, options)` with `RgbaImage`, `ImageLoader` and `Buffer.placeGraphic` (kitty graphics, iTerm2 inline images, half-block fallback).
 - `multiProgress(tasks, columns)` with `ProgressTask`, `ProgressColumn`, `MultiProgress`.

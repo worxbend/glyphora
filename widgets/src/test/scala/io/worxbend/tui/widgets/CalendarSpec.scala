@@ -161,3 +161,14 @@ final class CalendarSpec extends AnyFunSuite:
     assert(
       rendered(Calendar(2026, 7, Some(14)), 20, 8) == rendered(Calendar(2026, 7, Some(14), CalendarOptions()), 20, 8)
     )
+
+  test("dateAt answers a surrounding day only while surrounding days are drawn"):
+    val area  = Rect(0, 0, 20, 8)
+    val plain = Calendar(2026, 7)
+    assert(plain.dateAt(area, 0, 2).isEmpty) // Monday slot before 1 July
+    assert(plain.dateAt(area, 6, 2).contains(LocalDate.of(2026, 7, 1)))
+    val filled = Calendar(2026, 7, options = CalendarOptions(showSurroundingDays = true))
+    assert(filled.dateAt(area, 0, 2).contains(LocalDate.of(2026, 6, 29)))
+    assert(filled.dateAt(area, 18, 6).contains(LocalDate.of(2026, 8, 2)))
+    assert(filled.dateAt(area, 0, 7).isEmpty) // no sixth week row
+    assert(filled.dateAt(Rect(0, 0, 10, 8), 9, 2).isEmpty) // the day is clipped by the area

@@ -30,6 +30,17 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
     */
   private val postedCounter = AtomicInteger(0)
 
+  /** Makes "count an idle read" and "post an event" mutually exclusive.
+    *
+    * An idle read is counted only when nothing is posted, and `Pilot.waitForIdle` trusts a count that rose *after* it
+    * posted. As two separate atomics, a reader could see an empty count, lose the CPU, and add its idle read after the
+    * test had posted a key and taken its snapshot. That stale read then satisfied the wait as soon as the key was
+    * dequeued, before it was handled or drawn: a test asserting on the frame saw the one before the key, but only under
+    * load. Under this lock the reader either counts before the post, so the snapshot includes it, or sees the post and
+    * does not count.
+    */
+  private val accounting = Object()
+
   /** Whether a wake token is already queued and unread. [[wake]] offers a token only on a `false → true` transition and
     * [[readEvent]] clears it when it consumes the token, so a burst of wakes with nobody reading costs one spurious
     * loop iteration rather than one per wake — the same coalescing `EventPump` does for the JLine backend.
@@ -222,8 +233,10 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
     * (a 60 fps ticker, a repeating `Async`), and every `Pilot.waitForIdle` would run to its deadline.
     */
   private def countIdleRead(): Unit =
-    if postedCounter.get() == 0 then
-      val _ = idleReadCounter.incrementAndGet()
+    accounting.synchronized {
+      if postedCounter.get() == 0 then
+        val _ = idleReadCounter.incrementAndGet()
+    }
 
   /** Cuts an in-flight [[readEvent]] short, as `JLine3Backend.wake` interrupts its blocking read, and records the wake
     * so tests can assert that queued render-thread work asked for one.
@@ -392,8 +405,10 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
 
   /** Queues a synthetic event for the runner to read. Safe from any thread. */
   def postEvent(event: Event): Unit =
-    val _ = postedCounter.incrementAndGet()
-    events.put(Some(event))
+    accounting.synchronized {
+      val _ = postedCounter.incrementAndGet()
+      events.put(Some(event))
+    }
 
   /** Feeds raw terminal input through the *production* [[InputDecoder]] and queues whatever it decodes.
     *

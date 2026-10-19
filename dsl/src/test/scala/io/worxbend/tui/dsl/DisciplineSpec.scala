@@ -268,26 +268,13 @@ final class DisciplineSpec extends AnyFunSuite:
   private lazy val publishedVersion: String =
     declaredVersions.map(_._2).distinct.headOption.getOrElse(cancel("no build file declares publishVersion"))
 
-  /** Every module directory in the checkout, examples included.
-    *
-    * Examples nest one level deeper than the seven library modules, and a glob of one module directory plus
-    * `src/main/scala` expands only to the top-level ones — the blind spot that kept the examples exempt from `ci.yml`'s
-    * two greps for as long as they were written that way. The one-level-deeper children are looked at for exactly that
-    * reason.
+  /** Every module directory in the checkout, examples included — see [[DocumentationSources.buildModules]] for why only
+    * the build's own modules count.
     */
-  private def modules: Seq[Path] =
-    val top = directChildren(checkout).filterNot { child =>
-      val name = child.getFileName.toString
-      name.startsWith(".") || name == "out" || name == "node_modules"
-    }
-    top ++ top.flatMap(directChildren)
+  private def modules: Seq[Path] = DocumentationSources.buildModules(checkout)
 
   private def sourceRoots(kind: String): Seq[Path] =
     modules.map(_.resolve(s"src/$kind/scala")).filter(Files.isDirectory(_))
-
-  private def directChildren(directory: Path): Seq[Path] =
-    if !Files.isDirectory(directory) then Seq.empty
-    else Using.resource(Files.list(directory))(_.iterator.asScala.filter(Files.isDirectory(_)).toVector)
 
   private def scalaFilesUnder(directory: Path): Seq[Path] =
     Using.resource(Files.walk(directory)) { paths =>

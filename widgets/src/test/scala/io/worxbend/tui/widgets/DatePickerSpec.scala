@@ -2,6 +2,7 @@ package io.worxbend.tui.widgets
 
 import io.worxbend.tui.core.{Buffer, Cell, Modifiers, Rect, Style}
 import io.worxbend.tui.testsupport.BufferAssertions.{rendered, trimmedLines}
+import io.worxbend.tui.testsupport.GoldenFrames
 
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -86,3 +87,60 @@ final class DatePickerSpec extends AnyFunSuite:
       if !area.contains(x, y)
     do assert(buffer.get(x, y) == sentinel, s"outside write at ($x, $y)")
     DatePicker().render(Rect(0, 0, 0, 0), buffer, state(LocalDate.of(2026, 7, 14)))
+
+  test("min and max bound every move: the cursor stops at the bound rather than leaving the range"):
+    val picker = DatePickerState(
+      LocalDate.of(2026, 7, 14),
+      () => today,
+      min = Some(LocalDate.of(2026, 7, 10)),
+      max = Some(LocalDate.of(2026, 7, 20)),
+    )
+    picker.moveDays(-7)
+    assert(picker.cursor == LocalDate.of(2026, 7, 10))
+    picker.moveDays(-1)
+    assert(picker.cursor == LocalDate.of(2026, 7, 10))
+    picker.moveMonths(1)
+    assert(picker.cursor == LocalDate.of(2026, 7, 20))
+    picker.goToToday() // 19 October is past max
+    assert(picker.cursor == LocalDate.of(2026, 7, 20))
+    picker.cursor = LocalDate.of(2026, 1, 1)
+    assert(picker.cursor == LocalDate.of(2026, 7, 10))
+    assert(!picker.isSelectable(LocalDate.of(2026, 7, 21)))
+    assert(picker.isSelectable(LocalDate.of(2026, 7, 20)))
+
+  test("an initial date outside the bounds starts on the nearer bound"):
+    val picker = DatePickerState(LocalDate.of(2026, 1, 1), () => today, min = Some(LocalDate.of(2026, 3, 1)))
+    assert(picker.cursor == LocalDate.of(2026, 3, 1))
+
+  test("days outside the bounds are drawn in the disabled style"):
+    val picker = DatePickerState(
+      LocalDate.of(2026, 7, 14),
+      () => today,
+      min = Some(LocalDate.of(2026, 7, 10)),
+      max = Some(LocalDate.of(2026, 7, 20)),
+    )
+    val buffer = rendered(DatePicker(), picker, 20, 8)
+    // the 9th is the fourth slot of the second week row (x = 9, y = 3); the 10th the fifth (x = 12)
+    assert(buffer.get(9, 3).style.modifiers.hasAny(Modifiers.Dim))
+    assert(!buffer.get(12, 3).style.modifiers.hasAny(Modifiers.Dim))
+    // the 21st: second slot of the fourth week row
+    assert(buffer.get(3, 5).style.modifiers.hasAny(Modifiers.Dim))
+
+  test("dateAt maps a cell of the grid back to its date, and nothing else to one"):
+    val picker = state(LocalDate.of(2026, 7, 14))
+    val area   = Rect(2, 1, 20, 8)
+    assert(DatePicker().dateAt(area, 2 + 3, 1 + 4, picker).contains(LocalDate.of(2026, 7, 14)))
+    assert(DatePicker().dateAt(area, 2 + 4, 1 + 4, picker).contains(LocalDate.of(2026, 7, 14)))
+    assert(DatePicker().dateAt(area, 2 + 5, 1 + 4, picker).isEmpty) // the gap between two days
+    assert(DatePicker().dateAt(area, 2 + 0, 1 + 2, picker).isEmpty) // before the 1st
+    assert(DatePicker().dateAt(area, 2 + 0, 1 + 0, picker).isEmpty) // the title
+    assert(DatePicker().dateAt(area, 2 + 15, 1 + 6, picker).isEmpty) // past the 31st
+
+  test("golden: a bounded month dims the days outside the range"):
+    val picker = DatePickerState(
+      LocalDate.of(2026, 7, 14),
+      () => today,
+      min = Some(LocalDate.of(2026, 7, 10)),
+      max = Some(LocalDate.of(2026, 7, 20)),
+    )
+    GoldenFrames.assertMatchesStyled("date-picker-bounded", rendered(DatePicker(), picker, 20, 8))
