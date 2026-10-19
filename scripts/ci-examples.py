@@ -11,6 +11,20 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 NAME = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
+# Directories under examples/ that are deliberately not Mill modules. `scala-cli` holds the single-file quickstart,
+# which builds against the published artifacts with no build tool; it is allowed only while it holds nothing but
+# top-level .scala files (plus the gitignored .scala-build/.bsp caches scala-cli leaves) and no package.mill, so it
+# can never hide a real example from the matrix.
+SCALA_CLI = "scala-cli"
+
+
+def is_scala_cli_quickstart(child: Path) -> bool:
+    if child.name != SCALA_CLI or child.is_symlink():
+        return False
+    entries = [entry for entry in child.iterdir() if entry.name not in (".scala-build", ".bsp")]
+    return bool(entries) and all(
+        entry.is_file() and not entry.is_symlink() and entry.suffix == ".scala" for entry in entries
+    )
 
 
 def discover(directory: Path) -> list[str]:
@@ -25,6 +39,8 @@ def discover(directory: Path) -> list[str]:
         if child.is_symlink() or not NAME.fullmatch(child.name):
             raise ValueError(f"unsafe example name or symlink: {child.name!r}")
         package = child / "package.mill"
+        if not package.exists() and is_scala_cli_quickstart(child):
+            continue
         if not package.is_file() or package.is_symlink():
             raise ValueError(f"missing regular package.mill: {child.name}")
         if any(path != package for path in child.rglob("package.mill")):
