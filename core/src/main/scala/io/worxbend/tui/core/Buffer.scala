@@ -57,6 +57,11 @@ final class Buffer(val area: Rect):
     */
   private[core] val directives: Array[Byte] = new Array[Byte](area.area)
 
+  /** The pictures [[placeGraphic]] recorded this frame, in the order they were placed. Render-thread-owned like the
+    * grid itself; [[reset]] empties it.
+    */
+  private var placements: Vector[GraphicPlacement] = Vector.empty
+
   /** The cell at `(x, y)`, or [[Cell.Empty]] when the coordinates fall outside `area`. */
   def get(x: Int, y: Int): Cell = cellAt(x, y)
 
@@ -384,6 +389,24 @@ final class Buffer(val area: Rect):
           copyDirective(originX + dx, originY + dy, source, clipped.x + dx, y)
           dx += 1
         dy += 1
+      blitPlacements(source, clipped, originX - clipped.x, originY - clipped.y)
+
+  /** Carries `source`'s placements inside the copied window `clipped` into this buffer, moved by `(dx, dy)`.
+    *
+    * The copied cells replace whatever was in the landing region, so this buffer's own placements wholly inside it are
+    * replaced too — which is what keeps a render-into-a-local-buffer-and-blit-back round trip from doubling them. A
+    * source placement the window or the destination cuts is dropped and its landed cells are handed back to ordinary
+    * diffing: a partial picture would be drawn squeezed, and the widget's fallback text is in those cells already.
+    */
+  private def blitPlacements(source: Buffer, clipped: Rect, dx: Int, dy: Int): Unit =
+    if source.placements.nonEmpty || placements.nonEmpty then
+      val landed       = clipped.offset(dx, dy)
+      val survivors    = placements.filterNot(p => p.area.intersection(landed) == p.area)
+      val (whole, cut) = source.placements.filter(_.area.intersects(clipped)).partition { placement =>
+        placement.area.intersection(clipped) == placement.area
+      }
+      cut.foreach(placement => setDiffDirective(placement.area.offset(dx, dy), DiffDirective.Default))
+      placements = survivors ++ whole.map(_.moved(dx, dy))
 
   /** Whether the source column is reserved for the wide grapheme in the column before it, which the previous iteration
     * of [[blit]] already copied — writing it reserved the destination column in the same breath. Such a column needs no
@@ -528,6 +551,50 @@ final class Buffer(val area: Rect):
     val code = directive.ordinal.toByte
     foreachIndex(region)((_, _, index) => directives(index) = code)
 
+  /** Asks an out-of-band painter to draw `image` scaled into `region`, and reserves `region` for it.
+    *
+    * The cells of `region` are marked [[DiffDirective.Skip]] and the placement is recorded in [[graphics]] together
+    * with what those cells hold *now* — so draw the text fallback first and place the picture last: a later write over
+    * the region reads as the picture being covered (see [[covers]]). A `region` this buffer cannot hold whole is not
+    * placed at all, because a picture squeezed into the visible part of its box would be drawn distorted; its cells
+    * flush as ordinary text instead.
+    *
+    * Like directives, placements belong to the frame: [[reset]] forgets them, so a widget re-places its picture on
+    * every render. Whether anything is drawn is up to the backend — see [[GraphicPlacement]].
+    */
+  def placeGraphic(region: Rect, image: RgbaImage): Unit =
+    if !region.isEmpty && region.intersection(area) == region then
+      setDiffDirective(region, DiffDirective.Skip)
+      placements = placements :+ GraphicPlacement(region, image, cellsIn(region))
+
+  /** The pictures placed into this frame by [[placeGraphic]], in placement order. */
+  def graphics: Seq[GraphicPlacement] = placements
+
+  /** Whether something was drawn over `placement` after it was placed: any of its cells no longer holds what it held at
+    * that moment. A placement this buffer does not hold whole counts as covered.
+    */
+  def covers(placement: GraphicPlacement): Boolean =
+    placement.area.intersection(area) != placement.area ||
+      !IArray.genericWrapArray(cellsIn(placement.area)).sameElements(placement.underneath)
+
+  /** Drops the placements `keep` rejects, handing their cells back to ordinary diffing. The partner of [[covers]] for a
+    * backend that cannot draw a picture, or must take one down while something covers it.
+    */
+  def dropGraphics(keep: GraphicPlacement => Boolean): Unit =
+    val (kept, dropped) = placements.partition(keep)
+    dropped.foreach(placement => setDiffDirective(placement.area, DiffDirective.Default))
+    placements = kept
+
+  /** The cells of `region`, row-major — the fingerprint a [[GraphicPlacement]] keeps of what was under it. */
+  private def cellsIn(region: Rect): IArray[Cell] =
+    val out = new Array[Cell](region.area)
+    var i   = 0
+    foreachIn(region) { (_, _, cell) =>
+      out(i) = cell
+      i += 1
+    }
+    IArray.unsafeFromArray(out)
+
   /** An independent copy of this buffer. Backends snapshot the frame they just flushed so later mutation of the
     * caller's buffer cannot corrupt the next diff.
     *
@@ -539,6 +606,7 @@ final class Buffer(val area: Rect):
     Array.copy(cells, 0, copied.cells, 0, cells.length)
     Array.copy(continuations, 0, copied.continuations, 0, continuations.length)
     Array.copy(directives, 0, copied.directives, 0, directives.length)
+    copied.placements = placements
     copied
 
   /** Overwrites this buffer's contents with `source`'s, allocating nothing.
@@ -564,6 +632,7 @@ final class Buffer(val area: Rect):
       Array.copy(source.cells, 0, cells, 0, cells.length)
       Array.copy(source.continuations, 0, continuations, 0, continuations.length)
       Array.copy(source.directives, 0, directives, 0, directives.length)
+      placements = source.placements
 
   /** Resets every cell to [[Cell.Empty]], recycling the buffer for the next frame. */
   def reset(): Unit =
@@ -573,6 +642,7 @@ final class Buffer(val area: Rect):
       continuations(index) = false
       directives(index) = Buffer.DefaultCode
       index += 1
+    placements = Vector.empty
 
   /** The cells that changed going from this buffer (the previous frame) to `next` (the frame to display).
     *

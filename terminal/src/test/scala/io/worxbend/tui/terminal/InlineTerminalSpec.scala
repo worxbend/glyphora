@@ -20,9 +20,9 @@ final class InlineTerminalSpec extends AnyFunSuite:
     private var y      = 0
     private var saved  = (0, 0)
     // CSI sequences, DECSC/DECRC, OSC strings (BEL- or ST-terminated: the probe's `OSC 11;?` query and the pointer
-    // reset on close), and plain characters
+    // reset on close), APC strings (the probe's kitty graphics query), and plain characters
     private val tokens =
-      "\u001b\\[[0-?]*[ -/]*[@-~]|\u001b[78]|\u001b\\][^\u0007\u001b]*(?:\u0007|\u001b\\\\)|[^\u001b]".r
+      "\u001b\\[[0-?]*[ -/]*[@-~]|\u001b[78]|\u001b[\\]_][^\u0007\u001b]*(?:\u0007|\u001b\\\\)|[^\u001b]".r
     private val csi    = "\u001b\\[([0-?]*[ -/]*)([@-~])".r
 
     def line(row: Int): String = rows(row).stripTrailing()
@@ -59,7 +59,7 @@ final class InlineTerminalSpec extends AnyFunSuite:
         // SGR, private modes, kitty push/pop and capability queries do not move this screen's cursor.
         case csi(_, command) if Set("m", "h", "l", "u", "c", "n", "p", "q", "t").contains(command) => ()
         // an OSC string (a colour query, a pointer shape) is a message to the emulator and paints nothing
-        case osc if osc.startsWith("\u001b]")                                                      => ()
+        case osc if osc.startsWith("\u001b]") || osc.startsWith("\u001b_")                         => ()
         case character if character.length == 1 && character.head >= ' '                           =>
           if x == width then
             x = 0
