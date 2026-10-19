@@ -279,7 +279,7 @@ final class ElementHost:
     * [[focusNext]] or [[focusPrevious]] from your own key handling if you want the usual meaning.
     */
   def dispatchKey(key: KeyEvent): Boolean =
-    lastTree.exists(EventRouter.dispatchCapture(_, key)) ||
+    lastTree.exists(EventRouter.dispatchCapture(_, key, lastFocusPath)) ||
       lastTree.exists(EventRouter.dispatchKey(_, key, lastFocusPath)) || (lastTree.isDefined && groupArrow(key))
 
   /** An unmodified arrow nobody on the focus path consumed moves focus inside the focused element's focus group. That

@@ -151,7 +151,7 @@ final class ChromeElementsPilotSpec extends AnyFunSuite with PilotFixture:
     MenuBarMenu("Edit", Seq(MenuEntry.Item("Undo"), MenuEntry.Item("Redo"))),
   )
 
-  test("menuBar: Alt+F opens File over the content, Right moves to Edit, Enter runs the item"):
+  test("menuBar: F10 opens File over the content, Right moves to Edit, Enter runs the item"):
     val bar   = MenuBarState()
     var ran   = Vector.empty[(Int, Int)]
     val pilot = startApp(Size(30, 8)) {
@@ -162,7 +162,7 @@ final class ChromeElementsPilotSpec extends AnyFunSuite with PilotFixture:
         input(TextInputState("typing here")),
       )
     }
-    pilot.press("alt+f").waitForIdle()
+    pilot.press("f10").waitForIdle()
     assert(bar.open.contains(0))
     GoldenFrames.assertMatches("menu-bar-file-open", pilot.lastFrame)
     pilot.press("right").waitForIdle()
@@ -171,6 +171,38 @@ final class ChromeElementsPilotSpec extends AnyFunSuite with PilotFixture:
     pilot.press("down", "enter").waitForIdle()
     assert(ran == Vector(1 -> 1))
     assert(bar.open.isEmpty && !pilot.screenText.contains("Redo"))
+    quitApp(pilot)
+
+  test("menuBar: with nothing that edits text focused, Alt+F opens File"):
+    val bar   = MenuBarState()
+    val pilot = startApp(Size(30, 8))(column(menuBar(fileEdit, bar)((_, _) => ()), button("ok")(())))
+    pilot.press("alt+f").waitForIdle()
+    assert(bar.open.contains(0))
+    pilot.press("escape").waitForIdle()
+    assert(bar.open.isEmpty)
+    quitApp(pilot)
+
+  test("menuBar: a focused text field keeps Alt+B/Alt+F word motion; other mnemonics and F10 still reach the bar"):
+    val bar   = MenuBarState()
+    val field = TextInputState("one two three")
+    val pilot = startApp(Size(30, 8))(column(menuBar(fileEdit, bar)((_, _) => ()), input(field)))
+    val end   = field.cursor
+    pilot.press("alt+b").waitForIdle()
+    assert(bar.open.isEmpty, "Alt+B is the field's word-left, not a mnemonic")
+    assert(field.cursor < end, "the field moved back a word")
+    pilot.press("alt+f").waitForIdle()
+    assert(bar.open.isEmpty, "Alt+F is the field's word-right while the field has focus")
+    assert(field.cursor == end, "the field moved forward a word")
+    pilot.press("alt+e").waitForIdle()
+    assert(bar.open.contains(1), "a mnemonic the field does not use opens its menu")
+    pilot.press("escape", "f10").waitForIdle()
+    assert(bar.open.contains(0), "F10 opens the bar whatever holds focus")
+    pilot.press("e").waitForIdle()
+    assert(bar.open.contains(1), "with the bar open, a mnemonic letter moves to its menu")
+    pilot.press("alt+f").waitForIdle()
+    assert(bar.open.contains(0), "with the bar open, Alt+F is the File mnemonic again")
+    pilot.press("escape").waitForIdle()
+    assert(bar.open.isEmpty && field.value == "one two three")
     quitApp(pilot)
 
   test("menuBar: F10 opens the first menu, a click on a title switches menus, Esc and a click away close"):

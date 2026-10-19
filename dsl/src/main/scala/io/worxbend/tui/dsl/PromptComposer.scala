@@ -267,6 +267,7 @@ final case class PromptComposerElement(
   /** The caller-owned state this node paints, watched for writes made between frames. */
   override private[dsl] def watchedStates: Seq[Versioned] = Seq(state)
   override def debugName: String                          = "promptComposer"
+  private[dsl] override def editsText: Boolean            = true
   override def pointerShape: Option[PointerShape]         = textPointer(props)
 
   private def editorRows: Int = math.max(1, math.min(state.maxRows, state.editor.lineCount))

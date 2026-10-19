@@ -75,7 +75,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 **Widgets**
 
 - `datePicker`, `timePicker`, `rangeSlider`, `colorPicker`, `hexViewer`, `treeTable`, `placeholder`, `inspect` (with `Pretty` / `derivePretty`) and `qrCode`.
-- `menuBar`, `contextMenu`, `window` / `windowStack` (windows built by a caller-owned `WindowStack`), `tagInput`, `wizard`, `breadcrumb`, `toolbar`, `buttonGroup` and `accordion` (`AccordionSection`).
+- `menuBar`, `contextMenu`, `window` / `windowStack` (windows built by a caller-owned `WindowStack`), `tagInput`, `wizard`, `breadcrumb`, `toolbar`, `buttonGroup` and `accordion` (`AccordionSection`). A focused text field keeps its `Alt+B`/`D`/`F`/`Y` chords over a `menuBar` mnemonic; `F10` then the letter reaches the menu.
 - `timePicker` takes typed digits into the focused field (`TimePickerState.typeDigit`); `datePicker` bounds the cursor with `DatePickerState(…, min, max)`, dims the days outside and chooses a day on click (`DatePicker.dateAt`, `Calendar.dateAt`, `DatePicker.disabledStyle`).
 - `colorPicker(state, onSelect, ColorPickerMode.Rgb)`: three validated R/G/B fields beside the palette, choosing a `Color.Rgb` (`ColorPickerField`, `ColorChannel`, `ColorPickerState.chooseRgb`).
 - Collapsible `inspect(value, state)` over `InspectState`: Enter/Space/click fold a node, Left/Right collapse/expand; `Inspect` also renders as a `StatefulWidget[InspectState]`.

@@ -2883,7 +2883,11 @@ disabled items, `Enter` runs the item — `onSelect` gets the menu's index and t
 and `Esc` closes the bar. A click on a title opens or closes its menu, a click on an
 item runs it, and a click anywhere else closes the bar. The bar is not a tab stop; it
 takes the keyboard only while a menu is open, and its keys come before the focused
-control's, so a field's own `Alt+F` word motion yields to a bar with a `File` menu.
+control's — except a text field's own `Alt+B`, `Alt+D`, `Alt+F` and `Alt+Y` chords, which
+stay with a focused `input`, `textArea`, `searchBar`, `tagInput` or `promptComposer`
+while the bar is closed. `F10` still opens the bar from inside the field, and with the
+bar open a mnemonic letter, plain or with `Alt`, moves to its menu: `F10` then `F` opens
+`File`. See [Alt keys: menu bar or text field](./mouse#alt-keys-menu-bar-or-text-field).
 
 `contextMenu(items, state)(onSelect)(target)` gives any subtree a right-click menu:
 

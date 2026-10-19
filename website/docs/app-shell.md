@@ -86,7 +86,11 @@ column(
 
 `Alt+<letter>` and `F10` reach the menu bar whatever holds focus, and `Alt+M` / `Alt+R`
 move and resize the focused window; all three are rebindable framework keys
-(`menu-bar`, `window-move`, `window-resize` — see [Key bindings](./keybindings)).
+(`menu-bar`, `window-move`, `window-resize` — see [Key bindings](./keybindings)). One
+exception keeps text editing intact: while a text field has focus and no menu is open,
+`Alt+B`, `Alt+D`, `Alt+F` and `Alt+Y` are the field's word motions, not mnemonics. Reach
+a `File` menu from inside a field with `F10` then `F` — see
+[Alt keys: menu bar or text field](./mouse#alt-keys-menu-bar-or-text-field).
 
 ## Declare commands once
 
