@@ -665,6 +665,38 @@ confirmDialog("Deploy", "Deploy to production?", Seq("Deploy", "Dry run", "Cance
 *selected* button rather than the one under the pointer: the widget centres its labels
 and publishes no per-button geometry, so there is nothing to hit-test against.
 
+## Translate the built-in labels
+
+The framework draws a few words of its own: the `OK` a bare `dialog(title, message)`
+shows, the two buttons of `Screen.confirm`, the command palette's `Commands` title and
+`type to filter…` placeholder, the `Help` heading of `helpOverlay(bindings)`, the wizard's
+`Back`/`Next`/`Finish`, the inspector's panel titles, the `Search` placeholder of
+`searchBar(state)`, and the prompts' `(Y/n)` hints, list hints, `❯`/`◉`/`◯` glyphs and
+`✓`/`✗` task markers. Every one of them comes from one `Messages` table, which an app
+replaces by overriding `messages`:
+
+```scala
+object App extends TuiApp:
+  override def messages: Messages =
+    Messages.Default
+      .withDialogOk("Sí")
+      .withDialogCancel("Cancelar")
+      .withPaletteTitle("Órdenes")
+      .withPalettePlaceholder("escribe para filtrar…")
+      .withHelpTitle("Ayuda")
+
+  def view(using ReactiveScope, Theme): Element = dialog("Guardado", "Los cambios están escritos.")
+```
+
+`Messages.Default` is the English table every earlier release drew, and each field has a
+`with…` builder. The run binds the app's table on the render thread around every frame and
+every event, so a factory called in `view`, an overlay painted after it and a screen pushed
+from a key binding all read the same one. Labels the app passes itself —
+`dialog(title, message, buttons = Seq("Vale"))`, `Screen.confirm(..., confirmLabel = "Sí")`
+— are never touched: the table only supplies the defaults. Code that runs outside an app —
+a `Snapshot`, `Console.print`, a `Prompt` — reads `Messages.Default` unless it is wrapped
+in `Messages.scoped(table) { … }`.
+
 ## Notify without interrupting flow
 
 ```scala

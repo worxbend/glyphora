@@ -1,6 +1,6 @@
 # examples
 
-Eleven runnable example apps — also the primary "how do I use this"
+Twelve runnable example apps — also the primary "how do I use this"
 documentation and the GraalVM native-image compile targets. Each has headless `Pilot`
 end-to-end tests in its `test` submodule.
 
@@ -17,6 +17,10 @@ end-to-end tests in its `test` submodule.
 | `airsensor` | `./mill examples.airsensor.run` | polling on a timer, threshold bands, trend arrows, a loading/ready/error state machine |
 | `loadtest` | `./mill examples.loadtest.run` | concurrent background work streamed back to the render thread, with a live histogram and percentiles |
 | `doctor` | `./mill examples.doctor.run` | detected capabilities, colour depth, glyph tier, XTVERSION and background, then a live echo of every decoded key, click and paste |
+| `gallery` | `./mill examples.gallery.run` | every factory in the `export Element.{…}` block on its own page, grouped by family; its test keeps one golden frame per factory and `scripts/render-gallery.sh` turns them into SVG screenshots |
+
+`scala-cli/hello.scala` is not a Mill module: it is the single-file quickstart, run with `scala run
+examples/scala-cli/hello.scala` against the artifacts on Maven Central, no build tool involved.
 
 `counter` is the idiom to copy for anything real: bindings declared once drive dispatch, the status-bar hints, the
 help overlay and the `Ctrl+P` command palette together. `hello-world` deliberately stays one level lower, on a local

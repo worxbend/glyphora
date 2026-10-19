@@ -103,7 +103,11 @@ note in [Versioning & releases](website/docs/versioning.md).
 - JDK Flight Recorder events `FrameDrawn`, `EventRouted`, `FocusChanged`, `AsyncAdmitted`, `AsyncRejected` (`JfrEvents`).
 - Environment overrides `GLYPHORA_COLOR_DEPTH`, `GLYPHORA_KEYBOARD`, `GLYPHORA_MOUSE`, `GLYPHORA_ESCAPE_DELAY`.
 
-<!-- TICKET-28: add ticket 28's Added entries here. -->
+**Localisation, gallery and quickstart**
+
+- `Messages` — one table for every built-in label (dialog and confirm buttons, palette title and placeholder, help title, wizard buttons, inspector titles, `searchBar` placeholder, prompt hints, glyphs and yes/no); `TuiApp.messages`, `Messages.Default`, `with…` builders, `Messages.scoped`.
+- `examples/gallery`: every exported factory on its own page, grouped by family, with one golden frame per factory; `GLYPHORA_GALLERY_EXPORT` and `scripts/render-gallery.sh` write each page as an SVG screenshot.
+- `examples/scala-cli/hello.scala`: a single-file app run with `scala run`, no build tool.
 
 ### Changed
 
@@ -146,4 +150,5 @@ Each item has a before/after migration note in
 - `Language` is an alias for the open `Lexer` trait; `responsive` is an object; `PanelElement` field `children` → `content`.
 - `TextAreaOptions` field order changed (`syntax` is fourth); `Theme.apply` gained `components`.
 
-<!-- TICKET-28: add ticket 28's Changed / Breaking entries here. -->
+- `TuiApp` gained an overridable `messages` member; an app that declares its own `messages` needs `override` or a rename.
+- `Dialog` widens its box to fit its buttons, so a button row wider than the message is no longer dropped.

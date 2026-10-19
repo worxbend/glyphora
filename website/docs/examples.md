@@ -1,11 +1,11 @@
 ---
 title: Examples
-description: Run ten complete glyphora applications and learn which source to read for state, focus, dashboards, forms, async work, tables, live data, and app chrome.
+description: Run twelve complete glyphora applications and learn which source to read for state, focus, dashboards, forms, async work, tables, live data, and app chrome.
 ---
 
 # Learn from complete apps
 
-The repository includes eleven runnable applications. Each uses the same public APIs
+The repository includes twelve runnable applications. Each uses the same public APIs
 described in this guide and has a headless end-to-end test. Start with the behavior
 closest to your app and read its source beside the running terminal.
 
@@ -33,8 +33,10 @@ cd glyphora
 | `airsensor` | `./mill examples.airsensor.run` | polling, threshold bands, trend arrows, loading/ready/error — [guide](./build-a-sensor-dashboard) |
 | `loadtest` | `./mill examples.loadtest.run` | concurrent work off the render thread, histogram and percentiles — [guide](./build-a-load-generator) |
 | `doctor` | `./mill examples.doctor.run` | what glyphora detected about your terminal, then every decoded key and mouse event — [troubleshooting](./troubleshooting#run-the-doctor) |
+| `gallery` | `./mill examples.gallery.run` | every exported factory on its own page, grouped by family — the visual index of the toolkit, and a golden frame per factory |
 
-Every app exits with `q` or `Esc` (`doctor` only with `q`: it echoes `Esc` like any other key); the source comment above each app lists its full
+Every app exits with `q` or `Esc` (`doctor` only with `q`: it echoes `Esc` like any other key; `gallery` with `Ctrl+Q`,
+because its pages include text fields that take `q`); the source comment above each app lists its full
 keyboard vocabulary.
 
 ### Which idiom should you copy?

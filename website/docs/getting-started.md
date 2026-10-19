@@ -42,6 +42,52 @@ libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.20.0"
 
 Put application sources under `src/main/scala/`, then use `sbt run`.
 
+### scala-cli: one file, no build
+
+The `scala` command (scala-cli, since Scala 3.5) runs a single file that names its own
+dependencies, which is the quickest way to see glyphora in a terminal:
+
+```scala title="hello.scala"
+//> using scala 3.9.0
+//> using jvm 25
+//> using dep com.worxbend::tui-dsl:0.20.0
+//> using javaOpt --enable-native-access=ALL-UNNAMED
+
+import io.worxbend.tui.dsl.*
+
+/** A counter in a bordered panel: `+` and `-` change it, `q` quits. */
+object Hello extends TuiApp:
+
+  private val count = Signal(0)
+
+  def view(using ReactiveScope, Theme): Element =
+    panel("Hello, glyphora")(
+      text(s"count: ${count.get}").bold.fg(Color.Cyan),
+      spacer,
+      text("+ / - to change it, q to quit").dim,
+    ).rounded.onKeyEvent {
+      case KeyEvent(KeyCode.Char('+'), _) =>
+        count.update(_ + 1)
+        true
+      case KeyEvent(KeyCode.Char('-'), _) =>
+        count.update(_ - 1)
+        true
+      case KeyEvent(KeyCode.Char('q'), _) =>
+        quit()
+        true
+      case _                              => false
+    }
+```
+
+```bash
+scala run hello.scala
+```
+
+The repository keeps a complete copy at
+[`examples/scala-cli/hello.scala`](https://github.com/worxbend/glyphora/blob/main/examples/scala-cli/hello.scala).
+That copy pins the newest release already on Maven Central, so it runs before this
+version is published; move its `using dep` line to the version above once it is.
+
 ### Optional GitHub Packages resolver
 
 [GitHub Packages](https://github.com/worxbend/glyphora/packages) also hosts the libraries.
@@ -265,4 +311,4 @@ The complete pattern is in [Async work & timers](./async-and-timers).
   render-thread rules.
 - [Widget catalog](./widgets) — choose the right building blocks.
 - [The app shell](./app-shell) — themes, sidebars, screens, toasts, and the palette.
-- [Examples](./examples) — run ten complete applications from the repository.
+- [Examples](./examples) — run twelve complete applications from the repository.
