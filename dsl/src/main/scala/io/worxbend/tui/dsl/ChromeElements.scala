@@ -418,27 +418,42 @@ private[dsl] final case class WindowBodyElement(content: Element, props: Element
   * enters a move mode and `window-resize` (`Alt+R`) a resize mode, in which the arrows move or resize the window one
   * cell at a time and `Enter` or `Esc` leave; the mode shows in the title. A window whose content has nothing to focus
   * is a tab stop itself, so it can always be arranged from the keyboard.
+  *
+  * Styled like every container: `frameStyle` is the border and the caption (the theme's `border` from `window`, and
+  * bold while focus is inside), and the element's own `style` is the *content* style, layered under what the content
+  * draws.
   */
 final case class WindowElement(
     title: String,
     state: w.WindowState,
     body: Element,
     props: ElementProps = ElementProps(),
+    frameStyle: Style = Style.Default,
 ) extends Element:
   type Self = WindowElement
-  override private[dsl] def watchedStates: Seq[Versioned]                       = Seq(state)
-  override def debugName: String                                                = "window"
-  override def accessibleName: String                                           = s"window $title"
-  override def children: Seq[Element]                                           = Seq(body)
-  private def frame: w.Window                                                   =
-    val active = holdsFocus(this)
-    w.Window(title, style = props.style, borderStyle = if active then Style.Default.bold else Style.Default)
-  def widget: Widget                                                            =
+  override private[dsl] def watchedStates: Seq[Versioned] = Seq(state)
+  override def debugName: String                          = "window"
+  override def accessibleName: String                     = s"window $title"
+  override def children: Seq[Element]                     = Seq(body)
+  private def frame: w.Window                             =
+    val border = if holdsFocus(this) then frameStyle.bold else frameStyle
+    w.Window(title, borderStyle = border, titleStyle = border.bold)
+  def widget: Widget                                      =
     val current = frame
     (area, buffer) =>
       current.render(area, buffer, state)
-      body.widget.render(current.inner(area), buffer)
-  private[dsl] def withProps(props: ElementProps): WindowElement                = copy(props = props)
+      val inner = current.inner(area)
+      body.widget.render(inner, buffer)
+      // under whatever the content drew, as on a panel: a child's own colour wins, a cell nobody styled takes this one
+      if props.style != Style.Default then buffer.mapStyle(inner)(props.style.patch)
+
+  /** The style the border and caption are drawn in, replacing the theme's `border` — `.frameStyle(Style.fg(Red))`. */
+  def frameStyle(style: Style): WindowElement = copy(frameStyle = style)
+
+  /** The border style rebuilt from the current one — `.frameStyle(_.withFg(Color.Red))` keeps the rest of the theme's.
+    */
+  def frameStyle(transform: Style => Style): WindowElement       = copy(frameStyle = transform(frameStyle))
+  private[dsl] def withProps(props: ElementProps): WindowElement = copy(props = props)
   private[dsl] override def withChildren(children: Seq[Element]): WindowElement =
     children.headOption.fold(this)(child => copy(body = child))
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler]    = Some(handleMouse)
@@ -487,7 +502,7 @@ final case class WindowElement(
 private[dsl] object WindowElement:
 
   /** A window over `content`; a tab stop itself when `content` offers nothing to focus. */
-  def of(title: String, state: w.WindowState, content: Element): WindowElement =
+  def of(title: String, state: w.WindowState, content: Element, frameStyle: Style): WindowElement =
     val body = WindowBodyElement(
       content,
       ElementProps(onMouse = Some { event =>
@@ -495,7 +510,7 @@ private[dsl] object WindowElement:
         false
       }),
     )
-    WindowElement(title, state, body, ElementProps(focusable = !offersFocus(content)))
+    WindowElement(title, state, body, ElementProps(focusable = !offersFocus(content)), frameStyle)
 
 /** Floating windows over the area it is given — usually the overlay of a `layers(base, windowStack(...))`. Each
   * [[WindowElement]] is drawn at its state's rectangle, nudged back inside the area when it has been dragged past an

@@ -175,7 +175,8 @@ Three changes reach almost every app, so check them first:
   ```
 
   Code that read `panelElement.props.style` to get the border reads `panelElement.frameStyle`.
-  New container nodes follow the same split.
+  New container nodes follow the same split — `window(title, state)(content)` included: its border
+  is `.frameStyle(…)`, the theme's `border` by default and bold while focus is inside it.
 - **`withStyle(transform)(subtree)` returns one scope node.** It used to return `subtree` rebuilt
   with the style patched into every node's props, on every frame (research G3). It now returns a
   `StyleScopeElement` wrapping `subtree` unchanged, and the style reaches the descendants at

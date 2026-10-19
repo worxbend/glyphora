@@ -2723,8 +2723,10 @@ framework keys. A window whose content has nothing to focus is a tab stop itself
 can always be arranged from the keyboard. `WindowState` keeps the rectangle (`rect`),
 the stacking order (`z`, raised with `raise()`), and the mode. The order is counted by the
 caller-owned `WindowStack` that built the window (`desk.window(x, y, width, height)`), so
-two sets of windows — two apps, two test suites in one JVM — never interleave. The frame
-alone is the
+two sets of windows — two apps, two test suites in one JVM — never interleave. Styling
+follows every other container: the border is drawn in the theme's `border` style (bold
+while focus is inside the window) and `.frameStyle(…)` recolours it, while `.fg(…)` or
+`.styled(…)` is the content style the body is drawn over. The frame alone is the
 `Window(title, style, borderStyle, titleStyle, gripSymbol, borderType)` widget.
 
 ### Menu bars and context menus

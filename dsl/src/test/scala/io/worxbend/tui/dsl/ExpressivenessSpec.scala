@@ -51,6 +51,17 @@ final class ExpressivenessSpec extends AnyFunSuite:
     assert(buffer.get(1, 1).style.fg.contains(Color.Green)) // the "b" of the body
     assert(buffer.get(8, 1).style.fg.contains(Color.Green)) // a blank content cell nobody else styled
 
+  test("window follows the same split: frameStyle is the border, style the content, the theme's border the default"):
+    val plain = rendered(window("w", WindowStack().window(0, 0, 12, 4))(text("body")).widget, 12, 4)
+    assert(plain.get(0, 1).style.fg == Theme.Dark.border.fg) // left border, from the theme
+    val element =
+      window("w", WindowStack().window(0, 0, 12, 4))(text("body")).frameStyle(Style.fg(Color.Red)).fg(Color.Green)
+    val buffer  = rendered(element.widget, 12, 4)
+    assert(buffer.get(0, 0).style.fg.contains(Color.Red))   // corner
+    assert(buffer.get(0, 1).style.fg.contains(Color.Red))   // left border
+    assert(buffer.get(1, 1).style.fg.contains(Color.Green)) // the "b" of the body
+    assert(buffer.get(8, 2).style.fg.contains(Color.Green)) // a blank content cell
+
   test("a child's own style wins over the panel's content style"):
     val element = panel("x")(text("body").fg(Color.Yellow)).fg(Color.Green)
     val buffer  = rendered(element.widget, 12, 3)
