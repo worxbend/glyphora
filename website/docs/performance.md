@@ -58,13 +58,30 @@ handling is exactly where that shows.
 form, meters, a forty-row `scrollView` — through an `ElementHost` (resolve, focus pass,
 paint) at two sizes, with per-node **bounds recording** off and on. The gap between the
 two rows is what `boundsOf(key)`, the element-tree snapshot and the click-outside backdrop
-cost per frame: a wrapper per node plus one bounds entry each. On a loaded 16-core x86-64
-machine under glyphora 0.20.0 the gap at 80x24 was indistinguishable from the run-to-run
-noise (which was itself about 2x), and at 200x50 it read between +13% and +56% of the
-frame with the configurations timed in the order least favourable to recording. That is
-why recording is off by default on a real terminal and switched on only by something that
-reads it — a headless run, the first `boundsOf` call, a click-outside modal — and why the
-number is worth re-measuring on a quiet machine before deciding it is too dear to leave on.
+cost per frame: a wrapper per node plus one bounds entry each. Three runs on a quiet 16-core
+x86-64 machine under glyphora 0.20.0 (2 GB heap, SerialGC, configurations timed in the
+order least favourable to recording), after the recorder stopped copying its buffer on
+every publish:
+
+| Tree | Recording off | Recording on | Cost |
+|---|---|---|---|
+| dashboard, 80x24 | 106–109 µs | 115–116 µs | +6% to +9% (about 8 µs) |
+| dashboard, 200x50 | 156–159 µs | 164–166 µs | +4% to +5% |
+| 2 000 keyed rows (wide) | 4.88–5.07 ms | 5.28–5.58 ms | +8% to +10% |
+| 2 000 rows as a `lazyList` | 58–62 µs | 64–69 µs | +8% to +10% |
+
+The 0.20.0 plan assumed the recorder would cost under 5% of a frame; on the element pass
+alone it costs 5–10%, about 0.08 µs per recorded node. Measured against a whole terminal
+frame — which adds the diff and the encode `FramePipelineBench` times — the share is
+smaller, and in absolute terms it is a few microseconds a frame. The decision is
+therefore to keep recording *opt-in* rather than to spend more of the design on it:
+it is off by default on a real terminal and switched on only by something that reads
+it — a headless run, the first `boundsOf` call, a click-outside modal, `useArea`, an
+element-scoped effect, text selection or drag and drop, the inspector — and an app that
+uses one of those pays the figures above. Nodes with a pointer role (selectable text,
+drag sources, drop targets) are recorded on every frame regardless, because routing
+them needs it. `RenderLoopBench` has no recording dimension: it times the widget layer,
+which has no element tree to record.
 
 Two further configurations time a tree whose per-frame *walks*, not its paint, dominate:
 **wide** is two thousand keyed rows of a label and a button in a `scrollView`, and **lazy**

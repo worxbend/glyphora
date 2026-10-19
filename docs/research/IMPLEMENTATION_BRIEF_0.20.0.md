@@ -62,7 +62,11 @@ up front:
 
 ## Key assumptions to validate
 
-- [ ] A paint-time bounds recorder costs under 5% of frame time on `RenderLoopBench` — measure in the ticket.
+- [x] A paint-time bounds recorder costs under 5% of frame time on `RenderLoopBench` — measure in the ticket.
+  **Did not hold; decision recorded.** Measured on `ElementHostBench` (`RenderLoopBench` has no element tree to
+  record): +6–9% at 80x24, +4–5% at 200x50, +8–10% on a 2 000-row tree, about 0.08 µs per node, after the
+  recorder stopped copying its buffer per publish. Recording stays opt-in, switched on only by a consumer that reads
+  it; the numbers and the list of consumers are in `website/docs/performance.md`.
 - [ ] OSC 11 replies can be routed to a probe without re-opening the Alt+`]` decoder trade-off — ticket 05 tests it.
 - [ ] Kitty/iTerm2 graphics work through `Backend.writeRaw` + `DiffDirective.Skip` as designed — ticket 25 verifies
   with a `HeadlessBackend` capture of the raw bytes.

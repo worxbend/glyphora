@@ -34,7 +34,7 @@ private[dsl] final case class NodeBoundsEntry(
   * frame — the click-outside backdrop — scans `entries`, so building a map per frame for the lookups a test or a
   * snapshot makes now and then would be most of the recorder's cost for nothing.
   */
-private[dsl] final class NodeBoundsFrame(val entries: Vector[NodeBoundsEntry]):
+private[dsl] final class NodeBoundsFrame(val entries: collection.IndexedSeq[NodeBoundsEntry]):
 
   private lazy val byKey: Map[String, NodeBoundsEntry] =
     entries.iterator.filter(_.key.isDefined).map(entry => entry.key.get -> entry).toMap
@@ -82,7 +82,8 @@ private[dsl] object NodeBoundsFrame:
   */
 private[dsl] final class NodeBounds:
 
-  private val recording = mutable.ArrayBuffer.empty[NodeBoundsEntry]
+  // swapped out on publish rather than copied: the published buffer is never written again
+  private var recording = mutable.ArrayBuffer.empty[NodeBoundsEntry]
 
   /** Where each input target landed this frame, with its paint sequence — see [[PaintedArea]]. */
   private val targets = mutable.Map.empty[InputTarget, PaintedArea]
@@ -118,7 +119,10 @@ private[dsl] final class NodeBounds:
     }
 
   /** Closes the frame and makes it the one readers see. */
-  def publish(): Unit = published = NodeBoundsFrame(recording.toVector)
+  def publish(): Unit =
+    published = NodeBoundsFrame(recording)
+    // the next frame records into a fresh buffer sized like this one, so no frame pays to copy what it recorded
+    recording = new mutable.ArrayBuffer[NodeBoundsEntry](math.max(16, recording.size))
 
   /** The last published frame; empty before the first one. */
   def current: NodeBoundsFrame = published
