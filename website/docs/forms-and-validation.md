@@ -291,3 +291,11 @@ Run the repository example:
 Its source and headless test live under
 [`examples/form-demo`](https://github.com/worxbend/glyphora/tree/main/examples/form-demo).
 For modals and multi-step flows, continue with [The app shell](./app-shell).
+
+## Ask a form one field at a time
+
+A command-line program that is not a full-screen app can ask the same derived form as a
+sequence of inline questions: `Prompt.form[Config]` walks the fields in declaration
+order, one per step, with `Ctrl-U` going back to the previous field, and returns
+`Option[Config]`. `Prompt.formOf(spec, validators*)` checks the spec's typed validators
+once every field is answered. See [Prompts and progress](./prompts#a-form-one-field-per-step).

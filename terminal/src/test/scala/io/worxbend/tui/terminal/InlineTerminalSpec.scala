@@ -182,6 +182,31 @@ final class InlineTerminalSpec extends AnyFunSuite:
         assert(harness.replay().isEmpty, "a second close must not scroll the retained frame again")
       }
 
+  test("a close after keepInlineRows starts the shell's next output right below the kept rows"):
+    wired { harness =>
+      harness.start()
+      assert(harness.backend.draw(frame(20, "? Name alpha")).isRight)
+      assert(harness.backend.keepInlineRows(1).isRight)
+      assert(harness.backend.close().isRight)
+      harness.replay()
+      harness.screen.feed("SHELL>")
+      assert(harness.screen.line(1) == "HISTORY-B")
+      assert(harness.screen.line(4) == "? Name alpha")
+      assert(harness.screen.line(5) == "SHELL>")
+    }
+
+  test("keepInlineRows at or above the strip height parks below the whole strip, as a plain close does"):
+    wired { harness =>
+      harness.start()
+      assert(harness.backend.draw(frame(20, "ROW")).isRight)
+      assert(harness.backend.keepInlineRows(2).isRight)
+      assert(harness.backend.close().isRight)
+      harness.replay()
+      harness.screen.feed("SHELL>")
+      assert(harness.screen.line(3) == "ROW")
+      assert(harness.screen.line(5) == "SHELL>")
+    }
+
   test("inline close uses the terminal height at handover rather than the saved cursor row"):
     wired { harness =>
       harness.start()

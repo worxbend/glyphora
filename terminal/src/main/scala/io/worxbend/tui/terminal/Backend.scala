@@ -277,6 +277,20 @@ trait Backend:
     val _ = rows
     Right(())
 
+  /** Asks the next [[close]] of an inline run to keep only the top `rows` rows of the strip it reserved, and to park
+    * the cursor on the row below them instead of below the whole strip.
+    *
+    * For a run whose last frame is shorter than the strip it needed while live — a prompt that asked with a list of
+    * options and answers with one summary line. The rows below the kept ones must already be blank in the last frame
+    * drawn; this only moves where the shell's next output starts, so those blank rows are reused rather than left as a
+    * gap. A value at or above the strip's height keeps the whole strip, which is what closing does without this call.
+    *
+    * The default is a no-op, for a backend with no real screen.
+    */
+  def keepInlineRows(rows: Int): Either[BackendError, Unit] =
+    val _ = rows
+    Right(())
+
   /** Blocks up to `timeout` for the next input event; `Right(None)` means nothing arrived.
     *
     * `timeout` must be **strictly positive**, or infinite to block until an event arrives. Zero is rejected rather than
