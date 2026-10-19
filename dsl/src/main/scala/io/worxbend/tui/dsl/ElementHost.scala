@@ -1,7 +1,7 @@
 package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Buffer, KeyCode, KeyEvent, MouseEvent, MouseEventKind, Position, Rect, Size, Style}
-import io.worxbend.tui.runtime.{Frame, ReactiveScope}
+import io.worxbend.tui.runtime.{Frame, JfrEvents, ReactiveScope}
 import io.worxbend.tui.terminal.PointerShape
 
 /** The DSL's render-and-dispatch engine, with no loop and no key policy of its own.
@@ -73,6 +73,7 @@ final class ElementHost:
     pointer = PointerCapture()
     session = ViewSession(key => boundsOf(key))
     lastTree = None
+    lastFocus = (-1, None)
 
   /** Resolves `view` for an area of this size, reconciles focus, decorates the tree with `theme`'s focus cue and paints
     * it into `buffer`.
@@ -123,6 +124,7 @@ final class ElementHost:
       theme: Theme = Theme.default,
   ): Unit =
     tracker.reconcile(FocusPass.focusKeys(raw), FocusPass.autofocusRequest(raw), FocusScope.of(raw))
+    recordFocusChange()
     val recorder = Option.when(recordBounds)(bounds)
     motionDemanded = false
     cuesDemanded = false
@@ -143,6 +145,15 @@ final class ElementHost:
     try paint(tree)
     finally recorder.foreach(_.publish())
     session.afterPaint(raw)
+
+  /** Focus as of the last frame, for the Flight Recorder `FocusChanged` event; `-1` before the first one. */
+  private var lastFocus: (Int, Option[String]) = (-1, None)
+
+  private def recordFocusChange(): Unit =
+    val now = (tracker.focusedIndex, tracker.focusedKey)
+    if now != lastFocus then
+      JfrEvents.focusChanged(lastFocus._1, lastFocus._2, now._1, now._2)
+      lastFocus = now
 
   /** Whether a widget state painted on the last frame — a `TextInputState`, a `ListState`, any
     * [[io.worxbend.tui.core.Versioned]] state a node was handed — has been mutated since that frame. When one has, the
