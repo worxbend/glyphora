@@ -14,6 +14,7 @@ final class TodoAppSpec extends AnyFunSuite:
     val app     = TodoApp()
     Pilot.using(backend) { app.runWith(backend) } { pilot =>
       pilot.waitForIdle()
+      assert(pilot.a11yReport(app).isEmpty, pilot.a11yReport(app).mkString("\n"))
       body(app, pilot)
     }
 

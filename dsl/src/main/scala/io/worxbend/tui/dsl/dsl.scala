@@ -256,6 +256,9 @@ extension (inline sc: StringContext)
 // the same reason: an app that installs `RunnerConfig(onFrame = ...)` writes the type of that lambda's parameter in its
 // own source.
 export io.worxbend.tui.runtime.{
+  A11yAudit,
+  A11yFinding,
+  A11yRule,
   Async,
   AsyncErrorHandler,
   Cancelable,

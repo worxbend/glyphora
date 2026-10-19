@@ -14,7 +14,7 @@ import io.worxbend.tui.core.{
   Rect,
   Size,
 }
-import io.worxbend.tui.runtime.{RenderThread, RunnerError}
+import io.worxbend.tui.runtime.{A11yAudit, A11yFinding, RenderThread, RunnerError}
 import io.worxbend.tui.terminal.HeadlessBackend
 
 import java.util.concurrent.{CountDownLatch, TimeUnit}
@@ -549,6 +549,24 @@ final class Pilot private (
   def cursorPosition: Option[Position] =
     rethrowAppFailure()
     if backend.isCursorVisible then backend.cursorPosition else None
+
+  /** The accessibility findings for `subject` on the last frame — focusables with no visible focus change, low-contrast
+    * text, focused inputs that did not place the caret, modals with no `Esc` — through the
+    * [[io.worxbend.tui.runtime.A11yAudit]] the subject's type provides (`tui-dsl` gives every `TuiApp` one). Empty
+    * means the lint found nothing; it is a lint, not a certification.
+    *
+    * {{{
+    * pilot.waitForIdle()
+    * assert(pilot.a11yReport(app).isEmpty)
+    * }}}
+    *
+    * Reads the frame and the caret on the test thread, then walks the app's tree on its render thread. Call
+    * `waitForIdle()` first, for the reason every frame read needs it.
+    */
+  def a11yReport[A](subject: A)(using audit: A11yAudit[A]): Seq[A11yFinding] =
+    val frame  = lastFrame
+    val cursor = cursorPosition
+    readOnRenderThread(audit.findings(subject, frame, cursor))
 
   /** Asserts the hardware caret sits on `(x, y)`, and returns `this` so the check sits in a chain of interactions:
     *

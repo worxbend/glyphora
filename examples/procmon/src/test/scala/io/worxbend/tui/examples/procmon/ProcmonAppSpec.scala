@@ -20,6 +20,7 @@ final class ProcmonAppSpec extends AnyFunSuite:
       pilot.waitForIdle()
       pilot.waitUntil("the first sample to land", 10.seconds)(app.sampleCount.peek > 0)
       pilot.waitForIdle()
+      assert(pilot.a11yReport(app).isEmpty, pilot.a11yReport(app).mkString("\n"))
       body(app, pilot)
     }
 

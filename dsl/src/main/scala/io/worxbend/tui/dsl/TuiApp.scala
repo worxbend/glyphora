@@ -1138,6 +1138,9 @@ trait TuiApp:
     */
   private[dsl] def currentHost: Option[ElementHost] = activeHost.get()
 
+  /** The screen on top of the stack, read with `peek`, for [[A11yLint]]. Render-thread only. */
+  private[dsl] def topScreenNow: Option[Screen] = screenStack.topNow
+
   /** Whether [[boundsOf]] has ever been called on this app — the sticky half of the opt-in, so a run started after the
     * call records from its first frame. Written from whichever thread asked, read on the render thread at run start.
     */
@@ -1150,3 +1153,11 @@ trait TuiApp:
     backend match
       case _: HeadlessBackend => true
       case _                  => false
+
+/** Companion of every [[TuiApp]]: holds the accessibility audit `pilot.a11yReport(app)` finds for any app type, because
+  * a type's implicit scope includes the companions of its base traits.
+  */
+object TuiApp:
+
+  /** The lint `tui-test`'s `Pilot.a11yReport` runs on a `TuiApp` — see [[A11yLint]]. */
+  given a11yAudit: io.worxbend.tui.runtime.A11yAudit[TuiApp] = A11yLint.audit
