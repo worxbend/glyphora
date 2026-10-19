@@ -1,0 +1,12 @@
+┌Left──────────────────┐┌Right─────────────────┐
+│notes                 ││draft                 │
+│       [ Open ]       ││       [ Save ]       │
+│                      ││                      │
+│                 ╭ inspector ─────────────────╮
+│                 │button key=save             │
+│                 │bounds 25,2 22x1            │
+│                 │constraint Length(1)        │
+│                 │claim  Length(1) x Fill(1)  │
+│                 │height 1                    │
+│                 │focus  1                    │
+└─────────────────╰────────────────────────────╯

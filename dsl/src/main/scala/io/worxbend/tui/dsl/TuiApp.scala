@@ -585,6 +585,12 @@ trait TuiApp:
     */
   protected def colorDepth: ColorDepth = ColorDepth.detect()
 
+  /** Whether every frame is painted with debug borders: each container outlined dimly, each child a `row` or `column`
+    * laid out to zero cells marked in red. Read once, from `GLYPHORA_DEBUG_LAYOUT=1` by default; override it to switch
+    * the borders on from code (a test, a `--debug-layout` flag).
+    */
+  protected def debugLayout: Boolean = DebugLayout.enabled(sys.env)
+
   /** Opens the terminal [[run]] will draw on. JLine on the process's controlling terminal by default.
     *
     * Override it to substitute another [[Backend]] — a recording backend, a remote one, a `HeadlessBackend` wired to
@@ -776,12 +782,15 @@ trait TuiApp:
       // a modal that closes on a click outside reads where its dialog was painted, so the frame that first shows it
       // already records — the host's own demand detection would only switch recording on for the frame after
       if !run.host.recordBounds && modalClosesOnClickOutside then run.host.recordBounds = true
+      // the inspector reads the bounds of the frame it is painted over, so that frame has to record them
+      if inspectorMode != InspectorMode.Off || debugLayoutOn then run.host.recordBounds = true
       // inside the generation, so a `Theme.auto` frame subscribes to the colour scheme and a mode 2031 report repaints
       val resolved = resolvedTheme(using scope)
       run.host.renderComposed(frame, resolved, effectiveView(resolved)(using scope), () => syncFocusLayers(run))(using
         scope
       )
       effects.applyTo(frame)
+      paintInspector(frame, run)
       syncTaskbar(using scope)
       syncMouseMotion(run)
     // asked after either branch: an intro is an animation like any other, and it is what a run with no configured
@@ -839,7 +848,9 @@ trait TuiApp:
       case Event.Mouse(mouse)               =>
         val consumed = run.host.dispatchMouse(mouse)
         followPointer(run, mouse.position, handle)
-        consumed || run.invalidated
+        val moved    = inspectedPointer.forall(_ != mouse.position)
+        inspectedPointer = Some(mouse.position)
+        consumed || run.invalidated || (moved && inspectorMode != InspectorMode.Off)
       // Releases reach the focused element's own `.onKeyRelease` and stop there. They deliberately do not bubble on
       // to `bindings`: a binding names a press, so firing it again on the way up would run every chord twice.
       case Event.KeyRelease(key)            => run.host.dispatchKeyRelease(key) || run.invalidated
@@ -955,6 +966,9 @@ trait TuiApp:
     else if keys.fires(keys.closeModal, key) && topScreenClosesOnEscape then
       popScreen()
       false
+    else if keys.fires(keys.inspector, key) then
+      inspectorMode = inspectorMode.next
+      true
     else if spatialNavigation && key.modifiers == KeyModifiers.Alt then
       SpatialDirection.of(key.code).exists(tracker.focusInDirection)
     else false
@@ -993,6 +1007,14 @@ trait TuiApp:
   /** Pushes the bound progress source's current value to the taskbar when it differs from what is showing. Read under
     * `scope`, so a change to the source schedules the frame that pushes it.
     */
+  /** The debug-border overlay and then the F12 overlay over the frame just composed — see [[Inspector]]. Painted after
+    * effects, so it is never dissolved.
+    */
+  private def paintInspector(frame: Frame, run: RunState): Unit =
+    if debugLayoutOn then frame.renderWidget(DebugLayout.overlay(run.host), frame.area)
+    if inspectorMode != InspectorMode.Off then
+      frame.renderWidget(Inspector.overlay(run.host, inspectorMode, inspectedPointer), frame.area)
+
   private def syncTaskbar(using scope: ReactiveScope): Unit =
     taskbarSource.foreach(source => showTaskbar(source.get(using scope)))
 
@@ -1073,6 +1095,15 @@ trait TuiApp:
   // run: the pointer shape and taskbar progress the terminal was last told, the bound progress source, and whether the
   // terminal window has focus (true until the terminal says otherwise, since a terminal without focus reporting never
   // says anything).
+  /** [[debugLayout]], asked once per app instance rather than once per frame. */
+  private lazy val debugLayoutOn: Boolean = debugLayout
+
+  /** Which inspector overlay the `inspector` framework key has cycled to, and the last pointer position it saw. Both
+    * render-thread only.
+    */
+  private var inspectorMode: InspectorMode       = InspectorMode.Off
+  private var inspectedPointer: Option[Position] = None
+
   private var shownPointer: PointerShape                      = PointerShape.Default
   private var shownTaskbar: Option[Double]                    = None
   private var taskbarSource: Option[Reactive[Option[Double]]] = None

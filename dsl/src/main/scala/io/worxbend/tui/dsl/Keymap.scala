@@ -21,6 +21,7 @@ final case class FrameworkKeys(
     quit: KeyEvent = KeyEvent(KeyCode.Char('c'), KeyModifiers.Ctrl),
     closeModal: KeyEvent = KeyEvent.of(KeyCode.Escape),
     pageStep: Int = 10,
+    inspector: KeyEvent = KeyEvent.of(KeyCode.F(12)),
 ):
   require(pageStep > 0, s"pageStep must be positive, was $pageStep")
 
@@ -31,6 +32,7 @@ final case class FrameworkKeys(
     (FrameworkKeys.CommandPalette, commandPalette, "open the command palette"),
     (FrameworkKeys.Quit, quit, "quit"),
     (FrameworkKeys.CloseModal, closeModal, "close the modal on top"),
+    (FrameworkKeys.Inspector, inspector, "cycle the inspector overlay"),
   )
 
   /** These keys with every id in `keymap` moved to its sequence; ids that name no framework key are ignored, so one
@@ -50,6 +52,7 @@ final case class FrameworkKeys(
       commandPalette = key(FrameworkKeys.CommandPalette, commandPalette),
       quit = key(FrameworkKeys.Quit, quit),
       closeModal = key(FrameworkKeys.CloseModal, closeModal),
+      inspector = key(FrameworkKeys.Inspector, inspector),
     )
 
   /** Whether `event` is `key` held with at least `key`'s modifiers. */
@@ -64,7 +67,10 @@ object FrameworkKeys:
   val Quit: BindingId           = BindingId("quit")
   val CloseModal: BindingId     = BindingId("close-modal")
 
-  /** Tab, Shift+Tab, Ctrl+P, Ctrl+C, Esc and a page step of 10 — what every `TuiApp` used before these became ids. */
+  /** F12 by default: cycles the inspector overlay — node card, card plus element tree, off. */
+  val Inspector: BindingId = BindingId("inspector")
+
+  /** Tab, Shift+Tab, Ctrl+P, Ctrl+C, Esc, a page step of 10 and F12 for the inspector. */
   val default: FrameworkKeys = FrameworkKeys()
 
   /** The page step the key dispatch on this thread runs under. `TuiApp` binds it around each dispatch to its own
