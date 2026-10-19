@@ -23,9 +23,9 @@ final class KeymapSpec extends AnyFunSuite with PilotFixture:
     assert(parsed == Right(Map(BindingId("save") -> keyseq"ctrl+s", BindingId("go-to-top") -> keyseq"g t")))
 
   test("parse names the line of a malformed entry"):
-    assert(Keymap.parse("save = ctrl+s\nnonsense\n").left.exists(_.contains("line 2")))
-    assert(Keymap.parse("save = ctlr+s\n").left.exists(_.contains("line 1")))
-    assert(Keymap.parse("save = a\nsave = b\n").left.exists(_.contains("save")))
+    assert(Keymap.parse("save = ctrl+s\nnonsense\n").left.exists(_.line == 2))
+    assert(Keymap.parse("save = ctlr+s\n").left.exists(_.toString.startsWith("line 1: ")))
+    assert(Keymap.parse("save = a\nsave = b\n") == Left(LineError(2, "'save' is bound twice")))
 
   test("a binding's default id is its description slugged, and withId overrides it"):
     assert(binding("g g", "Go to top!")(()).id == BindingId("go-to-top"))

@@ -121,13 +121,14 @@ go-to-top = g t
 quit      = ctrl+q
 ```
 
-`Keymap.parse(text)` reads it into a `Map[BindingId, KeySequence]`, or a `Left` naming
-the first bad line. Blank lines and lines starting with `#` are skipped. Apply it with
+`Keymap.parse(text)` reads it into a `Map[BindingId, KeySequence]`, or a
+`Left(LineError(line, message))` naming the first bad line — the same error type a theme
+file's `Theme.parse` answers. Blank lines and lines starting with `#` are skipped. Apply it with
 `rebind`:
 
 ```scala
 private val userKeys: Map[BindingId, KeySequence] =
-  readKeymapFile().flatMap(Keymap.parse).getOrElse(Map.empty)
+  Keymap.parse(readKeymapFile()).getOrElse(Map.empty)
 
 override def bindings = KeyBindings(
   binding("ctrl+s", "save")(save()),

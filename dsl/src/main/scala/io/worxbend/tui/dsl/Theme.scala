@@ -439,9 +439,9 @@ object Theme:
 
   /** Reads a theme file — the `key = value` format [[ThemeFile]] describes — so an end user can restyle an app without
     * recompiling it. A setting the file leaves out keeps the base theme's (see `extends`); a malformed line is a
-    * [[ThemeError]] carrying its line number, never an exception.
+    * [[LineError]] carrying its line number, never an exception.
     */
-  def parse(text: String): Either[ThemeError, Theme] = ThemeFile.parse(text)
+  def parse(text: String): Either[LineError, Theme] = ThemeFile.parse(text)
 
   /** Writes `theme` as a theme file that [[parse]] reads back as an equal theme: every setting spelled out, components
     * one line per state. The one field that is not written is a loading `fillRamp`, which is code rather than a style.

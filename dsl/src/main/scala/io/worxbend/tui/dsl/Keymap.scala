@@ -119,23 +119,24 @@ object Keymap:
 
   /** Reads a keymap. Blank lines and lines whose first non-blank character is `#` are skipped; every other line is
     * `id = spec`, split at its first `=` with both sides trimmed, the spec in [[KeySequence.parse]]'s vocabulary. A
-    * line that is not of that shape, a spec that does not parse, or an id given twice is a `Left` naming the line.
+    * line that is not of that shape, a spec that does not parse, or an id given twice is a [[LineError]] naming the
+    * line.
     */
-  def parse(text: String): Either[String, Map[BindingId, KeySequence]] =
-    val entries = text.linesIterator.zipWithIndex.collect {
-      case (line, index) if line.trim.nonEmpty && !line.trim.startsWith("#") => (line, index + 1)
-    }
-    entries.foldLeft[Either[String, Map[BindingId, KeySequence]]](Right(Map.empty)) { case (acc, (line, number)) =>
-      acc.flatMap { parsed =>
-        line.indexOf('=') match
-          case -1 => Left(s"line $number: expected 'id = keys', got '${line.trim}'")
-          case at =>
-            val (left, right) = line.splitAt(at)
-            val id            = BindingId(left.trim)
-            val spec          = right.drop(1).trim
-            if id.value.isEmpty || spec.isEmpty then Left(s"line $number: expected 'id = keys', got '${line.trim}'")
-            else if parsed.contains(id) then Left(s"line $number: '$id' is bound twice")
-            else KeySequence.parse(spec).left.map(problem => s"line $number: $problem").map(seq => parsed + (id -> seq))
+  def parse(text: String): Either[LineError, Map[BindingId, KeySequence]] =
+    KeyValueLines.read(text, "id = keys").flatMap { lines =>
+      lines.foldLeft[Either[LineError, Map[BindingId, KeySequence]]](Right(Map.empty)) { (acc, line) =>
+        acc.flatMap { parsed =>
+          val id = BindingId(line.key)
+          if id.value.isEmpty || line.value.isEmpty then
+            Left(LineError(line.number, s"expected 'id = keys', found '${line.key} = ${line.value}'"))
+          else if parsed.contains(id) then Left(LineError(line.number, s"'$id' is bound twice"))
+          else
+            KeySequence
+              .parse(line.value)
+              .left
+              .map(problem => LineError(line.number, problem))
+              .map(sequence => parsed + (id -> sequence))
+        }
       }
     }
 

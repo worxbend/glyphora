@@ -978,7 +978,7 @@ A setting the file leaves out keeps the base theme's value: the `extends` preset
 private val loaded: Theme =
   Theme.parse(Files.readString(path)) match
     case Right(theme) => theme
-    case Left(error)  => // ThemeError(line, message): "line 4: accent: '#zzzzzz' is not a style word or a colour"
+    case Left(error)  => // LineError(line, message): "line 4: accent: '#zzzzzz' is not a style word or a colour"
       System.err.println(s"$path: $error")
       Theme.auto
 

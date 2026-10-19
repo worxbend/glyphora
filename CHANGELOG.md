@@ -26,7 +26,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 - Component styles: `StateStyles` per role via `Theme.withComponent`, roles `ButtonRole`, `InputRole`, `ListRole`, `TableHeaderRole`, `ComponentRole.named`, and `.variant(ButtonRole.Primary)`.
 - Hierarchical `StyleName` (`"list.selected"` falls back to `"list"`), `theme.component(role)`, `theme.style(name)`.
 - `.frameStyle(…)` for borders and `.style(s)` for content on every container.
-- Theme files: `Theme.parse` / `Theme.render`; `Style.parse` / `Style.render`.
+- Theme files: `Theme.parse` / `Theme.render`; `Style.parse` / `Style.render`. Theme files and keymaps share one `LineError(line, message)`.
 - Presets `Theme.Dracula`, `Catppuccin`, `Nord`, `Gruvbox`, `Solarized`, `Ansi16`; `Theme.presets` lists all nine.
 - `Theme.auto` follows the terminal's light or dark background; `lightDark(light, dark)`, `ColorScheme`, `Event.ColorSchemeChanged`.
 

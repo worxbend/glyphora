@@ -5,10 +5,6 @@ import io.worxbend.tui.widgets.{MarkdownTheme, SyntaxTheme}
 
 import java.util.Locale
 
-/** Why a theme file could not be read: the 1-based `line` it went wrong on and what was wrong there. */
-final case class ThemeError(line: Int, message: String):
-  override def toString: String = s"line $line: $message"
-
 /** The `key = value` text format [[Theme.parse]] reads and [[Theme.render]] writes, so an end user can restyle an app
   * without recompiling it.
   *
@@ -142,68 +138,60 @@ private[dsl] object ThemeFile:
 
   private val ComponentPrefix = "component."
 
-  def parse(text: String): Either[ThemeError, Theme] =
-    val lines   = text.linesIterator.zipWithIndex.map((line, index) => (index + 1, line.trim)).toVector
-    val entries = lines.filter((_, line) => line.nonEmpty && !line.startsWith("#"))
-    val pairs   = entries.map { (number, line) =>
-      val equals = line.indexOf('=')
-      if equals < 0 then Left(ThemeError(number, s"expected 'key = value', found '$line'"))
-      else Right((number, line.take(equals).trim, line.drop(equals + 1).trim))
+  def parse(text: String): Either[LineError, Theme] =
+    KeyValueLines.read(text, "key = value").flatMap { lines =>
+      val settings = lines.map(line => (line.number, line.key, line.value))
+      base(settings).flatMap(start => settings.foldLeft[Either[LineError, Theme]](Right(start))(apply))
     }
-    pairs.collectFirst { case Left(error) => error } match
-      case Some(error) => Left(error)
-      case None        =>
-        val settings = pairs.collect { case Right(entry) => entry }
-        base(settings).flatMap(start => settings.foldLeft[Either[ThemeError, Theme]](Right(start))(apply))
 
   /** The theme a file starts from: the `extends` preset, or `Dark` without its components. */
-  private def base(settings: Seq[(Int, String, String)]): Either[ThemeError, Theme] =
+  private def base(settings: Seq[(Int, String, String)]): Either[LineError, Theme] =
     settings.find(_._2 == "extends") match
       case None                     => Right(Theme.Dark.withoutComponents)
       case Some((number, _, value)) =>
         preset(value).toRight(
-          ThemeError(number, s"'$value' is not a preset; one of ${Theme.presets.map(_.name).mkString(", ")}")
+          LineError(number, s"'$value' is not a preset; one of ${Theme.presets.map(_.name).mkString(", ")}")
         )
 
-  private def apply(result: Either[ThemeError, Theme], entry: (Int, String, String)): Either[ThemeError, Theme] =
+  private def apply(result: Either[LineError, Theme], entry: (Int, String, String)): Either[LineError, Theme] =
     result.flatMap { theme =>
-      val (number, key, value)             = entry
-      def style: Either[ThemeError, Style] =
-        Style.parse(value).left.map(message => ThemeError(number, s"$key: $message"))
+      val (number, key, value)            = entry
+      def style: Either[LineError, Style] =
+        Style.parse(value).left.map(message => LineError(number, s"$key: $message"))
       key match
         case "extends" => Right(theme)
         case "name"    =>
-          if value.isEmpty then Left(ThemeError(number, "name: a theme needs a name")) else Right(theme.withName(value))
+          if value.isEmpty then Left(LineError(number, "name: a theme needs a name")) else Right(theme.withName(value))
         case "glyphs"  =>
           GlyphNames
             .find(_._1 == value.toLowerCase(Locale.ROOT))
             .map(found => theme.withGlyphs(found._2))
-            .toRight(ThemeError(number, s"glyphs: '$value' is not one of ${GlyphNames.map(_._1).mkString(", ")}"))
+            .toRight(LineError(number, s"glyphs: '$value' is not one of ${GlyphNames.map(_._1).mkString(", ")}"))
         case _         =>
           SettingsByKey.get(key) match
             case Some(setting)                           => style.map(setting.write(theme, _))
             case None if key.startsWith(ComponentPrefix) =>
               component(theme, number, key.drop(ComponentPrefix.length), style)
-            case None                                    => Left(ThemeError(number, s"'$key' is not a theme setting"))
+            case None                                    => Left(LineError(number, s"'$key' is not a theme setting"))
     }
 
   private def component(
       theme: Theme,
       number: Int,
       path: String,
-      style: => Either[ThemeError, Style],
-  ): Either[ThemeError, Theme] =
+      style: => Either[LineError, Style],
+  ): Either[LineError, Theme] =
     val colon          = path.indexOf(':')
     val (named, state) = if colon < 0 then (path, None) else (path.take(colon), Some(path.drop(colon + 1)))
     for
-      name   <- StyleName.parse(named).left.map(message => ThemeError(number, message))
+      name   <- StyleName.parse(named).left.map(message => LineError(number, message))
       update <- state match
         case None        => Right((styles: StateStyles, s: Style) => styles.copy(base = s))
         case Some(which) =>
           States
             .find(_._1 == which)
             .map(_._3)
-            .toRight(ThemeError(number, s"'$which' is not a state; one of ${States.map(_._1).mkString(", ")}"))
+            .toRight(LineError(number, s"'$which' is not a state; one of ${States.map(_._1).mkString(", ")}"))
       value  <- style
     yield
       val current = theme.components.getOrElse(name, StateStyles.Empty)
