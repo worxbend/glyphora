@@ -67,7 +67,7 @@ final class ScrollViewState extends VersionedState:
   /** Where each request the last paint could have made landed, in content coordinates — every focusable and every mark
     * under this view, by request identity. What [[pendingReveal]] is looked up in. Written only by the DSL.
     */
-  private[tui] var placements: collection.Map[String, Rect] = Map.empty
+  private[tui] var placements: String => Option[Rect] = _ => None
 
   /** Set when the DSL moved the offset *after* this frame painted (a request it could not place beforehand), so the
     * frame that shows the new offset is owed even though the version was read after the paint. Written only by the DSL.

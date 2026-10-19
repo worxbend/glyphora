@@ -163,7 +163,7 @@ final case class ScrollViewElement(
   private def revealBeforePaint(): Option[String] =
     state.owesFrame = false
     state.pendingReveal.filterNot(state.revealedRequest.contains).flatMap { id =>
-      state.placements.get(id).map { rect =>
+      state.placements(id).map { rect =>
         state.revealedRequest = Some(id)
         state.reveal(rect.y, rect.height)
         id
@@ -176,7 +176,7 @@ final case class ScrollViewElement(
     * one is never painted a second time, so every rect recorded during it is the one on screen.
     */
   private def settleAfterPaint(requests: RevealRequests, revealed: Option[String]): Unit =
-    state.placements = requests.placements
+    state.placements = requests.placements.get
     requests.chosen match
       case None             => state.revealedRequest = None
       case Some((id, rect)) =>

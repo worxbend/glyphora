@@ -16,23 +16,27 @@ import io.worxbend.tui.widgets.ScrollViewState
 private[dsl] final class RevealRequests(val followFocus: Boolean, area: Rect, state: ScrollViewState):
   private var visible: Option[(String, Rect)] = None
   private var focused: Option[(String, Rect)] = None
-  private val placed                          = collection.mutable.HashMap.empty[String, Rect]
+  // keyed by tab index rather than by request identity: every focusable under the view reports here on every frame,
+  // and building an identity string for each would cost more than the rest of the report
+  private val focusables                      = collection.mutable.LongMap.empty[Rect]
+  private val marks                           = collection.mutable.HashMap.empty[String, Rect]
 
   def offerVisible(id: String, rect: Rect): Unit =
-    place(id, rect)
-    if visible.isEmpty then visible = Some(id -> rect)
+    if !marks.contains(id) then marks.update(id, rect)
+    if visible.isEmpty then visible = Some(RevealProbe.visibleId(id) -> rect)
 
-  def offerFocused(id: String, rect: Rect): Unit =
-    place(id, rect)
-    if followFocus && focused.isEmpty then focused = Some(id -> rect)
+  def offerFocused(index: Int, rect: Rect): Unit =
+    placeFocusable(index, rect)
+    if followFocus && focused.isEmpty then focused = Some(RevealProbe.focusId(index) -> rect)
 
-  def place(id: String, rect: Rect): Unit = if !placed.contains(id) then placed.update(id, rect)
+  def placeFocusable(index: Int, rect: Rect): Unit =
+    if !focusables.contains(index.toLong) then focusables.update(index.toLong, rect)
 
   /** The request to act on: an explicit `.ensureVisible` wins over following focus. */
   def chosen: Option[(String, Rect)] = visible.orElse(focused)
 
-  /** Every request identity this render could have made, with where it landed. */
-  def placements: collection.Map[String, Rect] = placed
+  /** Where every request this render could have made landed, for the next frame to look its request up in. */
+  def placements: RevealPlacements = RevealPlacements(focusables, marks)
 
   /** `rect`, in this view's content coordinates, as the enclosing view sees it: moved to where the view draws its
     * window and clipped to that window, since that is the most of it the enclosing view can show. A rect scrolled out
@@ -42,6 +46,21 @@ private[dsl] final class RevealRequests(val followFocus: Boolean, area: Rect, st
     val moved = Rect(area.x + rect.x, area.y + rect.y - state.offset, rect.width, rect.height)
     val shown = moved.intersection(area)
     if shown.isEmpty then area else shown
+
+/** Where one paint of a scroll view's content placed every focusable (by tab index) and every `.ensureVisible` mark (by
+  * its id), in content coordinates — kept on the view's state for the next frame.
+  */
+private[dsl] final class RevealPlacements(
+    focusables: collection.Map[Long, Rect],
+    marks: collection.Map[String, Rect],
+):
+
+  /** The rect the request identified as `id` ([[RevealProbe.focusId]] or [[RevealProbe.visibleId]]) landed on. */
+  def get(id: String): Option[Rect] =
+    if id.startsWith(RevealProbe.FocusPrefix) then
+      id.stripPrefix(RevealProbe.FocusPrefix).toLongOption.flatMap(focusables.get)
+    else if id.startsWith(RevealProbe.VisiblePrefix) then marks.get(id.stripPrefix(RevealProbe.VisiblePrefix))
+    else None
 
 /** Routes visibility requests to every `scrollView` rendering on this thread around the element that makes them.
   *
@@ -61,29 +80,33 @@ private[dsl] object RevealProbe:
     try body
     finally if previous.isEmpty then stack.remove() else stack.set(previous)
 
+  val FocusPrefix: String   = "focus:"
+  val VisiblePrefix: String = "visible:"
+
   /** The request identity of the focusable in tab position `index`. */
-  def focusId(index: Int): String = s"focus:$index"
+  def focusId(index: Int): String = FocusPrefix + index
 
   /** The request identity of an element marked `.ensureVisible` and identified by `id`. */
-  def visibleId(id: String): String = s"visible:$id"
+  def visibleId(id: String): String = VisiblePrefix + id
 
-  /** The element in tab position `index` was handed `area`; `focused` says whether it is the focused one. */
+  /** The element in tab position `index` was handed `area`; `focused` says whether it is the focused one. Runs for
+    * every focusable on every frame, so it is a plain loop over the (usually empty) stack.
+    */
   def tracked(index: Int, area: Rect, focused: Boolean): Unit =
-    report(area)((requests, rect) =>
-      if focused then requests.offerFocused(focusId(index), rect) else requests.place(focusId(index), rect)
-    )
-
-  /** The element in tab position `index` is focused and was handed `area`. */
-  def focused(index: Int, area: Rect): Unit = tracked(index, area, focused = true)
+    var remaining = stack.get()
+    var rect      = area
+    while remaining.nonEmpty do
+      val requests = remaining.head
+      if focused then requests.offerFocused(index, rect) else requests.placeFocusable(index, rect)
+      remaining = remaining.tail
+      if remaining.nonEmpty then rect = requests.toParent(rect)
 
   /** An element marked `.ensureVisible`, identified by `id`, was handed `area`. */
   def visible(id: String, area: Rect): Unit =
-    report(area)((requests, rect) => requests.offerVisible(visibleId(id), rect))
-
-  private def report(area: Rect)(offer: (RevealRequests, Rect) => Unit): Unit =
-    var rect      = area
     var remaining = stack.get()
+    var rect      = area
     while remaining.nonEmpty do
-      offer(remaining.head, rect)
-      rect = remaining.head.toParent(rect)
+      val requests = remaining.head
+      requests.offerVisible(id, rect)
       remaining = remaining.tail
+      if remaining.nonEmpty then rect = requests.toParent(rect)
