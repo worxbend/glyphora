@@ -15,6 +15,7 @@ final class DashboardAppSpec extends AnyFunSuite:
     val app     = DashboardApp()
     Pilot.using(backend) { app.runWith(backend) } { pilot =>
       pilot.waitForIdle()
+      assert(pilot.a11yReport(app).isEmpty, pilot.a11yReport(app).mkString("\n"))
       val ticksBefore = app.tick.peek
       val drawsBefore = backend.drawCount
       // poll instead of a fixed sleep: under parallel test load the tick thread may be starved for a while

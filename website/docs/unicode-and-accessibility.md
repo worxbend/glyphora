@@ -196,6 +196,21 @@ computed background. See [Check that text will be
 readable](./layout-and-style#check-that-text-will-be-readable) for the two caveats that
 come with it.
 
+## Lint it
+
+The checks above are easy to state and easy to break by accident, so the test kit
+checks them: `pilot.a11yReport(app)` flags a focusable whose focus changes nothing on
+screen, text below 3:1 contrast (`Color.contrastRatio` over each printed cell whose
+colours are both set), a focused text input that parked no hardware caret, and a modal
+with no `Esc`. See [Lint a frame for accessibility](./testing#lint-a-frame-for-accessibility)
+for the rules and their exemptions.
+
+What it cannot see: whether the words are clear, whether a colour-coded status also
+says what it means in text (pair a tone with a symbol and a word, as above), whether a
+modal closes on `Esc` only inside an `onKeyEvent` handler (give it
+`dismissal = Dismissal.Escape` or an `esc` binding so both the lint and the help overlay
+can see it), and anything about cells left on the terminal's default colours.
+
 ## Offer a way to turn motion down
 
 Persistent animation is the accessibility hazard most terminal toolkits ignore. When
@@ -330,7 +345,9 @@ You never pick colors twice. Write the color you mean — including 24-bit
 
 ### What is detected
 
-`ColorDepth.detect()` reads the environment, in this order:
+`ColorDepth.detect()` reads the environment. `GLYPHORA_COLOR_DEPTH` (`truecolor`,
+`256`, `16`, `mono` or `none`) pins the answer outright, ahead of everything below — the
+switch for a terminal that misreports itself. Without it, in this order:
 
 1. **`NO_COLOR` and `CLICOLOR=0`** — either one turns color off entirely
    ([no-color.org](https://no-color.org) and the

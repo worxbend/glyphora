@@ -97,6 +97,74 @@ For a component that loads its own data, `useTask` does the hop for you — see
 
 See [Mouse & focus](./mouse) for the exact routing order.
 
+### Run the doctor
+
+`./mill examples.doctor.run` (or its native binary) prints what glyphora detected about
+the terminal it is running in — the terminal's own name and version (XTVERSION), `TERM`,
+the colour depth and glyph tier the environment resolves to, the background colour and
+light/dark scheme the terminal answered, every probed capability — and the `GLYPHORA_*`
+overrides currently set. Below that it echoes every decoded event live, newest first:
+`key    ctrl+x   KeyEvent(Char('x'), Ctrl)`, `mouse  Down Left at 10,30`, `paste "…"`,
+resizes and focus changes. `q` quits; every other key, `Esc` included, is echoed.
+
+If a key you press does not appear, the terminal (or a multiplexer in between) never
+sent it. If it appears as something else — `Esc` followed by letters instead of an
+arrow — raise `GLYPHORA_ESCAPE_DELAY`. If the mouse lines never appear, the terminal is
+not reporting the mouse, or `GLYPHORA_MOUSE=off` is set.
+
+### Environment overrides
+
+Every switch glyphora reads from the environment, for a terminal that misreports
+itself. Each only narrows or pins what would otherwise happen; an unrecognised value is
+ignored, never an error.
+
+| Variable | Values | Effect |
+|---|---|---|
+| `GLYPHORA_COLOR_DEPTH` | `truecolor`, `256`, `16`, `mono`, `none` | pins the colour depth, over `NO_COLOR`, `COLORTERM`, `TERM` and the rest |
+| `GLYPHORA_KEYBOARD` | `legacy` | never enables the kitty keyboard protocol, even when the terminal offers it |
+| `GLYPHORA_MOUSE` | `off`, `buttons` | ignores an app's mouse capture, or holds it to clicks and drags when it asks for all motion |
+| `GLYPHORA_ESCAPE_DELAY` | milliseconds, `1`–`2000` (default `50`) | how long a lone `Esc` waits for the rest of a sequence before it is the Escape key |
+| `GLYPHORA_ASCII` | any value but empty or `0` | draws borders and spinners in ASCII — see below |
+| `GLYPHORA_NO_CAPABILITY_PROBE` | any non-empty value | skips the start-up capability probe — see [What the terminal supports](#what-the-terminal-supports) |
+| `GLYPHORA_DEBUG_LAYOUT` | `1`, `true`, `yes` | debug borders — see [Seeing the layout](#seeing-the-layout) |
+| `GLYPHORA_DEBUG` | any non-empty value | failed teardown steps report themselves on stderr |
+| `NO_COLOR`, `CLICOLOR`, `CLICOLOR_FORCE`, `FORCE_COLOR` | the usual conventions | colour on or off, when `GLYPHORA_COLOR_DEPTH` is unset |
+
+Two more are for the test suite rather than for users: `GLYPHORA_GOLDEN_UPDATE` and
+`GLYPHORA_TAPE_OUTPUT` — see [Testing](./testing).
+
+## Seeing the layout
+
+Two tools answer "why is this drawn there, that size, or not at all".
+
+**The inspector.** Press `F12` in any `TuiApp`. A card shows the node under the mouse
+pointer — or the focused one, when the pointer is over nothing: its type (the node's
+`debugName`), its key, the rect it was laid out to, its constraint, the size it claims
+from its container, the height it measured at that width, and its focus index. The
+node itself is highlighted in place. `F12` again adds the element tree beside the card
+(the `ElementTreeSnapshot` dump, with the inspected node's line marked); a third press
+closes it. The key is the rebindable framework key `inspector`
+(`FrameworkKeys.default.rebind(Map(FrameworkKeys.Inspector -> keyseq"f11"))`), so an
+app that wants `F12` for itself can move it, and an app binding `F12` already wins,
+since framework keys are the last stage of key routing.
+
+**Debug borders.** Run with `GLYPHORA_DEBUG_LAYOUT=1` (or override
+`TuiApp.debugLayout` to `true`) and every container on every frame is outlined dimly —
+a thin box on its blank edge cells, a dimmed cell where the edge already shows
+something. A child of a `row` or `column` that was laid out to zero cells is marked in
+red where it would have started, the usual culprit when "a panel looks empty": a
+`Length(0)`, a `Percentage` of nothing, or a `Fill` beside fixed siblings that took the
+whole axis.
+
+**Flight Recorder.** For time rather than space, run the JVM with
+`-XX:StartFlightRecording=filename=run.jfr` and read `jfr print --categories glyphora
+run.jfr`: every frame is an `io.worxbend.tui.FrameDrawn` event (its duration spans
+composition and draw, with the number of cells that changed), every dispatched event an
+`EventRouted` (kind, and whether it owed a repaint), every focus move a `FocusChanged`,
+and every async submission an `AsyncAdmitted` or `AsyncRejected`. They cost nothing
+until a recording enables them, and pair with `RunnerConfig.withOnFrameTiming` — see
+[Performance](./performance).
+
 ## Focus jumps after conditional rendering
 
 Focus is positional unless an element has a stable key. Add `.key("unique-name")` to
@@ -228,8 +296,9 @@ the answer. The queries go out together — a DECRQM (`CSI ? mode $ p`) each for
 synchronised output (2026), bracketed paste (2004), focus reporting (1004),
 colour-scheme reports (2031), in-band resize (2048) and grapheme widths (2027), a
 `CSI ? u` for the kitty keyboard protocol, an OSC 11 `?` for the background colour, a
-`CSI ? 996 n` for the terminal's own light/dark verdict, and a primary device
-attributes request (`CSI c`) last. DA1 is the fence: terminals answer in the order the
+`CSI ? 996 n` for the terminal's own light/dark verdict, an XTVERSION request
+(`CSI > 0 q`) for its name and version, and a primary device attributes request
+(`CSI c`) last. DA1 is the fence: terminals answer in the order the
 queries arrived, so once its reply is back, anything still unanswered was never going
 to be answered.
 
@@ -275,7 +344,8 @@ produces exactly the "nothing established" answer a silent terminal would, so ev
 feature stays on.
 
 `Backend.capabilities` reports what was established, for an application that wants to
-show it or log it. A backend with no device to ask — `HeadlessBackend` — always reports
+show it or log it — `terminalVersion` is the XTVERSION answer, free text such as
+`kitty(0.35.2)`, for display only. The `doctor` example shows all of it. A backend with no device to ask — `HeadlessBackend` — always reports
 that nothing was established.
 
 ## Borders and spinners come out as boxes or question marks

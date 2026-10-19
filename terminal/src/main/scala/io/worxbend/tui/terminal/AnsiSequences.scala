@@ -316,6 +316,14 @@ private[terminal] object AnsiSequences:
     */
   val QueryKittyKeyboard: String = s"$Esc[?u"
 
+  /** XTVERSION (`CSI > 0 q`) — asks the terminal for its name and version.
+    *
+    * The answer is a DCS string, `ESC P > | name ST`, read into `TerminalCapabilities.terminalVersion` inside the
+    * capability probe. xterm, kitty, WezTerm, foot, Ghostty, iTerm2 and tmux answer; a terminal that does not ignores
+    * the unknown CSI, and the DA1 fence absorbs the silence.
+    */
+  val QueryTerminalVersion: String = s"$Esc[>0q"
+
   /** DA1 (`CSI c`), the primary device attributes query.
     *
     * Every terminal answers it, so it is the fence that ends a capability probe: terminals answer in the order the

@@ -4,6 +4,7 @@ import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.{
   ArrayBlockingQueue,
   Future,
+  RejectedExecutionException,
   ScheduledExecutorService,
   ScheduledThreadPoolExecutor,
   ThreadFactory,
@@ -161,7 +162,13 @@ object Async:
     * uncaught-exception handler, not disappear inside an unobserved Future.
     */
   private[runtime] def onWorker(body: => Unit): Unit =
-    worker.execute(() => body)
+    try
+      worker.execute(() => body)
+      JfrEvents.admitted("worker", worker.getQueue.size)
+    catch
+      case rejected: RejectedExecutionException =>
+        JfrEvents.rejected("worker", WorkerBacklog)
+        throw rejected
 
   /** The render loop of the calling thread, resolved *now* — the one capture every entry point here must do on the
     * caller's thread, before any work is handed to an executor. Resolving it later, from the worker, can deliver the
@@ -216,12 +223,13 @@ object Async:
   /** Process-lifetime daemon workers with 256 waiting submissions and nonblocking rejection, never CallerRuns on UI.
     */
   private val WorkerThreads = math.max(2, Runtime.getRuntime.availableProcessors())
+  private val WorkerBacklog = 256
   private val worker        = new ThreadPoolExecutor(
     WorkerThreads,
     WorkerThreads,
     0L,
     TimeUnit.MILLISECONDS,
-    new ArrayBlockingQueue[Runnable](256),
+    new ArrayBlockingQueue[Runnable](WorkerBacklog),
     daemonFactory("glyphora-async"),
     new ThreadPoolExecutor.AbortPolicy(),
   )
