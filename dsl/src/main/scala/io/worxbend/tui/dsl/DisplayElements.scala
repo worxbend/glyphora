@@ -436,7 +436,8 @@ final case class WidgetElement(
     copy(search = Some(state), props = props.copy(focusable = true))
 
   private def searchedWith(found: w.SearchState): Widget =
-    val view = w.Searchable(wrapped)
+    val styles = SearchStyles.of(props.focusState.theme)
+    val view   = w.Searchable(wrapped, styles.matched, styles.current)
     new Widget with Measured:
       def render(area: Rect, buffer: Buffer): Unit   =
         view.render(area, buffer, found)

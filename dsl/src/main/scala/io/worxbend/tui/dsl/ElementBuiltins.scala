@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind, Style}
+import io.worxbend.tui.core.{Color, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind, Style}
 import io.worxbend.tui.widgets as w
 
 // ---- the shared built-in vocabulary ----
@@ -109,6 +109,24 @@ private def dialogSelectedStyle(props: ElementProps, fallback: => Style): Style 
   else
     val states = theme.component(DialogRole.Selected)
     if props.focused then StateStyles.stated(states.focused).getOrElse(states.base) else states.base
+
+/** The two search highlights a searched node paints in: the theme's `"search.match"` / `"search.current"` components
+  * when it has them, and otherwise the theme's `warning` and `error` colours turned into a highlight — the colour as
+  * the background under black text (bold for the current match), or the role reversed when it carries no colour.
+  */
+private[dsl] final case class SearchStyles(matched: Style, current: Style)
+
+private[dsl] object SearchStyles:
+
+  def of(theme: Theme): SearchStyles =
+    def highlight(role: Style): Style                         =
+      role.fg.fold(role.reverse)(color => Style.Default.withFg(Color.Black).withBg(color))
+    def named(role: ComponentRole, fallback: => Style): Style =
+      if theme.components.contains(role.styleName) then theme.style(role.styleName) else fallback
+    SearchStyles(
+      named(SearchRole.Match, highlight(theme.warning)),
+      named(SearchRole.Current, highlight(theme.error).bold),
+    )
 
 /** The theme colour a severity draws in — the mapping shared by the `notice`/`badge` factories and the toast stack,
   * which reverses it into a padded badge at its own call site.

@@ -148,3 +148,17 @@ case object DialogRole extends ComponentRole:
     * keyboard. Inherits whatever `"dialog"` sets, as every hierarchical name does.
     */
   val Selected: ComponentRole = ComponentRole.named("dialog.selected")
+
+/** The search highlights of a searchable `log`, `scrollView` or `markdown` under `"search"`: [[SearchRole.Match]] for
+  * every match, [[SearchRole.Current]] for the one `n`/`N` is on. A theme that leaves them silent highlights in its own
+  * `warning` colour (a match) and `error` colour, bold (the current one), so search follows `Theme.Light` and every
+  * preset without a line of configuration.
+  */
+case object SearchRole extends ComponentRole:
+  val styleName: StyleName = StyleName("search")
+
+  /** Every match, `"search.match"`. */
+  val Match: ComponentRole = ComponentRole.named("search.match")
+
+  /** The current match, `"search.current"`. */
+  val Current: ComponentRole = ComponentRole.named("search.current")
