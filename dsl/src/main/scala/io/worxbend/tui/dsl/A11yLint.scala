@@ -2,6 +2,7 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Buffer, Color, Position, Rect}
 import io.worxbend.tui.runtime.{A11yAudit, A11yFinding, A11yRule}
+import io.worxbend.tui.widgets.{Image, PixelImage}
 
 /** The accessibility lint behind `pilot.a11yReport(app)` (research idea I4). Four rules over the last frame:
   *
@@ -15,7 +16,7 @@ import io.worxbend.tui.runtime.{A11yAudit, A11yFinding, A11yRule}
   *     `Color.contrastRatio`, and each colour pair below [[MinimumContrast]] is reported once with the cells it covers.
   *     That is what makes colour-only status ("red means failed") unreadable to anyone who cannot tell the hue apart. A
   *     cell left on the terminal's default foreground or background is skipped: its colour is the user's choice and not
-  *     knowable here.
+  *     knowable here. So is a cell inside a picture (`pixelImage`, `image`): its colours are two pixels, not text.
   *   - [[A11yRule.MissingCaret]] — the focused node is a text input that moves the hardware caret, yet the frame parked
   *     none.
   *   - [[A11yRule.ModalWithoutEscape]] — the modal on top of the screen stack neither closes on `Esc` (its
@@ -38,7 +39,7 @@ private[dsl] object A11yLint:
   val audit: A11yAudit[TuiApp] = (app, frame, cursor) =>
     app.currentHost.fold(Vector.empty[A11yFinding]) { host =>
       val nodes = Inspector.nodes(host)
-      focusCues(nodes) ++ contrast(frame) ++ caret(nodes, cursor) ++ modal(app, host)
+      focusCues(nodes) ++ contrast(frame, pictures(nodes)) ++ caret(nodes, cursor) ++ modal(app, host)
     }
 
   /** Only where there is a choice to see: a lone focusable — a confirm dialog's own key handling, a single editor — is
@@ -77,10 +78,20 @@ private[dsl] object A11yLint:
     node.withProps(props.copy(focusState = props.focusState.copy(focused = focused))).widget.render(rect, buffer)
     buffer
 
-  private def contrast(frame: Buffer): Vector[A11yFinding] =
+  /** Where pictures were painted: a `pixelImage` or `image` node's half-block cells pair two neighbouring *pixels* as
+    * foreground and background, so their contrast says nothing about whether text can be read.
+    */
+  private def pictures(nodes: Vector[InspectedNode]): Vector[Rect] =
+    nodes.flatMap { inspected =>
+      inspected.node.widget match
+        case _: PixelImage | _: Image => inspected.layout
+        case _                        => None
+    }
+
+  private def contrast(frame: Buffer, exempt: Vector[Rect]): Vector[A11yFinding] =
     val low = Vector.newBuilder[(Color, Color, Position)]
     frame.foreach { (x, y, cell) =>
-      if !cell.isBlank then
+      if !cell.isBlank && !exempt.exists(_.contains(x, y)) then
         for
           fg <- cell.style.fg.filterNot(_ == Color.Reset)
           bg <- cell.style.bg.filterNot(_ == Color.Reset)

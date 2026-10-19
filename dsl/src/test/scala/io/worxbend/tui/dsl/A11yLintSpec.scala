@@ -37,6 +37,15 @@ final class A11yLintSpec extends AnyFunSuite with PilotFixture:
     assert(findings.head.area.exists(_.y == 0), findings)
     assert(findings.head.message.contains("Blue"), findings)
 
+  // a picture's half-block cells pair neighbouring pixels as foreground and background; they are not text to read
+  test("the cells of a picture are not measured for contrast"):
+    val muddy = RgbaImage.tabulate(8, 8)((x, y) => 0xff000000 | ((x * y * 3) << 8) | 0x606060)
+    val app   = App(column(pixelImage(muddy), text("caption").style(Style.fg(Color.Blue).withBg(Color.BrightBlack))))
+    val pilot = started(app)
+    val found = pilot.a11yReport(app)
+    assert(found.map(_.rule) == Seq(A11yRule.LowContrast), found)
+    assert(found.head.message.contains("Blue"), found)
+
   test("a focusable that paints the same focused and unfocused is flagged"):
     val app   = App(column(text("plain").focusable.key("plain"), button("Save")(())))
     val pilot = started(app)
