@@ -43,7 +43,8 @@ def statusBar(hints: Seq[(String, String)])(using theme: Theme): Element =
 def statusBar(bindings: KeyBindings)(using Theme): Element =
   val mode  = Option.when(bindings.modes.nonEmpty)(bindings.mode).flatten.map(id => (s"[$id]", ""))
   val hints = bindings.pending match
-    case Some(prefix) => (s"${prefix.spelling} …", "") +: bindings.continuations(prefix.keys)
+    case Some(prefix) =>
+      (s"${prefix.spelling} …", "") +: bindings.continuations(prefix.keys).map(hint => (hint.keys, hint.description))
     case None         => bindings.hints
   statusBar(mode.toSeq ++ hints)
 
@@ -92,17 +93,17 @@ def helpOverlay(bindings: KeyBindings, title: String = Messages.active.helpTitle
   // bindings with modes list every mode, each under a `name:` heading, after the mode-less ones — the overlay is where
   // a user learns what the other modes do, so it is not narrowed to the live one the way the status bar is
   val sections = bindings.helpSections
-  val rows     = sections.flatMap(_._2)
+  val rows     = sections.flatMap(_.hints)
   // display columns, not UTF-16 lengths: a binding labelled with a CJK or emoji key otherwise asks for fewer cells
   // than it renders into and the second column stops lining up
   val width    = rows
-    .map((key, description) => CharWidth.of(key) + CharWidth.of(description) + HelpColumnGap)
+    .map(hint => CharWidth.of(hint.keys) + CharWidth.of(hint.description) + HelpColumnGap)
     .maxOption
     .getOrElse(4)
   val column   = math.min(width, MaxHelpKeyColumn)
-  val lines    = sections.flatMap { (heading, hints) =>
-    heading.map(mode => s"$mode:").toSeq ++ hints.map { (key, description) =>
-      key + " " * math.max(0, column - CharWidth.of(key)) + description
+  val lines    = sections.flatMap { section =>
+    section.mode.map(mode => s"$mode:").toSeq ++ section.hints.map { hint =>
+      hint.keys + " " * math.max(0, column - CharWidth.of(hint.keys)) + hint.description
     }
   }
   Element.widget(

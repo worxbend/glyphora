@@ -58,11 +58,14 @@ final case class AccordionElement(content: Element, state: w.AccordionState, pro
 private[dsl] object AccordionElement:
 
   /** One `collapsible` per section, wired to the shared state, stacked in a column. */
-  def of(state: w.AccordionState, sections: Seq[(String, Element)]): AccordionElement =
-    val headers = sections.zipWithIndex.map { case ((title, body), index) =>
-      CollapsibleElement(title, body, state.open.contains(index), _ => state.toggle(index))
+  def of(state: w.AccordionState, sections: Seq[AccordionSection]): AccordionElement =
+    val headers = sections.zipWithIndex.map { (section, index) =>
+      CollapsibleElement(section.title, section.content, state.open.contains(index), _ => state.toggle(index))
     }
     AccordionElement(ColumnElement(headers), state)
+
+/** One section of an [[Element.accordion]]: the title its header shows and the content it opens onto. */
+final case class AccordionSection(title: String, content: Element)
 
 /** One screen of a [[Element.wizard]]: its title in the progress header, its content, and the check `Next` runs before
   * leaving it — `Some(message)` refuses and shows the message, `None` lets the user on. The check runs on the render

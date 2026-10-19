@@ -197,11 +197,11 @@ final class KeyBindings private (
   /** What may follow `prefix`: for each live binding a sequence of which continues it, the rest of that sequence
     * spelled out and the binding's description — the rows of the which-key popup, in declaration order.
     */
-  def continuations(prefix: Vector[KeyEvent]): Seq[(String, String)] =
+  def continuations(prefix: Vector[KeyEvent]): Seq[KeyHint] =
     for
       bound   <- active
       trigger <- bound.triggers.find(t => t.keys.sizeIs > prefix.size && t.keys.startsWith(prefix))
-    yield (trigger.keys.drop(prefix.size).map(KeySequence.show).mkString(" "), bound.description)
+    yield KeyHint(trigger.keys.drop(prefix.size).map(KeySequence.show).mkString(" "), bound.description)
 
   /** `(label, description)` pairs for the status bar, in declaration order — one per live binding, whatever its trigger
     * count, so a command with several keys is advertised under the one its author chose.
@@ -212,11 +212,11 @@ final class KeyBindings private (
   /** Every hinted binding grouped for the help overlay: the mode-less ones first under no heading, then each mode's
     * under its id. Without modes this is one untitled section holding exactly [[hints]].
     */
-  def helpSections: Seq[(Option[ModeId], Seq[(String, String)])] =
-    def rows(of: Seq[KeyBinding]) = of.filter(_.showInHints).map(bound => (bound.label, bound.description))
+  def helpSections: Seq[HelpSection] =
+    def rows(of: Seq[KeyBinding]) = of.filter(_.showInHints).map(bound => KeyHint(bound.label, bound.description))
     val global                    = rows(bindings.filter(_.mode.isEmpty))
-    val modal                     = modes.map(id => (Some(id), rows(bindings.filter(_.mode.contains(id)))))
-    (if global.nonEmpty || modes.isEmpty then Seq((None, global)) else Seq.empty) ++ modal
+    val modal                     = modes.map(id => HelpSection(Some(id), rows(bindings.filter(_.mode.contains(id)))))
+    (if global.nonEmpty || modes.isEmpty then Seq(HelpSection(None, global)) else Seq.empty) ++ modal
 
   /** These bindings followed by `other`'s. The left side shadows the right for a key both declare; the combination is
     * not re-checked for collisions, so a screen's `"g"` may shadow an app's `"g g"` while the screen is up.
@@ -296,3 +296,13 @@ object KeyBindings:
           s"\"${longSeq.spelling}\" (${long.description}); a key that starts a sequence cannot also be a binding"
       )
     bindings
+
+/** One row of key help: the keys as the user types them — `"ctrl+s"`, or the rest of a sequence after a typed prefix —
+  * and what they do. Rows of the which-key popup and the help overlay.
+  */
+final case class KeyHint(keys: String, description: String)
+
+/** One block of the help overlay: the hints of the bindings that belong to `mode`, or of the mode-less ones when `mode`
+  * is `None`. See [[KeyBindings.helpSections]].
+  */
+final case class HelpSection(mode: Option[ModeId], hints: Seq[KeyHint])

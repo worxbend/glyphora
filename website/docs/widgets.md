@@ -2599,7 +2599,8 @@ testing.
 
 ### An accordion
 
-`accordion(state)(sections*)` stacks titled sections of which at most one is open. Each
+`accordion(state)(sections*)` stacks titled sections — each an `AccordionSection(title,
+content)` — of which at most one is open. Each
 header is a `collapsible` — a tab stop that Enter or Space toggles — and opening one
 closes whichever was open:
 
@@ -2607,9 +2608,9 @@ closes whichever was open:
 private val settings = AccordionState(open = Some(0))
 
 accordion(settings)(
-  "General" -> generalForm,
-  "Network" -> networkForm,
-  "About"   -> text(s"version $version"),
+  AccordionSection("General", generalForm),
+  AccordionSection("Network", networkForm),
+  AccordionSection("About", text(s"version $version")),
 )
 ```
 

@@ -1,7 +1,7 @@
 package io.worxbend.tui.runtime
 
 import io.worxbend.tui.core.{ColorScheme, Event, KeyCode, KeyEvent, Size}
-import io.worxbend.tui.terminal.{HeadlessBackend, PointerShape}
+import io.worxbend.tui.terminal.{DesktopNotification, HeadlessBackend, PointerShape}
 import io.worxbend.tui.testsupport.Pilot
 
 import org.scalatest.funsuite.AnyFunSuite
@@ -44,7 +44,7 @@ final class TerminalProtocolHandleSpec extends AnyFunSuite:
       pilot.waitForIdle()
       pilot.pressKey(KeyCode.Char('p')).pressKey(KeyCode.Char('n')).pressKey(KeyCode.Char('t')).waitForIdle()
       assert(backend.currentPointerShape == PointerShape.Pointer)
-      assert(backend.desktopNotifications == Seq(("build", "done")))
+      assert(backend.desktopNotifications == Seq(DesktopNotification("build", "done")))
       assert(backend.taskbarProgressRequests == Seq(Some(0.75)))
       pilot.pressKey(KeyCode.Char('q'))
       assert(pilot.awaitTermination())

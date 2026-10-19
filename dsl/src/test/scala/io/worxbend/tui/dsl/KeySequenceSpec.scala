@@ -72,4 +72,4 @@ final class KeySequenceSpec extends AnyFunSuite:
       binding("ctrl+k ctrl+w", "close all")(()),
       binding("q", "quit")(()),
     )
-    assert(bindings.continuations(Vector(ctrlK)) == Seq(("ctrl+s", "save all"), ("ctrl+w", "close all")))
+    assert(bindings.continuations(Vector(ctrlK)) == Seq(KeyHint("ctrl+s", "save all"), KeyHint("ctrl+w", "close all")))

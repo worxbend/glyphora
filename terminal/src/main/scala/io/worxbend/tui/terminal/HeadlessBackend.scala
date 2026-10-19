@@ -51,7 +51,7 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
   @volatile private var reported: TerminalCapabilities       = TerminalCapabilities.unknown
   @volatile private var pointerShape: PointerShape           = PointerShape.Default
   @volatile private var taskbarProgressShown: Option[Double] = None
-  private val notifications                           = scala.collection.mutable.ArrayBuffer.empty[(String, String)]
+  private val notifications                           = scala.collection.mutable.ArrayBuffer.empty[DesktopNotification]
   private val taskbarRequests                         = scala.collection.mutable.ArrayBuffer.empty[Option[Double]]
   @volatile private var lastClipboard: Option[String] = None
   @volatile private var lastTitle: Option[String]     = None
@@ -172,7 +172,8 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
 
   /** Records the notification, unless the installed capabilities deny desktop notifications. */
   override def notifyDesktop(title: String, body: String): Either[BackendError, Unit] =
-    if reported.desktopNotifications.usable then notifications.synchronized { val _ = notifications += ((title, body)) }
+    if reported.desktopNotifications.usable then
+      notifications.synchronized { val _ = notifications += DesktopNotification(title, body) }
     Right(())
 
   /** Records the progress request, unless the installed capabilities deny taskbar progress. */
@@ -445,9 +446,9 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
   def currentPointerShape: PointerShape = pointerShape
 
   /** Every desktop notification raised through [[notifyDesktop]] and not refused by the installed capabilities, in
-    * order, as `(title, body)`.
+    * order.
     */
-  def desktopNotifications: Seq[(String, String)] = notifications.synchronized(notifications.toSeq)
+  def desktopNotifications: Seq[DesktopNotification] = notifications.synchronized(notifications.toSeq)
 
   /** Every progress value handed to [[setTaskbarProgress]] and not refused, in order — `None` entries are clears. */
   def taskbarProgressRequests: Seq[Option[Double]] = taskbarRequests.synchronized(taskbarRequests.toSeq)
@@ -619,3 +620,6 @@ object HeadlessBackend:
 
     /** `close`: the terminal could not be handed back, which is the failure the user notices most. */
     case Close
+
+/** One desktop notification a [[HeadlessBackend]] recorded — see [[HeadlessBackend.desktopNotifications]]. */
+final case class DesktopNotification(title: String, body: String)

@@ -34,7 +34,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 
 - Key sequences: `binding("g g", …)`, `KeySequence`, the compile-checked `keyseq"…"` literal, `KeyLeader`, `TuiApp.sequenceTimeout`.
 - `whichKeyPopup` for pending prefixes; modes via `KeyBindings.modes(Mode(…), …)`, `ModeId`, `keyMode`.
-- User keymaps: `BindingId`, `Keymap.parse`, `KeyBindings.rebind`, `Keymap.markdown`; `FrameworkKeys` ids via `TuiApp.frameworkKeys`.
+- User keymaps: `BindingId`, `Keymap.parse`, `KeyBindings.rebind`, `Keymap.markdown`; `FrameworkKeys` ids via `TuiApp.frameworkKeys`. Key help is typed: `KeyHint`, `HelpSection` (`KeyBindings.continuations`, `helpSections`) and `KeymapEntry` (`FrameworkKeys.entries`).
 - `.disabled(cond)`, `.hoverStyle(…)`, `.pressedStyle(…)`, `TuiApp.accessibleLabel(key)`.
 - `focusGroup(children*)` (one tab stop, arrows inside), `.trapFocus`, `TuiApp.spatialNavigation` (Alt+arrows).
 
@@ -75,7 +75,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 **Widgets**
 
 - `datePicker`, `timePicker`, `rangeSlider`, `colorPicker`, `hexViewer`, `treeTable`, `placeholder`, `inspect` (with `Pretty` / `derivePretty`) and `qrCode`.
-- `menuBar`, `contextMenu`, `window` / `windowStack`, `tagInput`, `wizard`, `breadcrumb`, `toolbar`, `buttonGroup` and `accordion`.
+- `menuBar`, `contextMenu`, `window` / `windowStack`, `tagInput`, `wizard`, `breadcrumb`, `toolbar`, `buttonGroup` and `accordion` (`AccordionSection`).
 - `diffView(patch, state)` with `Patch.parse`, `Patch.of` (Myers), `DiffView`, `DiffViewState`.
 - `pixelImage(image, options)` with `RgbaImage`, `ImageLoader` and `Buffer.placeGraphic` (kitty graphics, iTerm2 inline images, half-block fallback).
 - `multiProgress(tasks, columns)` with `ProgressTask`, `ProgressColumn`, `MultiProgress`.

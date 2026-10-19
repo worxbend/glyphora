@@ -22,9 +22,9 @@ def whichKeyPopup(bindings: KeyBindings, size: Size)(using theme: Theme): Option
     rows = bindings.continuations(prefix.keys)
     if rows.nonEmpty
   yield
-    val keyColumn = rows.map((keys, _) => CharWidth.of(keys)).max
-    val lines     = rows.map { (keys, description) =>
-      keys + " " * (keyColumn - CharWidth.of(keys) + WhichKeyGap) + description
+    val keyColumn = rows.map(hint => CharWidth.of(hint.keys)).max
+    val lines     = rows.map { hint =>
+      hint.keys + " " * (keyColumn - CharWidth.of(hint.keys) + WhichKeyGap) + hint.description
     }
     val title     = s"${prefix.spelling} …"
     val width     = math.min(size.width, math.max(lines.map(CharWidth.of).max, CharWidth.of(title) + 2) + 4)

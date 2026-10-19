@@ -1,7 +1,7 @@
 package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.Size
-import io.worxbend.tui.terminal.{HeadlessBackend, Support, TerminalCapabilities}
+import io.worxbend.tui.terminal.{DesktopNotification, HeadlessBackend, Support, TerminalCapabilities}
 
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -32,7 +32,7 @@ final class DesktopNotificationSpec extends AnyFunSuite with PilotFixture:
     pilot.waitForIdle()
     pilot.focusLost().waitForIdle()
     pilot.press("n").waitUntil("the notification went out")(backend.desktopNotifications.nonEmpty)
-    assert(backend.desktopNotifications == Seq(("build", "all tests passed")))
+    assert(backend.desktopNotifications == Seq(DesktopNotification("build", "all tests passed")))
     // the toast is still there for when the user comes back
     pilot.waitUntil("the toast is on the frame")(pilot.screenText.contains("build: all tests passed"))
     // and focus coming back switches the desktop half off again

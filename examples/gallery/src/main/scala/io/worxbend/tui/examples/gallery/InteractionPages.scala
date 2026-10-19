@@ -113,7 +113,10 @@ object InteractionPages:
         contextMenu(entries, context)(_ => ())(text("right-click anywhere on this page"))
       ),
       page("accordion", family, "sections where one is open at a time")(
-        accordion(sections)("General" -> text("name, language"), "Advanced" -> text("cache, logging"))
+        accordion(sections)(
+          AccordionSection("General", text("name, language")),
+          AccordionSection("Advanced", text("cache, logging")),
+        )
       ),
       page("collapsible", family, "one section that opens and closes")(
         collapsible("Details", open)(text("shown while expanded"))

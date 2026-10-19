@@ -30,17 +30,17 @@ final case class FrameworkKeys(
   require(pageStep > 0, s"pageStep must be positive, was $pageStep")
 
   /** Each framework key with its id and a description, in the order the framework tries them. */
-  def entries: Seq[(BindingId, KeyEvent, String)] = Seq(
-    (FrameworkKeys.FocusPrevious, focusPrevious, "focus the previous control"),
-    (FrameworkKeys.FocusNext, focusNext, "focus the next control"),
-    (FrameworkKeys.CommandPalette, commandPalette, "open the command palette"),
-    (FrameworkKeys.Quit, quit, "quit"),
-    (FrameworkKeys.CloseModal, closeModal, "close the modal on top"),
-    (FrameworkKeys.MenuBar, menuBar, "open the menu bar"),
-    (FrameworkKeys.WindowMove, windowMove, "move the focused window with the arrows"),
-    (FrameworkKeys.WindowResize, windowResize, "resize the focused window with the arrows"),
-    (FrameworkKeys.Inspector, inspector, "cycle the inspector overlay"),
-    (FrameworkKeys.CopySelection, copySelection, "copy the mouse text selection"),
+  def entries: Seq[KeymapEntry] = Seq(
+    KeymapEntry(FrameworkKeys.FocusPrevious, focusPrevious, "focus the previous control"),
+    KeymapEntry(FrameworkKeys.FocusNext, focusNext, "focus the next control"),
+    KeymapEntry(FrameworkKeys.CommandPalette, commandPalette, "open the command palette"),
+    KeymapEntry(FrameworkKeys.Quit, quit, "quit"),
+    KeymapEntry(FrameworkKeys.CloseModal, closeModal, "close the modal on top"),
+    KeymapEntry(FrameworkKeys.MenuBar, menuBar, "open the menu bar"),
+    KeymapEntry(FrameworkKeys.WindowMove, windowMove, "move the focused window with the arrows"),
+    KeymapEntry(FrameworkKeys.WindowResize, windowResize, "resize the focused window with the arrows"),
+    KeymapEntry(FrameworkKeys.Inspector, inspector, "cycle the inspector overlay"),
+    KeymapEntry(FrameworkKeys.CopySelection, copySelection, "copy the mouse text selection"),
   )
 
   /** These keys with every id in `keymap` moved to its sequence; ids that name no framework key are ignored, so one
@@ -100,6 +100,11 @@ object FrameworkKeys:
     */
   private[dsl] val current: DynamicVariable[FrameworkKeys] = DynamicVariable(default)
 
+/** One framework key as [[FrameworkKeys.entries]] lists it: the id a keymap rebinds it by, the key it is bound to now
+  * and what it does.
+  */
+final case class KeymapEntry(id: BindingId, key: KeyEvent, description: String)
+
 /** User keymaps: a plain-text file of `id = spec` lines read into the `Map[BindingId, KeySequence]` that
   * `KeyBindings.rebind` and `FrameworkKeys.rebind` take, and a Markdown export of the keys an app ends up with.
   *
@@ -141,7 +146,7 @@ object Keymap:
 
   /** [[markdown]] followed by the framework's own keys, listed under their ids. */
   def markdown(bindings: KeyBindings, framework: FrameworkKeys): String =
-    table(bindings, framework.entries.map((id, key, description) => (None, KeySequence.show(key), description, id)))
+    table(bindings, framework.entries.map(entry => (None, KeySequence.show(entry.key), entry.description, entry.id)))
 
   private def table(bindings: KeyBindings, extra: Seq[(Option[ModeId], String, String, BindingId)]): String =
     val rows   = bindings.bindings.map(bound =>

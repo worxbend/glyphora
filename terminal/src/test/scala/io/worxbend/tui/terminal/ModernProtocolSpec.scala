@@ -155,7 +155,7 @@ final class ModernProtocolSpec extends AnyFunSuite:
     assert(backend.notifyDesktop("t", "b").isRight)
     assert(backend.setTaskbarProgress(Some(0.5)).isRight)
     assert(backend.currentPointerShape == PointerShape.Text)
-    assert(backend.desktopNotifications == Seq(("t", "b")))
+    assert(backend.desktopNotifications == Seq(DesktopNotification("t", "b")))
     assert(backend.taskbarProgressRequests == Seq(Some(0.5)))
     assert(backend.currentTaskbarProgress.contains(0.5))
 
