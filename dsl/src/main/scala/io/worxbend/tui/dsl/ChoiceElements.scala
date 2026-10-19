@@ -497,7 +497,8 @@ final case class DatePickerElement(
 
 /** A one-row `hh:mm:ss` field over a caller-owned [[w.TimePickerState]]. While focused, Left/Right move between the
   * hour, minute and second fields and Up/Down step the time by the focused field's unit, wrapping past midnight — one
-  * minute up from `23:59` is `00:00`. The focused field wears the focus style.
+  * minute up from `23:59` is `00:00`. Digits type into the focused field: two make its value (clamped to the field's
+  * maximum) and move focus on, so `0930` sets `09:30`. The focused field wears the focus style.
   */
 final case class TimePickerElement(
     state: w.TimePickerState,
@@ -521,6 +522,8 @@ final case class TimePickerElement(
         case KeyEvent(KeyCode.Right, _) => state.nextField()
         case KeyEvent(KeyCode.Up, _)    => state.increment()
         case KeyEvent(KeyCode.Down, _)  => state.decrement()
+        case KeyEvent(KeyCode.Char(digit), mods) if digit >= '0' && digit <= '9' && mods.isEmpty =>
+          state.typeDigit(digit - '0')
       }
     )
 

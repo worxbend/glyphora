@@ -48,6 +48,14 @@ final class ToolElementsPilotSpec extends AnyFunSuite with PilotFixture:
     assert(pilot.screenText.contains("00:00"))
     quitApp(pilot)
 
+  test("timePicker: typed digits fill the focused field and move on"):
+    val state = TimePickerState(LocalTime.of(0, 0), withSeconds = false)
+    val pilot = startApp(timePicker(state))
+    pilot.typeText("0930").waitForIdle()
+    assert(state.time == LocalTime.of(9, 30))
+    assert(pilot.screenText.contains("09:30"))
+    quitApp(pilot)
+
   test("rangeSlider: Tab moves to the upper thumb, the thumbs cannot cross, Tab from the top leaves"):
     val state = RangeSliderState(SliderRange.of(0, 100, 10), 40, 60)
     var heard = Option.empty[(Int, Int)]

@@ -53,3 +53,41 @@ final class TimePickerSpec extends AnyFunSuite:
     assert(lines(rendered(TimePicker(), TimePickerState(LocalTime.NOON), 4, 1)) == Seq("12:0"))
     val buffer = rendered(TimePicker(), TimePickerState(LocalTime.NOON), 4, 1)
     TimePicker().render(Rect(0, 0, 0, 0), buffer, TimePickerState(LocalTime.NOON))
+
+  test("typing two digits sets the focused field and moves on to the next"):
+    val state = TimePickerState(LocalTime.of(0, 0, 0))
+    state.typeDigit(1)
+    assert(state.time == LocalTime.of(1, 0, 0))
+    assert(state.field == TimeField.Hour)
+    state.typeDigit(7)
+    assert(state.time == LocalTime.of(17, 0, 0))
+    assert(state.field == TimeField.Minute)
+    state.typeDigit(4)
+    state.typeDigit(5)
+    assert(state.time == LocalTime.of(17, 45, 0))
+    assert(state.field == TimeField.Second)
+
+  test("a two-digit value past the field's maximum clamps, and a first digit no second digit can follow commits"):
+    val state = TimePickerState(LocalTime.of(0, 0, 0))
+    state.typeDigit(2)
+    state.typeDigit(9)
+    assert(state.time.getHour == 23)
+    assert(state.field == TimeField.Minute)
+    state.typeDigit(7) // no minute starts with 7x, so 07 is committed at once
+    assert(state.time.getMinute == 7)
+    assert(state.field == TimeField.Second)
+    state.typeDigit(5)
+    state.typeDigit(9)
+    assert(state.time == LocalTime.of(23, 7, 59))
+    assert(state.field == TimeField.Second) // the last field keeps focus
+
+  test("moving between fields or stepping drops a half-typed digit"):
+    val state = TimePickerState(LocalTime.of(0, 0), withSeconds = false)
+    state.typeDigit(1)
+    state.nextField()
+    state.typeDigit(2)
+    assert(state.time == LocalTime.of(1, 2))
+    state.increment()
+    state.typeDigit(3)
+    assert(state.time == LocalTime.of(1, 3))
+    assert(state.field == TimeField.Minute)
