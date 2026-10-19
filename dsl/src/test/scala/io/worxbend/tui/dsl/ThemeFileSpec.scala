@@ -62,3 +62,23 @@ final class ThemeFileSpec extends AnyFunSuite:
     val values = Theme.render(Theme.Ansi16).linesIterator.filterNot(_.startsWith("#")).map(_.dropWhile(_ != '='))
     val words  = values.flatMap(_.drop(1).trim.split(' ')).toSeq
     assert(words.forall(word => !word.startsWith("#") && !word.forall(_.isDigit)), words.mkString(" "))
+
+  test("a loading fill ramp is written as its comma-separated stops and read back"):
+    val ramped = Theme.Dark.withLoading(Theme.Dark.loading.copy(fillRamp = Some(ColorRamp.Traffic))).withName("ramped")
+    val text   = Theme.render(ramped)
+    assert(text.linesIterator.contains("loading.fill-ramp = Green, Yellow, Red"), text)
+    assert(Theme.parse(text) == Right(ramped))
+
+  test("a theme with no ramp writes none, and a file can read a ramp of hex stops or switch one off"):
+    assert(Theme.render(Theme.Dark).linesIterator.contains("loading.fill-ramp = none"))
+    val parsed = Theme.parse("extends = dark\nloading.fill-ramp = #00ff00, #ff0000\n").map(_.loading.fillRamp)
+    assert(parsed == Right(Some(ColorRamp(Color.Rgb(0, 255, 0), Color.Rgb(255, 0, 0)))))
+    val ramped = "extends = dark\nloading.fill-ramp = red\nloading.fill-ramp = none\n"
+    assert(Theme.parse(ramped).map(_.loading.fillRamp) == Right(None))
+
+  test("a bad ramp stop is reported with its line"):
+    Theme.parse("name = x\nloading.fill-ramp = green, nope\n") match
+      case Left(error)  =>
+        assert(error.line == 2)
+        assert(error.message.contains("loading.fill-ramp") && error.message.contains("nope"), error.message)
+      case Right(theme) => fail(s"parsed $theme")

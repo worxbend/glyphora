@@ -29,6 +29,10 @@ note in [Versioning & releases](website/docs/versioning.md).
 - Theme files: `Theme.parse` / `Theme.render`; `Style.parse` / `Style.render`. Theme files and keymaps share one `LineError(line, message)`.
 - Presets `Theme.Dracula`, `Catppuccin`, `Nord`, `Gruvbox`, `Solarized`, `Ansi16`; `Theme.presets` lists all nine.
 - `Theme.auto` follows the terminal's light or dark background; `lightDark(light, dark)`, `ColorScheme`, `Event.ColorSchemeChanged`.
+- Component roles `DialogRole` / `DialogRole.Selected` for `dialog` and `confirmDialog`, and `SearchRole.Match` / `SearchRole.Current` for search highlights (defaulting to the theme's `warning` / `error`).
+- `statusBar`, `topBar`, `helpOverlay`, `whichKeyPopup` and `.border()` built outside a view paint in the app's theme (late binding).
+- `widget(…)` leaves paint the element style (and a `withStyle` cascade) under the wrapped widget.
+- Theme files read and write `loading.fill-ramp`.
 
 **Keys and focus**
 
@@ -111,6 +115,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 **Localisation, gallery and quickstart**
 
 - `Messages` — one table for every built-in label (dialog and confirm buttons, palette title and placeholder, help title, wizard buttons, inspector titles, `searchBar` placeholder, prompt hints, glyphs and yes/no); `TuiApp.messages`, `Messages.Default`, `with…` builders, `Messages.scoped`.
+- `Messages` also covers the which-key ellipsis, framework-key descriptions (`withFrameworkKeyDescription`), prompt validation errors (templates with `{input}`, `{min}`, `{max}`, …) and severity icons and tags (`withIcon(level, …)`, `withTag(level, …)`); `Badge.of(…, label)`.
 - `examples/gallery`: every exported factory on its own page, grouped by family, with one golden frame per factory; `GLYPHORA_GALLERY_EXPORT` and `scripts/render-gallery.sh` write each page as an SVG screenshot.
 - `examples/scala-cli/hello.scala`: a single-file app run with `scala run`, no build tool.
 
@@ -158,4 +163,7 @@ Each item has a before/after migration note in
 - `TuiApp` gained an overridable `messages` member; an app that declares its own `messages` needs `override` or a rename.
 - `Dialog` widens its box to fit its buttons, so a button row wider than the message is no longer dropped.
 - An unfocused `confirmDialog` (and the new pickers) underlines its selection instead of painting the focus cue, so focus is visible.
+- `dialog(…)` returns `DialogElement` (was `WidgetElement`); `ConfirmDialogElement` keeps its theme style in `bodyStyle`.
+- `widget(…)` leaves no longer ignore `.fg`/`.bg`/`.style`/`withStyle`; search highlights take theme colours (Dark's current match is red, not bright red).
+- `Messages` gained trailing fields (positional construction past `searchPlaceholder` breaks).
 - `RunnerConfig.mouseCapture: Boolean` is now `mouse: MouseCaptureMode` (`MouseCaptureMode` gained `Off`); `RunnerConfig(mouseCapture = true)` becomes `RunnerConfig(mouse = MouseCaptureMode.Buttons)`. `withMouseCapture`, `withoutMouseCapture`, a derived `mouseCapture` and the positional Boolean arities still work.

@@ -29,19 +29,25 @@ final case class FrameworkKeys(
 ):
   require(pageStep > 0, s"pageStep must be positive, was $pageStep")
 
-  /** Each framework key with its id and a description, in the order the framework tries them. */
-  def entries: Seq[KeymapEntry] = Seq(
-    KeymapEntry(FrameworkKeys.FocusPrevious, focusPrevious, "focus the previous control"),
-    KeymapEntry(FrameworkKeys.FocusNext, focusNext, "focus the next control"),
-    KeymapEntry(FrameworkKeys.CommandPalette, commandPalette, "open the command palette"),
-    KeymapEntry(FrameworkKeys.Quit, quit, "quit"),
-    KeymapEntry(FrameworkKeys.CloseModal, closeModal, "close the modal on top"),
-    KeymapEntry(FrameworkKeys.MenuBar, menuBar, "open the menu bar"),
-    KeymapEntry(FrameworkKeys.WindowMove, windowMove, "move the focused window with the arrows"),
-    KeymapEntry(FrameworkKeys.WindowResize, windowResize, "resize the focused window with the arrows"),
-    KeymapEntry(FrameworkKeys.Inspector, inspector, "cycle the inspector overlay"),
-    KeymapEntry(FrameworkKeys.CopySelection, copySelection, "copy the mouse text selection"),
-  )
+  /** Each framework key with its id and a description, in the order the framework tries them. The descriptions come
+    * from the [[Messages]] table in force on the calling thread, so a translated app documents its keys in its own
+    * language.
+    */
+  def entries: Seq[KeymapEntry] =
+    val labels                          = Messages.active
+    def describe(id: BindingId): String = labels.frameworkKeyDescription(id)
+    Seq(
+      KeymapEntry(FrameworkKeys.FocusPrevious, focusPrevious, describe(FrameworkKeys.FocusPrevious)),
+      KeymapEntry(FrameworkKeys.FocusNext, focusNext, describe(FrameworkKeys.FocusNext)),
+      KeymapEntry(FrameworkKeys.CommandPalette, commandPalette, describe(FrameworkKeys.CommandPalette)),
+      KeymapEntry(FrameworkKeys.Quit, quit, describe(FrameworkKeys.Quit)),
+      KeymapEntry(FrameworkKeys.CloseModal, closeModal, describe(FrameworkKeys.CloseModal)),
+      KeymapEntry(FrameworkKeys.MenuBar, menuBar, describe(FrameworkKeys.MenuBar)),
+      KeymapEntry(FrameworkKeys.WindowMove, windowMove, describe(FrameworkKeys.WindowMove)),
+      KeymapEntry(FrameworkKeys.WindowResize, windowResize, describe(FrameworkKeys.WindowResize)),
+      KeymapEntry(FrameworkKeys.Inspector, inspector, describe(FrameworkKeys.Inspector)),
+      KeymapEntry(FrameworkKeys.CopySelection, copySelection, describe(FrameworkKeys.CopySelection)),
+    )
 
   /** These keys with every id in `keymap` moved to its sequence; ids that name no framework key are ignored, so one
     * keymap can serve both this and `KeyBindings.rebind`. Throws `IllegalArgumentException` for a multi-key sequence.

@@ -124,6 +124,9 @@ final class NoticeAndBadgeSpec extends AnyFunSuite:
     assert(render(Badge.of(NoticeLevel.Error, Style.Default, BadgeVariant.Outline), 12) == "[FAIL]")
     assert(render(Badge.of(NoticeLevel.Success, Style.Default, BadgeVariant.Outline), 12) == "[OK]")
 
+  test("Badge.of draws a tag passed in — a translated one — in the level's place"):
+    assert(render(Badge.of(NoticeLevel.Error, Style.Default, BadgeVariant.Outline, Some("ERROR")), 12) == "[ERROR]")
+
   test("an empty label still renders a well-formed badge"):
     assert(raw(Badge("", BadgeVariant.Outline), 8) == "[]")
     assert(raw(Badge("", BadgeVariant.Dot), 8) == "●")

@@ -143,7 +143,10 @@ final case class ScrollViewElement(
       content match
         case viewport: ScrollViewportElement => viewport.publishScreenArea(area)
         case _                               => ()
-      val view     = searched(w.ScrollView(content.widget, rows))
+      val found    = SearchStyles.of(props.focusState.theme)
+      val view     = searched(
+        w.ScrollView(content.widget, rows, matchStyle = found.matched, currentMatchStyle = found.current)
+      )
       val portals  = PortalQueue.mark
       val requests = RevealRequests(followsFocus)
       RevealProbe.collecting(requests)(view.render(area, buffer, state))

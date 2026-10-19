@@ -444,7 +444,7 @@ object Theme:
   def parse(text: String): Either[LineError, Theme] = ThemeFile.parse(text)
 
   /** Writes `theme` as a theme file that [[parse]] reads back as an equal theme: every setting spelled out, components
-    * one line per state. The one field that is not written is a loading `fillRamp`, which is code rather than a style.
+    * one line per state, the loading `fillRamp` as its colour stops.
     */
   def render(theme: Theme): String = ThemeFile.render(theme)
 
