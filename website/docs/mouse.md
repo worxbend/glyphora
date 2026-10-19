@@ -316,6 +316,26 @@ each other and with a raw handler. That is what lets a helper hand back an eleme
 binding on it and a call site add a second binding without erasing the first.
 
 
+## Alt keys: menu bar or text field
+
+A `menuBar` sees keys before the focused control (the capture phase), and a text field
+uses four `Alt+<letter>` chords of its own: `Alt+B` / `Alt+F` move by word, `Alt+D`
+deletes the word after the caret and `Alt+Y` cycles the kill ring. When both want the
+same key, one policy applies:
+
+| Focus | Bar | `Alt+F` with a `File` menu | `Alt+E` with an `Edit` menu | `F10` |
+|---|---|---|---|---|
+| a text field | closed | word right in the field | opens `Edit` | opens the first menu |
+| anything else | closed | opens `File` | opens `Edit` | opens the first menu |
+| anything | open | moves to `File` | moves to `Edit` | closes the bar |
+
+So a field never loses its word motion, and every menu stays one key sequence away:
+`F10` (the rebindable `menu-bar` key) opens the bar from anywhere, and with the bar open
+a mnemonic letter, plain or with `Alt`, moves to its menu — `F10` then `F` opens `File`
+from inside a field. The text fields are `input`, `textArea`, `searchBar`, `tagInput`
+and `promptComposer`. "Press the mnemonic twice" was considered and rejected: a second
+`Alt+F` is also the field's second word-right, so it cannot mean both.
+
 ## Built-in mouse behavior
 
 You do not need custom handlers for common interactions:

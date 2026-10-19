@@ -1,9 +1,10 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.terminal.{Backend, BackendError, JLine3Backend, StandardOutput}
+import io.worxbend.tui.terminal.{Backend, BackendError, JLine3Backend, StandardOutput, TerminalCapabilities}
 
 import java.io.{BufferedReader, InputStreamReader}
 import java.nio.charset.StandardCharsets.UTF_8
+import java.util.concurrent.atomic.AtomicReference
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -51,14 +52,14 @@ final class PromptSession private (private[dsl] val mode: PromptSession.Mode, ec
     */
   private[dsl] def resolve(): PromptSession.Shape =
     mode match
-      case PromptSession.Mode.Scripted(answers)                          => PromptSession.Shape.Scripted(answers)
-      case plain: PromptSession.Mode.Plain                               => PromptSession.Shape.Plain(plain)
-      case PromptSession.Mode.Terminal(open, fallbackWhen, theme, plain) =>
+      case PromptSession.Mode.Scripted(answers) => PromptSession.Shape.Scripted(answers)
+      case plain: PromptSession.Mode.Plain      => PromptSession.Shape.Plain(plain)
+      case PromptSession.Mode.Terminal(open, fallbackWhen, theme, plain, remember) =>
         if fallbackWhen() then PromptSession.Shape.Plain(plain())
         else
           open() match
             case Left(_)        => PromptSession.Shape.Plain(plain())
-            case Right(backend) => PromptSession.Shape.Terminal(backend, theme, plain)
+            case Right(backend) => PromptSession.Shape.Terminal(backend, theme, plain, () => remember(backend))
 
 object PromptSession:
 
@@ -69,15 +70,17 @@ object PromptSession:
         fallbackWhen: () => Boolean,
         theme: Theme,
         plain: () => Plain,
+        remember: Backend => Unit,
     )
     case Plain(read: () => Option[String], write: String => Unit, echoInput: Boolean)
     case Scripted(answers: Iterator[String])
 
   /** A resolved [[Mode]]: what one prompt actually runs in. A terminal shape keeps its plain fallback, for a backend
-    * that fails once the prompt is already running.
+    * that fails once the prompt is already running, and `ran`, which a prompt calls once its run ended normally so the
+    * capabilities its backend probed are kept for the next prompt's.
     */
   private[dsl] enum Shape:
-    case Terminal(backend: Backend, theme: Theme, fallback: () => Mode.Plain)
+    case Terminal(backend: Backend, theme: Theme, fallback: () => Mode.Plain, ran: () => Unit)
     case Plain(plain: Mode.Plain)
     case Scripted(answers: Iterator[String])
 
@@ -88,6 +91,10 @@ object PromptSession:
 
   /** Prompts drawn in an inline strip of the terminal `open` returns — the controlling terminal through JLine by
     * default.
+    *
+    * The controlling terminal is probed for its capabilities once per process, not once per prompt: the first prompt's
+    * backend asks, and every later prompt's backend is opened with that answer ([[JLine3Backend.create]]'s
+    * `knownCapabilities`) and skips the round trip. A custom `open` is used as given and never handed a probe.
     *
     * @param fallbackWhen
     *   asked before every prompt; `true` answers it in the plain shape over standard input and output instead. The
@@ -102,15 +109,18 @@ object PromptSession:
   def terminal(
       fallbackWhen: => Boolean = Console.isNonInteractive() || !StandardOutput.isInputTerminal,
       theme: Theme = Theme.auto,
-      open: () => Either[BackendError, Backend] = () => JLine3Backend.create(),
+      open: () => Either[BackendError, Backend] = () => controllingTerminal.open(),
   ): PromptSession =
-    new PromptSession(Mode.Terminal(open, () => fallbackWhen, theme, () => standardPlain), _ => ())
+    new PromptSession(
+      Mode.Terminal(open, () => fallbackWhen, theme, () => standardPlain, controllingTerminal.remember),
+      _ => (),
+    )
 
   /** Prompts drawn on one already-open `backend` — a `HeadlessBackend` under `Pilot`, an embedding host's own. Each
     * prompt's runner closes the backend when it ends, so a backend serves one prompt (or one `Prompt.form`).
     */
   def on(backend: Backend, theme: Theme = Theme.Dark): PromptSession =
-    new PromptSession(Mode.Terminal(() => Right(backend), () => false, theme, () => standardPlain), _ => ())
+    new PromptSession(Mode.Terminal(() => Right(backend), () => false, theme, () => standardPlain, _ => ()), _ => ())
 
   /** A terminal session over `open` whose plain fallback is `plain` rather than standard input and output — the seam a
     * test uses to see what a failing terminal falls back to.
@@ -120,7 +130,15 @@ object PromptSession:
       plain: Mode.Plain,
       theme: Theme,
   ): PromptSession =
-    new PromptSession(Mode.Terminal(open, () => false, theme, () => plain), _ => ())
+    new PromptSession(Mode.Terminal(open, () => false, theme, () => plain, _ => ()), _ => ())
+
+  /** A terminal session that opens its backends through `probe` — the seam a test uses to see the probe handed on. */
+  private[dsl] def probing(probe: ProbeOnce, plain: Mode.Plain, theme: Theme): PromptSession =
+    new PromptSession(Mode.Terminal(() => probe.open(), () => false, theme, () => plain, probe.remember), _ => ())
+
+  /** The process's controlling terminal, probed once: what every [[terminal]] session with the default `open` uses. */
+  private[dsl] val controllingTerminal: ProbeOnce =
+    ProbeOnce(known => JLine3Backend.create(knownCapabilities = known))
 
   /** Line-based prompts: each question is written with `write` (no trailing newline) and its answer read with `read`,
     * whose `None` means the input ended — read as a cancellation, the way `Ctrl-C` is in the terminal shape. With
@@ -141,3 +159,24 @@ object PromptSession:
     // one reader for the process: a reader per prompt would buffer ahead and swallow the next prompt's piped answer
     val reader = BufferedReader(InputStreamReader(System.in, UTF_8))
     Mode.Plain(() => Option(reader.readLine()), Console.write, echoInput = !StandardOutput.isInputTerminal)
+
+/** Opens backends on one terminal and probes it once: the first backend probes as usual; once a run on a backend this
+  * opened has ended, [[remember]] keeps what it reported, and every later [[open]] hands that to `create`.
+  *
+  * Threads: `open` and `remember` may be called from any thread (each prompt runs on its caller's); the first
+  * remembered answer wins.
+  */
+private[dsl] final class ProbeOnce(create: Option[TerminalCapabilities] => Either[BackendError, Backend]):
+
+  private val known  = AtomicReference(Option.empty[TerminalCapabilities])
+  private val opened = AtomicReference(Option.empty[Backend])
+
+  def open(): Either[BackendError, Backend] =
+    val result = create(known.get)
+    result.foreach(backend => opened.set(Some(backend)))
+    result
+
+  /** Keeps `backend`'s capabilities for later opens — only for a backend this opened, and only the first time. */
+  def remember(backend: Backend): Unit =
+    if opened.get.exists(_ eq backend) then
+      val _ = known.compareAndSet(None, Some(backend.capabilities))

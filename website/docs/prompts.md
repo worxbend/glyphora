@@ -52,7 +52,7 @@ cancel, so `for`-comprehensions over several prompts stop at the first `None`.
 | `Prompt.multiSelect(label, options, render, preselected, min)` | `Option[Seq[A]]` | Up/Down; Space ticks; Enter |
 | `Prompt.number(label, default, min, max)` | `Option[Long]` | as `text` |
 | `Prompt.path(label, default, base, mustExist)` | `Option[Path]` | as `text`; Tab completes |
-| `Prompt.form[A]` | `Option[A]` | one field per step; `Ctrl-U` goes back |
+| `Prompt.form[A]` | `Option[A]` | one field per step; `Shift+Tab` goes back |
 | `Prompt.task(label)(log => work)` | `Option[A]` | `Ctrl-C` cancels |
 | `Prompt.loader(label, items)(f)` | `Option[Seq[B]]` | `Ctrl-C` cancels |
 
@@ -80,7 +80,8 @@ final case class Service(name: String, port: Int, tls: Boolean)
 val service: Option[Service] = Prompt.form[Service]
 ```
 
-`Ctrl-U` returns to the previous field with its answer still in it. To check the
+`Shift+Tab` (the `focus-previous` framework key) returns to the previous field with its
+answer still in it; `Ctrl-U` kills to the start of the line, as in any `input`. To check the
 assembled value as well, pass the spec and its validators to `Prompt.formOf`; a failing
 check sends the user back to its field:
 
@@ -100,8 +101,11 @@ lines it logs scrolling underneath. When the work ends the strip collapses to on
 rethrown after the line is drawn. Anything the work prints to standard output lands in
 the log rather than over the strip.
 
-`Ctrl-C` answers `None` straight away. The work's thread is interrupted, not waited
-for, so blocking work should respond to interruption.
+`Ctrl-C` draws the `✗ label (cancelled)` line at once, interrupts the work's thread and
+then waits for it to finish — at most two seconds (`CancelJoinBound`) — before answering
+`None`. Work that honours the interrupt (a `sleep`, a blocking read, an awaited future)
+has therefore cleaned up by the time the caller continues; work that ignores it is left
+running on its daemon thread after the two seconds, and ends with the process.
 
 `Prompt.loader` is the same with a progress row instead of the log: it runs `f` over
 every item and draws the bar, the percentage and the ETA as it goes.
@@ -138,6 +142,11 @@ assert(session.transcript == Seq("? Name alpha"))
 
 To drive the interactive prompt itself, run it on a `HeadlessBackend` under
 [`Pilot`](./testing) with `PromptSession.on(backend)` and send it keys.
+
+Each terminal prompt is a one-shot app on a backend of its own, but the terminal is asked
+about its capabilities only once per process: the first prompt probes, and every later
+prompt opens its backend with that answer (`JLine3Backend.create(knownCapabilities = …)`),
+so a run of ten questions costs one probe round trip, not ten.
 
 ## Without a terminal
 

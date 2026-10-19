@@ -1,13 +1,15 @@
 package io.worxbend.tui.terminal
 
-/** The terminal image protocols glyphora can draw a [[io.worxbend.tui.core.GraphicPlacement]] with. */
-enum ImageProtocol:
+/** The terminal image protocols glyphora can draw a [[io.worxbend.tui.core.GraphicPlacement]] with. `tag` is the name a
+  * [[io.worxbend.tui.core.GraphicPayload]] encoded for the protocol carries.
+  */
+enum ImageProtocol(val tag: String):
 
   /** The kitty graphics protocol — kitty, Ghostty and WezTerm among others answer its query. See [[KittyGraphics]]. */
-  case Kitty
+  case Kitty extends ImageProtocol("kitty")
 
   /** iTerm2's inline images (OSC 1337), which iTerm2 and WezTerm draw. See [[ITerm2Images]]. */
-  case ITerm2
+  case ITerm2 extends ImageProtocol("iterm2")
 
 object ImageProtocol:
 

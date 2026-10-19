@@ -2,7 +2,7 @@ package io.worxbend.tui.core
 
 import org.scalatest.funsuite.AnyFunSuite
 
-import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.{Duration, DurationInt, DurationLong, FiniteDuration}
 
 final class PatternSpec extends AnyFunSuite:
 
@@ -80,3 +80,35 @@ final class PatternSpec extends AnyFunSuite:
     // the leading half has finished dissolving, the trailing half has not started
     assert((0 until 3).forall(x => buffer.get(x, 0).isBlank))
     assert((3 until 6).forall(x => !buffer.get(x, 0).isBlank))
+
+  /** An effect that counts how often it is evaluated, painting each cell with the progress step it was asked for. */
+  private final class Counting(total: FiniteDuration) extends Effect:
+    var calls: Int                                                         = 0
+    def duration: Duration                                                 = total
+    def process(elapsed: FiniteDuration, buffer: Buffer, area: Rect): Unit =
+      calls += 1
+      area.foreachPosition((x, y) =>
+        buffer.set(x, y, buffer.get(x, y).copy(symbol = (elapsed.toMillis / 100).toString))
+      )
+
+  private def frame(text: String): Buffer =
+    val buffer = Buffer(Rect(0, 0, 9, 1))
+    buffer.setString(0, 0, text, Style.Default)
+    buffer
+
+  test("patterned evaluates its inner effect once per progress step over a whole run of unchanged frames"):
+    val inner = Counting(1.second)
+    val fx    = Effect.patterned(Pattern.sweep(MotionDirection.Right))(inner)
+    (0 to 60).foreach(f => fx.process((1000L * f / 60).millis, frame("abcdefghi"), Rect(0, 0, 9, 1)))
+    // 65 steps exist (0..64); 61 frames each spreading nine cells over several steps used to cost far more
+    assert(inner.calls <= Effect.PatternLevels + 1, s"${inner.calls} evaluations")
+
+  test("patterned re-evaluates when the rendered content changes under it"):
+    val fx     = Effect.patterned(Pattern.sweep(MotionDirection.Right, softness = 0.0001))(Effect.dissolve(1.second))
+    val first  = frame("abcdefghi")
+    fx.process(500.millis, first, first.area)
+    val second = frame("ABCDEFGHI")
+    fx.process(500.millis, second, second.area)
+    // the trailing cells have not started dissolving, so they must show the *new* content, not a cached copy
+    assert(second.get(8, 0).symbol == "I")
+    assert(second.get(0, 0).isBlank)

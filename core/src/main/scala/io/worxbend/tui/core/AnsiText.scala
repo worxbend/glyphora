@@ -28,14 +28,25 @@ import scala.collection.mutable.ArrayBuffer
   *     The link is independent of SGR, as it is on a terminal: SGR 0 does not close it.
   *
   * Every other escape sequence — cursor movement, screen clearing, other OSC strings, DCS and APC payloads, two-byte
-  * escapes — is recognised far enough to be skipped whole and then dropped. Control characters other than `\n` are
-  * dropped as well, `\r` included, so CRLF output splits into clean rows: a control occupies no column but one
-  * [[Cell]], and a text model that kept one would draw the rest of its row one column out of place (see
-  * [[CharWidth.withoutControls]]). A tab is a control too and is dropped rather than expanded; expand tabs before
-  * feeding the text if their columns matter.
+  * escapes — is recognised far enough to be skipped whole and then dropped, with one exception: '''erase in line'''
+  * (`ESC [ K`, `ESC [ 1 K`, `ESC [ 2 K`), which a progress bar sends after its `\r` and which is applied to the line
+  * being built.
   *
-  * The widths of the lines produced are, as for every [[Line]], measured through [[CharWidth]]; the parser itself never
-  * counts columns. Plain text with no escape sequence in it comes out exactly as [[Text.raw]] would read it.
+  * Three controls move within the line the way a terminal's cursor would:
+  *
+  *   - a '''tab''' advances to the next eight-column stop — columns counted in display width through [[CharWidth]], so
+  *     a wide character takes two — padding with spaces in the style in force;
+  *   - a '''carriage return''' (`\r`) goes back to the first column, and the text after it *overwrites* the line cell
+  *     by cell, keeping whatever it does not reach: `"100%\r5%"` reads `5%0%`, as it would on screen, and
+  *     `"100%\r\u001b[K5%"` reads `5%`. A progress bar that redraws itself with `\r` therefore shows its latest state,
+  *     and CRLF output still splits into clean rows. Overwriting half of a wide character blanks its other half;
+  *   - a '''newline''' (`\n`) ends the line.
+  *
+  * Every other control character is dropped: a control occupies no column but one [[Cell]], and a text model that kept
+  * one would draw the rest of its row one column out of place (see [[CharWidth.withoutControls]]).
+  *
+  * The widths of the lines produced are, as for every [[Line]], measured through [[CharWidth]]. Plain text with no
+  * escape sequence or control in it comes out exactly as [[Text.raw]] would read it.
   *
   * '''Ownership.''' A mutable object owned by its caller and confined to one thread at a time — the thread reading the
   * subprocess, typically, with the finished lines then handed to the render thread. It holds no reference to anything
@@ -57,6 +68,10 @@ final class AnsiParser:
   private var current: Style = Style.Default
   private val run            = StringBuilder()
   private val spans          = ArrayBuffer.empty[Span]
+
+  /** Where the next text lands while the line is being rewritten after a `\r`, or `-1` while text appends at its end.
+    */
+  private var cursor: Int = -1
 
   private var state: State  = State.Ground
   private val sequence      = StringBuilder()
@@ -106,6 +121,8 @@ final class AnsiParser:
       sequence.clear()
       state = State.Escape
     else if c == '\n' then completed += endLine()
+    else if c == '\r' then carriageReturn()
+    else if c == '\t' then tab()
     else if !Character.isISOControl(c) then run.append(c)
 
   private def escape(c: Char, completed: ArrayBuffer[Line]): Unit =
@@ -129,6 +146,7 @@ final class AnsiParser:
     else if c >= 0x20 && c <= 0x2f then intermediates += 1
     else if c >= 0x40 && c <= 0x7e then
       if c == 'm' && intermediates == 0 then applySgr(sequence.result())
+      else if c == 'K' && intermediates == 0 then eraseInLine(sequence.result())
       sequence.clear()
       state = State.Ground
     else if c == Esc then
@@ -289,17 +307,75 @@ final class AnsiParser:
 
   private def flushRun(): Unit =
     if run.nonEmpty then
-      spans += Span(run.result(), current)
+      val text = run.result()
       run.clear()
+      if cursor < 0 then
+        if spans.nonEmpty && spans.last.style == current then
+          spans(spans.size - 1) = Span(spans.last.content + text, current)
+        else spans += Span(text, current)
+      else
+        val cells = LineCells.of(spans)
+        cursor = cells.write(cursor, text, current)
+        replaceSpans(cells)
+        if cursor >= cells.width then cursor = -1
+
+  private def replaceSpans(cells: LineCells): Unit =
+    spans.clear()
+    spans ++= cells.spans
+
+  /** The display width of the line so far, the unflushed run included. */
+  private def lineWidth: Int = spans.iterator.map(span => CharWidth.of(span.content)).sum + CharWidth.of(run.result())
+
+  /** `\r`: back to the first column. An empty line has nothing to overwrite, so it stays in append mode. */
+  private def carriageReturn(): Unit =
+    flushRun()
+    cursor = if lineWidth > 0 then 0 else -1
+
+  /** `\t`: on to the next multiple of eight columns. Appending, the gap is spaces in the style in force; rewriting
+    * after a `\r`, a tab moves over the cells without erasing them, and pads only past the end of the line.
+    */
+  private def tab(): Unit =
+    flushRun()
+    val width  = lineWidth
+    val column = if cursor < 0 then width else cursor
+    val target = (column / TabStop + 1) * TabStop
+    if target < width then cursor = target
+    else
+      cursor = -1
+      run.append(" " * (target - width))
+
+  /** `ESC [ n K`: erase in line — `0` (the default) from the cursor to the end, `1` from the start through the cursor,
+    * `2` the whole line. The cursor keeps its column, so text after an erase lands where it would on screen.
+    */
+  private def eraseInLine(parameters: String): Unit =
+    val mode = if parameters.isEmpty then Some(0) else parameters.toIntOption
+    mode.foreach { selected =>
+      flushRun()
+      val cells  = LineCells.of(spans)
+      val column = if cursor < 0 then cells.width else cursor
+      selected match
+        case 0 => cells.truncate(column)
+        case 1 => cells.blank(0, column + 1)
+        case 2 =>
+          cells.truncate(0)
+          cells.padTo(column)
+        case _ => ()
+      replaceSpans(cells)
+      cursor = if column >= cells.width then -1 else column
+    }
 
   /** Closes the current line. A line with no spans gets one empty span, the shape [[Text.raw]] gives an empty row. */
   private def endLine(): Line =
     flushRun()
+    cursor = -1
     val line = if spans.isEmpty then Line(Seq(Span("", current))) else Line(spans.toSeq)
     spans.clear()
     line
 
 object AnsiParser:
+
+  /** Columns between tab stops, the terminal default. */
+  private val TabStop = 8
 
   private val Esc: Char = '\u001b'
   private val Bel: Char = '\u0007'
@@ -346,3 +422,101 @@ object AnsiParser:
 
     /** An ESC inside an OSC or control string: a following `\` is the ST terminator. */
     case StringEsc
+
+/** The line an [[AnsiParser]] is rewriting after a `\r`, one entry per display column: a grapheme cluster on the column
+  * it starts at, and an empty string on each further column a wide cluster covers. Built from the line's spans when an
+  * overwrite needs it and turned back into spans straight after, so the append path never pays for it.
+  */
+private final class LineCells private (columns: ArrayBuffer[(String, Style)]):
+
+  def width: Int = columns.size
+
+  /** Writes `text` from `column` on, cluster by cluster, and answers the column after the last one written. */
+  def write(column: Int, text: String, style: Style): Int =
+    var at = column
+    CharWidth.graphemeClusters(text).foreach { cluster =>
+      val w = CharWidth.of(cluster)
+      if w == 0 then
+        // a zero-width cluster joins the cluster before it, as it would have had the two arrived together
+        leadBefore(at).foreach(lead => columns(lead) = (columns(lead)._1 + cluster, columns(lead)._2))
+      else
+        padTo(at)
+        (at until math.min(at + w, width)).foreach(clearClusterAt)
+        (at until at + w).foreach { index =>
+          val entry = (if index == at then cluster else "", style)
+          if index < width then columns(index) = entry else columns += entry
+        }
+        at += w
+    }
+    at
+
+  /** Drops every column from `column` on, blanking a wide cluster the cut goes through. */
+  def truncate(column: Int): Unit =
+    if column < width then
+      if column > 0 then clearClusterAt(column)
+      columns.dropRightInPlace(width - column)
+
+  /** Blanks the columns `from until until` (and any wide cluster they cut through) to spaces in their own style. */
+  def blank(from: Int, until: Int): Unit =
+    (from until math.min(until, width)).foreach { index =>
+      clearClusterAt(index)
+      columns(index) = (" ", columns(index)._2)
+    }
+
+  /** Extends the line with default-style spaces until it is `column` wide. */
+  def padTo(column: Int): Unit =
+    while width < column do columns += ((" ", Style.Default))
+
+  /** The line as spans, adjacent columns of one style merged into one span. */
+  def spans: Seq[Span] =
+    val out                  = ArrayBuffer.empty[Span]
+    val run                  = StringBuilder()
+    var style: Option[Style] = None
+    columns.foreach { (cluster, cellStyle) =>
+      if cluster.nonEmpty then
+        if !style.contains(cellStyle) then
+          style.foreach(previous => out += Span(run.result(), previous))
+          run.clear()
+          style = Some(cellStyle)
+        run.append(cluster)
+    }
+    style.foreach(previous => out += Span(run.result(), previous))
+    out.toSeq
+
+  /** Replaces the whole cluster covering `index` with spaces, so writing over part of a wide character never leaves the
+    * other part half-drawn.
+    */
+  private def clearClusterAt(index: Int): Unit =
+    leadAtOrBefore(index).foreach { lead =>
+      var column = lead
+      columns(column) = (" ", columns(column)._2)
+      column += 1
+      while column < width && columns(column)._1.isEmpty do
+        columns(column) = (" ", columns(column)._2)
+        column += 1
+    }
+
+  private def leadAtOrBefore(index: Int): Option[Int] =
+    var column = math.min(index, width - 1)
+    while column >= 0 && columns(column)._1.isEmpty do column -= 1
+    Option.when(column >= 0)(column)
+
+  private def leadBefore(index: Int): Option[Int] = if index <= 0 then None else leadAtOrBefore(index - 1)
+
+private object LineCells:
+
+  def of(spans: Iterable[Span]): LineCells =
+    val columns = ArrayBuffer.empty[(String, Style)]
+    spans.foreach { span =>
+      CharWidth.graphemeClusters(span.content).foreach { cluster =>
+        val w = CharWidth.of(cluster)
+        if w == 0 then
+          val lead = columns.lastIndexWhere(_._1.nonEmpty)
+          if lead >= 0 then columns(lead) = (columns(lead)._1 + cluster, columns(lead)._2)
+          else columns += ((cluster, span.style))
+        else
+          columns += ((cluster, span.style))
+          (1 until w).foreach(_ => columns += (("", span.style)))
+      }
+    }
+    new LineCells(columns)

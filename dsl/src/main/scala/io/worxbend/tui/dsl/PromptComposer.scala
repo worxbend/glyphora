@@ -1,6 +1,17 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Buffer, CharWidth, KeyCode, KeyEvent, KeyModifiers, Position, Rect, Versioned, Widget}
+import io.worxbend.tui.core.{
+  Buffer,
+  CharWidth,
+  Constraint,
+  KeyCode,
+  KeyEvent,
+  KeyModifiers,
+  Position,
+  Rect,
+  Versioned,
+  Widget,
+}
 import io.worxbend.tui.runtime.{Async, Cancelable, ReactiveScope, Signal, TaskScope}
 import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets as w
@@ -26,6 +37,10 @@ import scala.concurrent.duration.{DurationInt, FiniteDuration}
   *   a bracketed paste of at least this many lines is shown as a `[Pasted N lines]` placeholder and expanded on submit
   * @param maxRows
   *   the most rows the draft grows to before it scrolls
+  *
+  * [[Versioned]] over its own fields as well as the draft: [[version]] is the editor's version plus a count of this
+  * state's own writes (history recall, the reverse search, the completion popup, pastes, submits), so any of them made
+  * between frames schedules the frame that shows it.
   */
 final class PromptComposerState(
     initialHistory: Seq[String] = Nil,
@@ -33,18 +48,35 @@ final class PromptComposerState(
     val debounce: FiniteDuration = 150.millis,
     val pasteLines: Int = 10,
     val maxRows: Int = 8,
-):
+) extends Versioned:
   /** The draft being edited — every [[w.EditBuffer]] operation is available on it. */
   val editor: w.TextAreaState = w.TextAreaState()
 
-  private val entries                       = mutable.ArrayBuffer.from(initialHistory)
-  private var recalled: Option[Int]         = None
-  private var draft: String                 = ""
-  private val pastes                        = mutable.LinkedHashMap.empty[String, String]
-  private[dsl] var reverse: Option[Reverse] = None
-  private[dsl] var popup: Option[Popup]     = None
-  private var scope: Option[TaskScope]      = None
-  private var pending: Option[Cancelable]   = None
+  private val entries                      = mutable.ArrayBuffer.from(initialHistory)
+  private var recalled: Option[Int]        = None
+  private var draft: String                = ""
+  private val pastes                       = mutable.LinkedHashMap.empty[String, String]
+  private var reverseOpen: Option[Reverse] = None
+  private var popupOpen: Option[Popup]     = None
+  private var scope: Option[TaskScope]     = None
+  private var pending: Option[Cancelable]  = None
+  private var writes: Long                 = 0L
+
+  def version: Long = writes + editor.version
+
+  private def touch(): Unit = writes += 1
+
+  private[dsl] def reverse: Option[Reverse] = reverseOpen
+
+  private[dsl] def reverse_=(next: Option[Reverse]): Unit =
+    reverseOpen = next
+    touch()
+
+  private[dsl] def popup: Option[Popup] = popupOpen
+
+  private[dsl] def popup_=(next: Option[Popup]): Unit =
+    popupOpen = next
+    touch()
 
   /** Bumped by an async completion result, so the frame that shows it is scheduled. */
   private[dsl] val revision: Signal[Int] = Signal(0)
@@ -66,6 +98,7 @@ final class PromptComposerState(
     recalled = None
     editor.clear()
     pastes.clear()
+    touch()
     Option.when(text.trim.nonEmpty) {
       if !entries.lastOption.contains(text) then entries += text
       text
@@ -79,11 +112,13 @@ final class PromptComposerState(
       val index = recalled.fold(entries.size - 1)(current => math.max(0, current - 1))
       if recalled.isEmpty then draft = editor.value
       recalled = Some(index)
+      touch()
       editor.setValue(entries(index))
 
   /** Steps one entry forward; past the newest, the draft comes back. */
   def historyNext(): Unit =
     recalled.foreach { current =>
+      touch()
       if current + 1 < entries.size then
         recalled = Some(current + 1)
         editor.setValue(entries(current + 1))
@@ -209,6 +244,7 @@ final class PromptComposerState(
         if base.endsWith("]") then s"${base.dropRight(1)} #${pastes.size + 1}]" else s"$base #${pastes.size + 1}"
       val placeholder = if pastes.contains(base) then numbered else base
       pastes(placeholder) = clean
+      touch()
       editor.insert(placeholder)
     else editor.insert(clean)
 
@@ -231,31 +267,54 @@ private[dsl] final case class Popup(
   * newline; `Up`/`Down` on the first/last line walk the history; `Ctrl+R` searches it; a dim suggestion from history is
   * accepted with `Tab` or `Right`; `/` and `@` open the completion popup (`Up`/`Down`, `Enter`/`Tab`, `Esc`). Every
   * [[editingChords]] chord works too.
+  *
+  * The composer is as tall as its draft once soft-wrapped at the width it is given, up to the state's `maxRows`, after
+  * which it scrolls inside them. [[prompt]] puts a glyph (`"❯ "`) before the first row; wrapped and further rows hang
+  * under the text rather than under the glyph.
   */
 final case class PromptComposerElement(
     state: PromptComposerState,
     onSubmit: String => Unit,
     props: ElementProps = ElementProps(focusable = true),
+    promptGlyph: String = "",
 ) extends Element:
   type Self = PromptComposerElement
 
   /** The caller-owned state this node paints, watched for writes made between frames. */
-  override private[dsl] def watchedStates: Seq[Versioned] = Seq(state.editor)
+  override private[dsl] def watchedStates: Seq[Versioned] = Seq(state)
   override def debugName: String                          = "promptComposer"
+  private[dsl] override def editsText: Boolean            = true
   override def pointerShape: Option[PointerShape]         = textPointer(props)
 
-  private def editorRows: Int = math.max(1, math.min(state.maxRows, state.editor.lineCount))
+  /** Prefixes the draft with `glyph` — `promptComposer(state)(send).prompt("❯ ")` — drawn on the first row in the
+    * composer's style; the text, and every row it wraps onto, starts after it.
+    */
+  def prompt(glyph: String): PromptComposerElement = copy(promptGlyph = CharWidth.withoutControls(glyph))
 
-  private[dsl] override def claim: SizeClaim = SizeClaim.rows(editorRows + state.reverse.size)
+  private def glyphWidth: Int = CharWidth.of(promptGlyph)
+
+  private def editor: w.TextArea = w.TextArea(
+    showCursor = props.focused && props.caretStyle.paints && state.reverse.isEmpty,
+    style = props.style,
+    options = w.TextAreaOptions(wrap = true),
+  )
+
+  /** The draft's rows soft-wrapped at `width` (less the glyph), between one and `maxRows`. */
+  private def editorRows(width: Int): Int =
+    math.max(1, math.min(state.maxRows, editor.heightAt(math.max(1, width - glyphWidth), state.editor)))
+
+  private[dsl] override def claim: SizeClaim = SizeClaim(Constraint.Auto, Constraint.Fill(1))
+
+  private[dsl] override def intrinsicHeight(width: Int): Option[Int] =
+    constrainedHeight(Some(editorRows(width) + state.reverse.size))
 
   def widget: Widget =
-    val editor = w.TextArea(
-      showCursor = props.focused && props.caretStyle.paints && state.reverse.isEmpty,
-      style = props.style,
-      options = w.TextAreaOptions(wrap = true),
-    )
+    val editor = this.editor
     (area, buffer) =>
-      val text  = Rect(area.x, area.y, area.width, math.max(0, area.height - state.reverse.size))
+      val inset = math.min(glyphWidth, area.width)
+      val text  = Rect(area.x + inset, area.y, area.width - inset, math.max(0, area.height - state.reverse.size))
+      if inset > 0 && text.height > 0 then
+        buffer.setString(area.x, area.y, CharWidth.substringByWidth(promptGlyph, inset), props.style)
       editor.render(text, buffer, state.editor)
       val caret = editor.caretAt(text, state.editor)
       for cell <- caret; rest <- state.ghost do paintGhost(buffer, text, cell.x, cell.y, rest)

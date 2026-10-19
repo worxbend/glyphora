@@ -135,6 +135,11 @@ def view(using ReactiveScope, Theme): Element =
   and `Down` move the highlight, `Enter` or `Tab` accept it and `Esc` closes the popup.
 - A paste of `pasteLines` lines or more (10 by default) shows as `[Pasted 50 lines]`. The
   submitted text has the whole paste in its place.
+- The composer is as tall as its draft soft-wrapped at the width it is given — a long line
+  grows it as surely as a newline does — up to `maxRows` (8 by default), after which it
+  scrolls inside them.
+- `.prompt("❯ ")` draws a prompt glyph before the first row; the text and every row it
+  wraps onto start after the glyph, so continuation rows hang under the text.
 
 The provider must not touch UI state, because it runs off the render thread. Everything
 else on `PromptComposerState` is render-thread-only, like every widget state.

@@ -18,6 +18,7 @@ import io.worxbend.tui.runtime.{
 }
 import io.worxbend.tui.terminal.{Backend, BackendError, ColorDepth, HeadlessBackend, JLine3Backend, PointerShape}
 import io.worxbend.tui.terminal.MouseCaptureMode
+import io.worxbend.tui.terminal.ImageProtocol
 import io.worxbend.tui.widgets.{Clipboard, NoticeLevel}
 
 import java.nio.file.Path
@@ -750,6 +751,8 @@ trait TuiApp:
         SignalMotion.attachToCurrentLoop(nanoTime, () => requestRedraw())
         // what the probe established, before the first frame: a `Theme.auto` first frame is already the right one
         colorSchemeSignal.set(backend.capabilities.colorScheme)
+        // and the picture protocol, so `pixelImage` encodes for it off the render thread from the first frame
+        run.host.imageProtocol = ImageProtocol.select(backend.capabilities)
         shownPointer = PointerShape.Default
         motionRequested = false
         shownTaskbar = None

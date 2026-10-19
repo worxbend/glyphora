@@ -182,6 +182,7 @@ export io.worxbend.tui.core.{
   MouseEventKind,
   MotionDirection,
   Pattern,
+  ColorTarget,
   Position,
   Rect,
   Size,
@@ -197,6 +198,8 @@ export io.worxbend.tui.core.{
   Widget,
   RgbaImage,
   GraphicPlacement,
+  GraphicCrop,
+  GraphicPayload,
 }
 
 /** The modifier bitset carried by [[KeyEvent]] and [[MouseEvent]].
@@ -395,6 +398,7 @@ export io.worxbend.tui.widgets.{
   ProgressColumn,
   ProgressTask,
   Lexer,
+  LexState,
   TableOverflow,
   TextAreaOptions,
   Clipboard,

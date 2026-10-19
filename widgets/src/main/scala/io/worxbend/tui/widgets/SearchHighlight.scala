@@ -83,7 +83,9 @@ private[widgets] object SearchHighlight:
     }
 
   /** Patches the match styles over every match of `state`, a match at content `(row, column)` landing at
-    * `(originX + column, originY + row)`; nothing is painted outside `clip`.
+    * `(originX + rowShift(row) + column, originY + row)`; nothing is painted outside `clip`. `rowShift` is how far a
+    * row's own alignment moved it right of `originX` — zero for left-aligned content — and is asked only about rows
+    * that land inside `clip`.
     */
   def paint(
       buffer: Buffer,
@@ -93,10 +95,14 @@ private[widgets] object SearchHighlight:
       state: SearchState,
       matchStyle: Style,
       currentStyle: Style,
+      rowShift: Int => Int = _ => 0,
   ): Unit =
     val current = state.current
     state.matches.iterator.zipWithIndex.foreach { (hit, index) =>
-      val region = Rect(originX + hit.column, originY + hit.row, hit.width, 1).intersection(clip)
+      val y      = originY + hit.row
+      val region =
+        if y < clip.y || y >= clip.bottom then Rect(0, 0, 0, 0)
+        else Rect(originX + rowShift(hit.row) + hit.column, y, hit.width, 1).intersection(clip)
       if !region.isEmpty then
         val style = if current.contains(index) then currentStyle else matchStyle
         buffer.mapStyle(region)(_.patch(style))

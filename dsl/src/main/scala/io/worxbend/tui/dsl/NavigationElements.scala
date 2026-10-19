@@ -162,8 +162,13 @@ final case class ScrollViewElement(
       // the container-query pre-pass paints an undecorated tree, which asks for nothing: that is not a request going
       // away, so the pre-pass leaves the bookkeeping of the frames that do ask alone
       val measuring = LocalProbe.measuring
+      val atEnd     = state.isAtEnd
       val revealed  = if measuring then None else revealBeforePaint()
-      val requests  = RevealRequests(followsFocus, area, state)
+      // a view that was following a tail and is still at its end goes to the new end before it paints, so a row that
+      // arrived since the last frame shows on this one; the paint clamps the offset to the content's new bottom
+      if !measuring && atEnd && state.revealedRequest.exists(_.startsWith(RevealProbe.TailPrefix)) then
+        state.offset = Int.MaxValue / 2
+      val requests  = RevealRequests(followsFocus, area, state, atEnd)
       RevealProbe.collecting(requests)(view.render(area, buffer, state))
       if !measuring then settleAfterPaint(requests, revealed)
 

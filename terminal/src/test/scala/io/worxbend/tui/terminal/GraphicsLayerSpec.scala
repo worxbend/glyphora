@@ -1,6 +1,6 @@
 package io.worxbend.tui.terminal
 
-import io.worxbend.tui.core.{Buffer, DiffDirective, Rect, RgbaImage, Size, Style}
+import io.worxbend.tui.core.{Buffer, DiffDirective, GraphicPayload, Position, Rect, RgbaImage, Size, Style}
 
 import org.jline.terminal.Terminal
 import org.jline.terminal.impl.LineDisciplineTerminal
@@ -95,6 +95,53 @@ final class GraphicsLayerSpec extends AnyFunSuite:
       assert(sink.toString(UTF_8).isEmpty)
     finally
       val _ = backend.close()
+
+  // ------------------------------------------------------------------ cropped pictures
+
+  /** A 4x6-pixel picture whose every pixel is distinct, so a crop can be checked pixel for pixel. */
+  private def tall(x: Int, y: Int): Int = 0xff000000 | (x * 40) << 16 | (y * 40) << 8 | 0x7f
+  private val tallImage                 = RgbaImage.tabulate(4, 6)(tall)
+
+  /** What a scroll view does: the picture's 2x3-cell box sits in content rows 0..2 and the window copies rows 1..3, so
+    * the top row of the box is cut and the frame holds the bottom two thirds of it at screen row 0.
+    */
+  private def scrolledFrame(payload: Option[GraphicPayload] = None): Buffer =
+    val content = Buffer(Rect(0, 0, 10, 6))
+    content.setString(1, 0, "ab", Style.Default)
+    content.setString(1, 1, "cd", Style.Default)
+    content.setString(1, 2, "ef", Style.Default)
+    content.placeGraphic(Rect(1, 0, 2, 3), tallImage, payload)
+    val screen  = Buffer(Rect(0, 0, 10, 4))
+    screen.blit(content, Position(0, 0), Rect(0, 1, 10, 4))
+    screen
+
+  test("kitty draws a clipped picture as a source rectangle of the whole image, not as the fallback"):
+    val backend  = kittyBackend()
+    assert(backend.draw(scrolledFrame()).isRight)
+    val expected =
+      s"${AnsiSequences.moveTo(1, 0)}${Esc}_Ga=T,f=32,s=4,v=6,x=0,y=2,w=4,h=4,i=1,c=2,r=2,C=1,q=2;" +
+        KittyGraphics.payload(tallImage) + s"$Esc\\"
+    assert(backend.rawSequences.single.contains(expected))
+    assert(backend.lastDrawn.exists(_.diffDirective(1, 0) == DiffDirective.Skip))
+
+  test("iTerm2 draws a clipped picture by re-encoding just the visible region"):
+    val backend = HeadlessBackend(Size(10, 4))
+    backend.capabilitiesTo(TerminalCapabilities(inlineImages = Support.Yes))
+    assert(backend.draw(scrolledFrame()).isRight)
+    val visible = RgbaImage.tabulate(4, 4)((x, y) => tall(x, y + 2))
+    assert(backend.rawSequences.single.contains(AnsiSequences.moveTo(1, 0) + ITerm2Images.display(visible, 2, 2)))
+
+  test("a placement that brings its own payload for the protocol is sent as given, not re-encoded"):
+    val backend = kittyBackend()
+    val frame   = Buffer(Rect(0, 0, 10, 4))
+    frame.placeGraphic(area, image, Some(GraphicPayload(ImageProtocol.Kitty.tag, "UFJF")))
+    assert(backend.draw(frame).isRight)
+    assert(backend.rawSequences.single.contains(kittyDisplay(1) + s"UFJF$Esc\\"))
+    val other   = Buffer(Rect(0, 0, 10, 4))
+    other.placeGraphic(area, image, Some(GraphicPayload(ImageProtocol.ITerm2.tag, "UFJF")))
+    val again   = kittyBackend()
+    assert(again.draw(other).isRight)
+    assert(again.rawSequences.single.contains(kittyDisplay(1) + KittyGraphics.payload(image)))
 
   extension (sequences: Seq[String])
     private def single: String =

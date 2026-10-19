@@ -7,4 +7,4 @@
 [0m  - [0;36m&base[0m tui                                               [0m
 [0m  - [0;36m*base[0m                                                   [0m
 [0;34mscript[0m: [0;35m|[0m                                                   [0m
-[0m  echo hi [0;2;3m# not a key[0m                                       [0m
+[0m  [0;32mecho hi # not a key[0m                                       [0m

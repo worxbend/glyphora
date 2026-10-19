@@ -51,33 +51,24 @@ object Effect:
     * from the whole run's progress and the cell's position — a fade that blooms from the centre is
     * `patterned(Pattern.radial(center))(fadeIn(…))`.
     *
-    * Each frame `effect` is evaluated over a scratch copy of the rendered frame once per distinct cell progress, with
-    * progress rounded to one of [[PatternLevels]] steps, and each cell takes its result from the evaluation at its own
-    * step; so the cost is bounded by that step count, not by the area. Effects that move content between cells
+    * Each cell's progress is rounded to one of [[PatternLevels]] steps, `effect` is evaluated over a scratch copy of
+    * the rendered frame once per step a cell needs, and each cell takes its result from the evaluation at its own step;
+    * so the cost of a frame is bounded by that step count, not by the area. Effects that move content between cells
     * (`slideIn`) compose too, though a cell then shows whatever its own step put there.
+    *
+    * '''Evaluations are cached across frames.''' An evaluation depends only on its step, the rendered frame and the
+    * area — `effect` is a pure function of the `elapsed` it is handed, as every effect is — so while the rendered frame
+    * underneath stays the same, a step evaluated on an earlier frame is reused rather than evaluated again. A whole run
+    * over unchanging content then evaluates `effect` at most once per step, `PatternLevels + 1` times in all, however
+    * many frames it spans; a frame whose content differs from the last one (compared cell by cell) starts the cache
+    * afresh. The cache holds one area's worth of cells per step reached, is dropped when the run ends, and makes the
+    * returned effect render-thread-only: share the *description* across views, not one running value.
     *
     * The duration is `effect`'s; an endless `effect` has no run to spread over the area, so it plays unpatterned.
     */
   def patterned(pattern: Pattern)(effect: Effect): Effect =
     effect.duration match
-      case total: FiniteDuration =>
-        new Effect:
-          def duration: Duration                                                 = total
-          def process(elapsed: FiniteDuration, buffer: Buffer, area: Rect): Unit =
-            val progress = Progress.normalized(elapsed, total)
-            val rendered = buffer.snapshot
-            val scratch  = Buffer(buffer.area)
-            val levels   = new Array[Int](area.area)
-            area.foreachPosition: (x, y) =>
-              val local = pattern(progress, x, y, area)
-              levels((y - area.y) * area.width + (x - area.x)) = math.round(local * PatternLevels).toInt
-            levels.distinct.foreach: level =>
-              scratch.copyFrom(rendered)
-              // the top step is `total` itself, not a division of it rounded down a few nanoseconds short of the end
-              val at = if level >= PatternLevels then total else (total.toNanos / PatternLevels * level).nanos
-              effect.process(at, scratch, area)
-              area.foreachPosition: (x, y) =>
-                if levels((y - area.y) * area.width + (x - area.x)) == level then buffer.set(x, y, scratch.get(x, y))
+      case total: FiniteDuration => PatternedEffect(pattern, effect, total)
       case _                     => effect
 
   /** How finely [[patterned]] resolves each cell's progress: 64 steps is smoother than a terminal's colour ramps show.
@@ -160,7 +151,8 @@ object Effect:
 
   /** Shifts every text cell's foreground around the HSL wheel: by the end of the run its hue has turned `hue` degrees
     * and its saturation and lightness have moved by `saturation` and `lightness` (fractions, clamped to `[0, 1]` as
-    * [[Color.hsl]] does). A cell with no foreground of its own is shifted from white.
+    * [[Color.hsl]] does). A cell with no foreground of its own is shifted from white. `target` picks the layer — see
+    * [[ColorTarget]]; with `Background` every cell's background is shifted instead, a cell with none from black.
     */
   def hslShift(
       hue: Double,
@@ -168,19 +160,34 @@ object Effect:
       lightness: Double,
       duration: FiniteDuration,
       easing: Easing = Easing.Linear,
+      target: ColorTarget = ColorTarget.Foreground,
+  ): Effect =
+    def shifted(color: Color, progress: Double): Color =
+      val (h, s, l) = Color.toHsl(color)
+      Color.hsl(h + hue * progress, s + saturation * progress, l + lightness * progress)
+    new TimedEffect(duration, easing):
+      def transform(progress: Double, buffer: Buffer, area: Rect): Unit =
+        mapLayers(buffer, area, target)(
+          fg = style => style.withFg(shifted(style.fg.getOrElse(Color.White), progress)),
+          bg = style => style.withBg(shifted(style.bg.getOrElse(Color.Black), progress)),
+        )
+
+  /** Paints every text cell's foreground towards `color`, reaching it at the end of the run (an RGB mix). `target`
+    * picks the layer — see [[ColorTarget]]; a background is mixed from black where a cell has none of its own.
+    */
+  def paint(
+      color: Color,
+      duration: FiniteDuration,
+      easing: Easing = Easing.Linear,
+      target: ColorTarget = ColorTarget.Foreground,
   ): Effect =
     new TimedEffect(duration, easing):
       def transform(progress: Double, buffer: Buffer, area: Rect): Unit =
-        mapCells(buffer, area): style =>
-          val (h, s, l) = Color.toHsl(style.fg.getOrElse(Color.White))
-          style.withFg(Color.hsl(h + hue * progress, s + saturation * progress, l + lightness * progress))
-
-  /** Paints every text cell's foreground towards `color`, reaching it at the end of the run (an RGB mix). */
-  def paint(color: Color, duration: FiniteDuration, easing: Easing = Easing.Linear): Effect =
-    new TimedEffect(duration, easing):
-      def transform(progress: Double, buffer: Buffer, area: Rect): Unit =
         if progress > 0 then
-          mapCells(buffer, area)(style => style.withFg(Color.mix(style.fg.getOrElse(Color.White), color, progress)))
+          mapLayers(buffer, area, target)(
+            fg = style => style.withFg(Color.mix(style.fg.getOrElse(Color.White), color, progress)),
+            bg = style => style.withBg(Color.mix(style.bg.getOrElse(Color.Black), color, progress)),
+          )
 
   /** Scrambles a share of the text cells — `intensity` in `[0, 1]` of them — into [[GlitchGlyphs]] for the length of
     * the run, picking new cells and glyphs [[GlitchRate]] times a second. Seeded and a pure function of `elapsed`, so a
@@ -360,6 +367,17 @@ object Effect:
     * re-derives the result only when the style actually changes. Without that, a whole-frame fade built a fresh `Color`
     * and `Style` for each of a frame's ten thousand cells to arrive at the same answer.
     */
+  /** [[mapCells]] for the colour layers `target` names: `fg` on text cells, `bg` on every cell, each memoized. */
+  private def mapLayers(buffer: Buffer, area: Rect, target: ColorTarget)(fg: Style => Style, bg: Style => Style): Unit =
+    if target == ColorTarget.Foreground then mapCells(buffer, area)(fg)
+    else
+      val foreground = MemoizedStyleTransform(fg)
+      val background = MemoizedStyleTransform(bg)
+      area.foreachPosition: (x, y) =>
+        val cell  = buffer.get(x, y)
+        val style = if target.foreground && !cell.isBlank then foreground(cell.style) else cell.style
+        buffer.set(x, y, cell.copy(style = background(style)))
+
   private def mapCells(buffer: Buffer, area: Rect)(transform: Style => Style): Unit =
     val memoized = MemoizedStyleTransform(transform)
     area.foreachPosition: (x, y) =>
@@ -380,3 +398,45 @@ object Effect:
         math.round(b * level).toInt,
       )
     )
+
+/** The running form of [[Effect.patterned]], with its per-step evaluation cache. Render-thread-only. */
+private final class PatternedEffect(pattern: Pattern, effect: Effect, total: FiniteDuration) extends Effect:
+
+  // the frame and area the cached steps were evaluated over, and each evaluated step's cells (row-major over `area`)
+  private var cachedFrame: Option[Buffer] = None
+  private var cachedArea: Rect            = Rect(0, 0, 0, 0)
+  private val evaluated                   = scala.collection.mutable.HashMap.empty[Int, Array[Cell]]
+
+  def duration: Duration = total
+
+  def process(elapsed: FiniteDuration, buffer: Buffer, area: Rect): Unit =
+    val progress     = Progress.normalized(elapsed, total)
+    val rendered     = buffer.snapshot
+    if area != cachedArea || !cachedFrame.contains(rendered) then
+      evaluated.clear()
+      cachedFrame = Some(rendered)
+      cachedArea = area
+    val levels       = new Array[Int](area.area)
+    area.foreachPosition: (x, y) =>
+      val local = pattern(progress, x, y, area)
+      levels((y - area.y) * area.width + (x - area.x)) = math.round(local * Effect.PatternLevels).toInt
+    lazy val scratch = Buffer(buffer.area)
+    area.foreachPosition: (x, y) =>
+      val index = (y - area.y) * area.width + (x - area.x)
+      val cells = evaluated.getOrElseUpdate(levels(index), evaluate(levels(index), rendered, scratch, area))
+      buffer.set(x, y, cells(index))
+    // a finished run will not ask again; the cells are an area's worth per step, so do not keep them around
+    if elapsed >= total then
+      evaluated.clear()
+      cachedFrame = None
+
+  /** `effect` at step `level` over a fresh copy of `rendered`, read back as the area's cells in row-major order. */
+  private def evaluate(level: Int, rendered: Buffer, scratch: Buffer, area: Rect): Array[Cell] =
+    scratch.copyFrom(rendered)
+    // the top step is `total` itself, not a division of it rounded down a few nanoseconds short of the end
+    val at    =
+      if level >= Effect.PatternLevels then total else (total.toNanos / Effect.PatternLevels * level).nanos
+    effect.process(at, scratch, area)
+    val cells = new Array[Cell](area.area)
+    area.foreachPosition((x, y) => cells((y - area.y) * area.width + (x - area.x)) = scratch.get(x, y))
+    cells

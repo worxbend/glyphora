@@ -8,8 +8,10 @@ import io.worxbend.tui.core.{
   Flex,
   KeyCode,
   KeyEvent,
+  KeyModifiers,
   Line,
   Measured,
+  MouseButton,
   Rect,
   Span,
   Style,
@@ -631,12 +633,15 @@ final case class RichTextElement(
 /** Markdown that is still arriving — an LLM's reply, token by token — drawn from a caller-owned [[w.MarkdownStream]].
   *
   * Without a `follow` state this is a measured leaf like `markdown(…)`: it reports its wrapped height, so it sizes
-  * correctly in a column or inside a `scrollView`. With one (`markdownStream(stream, scroll)`) the node is its own
-  * scroll view over the document, pinned to the newest row while content arrives: each frame it measures the document,
-  * and if the view's offset was still at the bottom the frame before, moves it to the new bottom. Scrolling up (Up,
-  * PageUp, Home, the wheel) leaves the bottom and the view holds still while text keeps arriving; End, or scrolling
-  * back down, rejoins the tail. That decision lives here rather than in `scrollView`, so a plain scroll view keeps its
-  * offset exactly where the user left it.
+  * correctly in a column or inside a `scrollView` — and inside one it keeps the view pinned to its newest row through
+  * the scroll view's reveal requests: when the view was at its end as a frame began, it asks to show the stream's last
+  * row, so `scrollView(markdownStream(stream), scroll)` follows the tail, holds still once the reader scrolls up, and
+  * follows again after End. With one (`markdownStream(stream, scroll)`) the node is its own scroll view over the
+  * document, pinned to the newest row while content arrives: each frame it measures the document, and if the view's
+  * offset was still at the bottom the frame before, moves it to the new bottom. Scrolling up (Up, PageUp, Home, the
+  * wheel) leaves the bottom and the view holds still while text keeps arriving; End, or scrolling back down, rejoins
+  * the tail. That decision lives here rather than in `scrollView`, so a plain scroll view keeps its offset exactly
+  * where the user left it.
   *
   * The stream is render-thread-only and appending does not schedule a frame: append from a render-thread callback (an
   * `Async` continuation, a binding) and pair it with a `Signal` write or `TuiApp.requestRedraw()`. One pinned view per
@@ -661,7 +666,7 @@ final case class MarkdownStreamElement(
   def widget: Widget =
     val document = stream.markdown(theme, markdownOptions)
     follow match
-      case None         => document
+      case None         => TailReporting(document, System.identityHashCode(stream))
       case Some(scroll) =>
         (area, buffer) =>
           if !area.isEmpty then
@@ -682,6 +687,16 @@ final case class MarkdownStreamElement(
 
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     follow.map(scroll => wheelScrolls(() => scroll.scrollUp(), () => scroll.scrollDown()))
+
+/** A measured document that, painted inside a `scrollView`, reports its last row as a follow-the-tail reveal request
+  * (see [[RevealProbe.tail]]). The request's identity carries the row, so every new row is a new request.
+  */
+private final class TailReporting(document: Widget & Measured, owner: Int) extends Widget with Measured:
+  def render(area: Rect, buffer: Buffer): Unit   =
+    document.render(area, buffer)
+    if !area.isEmpty then RevealProbe.tail(s"$owner:${area.bottom}", Rect(area.x, area.bottom - 1, area.width, 1))
+  override def heightAt(width: Int): Option[Int] = document.heightAt(width)
+  override def widthAt(height: Int): Option[Int] = document.widthAt(height)
 
 /** A unified diff drawn by [[w.DiffView]] — `git diff` output read with `Patch.parse`, or two texts compared with
   * `Patch.of` — scrolled and stepped through by a caller-owned [[w.DiffViewState]].
@@ -729,7 +744,7 @@ final case class DiffViewElement(
     val view = w.DiffView(patch, options.copy(style = props.style.patch(options.style)))
     new Widget with Measured:
       def render(area: Rect, buffer: Buffer): Unit   = view.render(area, buffer, state)
-      override def heightAt(width: Int): Option[Int] = view.heightAt(width)
+      override def heightAt(width: Int): Option[Int] = Some(view.heightAt(width, state))
 
   private[dsl] def withProps(props: ElementProps): DiffViewElement = copy(props = props)
 
@@ -738,12 +753,27 @@ final case class DiffViewElement(
       keys {
         case KeyEvent(KeyCode.Char('n') | KeyCode.Char(']'), _) => state.nextHunk()
         case KeyEvent(KeyCode.Char('p') | KeyCode.Char('['), _) => state.previousHunk()
+        case KeyEvent(KeyCode.Enter, mods) if mods.isEmpty      => val _ = state.expandFirstVisible()
+        case KeyEvent(KeyCode.Left, mods) if mods.isEmpty       => state.scrollLeft()
+        case KeyEvent(KeyCode.Right, mods) if mods.isEmpty      => state.scrollRight()
       }.orElse(scrollKeys(rows => state.scrollUp(rows), rows => state.scrollDown(rows)))
         .orElse(scrollJumpKeys(() => state.first(), () => state.last()))
     )
 
+  /** The wheel scrolls rows, Shift+wheel (or a sideways wheel) the line text, and a click on a folded run expands it.
+    */
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
-    Some(wheelScrolls(() => state.scrollUp(), () => state.scrollDown()))
+    Some { (event, area) =>
+      val sideways = event.modifiers.hasAny(KeyModifiers.Shift)
+      event.kind match
+        case MouseEventKind.ScrollUp if sideways                     => { state.scrollLeft(); true }
+        case MouseEventKind.ScrollDown if sideways                   => { state.scrollRight(); true }
+        case MouseEventKind.ScrollLeft                               => { state.scrollLeft(); true }
+        case MouseEventKind.ScrollRight                              => { state.scrollRight(); true }
+        case MouseEventKind.Down if event.button == MouseButton.Left =>
+          state.expandAt(state.offset + event.position.y - area.y)
+        case _ => wheelScrolls(() => state.scrollUp(), () => state.scrollDown())(event, area)
+    }
 
 /** A prototyping stand-in: a dashed box with `label` centred in it and the size the layout actually gave it written
   * underneath. Takes whatever room its container hands out, the way the panel it stands in for eventually will, so

@@ -130,3 +130,23 @@ final class PromptComposerSpec extends AnyFunSuite with PilotFixture:
     pilot.pressKey(KeyCode.Enter).waitForIdle()
     assert(harness.submitted.toSeq == Seq(s"see: $pasted"))
     harness.finish()
+
+  test("a prompt glyph prefixes the first row, wrapped rows hang under it, and the composer grows up to maxRows"):
+    val state   = PromptComposerState(maxRows = 2)
+    val backend = HeadlessBackend(Size(12, 5))
+    val app     = new TuiApp:
+      override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
+      def view(using ReactiveScope, Theme): Element =
+        column(promptComposer(state)(_ => ()).prompt("> ").autofocus, text("below"))
+    val pilot   = startPilot(backend)(app.runWith(backend))
+    pilot.waitForIdle()
+    assert(pilot.screenLines.take(2).map(_.stripTrailing) == Seq(">", "below"))
+    // ten columns are left for the text: "aaaa bbbb " fills the first row and the rest wraps onto a second
+    pilot.typeText("aaaa bbbb cccc dddd").waitForIdle()
+    assert(pilot.screenLines.take(3).map(_.stripTrailing) == Seq("> aaaa bbbb", "  cccc dddd", "below"))
+    // a third wrapped row would pass maxRows = 2: the composer stays two rows tall and scrolls inside them
+    pilot.typeText(" eeee").waitForIdle()
+    assert(pilot.screenLines(2).stripTrailing == "below")
+    assert(pilot.screenLines(1).stripTrailing == "  eeee")
+    pilot.pressKey(KeyCode.Char('q'), Ctrl)
+    assert(pilot.awaitTermination())

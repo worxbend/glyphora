@@ -76,3 +76,46 @@ final class DiffViewElementSpec extends AnyFunSuite with PilotFixture:
     assert(top == "1  1  one")
     pilot.press("q")
     assert(pilot.awaitTermination())
+
+  private val folding =
+    Patch.of((1 to 10).mkString("\n"), (Seq("one") ++ (2 to 9).map(_.toString) ++ Seq("ten")).mkString("\n"), 10)
+
+  test("Enter expands the folded run on screen"):
+    val backend = HeadlessBackend(Size(24, 14))
+    val state   = DiffViewState()
+    val app     = new TuiApp:
+      override def bindings: KeyBindings            = KeyBindings(binding("q", "quit")(quit()))
+      def view(using ReactiveScope, Theme): Element =
+        diffView(folding, state).withOptions(DiffViewOptions(lineNumbers = false, contextLines = Some(1)))
+    val pilot   = startPilot(backend) { app.runWith(backend) }
+
+    pilot.waitForIdle()
+    assert(pilot.screenLines(4).trim == "… 6 unchanged lines")
+    pilot.pressKey(KeyCode.Enter).waitForIdle()
+    assert(
+      pilot.screenLines.take(13).map(_.trim) == Seq("@@ -1,10 +1,10 @@", "-1", "+one") ++ (2 to 9).map(
+        _.toString
+      ) ++ Seq("-10", "+ten")
+    )
+    pilot.press("q")
+    assert(pilot.awaitTermination())
+
+  test("a click on a folded row expands it, and Right scrolls the line text"):
+    val backend = HeadlessBackend(Size(24, 14))
+    val state   = DiffViewState()
+    val app     = new TuiApp:
+      override def bindings: KeyBindings            = KeyBindings(binding("q", "quit")(quit()))
+      def view(using ReactiveScope, Theme): Element =
+        diffView(folding, state).withOptions(DiffViewOptions(lineNumbers = false, contextLines = Some(1)))
+    val pilot   = startPilot(backend) { app.runWith(backend) }
+
+    pilot.waitForIdle()
+    pilot.click(Rect(2, 4, 1, 1)).waitForIdle()
+    assert(pilot.screenLines(4).trim == "3")
+    pilot.pressKey(KeyCode.Right).waitForIdle()
+    assert(pilot.readOnRenderThread(state.column) == 2) // "one" is the widest text, three columns: clamped at 2
+    assert(pilot.screenLines(2).trim == "+e")
+    pilot.pressKey(KeyCode.Left).waitForIdle()
+    assert(pilot.screenLines(2).trim == "+one")
+    pilot.press("q")
+    assert(pilot.awaitTermination())

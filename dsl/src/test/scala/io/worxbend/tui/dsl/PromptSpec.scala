@@ -145,6 +145,51 @@ final class PromptSpec extends AnyFunSuite with PilotFixture:
     assert(error.getMessage == "no")
     assert(summon[PromptSession].transcript == Seq("✗ Boom no"))
 
+  test("task: Ctrl-C interrupts the work and waits for it to wind down before answering None"):
+    val backend         = HeadlessBackend(Size(40, 8))
+    val started         = java.util.concurrent.CountDownLatch(1)
+    val woundDown       = java.util.concurrent.atomic.AtomicBoolean(false)
+    val (pilot, result) = asking(backend) {
+      Prompt.task("Cleaning") { _ =>
+        started.countDown()
+        try Thread.sleep(60_000)
+        catch
+          case _: InterruptedException =>
+            // cleanup that outlives the interrupt: a cancel that did not join would answer before this lands
+            val until = System.nanoTime() + 300_000_000L
+            while System.nanoTime() < until do Thread.onSpinWait()
+            woundDown.set(true)
+      }
+    }
+    started.await()
+    pilot.waitForIdle().interrupt()
+    assert(pilot.awaitTermination())
+    assert(result.get.contains(None))
+    assert(woundDown.get, "Prompt.task answered before the interrupted work had finished")
+
+  test("task: work that ignores the interrupt is waited for no longer than the join bound"):
+    val backend         = HeadlessBackend(Size(40, 8))
+    val started         = java.util.concurrent.CountDownLatch(1)
+    val release         = java.util.concurrent.CountDownLatch(1)
+    val (pilot, result) = asking(backend) {
+      Prompt.task("Stubborn") { _ =>
+        started.countDown()
+        var done = false
+        while !done do
+          try done = release.await(10, java.util.concurrent.TimeUnit.SECONDS)
+          catch case _: InterruptedException => () // ignores cancellation on purpose
+      }
+    }
+    started.await()
+    val cancelledAt     = System.nanoTime()
+    pilot.waitForIdle().interrupt()
+    assert(pilot.awaitTermination(scala.concurrent.duration.FiniteDuration(15, "s")))
+    val waited          = (System.nanoTime() - cancelledAt) / 1_000_000L
+    release.countDown()
+    assert(result.get.contains(None))
+    assert(waited >= PromptTask.CancelJoinBound.toMillis, s"answered after only ${waited}ms")
+    assert(waited < PromptTask.CancelJoinBound.toMillis + 5_000L, s"waited ${waited}ms")
+
   test("loader drives a progress row through every item and answers the results in order"):
     val backend         = HeadlessBackend(Size(40, 4))
     val (pilot, result) = asking(backend)(Prompt.loader("Squares", 1 to 5)(n => n * n))
