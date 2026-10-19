@@ -309,10 +309,12 @@ and pass it where the row sequence goes; a provider *is* a `Seq[KeyedRow[K]]`, s
 plain `Vector` needs no adapter. The table reads only the body window, the selected
 row (one read, to confirm the key still sits where it did), and the rows of the current
 page (`DataTableLazyRowsSpec`: a 1 000 000-row provider is asked for at most body + 2
-rows per frame). Two costs remain with the caller: `state.sort` and `state.filter`
-walk every row, because they are defined on the cells the table draws — sort and filter
-at the source and leave both unset — and `selectKey` scans for a key, which is as
-expensive as the provider makes `apply`. Replace the provider instance (or call
+rows per frame). A sort or a filter is offered to the provider first: override
+`view(sort, filter)` to answer it at the source — `ORDER BY`, `WHERE` — with another
+provider, and the table reads that one a row at a time too. A provider that answers
+`None` (the default) is sorted and filtered by the table, which walks every row once per
+sort or filter change. `selectKey` scans for a key, which is as expensive as the provider
+makes `apply`. Replace the provider instance (or call
 `state.invalidate()`) when its contents change: the memoised view is keyed by identity.
 
 **Thousands of elements: `lazyList`.** The three widgets above virtualise rows of text.
