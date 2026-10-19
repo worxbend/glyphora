@@ -20,8 +20,14 @@ final case class SearchMatch(row: Int, column: Int, width: Int)
   *
   * When the query changes, the first match at or after the top of the view's window becomes current; [[next]] and
   * [[previous]] step through the rest, wrapping round. The view scrolls to the current match once per move, so a reader
-  * who scrolls away from it is not dragged back on the next frame. A `SearchState` belongs to one view: two views
-  * sharing one would overwrite each other's matches.
+  * who scrolls away from it is not dragged back on the next frame.
+  *
+  * A `SearchState` records the matches of one view. To search two views with one query — a search bar over a split
+  * diff, a log beside its source — hand each view its own [[view]] of the state: `search.view("left")` and
+  * `search.view("right")` share this state's [[input]], so one query reaches both, while each keeps its own matches,
+  * current match and scroll-to-match. [[next]], [[previous]] and [[clear]] on this state reach every view; on a view
+  * they act on that view alone. Rendering two views with the *same* state still makes them overwrite each other's
+  * matches.
   *
   * The query is edited through [[input]], the [[TextInputState]] a DSL `searchBar(state)` types into; [[query_=]] sets
   * it in one go.
@@ -30,10 +36,16 @@ final case class SearchMatch(row: Int, column: Int, width: Int)
   * node that paints this state schedules the frame that shows it. Matches recorded by a render do not move it: a frame
   * must not schedule another frame just by having been drawn.
   */
-final class SearchState extends Versioned:
+final class SearchState private (
+    /** The editable query: what a `searchBar` types into. Reading [[query]] reads this. Shared with every [[view]]. */
+    val input: TextInputState,
+    owner: Option[SearchState],
+) extends Versioned:
 
-  /** The editable query: what a `searchBar` types into. Reading [[query]] reads this. */
-  val input: TextInputState = TextInputState()
+  /** A fresh search: an empty query, no matches, no views. */
+  def this() = this(TextInputState(), None)
+
+  private val views = scala.collection.mutable.LinkedHashMap.empty[Any, SearchState]
 
   private var mutations: Long                 = 0L
   private var found: Vector[SearchMatch]      = Vector.empty
@@ -67,20 +79,39 @@ final class SearchState extends Versioned:
 
   def currentMatch: Option[SearchMatch] = currentIndex.flatMap(found.lift)
 
-  /** Makes the next match current, wrapping from the last to the first; answers whether there was one to move to. */
-  def next(): Boolean = step(1)
+  /** The per-view state for the view `key` names — created on first use, the same instance ever after. It shares this
+    * state's query and keeps its own matches; see the class notes. Asked of a view, it answers its owner's view, so
+    * views do not nest.
+    */
+  def view(key: Any): SearchState =
+    owner match
+      case Some(root) => root.view(key)
+      case None       => views.getOrElseUpdate(key, new SearchState(input, Some(this)))
 
-  /** Makes the previous match current, wrapping from the first to the last. */
-  def previous(): Boolean = step(-1)
+  /** Makes the next match current, wrapping from the last to the first — in this state and in every [[view]] of it;
+    * answers whether there was one to move to.
+    */
+  def next(): Boolean = stepAll(1)
 
-  /** Empties the query and forgets the matches — what Esc in a `searchBar` does. */
+  /** Makes the previous match current, wrapping from the first to the last, in this state and every [[view]]. */
+  def previous(): Boolean = stepAll(-1)
+
+  /** Empties the query and forgets the matches — this state's and every [[view]]'s. What Esc in a `searchBar` does. */
   def clear(): Unit =
     input.clear()
+    forget()
+    views.valuesIterator.foreach(_.forget())
+
+  private def forget(): Unit =
     found = Vector.empty
     currentIndex = None
     recordedQuery = ""
     cachedKey = None
     mutations += 1
+
+  private def stepAll(delta: Int): Boolean =
+    val own = step(delta)
+    views.valuesIterator.map(_.step(delta)).foldLeft(own)(_ || _)
 
   /** A count of the moves that should scroll the current match into view — a query change or a step. The DSL keys its
     * scroll-to-match request on it, so one move scrolls once.

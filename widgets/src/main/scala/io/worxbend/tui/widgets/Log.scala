@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, Line, Rect, StatefulWidget, Style, VersionedState}
+import io.worxbend.tui.core.{Alignment, Buffer, Line, Rect, StatefulWidget, Style, VersionedState}
 
 import scala.collection.mutable
 
@@ -111,9 +111,13 @@ final class LogState(maxLines: Int = 1000) extends VersionedState:
 
 /** An append-only scrolling text panel (build/log output, chat transcripts).
   *
+  * Each line is drawn at its own [[Line.alignment]] — a centred banner stays centred — and left-aligned when it names
+  * none.
+  *
   * Rendered with a [[SearchState]] (the four-argument `render`), the log searches every line it holds — not only the
-  * ones on screen — highlights the matches in `matchStyle`, the current one in `currentMatchStyle`, and scrolls so the
-  * current match's line is visible whenever the query changes or the search steps with `next`/`previous`.
+  * ones on screen — highlights the matches in `matchStyle`, the current one in `currentMatchStyle`, where the line is
+  * drawn, and scrolls so the current match's line is visible whenever the query changes or the search steps with
+  * `next`/`previous`.
   */
 final case class Log(
     style: Style = Style.Default,
@@ -124,7 +128,7 @@ final case class Log(
   def render(area: Rect, buffer: Buffer, state: LogState): Unit =
     if !area.isEmpty then
       state.visibleSlice(area.height).zipWithIndex.foreach { (line, row) =>
-        val _ = LineRenderer.render(buffer, area.x, area.y + row, line, area.width, style)
+        val _ = LineRenderer.render(buffer, area.x, area.y + row, line, area.width, style, alignmentOf(line))
       }
 
   /** Draws the log searched for `search`'s query; see the class notes. Render thread only. */
@@ -143,4 +147,19 @@ final case class Log(
       search.takeReveal().foreach(hit => state.reveal(hit.row))
       render(area, buffer, state)
       val top   = state.offset
-      SearchHighlight.paint(buffer, area, area.x, area.y - top, search, matchStyle, currentMatchStyle)
+      val lines = state.lines
+      SearchHighlight.paint(
+        buffer,
+        area,
+        area.x,
+        area.y - top,
+        search,
+        matchStyle,
+        currentMatchStyle,
+        row =>
+          val line = lines(row)
+          alignmentOf(line).originAt(0, area.width, line.width),
+      )
+
+  /** A line's own alignment, `Left` when it names none — a log has no alignment of its own to fall back on. */
+  private def alignmentOf(line: Line): Alignment = line.alignment.getOrElse(Alignment.Left)

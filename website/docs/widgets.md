@@ -650,6 +650,13 @@ back.
   Inside a `scrollView` the whole document is searched and the scroll view scrolls to the
   current match. The node becomes focusable, so `n`/`N` work once it has focus, and the
   arrows bubble to the scroll view around it.
+- `textArea(state).searchable(search)` hands the editor's search to the shared state: the
+  `searchBar` types the query, the matches take the same theme styles, and each move of the
+  search puts the caret on the current match. `F3` / `Shift+F3` (and `n` / `N` in a
+  `readOnly` area) step it; `Ctrl+F` and `/` bubble to the app instead of opening the
+  editor's own prompt.
+- A log draws each line at its own alignment — `Line.centered`, `rightAligned` — and the
+  highlight lands where the line is drawn.
 
 Matching is by grapheme cluster, never by `char`: a combining sequence, an emoji or a wide
 CJK character is matched whole, a precomposed `é` matches `e` followed by a combining
@@ -660,9 +667,14 @@ the same matcher.
 `SearchState` is render-thread-only. `query`, `matches` (each a `SearchMatch(row, column,
 width)` in the view's content coordinates), `current`, `next()`, `previous()` and
 `clear()` are its API, and every edit moves its `version`, so the view redraws when you
-change it. Give one state to one view only: two views sharing it would overwrite each
-other's matches. Without the DSL, `Log` and `ScrollView` have a `render` overload that takes
-a `SearchState`, and `Searchable(widget)` makes any widget searchable.
+change it. Give one state to one view only: two views rendered with the same state would
+overwrite each other's matches. To search two views with one query, give each its own
+`search.view(key)` — `log(left).searchable(search.view("left"))`,
+`log(right).searchable(search.view("right"))` — and put `searchBar(search)` over the
+parent: the views share its query, each keeps its own matches and current match, and
+`next()`, `previous()` and `clear()` on the parent reach every view. Without the DSL,
+`Log`, `ScrollView` and `TextArea` have a `render` overload that takes a `SearchState`, and
+`Searchable(widget)` makes any widget searchable.
 
 ### Confining a failing subtree
 

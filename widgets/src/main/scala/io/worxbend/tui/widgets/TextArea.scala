@@ -167,6 +167,13 @@ final class TextAreaState(initial: String = "", killRing: KillRing = KillRing())
     val found = matches
     found.findLast(_.start < caret).orElse(found.lastOption).map(hit => moveTo(hit.start)).isDefined
 
+  /** Makes `query` the query [[matches]] answers for, without opening the prompt and without moving `version` — what a
+    * [[TextArea]] rendered with a [[SearchState]] does each frame, so a search bar elsewhere drives this area's search.
+    * An open `/` prompt keeps its own query.
+    */
+  private[widgets] def followQuery(query: String): Unit =
+    if openQuery.isEmpty then lastQuery = query
+
   /** Every match of the last query, in document order — what [[TextArea]] underlines. Recomputed only when the text or
     * the query changed since the last call.
     */
@@ -251,14 +258,45 @@ final case class TextArea(
     options: TextAreaOptions = TextAreaOptions(),
 ) extends StatefulWidget[TextAreaState]:
 
-  def render(area: Rect, buffer: Buffer, state: TextAreaState): Unit =
+  def render(area: Rect, buffer: Buffer, state: TextAreaState): Unit = draw(area, buffer, state, None)
+
+  /** Draws the area searched for `search`'s query — the [[SearchState]] path [[Log]] and [[ScrollView]] take, so a
+    * `searchBar` elsewhere drives this editor's search. The area's matches are recorded on `search` in content
+    * coordinates (line, display column), painted in `matchStyle` and the current one in `currentMatchStyle`, and each
+    * move of the search — a new query, `next`, `previous` — puts the caret on the current match, which scrolls it into
+    * view. The editor's own `/` prompt, while open, keeps its own query. Render thread only.
+    */
+  def render(
+      area: Rect,
+      buffer: Buffer,
+      state: TextAreaState,
+      search: SearchState,
+      matchStyle: Style = SearchHighlight.DefaultMatchStyle,
+      currentMatchStyle: Style = SearchHighlight.DefaultCurrentStyle,
+  ): Unit =
+    state.followQuery(if search.isActive then search.query else "")
+    val found                               = state.matches
+    val lines                               = state.clusterLines
+    def column(position: TextPosition): Int = ClusterRow.visibleWidth(lines(position.line), 0, position.column)
+    search.record(
+      found.map(hit => SearchMatch(hit.start.line, column(hit.start), column(hit.end) - column(hit.start))),
+      state.caret.line,
+    )
+    search.takeReveal().foreach(_ => search.current.flatMap(found.lift).foreach(hit => state.moveTo(hit.start)))
+    val current                             = search.current.flatMap(found.lift)
+    draw(area, buffer, state, Some(Highlighting(matchStyle, currentMatchStyle, current)))
+
+  /** How a searched render paints its matches: the match styles and which match is current. */
+  private final case class Highlighting(matchStyle: Style, currentStyle: Style, current: Option[TextAreaState.Match])
+
+  private def draw(area: Rect, buffer: Buffer, state: TextAreaState, searched: Option[Highlighting]): Unit =
     if !area.isEmpty then
       val layout = layoutFor(area, state)
       state.wrapWidth = Option.when(options.wrap)(layout.text.width)
       state.scrollRow = layout.scrollRow
       state.scrollColumn = layout.scrollColumn
       (layout.scrollRow until math.min(layout.rowCount, layout.scrollRow + layout.text.height)).foreach { index =>
-        renderRow(buffer, layout, layout.row(index), layout.text.y + index - layout.scrollRow, state)
+        renderRow(buffer, layout, layout.row(index), layout.text.y + index - layout.scrollRow, state, searched)
       }
       for prompt <- layout.prompt; query <- state.search do
         buffer.setString(prompt.x, prompt.y, CharWidth.substringByWidth("/" + query, prompt.width), style)
@@ -362,7 +400,14 @@ final case class TextArea(
     * on it, so an editor does not paint its own background over whatever is behind the end of a short line — see
     * [[ClusterRow.draw]] for the wide-glyph and cursor rules.
     */
-  private def renderRow(buffer: Buffer, layout: Layout, row: VisualRow, y: Int, state: TextAreaState): Unit =
+  private def renderRow(
+      buffer: Buffer,
+      layout: Layout,
+      row: VisualRow,
+      y: Int,
+      state: TextAreaState,
+      searched: Option[Highlighting],
+  ): Unit =
     val (cursorLine, cursorColumn) = state.cursor
     val clusters                   = state.clusterLines(row.line)
     if layout.gutterWidth > 0 then
@@ -395,17 +440,25 @@ final case class TextArea(
       cursorStyle = cursorStyle,
       paintEndCell = false,
       tokenStyles = options.lexer.fold(IndexedSeq.empty)(lexer => tokenStyles(clusters, lexer)),
-      highlights = highlightsOn(row.line, clusters.size, state),
+      highlights = highlightsOn(row.line, clusters.size, state, searched),
       until = if row.last then clusters.size + 1 else row.end,
     )
 
   /** Search matches, then the selection over them, as cluster ranges of `line`. */
-  private def highlightsOn(line: Int, size: Int, state: TextAreaState): Seq[ClusterRow.Highlight] =
-    val found     = state.matches.iterator
+  private def highlightsOn(
+      line: Int,
+      size: Int,
+      state: TextAreaState,
+      searched: Option[Highlighting],
+  ): Seq[ClusterRow.Highlight] =
+    def styleOf(hit: TextAreaState.Match): Style = searched match
+      case Some(painting) => if painting.current.contains(hit) then painting.currentStyle else painting.matchStyle
+      case None           => options.matchStyle
+    val found                                    = state.matches.iterator
       .filter(_.start.line == line)
-      .map(hit => ClusterRow.Highlight(hit.start.column, hit.end.column, options.matchStyle))
+      .map(hit => ClusterRow.Highlight(hit.start.column, hit.end.column, styleOf(hit)))
       .toList
-    val selection = state.selection.toList.collect {
+    val selection                                = state.selection.toList.collect {
       case (from, to) if from.line <= line && to.line >= line =>
         val start = if from.line == line then from.column else 0
         val end   = if to.line == line then to.column else size
