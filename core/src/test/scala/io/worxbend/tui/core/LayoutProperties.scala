@@ -7,7 +7,7 @@ import org.scalatestplus.scalacheck.ScalaCheckPropertyChecks
 /** Property-based layout invariants over every constraint kind, `Auto` and `Bounded` included, on both axes.
   *
   * [[LayoutPropertySpec]] covers the six fixed-and-growing kinds on one axis; this suite adds the two measured kinds
-  * ticket 10 introduced, a measure function, both directions, and the weight-monotonicity rule. 500 cases a property:
+  * (`Auto`, `Bounded`), a measure function, both directions, and the weight-monotonicity rule. 500 cases a property:
   * the draws are cheap, and a solver bug tends to live in one corner of a large space.
   */
 final class LayoutProperties extends AnyFunSuite with ScalaCheckPropertyChecks:

@@ -175,12 +175,12 @@ note in [Versioning & releases](website/docs/versioning.md).
 
 - `Pilot`'s default wait is 10 s (was 2 s): a cold test JVM's first frame on a loaded machine crossed 2 s and failed healthy tests with "did not go idle". `PromptComposerSpec` waits on the last query's completions rather than any popup naming "albert".
 
-- **B1** — Focused DSL text fields now move the terminal's hardware cursor, so screen readers and input-method popups follow the caret.
-- **B2** — `dropdown` no longer reflows its siblings or clips its list near the bottom edge.
-- **B3** — A click on a click-outside dialog's own border, title or caption no longer dismisses it.
-- **B4** — `ListView` no longer does O(n) work per frame, restoring its row virtualisation.
-- **B5** — `TextArea` undo no longer snapshots the whole document per keystroke; typing a word is one undo step.
-- **B6** — `each` scopes hooks under the item key, so focus and hook state share one identity.
+- Focused DSL text fields now move the terminal's hardware cursor, so screen readers and input-method popups follow the caret.
+- `dropdown` no longer reflows its siblings or clips its list near the bottom edge.
+- A click on a click-outside dialog's own border, title or caption no longer dismisses it.
+- `ListView` no longer does O(n) work per frame, restoring its row virtualisation.
+- `TextArea` undo no longer snapshots the whole document per keystroke; typing a word is one undo step.
+- `each` scopes hooks under the item key, so focus and hook state share one identity.
 - A `scrollView` that scrolls to reveal a child no longer paints its content twice on that frame, so `boundsOf` and the other recorded rects are never one frame stale.
 - A mouse selection stays on its node when nodes are added elsewhere in the tree, and moves with the content when a `scrollView` scrolls.
 - `scrollbar(…)` and `notice(…)` can be placed in a `grid` with `.at(row, col)`.

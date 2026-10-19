@@ -4,7 +4,7 @@ import io.worxbend.tui.core.{Buffer, Color, Position, Rect}
 import io.worxbend.tui.runtime.{A11yAudit, A11yFinding, A11yRule}
 import io.worxbend.tui.widgets.{Image, PixelImage}
 
-/** The accessibility lint behind `pilot.a11yReport(app)` (research idea I4). Four rules over the last frame:
+/** The accessibility lint behind `pilot.a11yReport(app)`. Four rules over the last frame:
   *
   *   - [[A11yRule.NoFocusCue]] — when the tab order holds two or more controls, each focusable on screen is painted
   *     twice into a scratch buffer, focused and not, and flagged when the two are identical: the theme's focus cue

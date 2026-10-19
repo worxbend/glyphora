@@ -2,10 +2,10 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Buffer, Cell, Color, Position, Rect, Style, Widget}
 
-/** Debug borders (research idea B4): with `GLYPHORA_DEBUG_LAYOUT=1` every container on the frame is outlined dimly and
-  * every child a `row` or `column` laid out to zero cells is marked in red where it would have started — the cell just
-  * past the sibling before it, or the container's first cell when it is the first child. A blank cell there shows a
-  * `•`; an occupied one keeps its glyph and takes the red background.
+/** Debug borders: with `GLYPHORA_DEBUG_LAYOUT=1` every container on the frame is outlined dimly and every child a `row`
+  * or `column` laid out to zero cells is marked in red where it would have started — the cell just past the sibling
+  * before it, or the container's first cell when it is the first child. A blank cell there shows a `•`; an occupied one
+  * keeps its glyph and takes the red background.
   *
   * The outline never hides content: on a blank cell it draws a thin box glyph, on a cell that already shows something
   * it only dims that cell. It reads the host's [[NodeBounds]] for the frame just painted, so `TuiApp` turns bounds

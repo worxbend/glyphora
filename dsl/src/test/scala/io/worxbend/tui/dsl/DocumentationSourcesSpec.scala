@@ -7,9 +7,9 @@ import java.nio.file.{Files, Path}
 /** The checkout walkers behind the suites that read the repository — [[GoldenFixtureDisciplineSpec]],
   * [[DisciplineSpec]], the documentation suites — must only ever see the checkout they were built from.
   *
-  * A swarm of git worktrees is where that went wrong: a `dsl.test` run reported orphan golden fixtures that belonged to
-  * a different worktree. These cases build that layout on disk — a second checkout beside this one, and one placed
-  * inside it — and pin down which directories count.
+  * Several git worktrees side by side is where that went wrong: a `dsl.test` run reported orphan golden fixtures that
+  * belonged to a different worktree. These cases build that layout on disk — a second checkout beside this one, and one
+  * placed inside it — and pin down which directories count.
   */
 final class DocumentationSourcesSpec extends AnyFunSuite:
 

@@ -39,10 +39,9 @@ private[dsl] final case class InspectedNode(
       s"focus  ${focusIndex.fold("-")(_.toString)}",
     ) ++ Option.when(props.focused)("focused")
 
-/** The F12 overlay (research idea B3): for the node under the pointer — or the focused one when the pointer is
-  * elsewhere or was never seen — a card with its `debugName`, key, painted bounds, constraint, size claim, measured
-  * height and focus index; in the second mode the element tree of [[ElementTreeSnapshot]] beside it, with the inspected
-  * node's line marked.
+/** The F12 overlay: for the node under the pointer — or the focused one when the pointer is elsewhere or was never seen
+  * — a card with its `debugName`, key, painted bounds, constraint, size claim, measured height and focus index; in the
+  * second mode the element tree of [[ElementTreeSnapshot]] beside it, with the inspected node's line marked.
   *
   * It reads only what the host already recorded for the frame just painted — the decorated tree and the one
   * [[NodeBounds]] recorder — so it needs bounds recording on, which `TuiApp` switches on while the overlay is open. The

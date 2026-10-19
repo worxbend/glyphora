@@ -270,7 +270,7 @@ final case class KeyedRow[K](key: K, cells: Seq[String])
 /** Rows a [[DataTable]] asks for one at a time, for data too large or too remote to hold as a sequence: a million
   * records behind a query, a log indexed on disk. Implement `count` and `apply`; the table reads only the rows it can
   * paint — the body window, the selected row's key, the rows of the current page — so rendering costs the viewport and
-  * not the data (research idea L4).
+  * not the data.
   *
   * A provider *is* a `Seq[KeyedRow[K]]`, so it goes wherever a row sequence went, `DataTable(columns, rows, widths)`
   * included, and a plain `Vector` of rows needs no adapter at all. Three things follow from that:

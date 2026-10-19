@@ -129,7 +129,7 @@ Three changes reach almost every app, so check them first:
   whether open or closed, and the list is drawn at the frame root like `portal` content — below
   the row when there is room, above it when there is not, never clipped by the enclosing panel.
   Before, an open dropdown claimed `1 + maxVisibleRows + 2` rows and pushed everything below it
-  down, and one near the bottom of a short area got a clipped list (research bug B2). A click
+  down, and one near the bottom of a short area got a clipped list. A click
   outside an open list now closes it *and is spent on that* — the control under the pointer does
   not also get the click — and Tab closes the list on its way to the next control. Nothing to
   change unless a test pinned the reflowed positions.
@@ -212,7 +212,7 @@ Three changes reach almost every app, so check them first:
   New container nodes follow the same split — `window(title, state)(content)` included: its border
   is `.frameStyle(…)`, the theme's `border` by default and bold while focus is inside it.
 - **`withStyle(transform)(subtree)` returns one scope node.** It used to return `subtree` rebuilt
-  with the style patched into every node's props, on every frame (research G3). It now returns a
+  with the style patched into every node's props, on every frame. It now returns a
   `StyleScopeElement` wrapping `subtree` unchanged, and the style reaches the descendants at
   paint. What is drawn is the same. Only code that inspected the result changes:
   `withStyle(…)(row(a, b)).children` is `Seq(row(a, b))`, and the children's `props.style` no
@@ -220,7 +220,7 @@ Three changes reach almost every app, so check them first:
 - **Elements built outside a view paint in the app's theme.** A themed factory (`panel`, `rule`,
   `gauge`, `progressBar`, the spinners and skeletons, `notice`, `badge`, `dialog`, `markdown`,
   `logConsole`, …) called where only `Theme.default` is in scope — a top-level `def`, a helper
-  object — used to paint dark-theme colours even in a `Theme.Light` app (research G2). It is now
+  object — used to paint dark-theme colours even in a `Theme.Light` app. It is now
   re-resolved against the app's theme when painted, keeping any builders applied afterwards. A
   helper that *wanted* the dark palette passes it: `panel("x")(body)(using Theme.Dark)`.
   The chrome builders `statusBar`, `topBar`, `helpOverlay` and `whichKeyPopup` and the
@@ -382,7 +382,7 @@ Three changes reach almost every app, so check them first:
 
 ### Editing
 
-- **Undo is coalesced and diff-based** (research bug B5). `TextAreaState` — and now
+- **Undo is coalesced and diff-based**. `TextAreaState` — and now
   `TextInputState` — store diffs instead of a whole-document snapshot per edit, and consecutive
   single-grapheme inserts join one undo step, as do consecutive backspaces and forward deletes. A
   space after a word, any caret move, a selection change, undo or redo starts a new step; the
@@ -418,7 +418,7 @@ Three changes reach almost every app, so check them first:
   `templateInput`, `autocomplete`, `textArea` and the command palette's filter report their caret,
   and the frame parks the hardware cursor there; it hides when focus leaves text. Before, the DSL
   painted a reverse-video cell and left the terminal cursor hidden — invisible to screen readers
-  and to input-method popups (research bug B1). The default is `CaretStyle.Both`; keep the old look
+  and to input-method popups. The default is `CaretStyle.Both`; keep the old look
   with `.caretStyle(CaretStyle.Painted)`:
 
   ```scala
@@ -446,7 +446,7 @@ Three changes reach almost every app, so check them first:
 
 ### State and hooks
 
-- **`each` scopes its rows' hooks under the item key** (research bug B6).
+- **`each` scopes its rows' hooks under the item key**.
   `each(items)(key)(render)` runs `render` inside `keyed(key)` as well as stamping `.key(key)`, so
   focus and `useSignal`/`useState` share one identity and follow the item through reorders. Hook
   state declared directly inside an `each` row (with no `keyed` of its own) therefore moves from a
@@ -467,7 +467,7 @@ Three changes reach almost every app, so check them first:
   `TextAreaState`, the new picker states, `MarkdownStream`, …) is `Versioned`: each mutation
   raises `version`, and a `TuiApp` redraws when a painted state's version moves. A render-thread
   write outside an event handler — an `Async` continuation — is drawn without a `Signal` write or
-  `requestRedraw()` (research E4); an app may see a frame where it used to see none. A redraw
+  `requestRedraw()`; an app may see a frame where it used to see none. A redraw
   request that only followed a widget-state write can go:
 
   ```scala
@@ -506,7 +506,7 @@ Three changes reach almost every app, so check them first:
   `TreeState.toggle` now ignores a selection that names no visible row; it used to toggle a
   hidden node inside a collapsed branch.
 - **`ListView` remembers its item layout on the `ListState`**, once per `items` reference, so a
-  frame no longer walks every item (research bug B4). A `Seq` mutated in place under the same
+  frame no longer walks every item. A `Seq` mutated in place under the same
   reference is re-measured when its count changes or a drawn item's height disagrees; an
   off-screen item that changed height is noticed when it scrolls in. Replace the sequence, as a
   `Signal[Vector[…]]` does, rather than mutating it.
@@ -575,7 +575,7 @@ Three changes reach almost every app, so check them first:
 - **Press and motion on a `.draggable` element is a drag.** Its `Drag`/`Up` events go to the drag
   gesture, not the element's `onDrag`/`onDragEnd`; a press and release without motion is still a
   click.
-- **A click on a click-outside dialog's own border stays inside it** (research bug B3). A modal
+- **A click on a click-outside dialog's own border stays inside it**. A modal
   pushed with `Dismissal.ClickOutside` or `EscapeOrClickOutside`, and any `dismissibleOverlay`,
   used to treat a press on the dialog's border, title or caption as outside. Now a press on any
   node of the dialog that draws something is absorbed, and only a press on layout-only nodes
