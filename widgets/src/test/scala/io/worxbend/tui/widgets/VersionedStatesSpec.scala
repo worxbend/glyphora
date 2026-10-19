@@ -189,7 +189,9 @@ final class VersionedStatesSpec extends AnyFunSuite:
     row("DiffViewState", DiffViewState())(
       "offset ="             -> (_.offset = 2),
       "scrollUp"             -> (state => { state.offset = 3; state.scrollUp() }),
-      "scrollDown"           -> (state => { state.lastContentHeight = 10; state.scrollDown() }),
+      "scrollDown"           -> (state => { state.recordFrame(10, 1); state.scrollDown() }),
+      "pageUp"               -> (state => { state.offset = 3; state.pageUp() }),
+      "pageDown"             -> (state => { state.recordFrame(10, 1); state.pageDown() }),
       "first"                -> (_.first()),
       "last"                 -> (_.last()),
     ),

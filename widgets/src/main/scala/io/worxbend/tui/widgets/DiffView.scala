@@ -1,17 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{
-  Buffer,
-  CharWidth,
-  Color,
-  Line,
-  Measured,
-  Rect,
-  Span,
-  StatefulWidget,
-  Style,
-  VersionedState,
-}
+import io.worxbend.tui.core.{Buffer, CharWidth, Color, Line, Measured, Rect, Span, StatefulWidget, Style, Versioned}
 
 /** How a [[DiffView]] lays a hunk out: one column with `-` lines above their `+` replacements (`Unified`, what `git
   * diff` prints), or the old file on the left and the new one on the right with a replaced line beside its replacement
@@ -64,20 +53,27 @@ final case class DiffViewOptions(
   * again until the patch (by reference) or the options change.
   *
   * Render-thread-only. Every mutation raises `version` (see [[io.worxbend.tui.core.Versioned]]), so a DSL node that
-  * paints this state notices a write made outside the event path and schedules the frame that shows it.
+  * paints this state notices a write made outside the event path and schedules the frame that shows it. The scrolling
+  * itself — offset, clamp, page moves — is a [[ScrollViewState]] inside, so a diff and a scroll view page alike.
   */
-final class DiffViewState extends VersionedState:
-  def offset: Int = offsetValue
+final class DiffViewState extends Versioned:
 
-  def offset_=(value: Int): Unit =
-    offsetValue = value
-    touch()
+  /** The scrolling half: the offset, the recorded viewport and content heights, and the clamped moves. */
+  private val scroll: ScrollViewState = ScrollViewState()
 
-  private var offsetValue: Int                                                      = 0
+  def version: Long = scroll.version
+
+  def offset: Int = scroll.offset
+
+  def offset_=(value: Int): Unit = scroll.offset = value
+
   private[widgets] var hunkRows: IndexedSeq[Int]                                    = IndexedSeq.empty
-  private[widgets] var lastViewportHeight: Int                                      = 1
-  private[widgets] var lastContentHeight: Int                                       = 0
   private[widgets] var cache: Option[(Patch, DiffViewOptions, IndexedSeq[DiffRow])] = None
+
+  /** Records the size of the frame just drawn, which every clamped move is measured against. */
+  private[widgets] def recordFrame(contentHeight: Int, viewportHeight: Int): Unit =
+    scroll.lastContentHeight = contentHeight
+    scroll.lastViewportHeight = viewportHeight
 
   /** The index of the hunk whose header is at or above the top row, or `None` above the first hunk. */
   def currentHunk: Option[Int] =
@@ -90,18 +86,22 @@ final class DiffViewState extends VersionedState:
   /** Scrolls the previous hunk's header — the one above the top row — to the top row. */
   def previousHunk(): Unit = hunkRows.findLast(_ < offset).foreach(row => offset = row)
 
-  def scrollUp(count: Int = 1): Unit = offset = math.max(0, offset - count)
+  def scrollUp(count: Int = 1): Unit = scroll.scrollUp(count)
 
   /** Scrolls `count` rows towards the end, stopping once the last row is at the bottom of the viewport. An offset a
     * hunk jump left further down than that stays where it is.
     */
-  def scrollDown(count: Int = 1): Unit =
-    val bottom = math.max(0, lastContentHeight - lastViewportHeight)
-    if offset < bottom then offset = math.min(bottom, offset + count)
+  def scrollDown(count: Int = 1): Unit = if offset < scroll.maxOffset then scroll.scrollDown(count)
 
-  def first(): Unit = offset = 0
+  /** Scrolls up by one viewport — the PageUp move. */
+  def pageUp(): Unit = scroll.pageUp()
 
-  def last(): Unit = offset = math.max(0, lastContentHeight - lastViewportHeight)
+  /** Scrolls down by one viewport — the PageDown move; like [[scrollDown]], it never pulls a hunk jump back up. */
+  def pageDown(): Unit = if offset < scroll.maxOffset then scroll.pageDown()
+
+  def first(): Unit = scroll.first()
+
+  def last(): Unit = scroll.last()
 
   private[widgets] def rowsFor(patch: Patch, options: DiffViewOptions): IndexedSeq[DiffRow] =
     cache match
@@ -139,8 +139,7 @@ final case class DiffView(patch: Patch, options: DiffViewOptions = DiffViewOptio
         case DiffRow.HunkHeader(_) => true
         case _                     => false
     }
-    state.lastContentHeight = laidOut.size
-    state.lastViewportHeight = math.max(1, area.height)
+    state.recordFrame(laidOut.size, math.max(1, area.height))
     state.offset = math.max(0, math.min(state.offset, laidOut.size - 1))
     if !area.isEmpty then
       buffer.setStyle(area, options.style)
