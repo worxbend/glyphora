@@ -301,6 +301,21 @@ final case class TextArea(
       for prompt <- layout.prompt; query <- state.search do
         buffer.setString(prompt.x, prompt.y, CharWidth.substringByWidth("/" + query, prompt.width), style)
 
+  /** The rows this editor's text takes at `width` columns, gutter included: one per line without wrap, one per wrapped
+    * row with it — counting the extra row the caret claims when it sits past the end of a full row, so a host that
+    * sizes the editor by this never hides the caret. The prompt row of an open search is not counted. What a host
+    * growing an editor with its content (a chat composer) measures; the wrap spans come from the state's cache.
+    */
+  def heightAt(width: Int, state: TextAreaState): Int =
+    val lines = state.clusterLines
+    if !options.wrap then lines.size
+    else
+      val digits                     = lines.size.toString.length
+      val gutterWidth                = if options.lineNumbers && digits + 1 < width then digits + 1 else 0
+      val textWidth                  = math.max(1, width - gutterWidth)
+      val (cursorLine, cursorColumn) = state.cursor
+      wrappedRows(lines, state.wrapLayout(textWidth), textWidth, cursorLine, cursorColumn).size
+
   /** The buffer cell the caret occupies when this editor is drawn into `area` for `state` — the counterpart of
     * `TextInput.caretAt`, for a host that parks the terminal's own cursor on the insertion point. While a search is
     * open, that is the end of the prompt's query.
