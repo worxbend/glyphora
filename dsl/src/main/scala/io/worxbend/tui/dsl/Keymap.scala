@@ -25,6 +25,7 @@ final case class FrameworkKeys(
     windowMove: KeyEvent = KeyEvent(KeyCode.Char('m'), KeyModifiers.Alt),
     windowResize: KeyEvent = KeyEvent(KeyCode.Char('r'), KeyModifiers.Alt),
     inspector: KeyEvent = KeyEvent.of(KeyCode.F(12)),
+    copySelection: KeyEvent = KeyEvent(KeyCode.Char('c'), KeyModifiers.Ctrl | KeyModifiers.Shift),
 ):
   require(pageStep > 0, s"pageStep must be positive, was $pageStep")
 
@@ -39,6 +40,7 @@ final case class FrameworkKeys(
     (FrameworkKeys.WindowMove, windowMove, "move the focused window with the arrows"),
     (FrameworkKeys.WindowResize, windowResize, "resize the focused window with the arrows"),
     (FrameworkKeys.Inspector, inspector, "cycle the inspector overlay"),
+    (FrameworkKeys.CopySelection, copySelection, "copy the mouse text selection"),
   )
 
   /** These keys with every id in `keymap` moved to its sequence; ids that name no framework key are ignored, so one
@@ -62,6 +64,7 @@ final case class FrameworkKeys(
       windowMove = key(FrameworkKeys.WindowMove, windowMove),
       windowResize = key(FrameworkKeys.WindowResize, windowResize),
       inspector = key(FrameworkKeys.Inspector, inspector),
+      copySelection = key(FrameworkKeys.CopySelection, copySelection),
     )
 
   /** Whether `event` is `key` held with at least `key`'s modifiers. */
@@ -78,6 +81,7 @@ object FrameworkKeys:
   val MenuBar: BindingId        = BindingId("menu-bar")
   val WindowMove: BindingId     = BindingId("window-move")
   val WindowResize: BindingId   = BindingId("window-resize")
+  val CopySelection: BindingId  = BindingId("copy-selection")
 
   /** F12 by default: cycles the inspector overlay — node card, card plus element tree, off. */
   val Inspector: BindingId = BindingId("inspector")

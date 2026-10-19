@@ -54,6 +54,15 @@ trait AppServices extends Notifications:
     */
   def runEffect(key: String, effect: Effect): Unit
 
+  /** [[runEffect(key:String,effect:io\.worxbend\.tui\.core\.Effect)*]] confined to the element declared with
+    * `.key(scope)`: the effect covers only the rect that node was painted into, resolved on every frame, and paints
+    * nothing on a frame the node is not on screen. Services that cannot resolve an element — this default, kept so an
+    * existing implementation of the trait still compiles — run it under `key` over the whole frame instead.
+    */
+  def runEffect(key: String, effect: Effect, scope: String): Unit =
+    val _ = scope
+    runEffect(key, effect)
+
   /** Schedules one frame — for state the reactive layer cannot see, such as a plain field the view reads. */
   def requestRedraw(): Unit
 

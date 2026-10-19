@@ -14,6 +14,9 @@ import scala.collection.mutable
   *
   * `layoutOnly` marks a node that paints nothing of its own — a `row`, a `column`, a `spacer`, a `layers` — so a query
   * asking "did this press land on something drawn" can skip it; see [[Element.layoutOnly]].
+  *
+  * `roles` is what the pointer gestures can do with the node — select its text, drag it, drop onto it — see
+  * [[PointerRoles]]. A node with a role is recorded on every frame, whether or not full recording is on.
   */
 private[dsl] final case class NodeBoundsEntry(
     id: Int,
@@ -22,6 +25,7 @@ private[dsl] final case class NodeBoundsEntry(
     layoutOnly: Boolean,
     layout: Rect,
     visible: Rect,
+    roles: PointerRoles = PointerRoles.Empty,
 )
 
 /** One frame's worth of recorded node bounds, immutable once published.
@@ -47,6 +51,12 @@ private[dsl] final class NodeBoundsFrame(val entries: Vector[NodeBoundsEntry]):
     entries.exists(entry =>
       entry.id > id && entry.id <= lastDescendantId && !entry.layoutOnly && entry.visible.contains(position)
     )
+
+  /** The innermost node at `position` that `role` accepts — the last in pre-order, which is the deepest and the one
+    * painted on top.
+    */
+  def innermostAt(position: Position)(role: PointerRoles => Boolean): Option[NodeBoundsEntry] =
+    entries.iterator.filter(entry => role(entry.roles) && entry.visible.contains(position)).maxByOption(_.id)
 
 private[dsl] object NodeBoundsFrame:
   val Empty: NodeBoundsFrame = NodeBoundsFrame(Vector.empty)
@@ -75,10 +85,18 @@ private[dsl] final class NodeBounds:
   /** Records `area` for node `id`, mapped onto the frame through the enclosing scroll viewports; a node scrolled fully
     * out of view leaves no entry.
     */
-  def record(id: Int, lastDescendantId: Int, key: Option[String], layoutOnly: Boolean, area: Rect): Unit =
+  def record(
+      id: Int,
+      lastDescendantId: Int,
+      key: Option[String],
+      layoutOnly: Boolean,
+      area: Rect,
+      roles: PointerRoles = PointerRoles.Empty,
+  ): Unit =
     val visible = FrameCoordinates.visible(area)
     if !visible.isEmpty then
-      recording += NodeBoundsEntry(id, lastDescendantId, key, layoutOnly, FrameCoordinates.translate(area), visible)
+      recording +=
+        NodeBoundsEntry(id, lastDescendantId, key, layoutOnly, FrameCoordinates.translate(area), visible, roles)
 
   /** Closes the frame and makes it the one readers see. */
   def publish(): Unit = published = NodeBoundsFrame(recording.toVector)
@@ -90,10 +108,19 @@ private[dsl] final class NodeBounds:
   * everything else: props, children, measurement and handlers all read through to `inner`, the way the other decorators
   * in `ElementDecorators` do, so the tree routes and lays out exactly as it would unwrapped.
   *
-  * Added only while recording is on, which is what keeps a frame with recording off free of per-node allocations.
+  * Added to every node only while recording is on, which is what keeps a frame with recording off free of per-node
+  * allocations. A node with [[PointerRoles]] is wrapped even while full recording is off, with `gestures` set: after
+  * the node paints, the gestures draw their overlay on it — the selection highlight, a drop target's hover cue, a
+  * dragged node's ghost — which is how they are composed into the frame without any widget knowing about them.
   */
-private[dsl] final case class BoundsElement(inner: Element, id: Int, lastDescendantId: Int, recorder: NodeBounds)
-    extends DecoratingElement:
+private[dsl] final case class BoundsElement(
+    inner: Element,
+    id: Int,
+    lastDescendantId: Int,
+    recorder: NodeBounds,
+    roles: PointerRoles = PointerRoles.Empty,
+    gestures: Option[PointerGestures] = None,
+) extends DecoratingElement:
   type Self = BoundsElement
 
   /** The wrapped node's children, not the node itself — see `TrackedElement.children` for why. */
@@ -101,8 +128,9 @@ private[dsl] final case class BoundsElement(inner: Element, id: Int, lastDescend
 
   def widget: Widget =
     (area, buffer) =>
-      recorder.record(id, lastDescendantId, inner.props.focusKey, inner.layoutOnly, area)
+      recorder.record(id, lastDescendantId, inner.props.focusKey, inner.layoutOnly, area, roles)
       inner.widget.render(area, buffer)
+      if !roles.isEmpty then gestures.foreach(_.painted(id, roles, inner, area, buffer))
 
   /** A [[BoundsAwareElement]] underneath gets the behaviour that reads where its subtree was painted; every other
     * node's built-in passes through untouched. The frame is looked up when the event arrives, so the behaviour sees the
