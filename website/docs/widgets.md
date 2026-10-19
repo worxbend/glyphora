@@ -2701,6 +2701,9 @@ click on a visible item hands its index to `onSelect`:
 breadcrumb("Home" +: screenLabels, step => (step until screenLabels.size).foreach(_ => popScreen()))
 ```
 
+Outside the app object, `summon[AppServices].screenLabels` is the same list (see
+[Name the screens](./app-shell#name-the-screens-and-draw-a-breadcrumb)).
+
 When the row is too narrow the middle items fold into one `…`, earliest first, so the
 start of the trail and the items nearest the end stay readable longest:
 `Home › … › widgets › Breadcrumb`, then `Home › … › Breadcrumb`, then `… › Breadcrumb`,

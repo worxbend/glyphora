@@ -111,6 +111,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 - Asciicast recording via `RunnerConfig.withRecording(path)`, `-Dglyphora.record=…` or `AsciicastRecorder`; `Tape.parse` / `Tape.run`.
 - Inspector overlay (F12, framework key `inspector`); `GLYPHORA_DEBUG_LAYOUT=1` debug borders; `examples/doctor`.
 - `pilot.a11yReport(app)` accessibility lint (`A11yFinding`, `A11yRule`); its focus-cue exemption follows the node's own `selectionIsFocusCue`.
+- `AppServices.screenLabels`: the screen trail for a `breadcrumb` drawn by a helper outside the app.
 - `TuiApp.inspector = false` and `FrameworkKeys.unbind(ids*)` (`KeySequence.unbound`) turn the inspector — or any framework key — off.
 - JDK Flight Recorder events `FrameDrawn`, `EventRouted`, `FocusChanged`, `AsyncAdmitted`, `AsyncRejected` (`JfrEvents`).
 - Environment overrides `GLYPHORA_COLOR_DEPTH`, `GLYPHORA_KEYBOARD`, `GLYPHORA_MOUSE`, `GLYPHORA_ESCAPE_DELAY`.

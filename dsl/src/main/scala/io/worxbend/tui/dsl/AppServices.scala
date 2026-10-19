@@ -1,7 +1,7 @@
 package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{ColorScheme, Effect}
-import io.worxbend.tui.runtime.{Reactive, Signal}
+import io.worxbend.tui.runtime.{Reactive, ReactiveScope, Signal}
 import io.worxbend.tui.widgets.{Clipboard, NoticeLevel}
 
 import java.nio.file.Path
@@ -36,6 +36,13 @@ trait AppServices extends Notifications:
 
   /** Pushes a screen: a modal layers over the current view, a full screen replaces it. */
   def pushScreen(screen: Screen): Unit
+
+  /** The names of the screens on the stack, outermost first, as a reactive read — the app's `screenLabels`, for a
+    * helper written outside the app: `breadcrumb("Home" +: services.screenLabels, …)`. Unnamed screens contribute
+    * nothing. Concrete, answering no screens, so an implementation written before it keeps compiling; a running
+    * `TuiApp`'s services answer its stack.
+    */
+  def screenLabels(using @scala.annotation.unused scope: ReactiveScope): Seq[String] = Seq.empty
 
   /** Pops the topmost screen, if there is one. */
   def popScreen(): Unit

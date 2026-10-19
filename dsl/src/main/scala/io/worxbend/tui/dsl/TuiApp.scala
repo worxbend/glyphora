@@ -427,6 +427,7 @@ trait TuiApp:
     def dismissToasts(): Unit                                                       = TuiApp.this.dismissToasts()
     def pushScreen(screen: Screen): Unit                                            = TuiApp.this.pushScreen(screen)
     def popScreen(): Unit                                                           = TuiApp.this.popScreen()
+    override def screenLabels(using scope: ReactiveScope): Seq[String]              = screenStack.labels
     def openPalette(): Unit                                                         = TuiApp.this.openPalette()
     def closePalette(): Unit                                                        = TuiApp.this.closePalette()
     def runEffect(effect: Effect): Unit                                             = TuiApp.this.runEffect(effect)

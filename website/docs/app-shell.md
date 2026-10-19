@@ -447,6 +447,18 @@ def view(using ReactiveScope, Theme): Element =
 `breadcrumb("Home" +: screenLabels, onSelect)` draws the same trail clickable, folding its
 middle items into `…` when the row runs short — see the widgets guide.
 
+`screenLabels` is `protected` on the app. A view helper written in another file reads the
+same list from the services, `summon[AppServices].screenLabels`, and pops with
+`popScreen()` on them:
+
+```scala
+def trail(using ReactiveScope, Theme, AppServices): Element =
+  val app = summon[AppServices]
+  breadcrumb("Home" +: app.screenLabels, step => (step until app.screenLabels.size).foreach(_ => app.popScreen()))
+```
+
+`AppServices.NoOp`, outside a run, reports no screens.
+
 `screenLabels` lists the stacked screens outermost first, which is the order a breadcrumb
 reads in, and skips any screen that has no label — a dialog that never wanted a name adds
 a level of depth without opening a blank step in the trail. The app's own `view` is not in
