@@ -1110,6 +1110,10 @@ therefore size a tab bar from its own content instead of you maintaining a
 
 ## Tables: simple and interactive
 
+<p align="center">
+  <img src="/glyphora/gallery/table.svg" alt="a four-row table with service, state and latency columns, as the gallery renders it" width="100%" />
+</p>
+
 Use `table` for static rows:
 
 ```scala
@@ -1481,6 +1485,10 @@ Pass a single `column(...)` for a vertical group. A member that wants an arrow f
 the [Mouse & focus](./mouse#focus-groups) page.
 
 ## Data visualization
+
+<p align="center">
+  <img src="/glyphora/gallery/barChart.svg" alt="a bar chart of five weekday values, as the gallery renders it" width="100%" />
+</p>
 
 A tick-driven dashboard can remain compact:
 
@@ -1972,6 +1980,10 @@ final case class FilledBox(x1: Double, y1: Double, x2: Double, y2: Double, style
 
 ### Marking days on a calendar
 
+<p align="center">
+  <img src="/glyphora/gallery/calendar.svg" alt="the October 2026 month grid drawn by calendar, as the gallery renders it" width="100%" />
+</p>
+
 `calendar(year, month, selected)` draws a month grid. The widget behind it,
 `Calendar`, takes a `dayStyles: Map[LocalDate, Style]` so that any number of
 individual dates can be drawn differently — appointments, public holidays, today,
@@ -2023,6 +2035,10 @@ depends on the machine it runs on cannot be checked by comparing frames — so p
 `Locale.getDefault` when you do want the machine's language.
 
 ## Feedback and motion
+
+<p align="center">
+  <img src="/glyphora/gallery/progressBar.svg" alt="two labelled progress bars at 42% and 70%, as the gallery renders them" width="100%" />
+</p>
 
 Animations need one thing from you — a tick rate — and nothing else:
 

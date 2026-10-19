@@ -25,8 +25,11 @@ final class RichTextElementSpec extends AnyFunSuite:
     assert(buffer.get(1, 0).style == Style.Default.dim)
 
   test("a styled text claims the exact box its rows measure, in display columns, like text(String) does"):
-    val claim = text(markup"[bold]日本[/]\ncdef").claim
-    assert(claim.horizontal == Constraint.Length(4) && claim.vertical == Constraint.Length(2))
+    val element = text(markup"[bold]日本[/]\ncdef")
+    assert(element.claim == SizeClaim.Measured)
+    assert(element.intrinsicWidth(2).contains(4) && element.intrinsicHeight(4).contains(2))
+    // laid out beside another node, it takes exactly its four columns rather than half the row
+    assert(lines(row(element, text("|")), 10, 2).head == "日本|")
     assert(text(Text.fromAnsi("\u001b[1mabcdefgh\u001b[0m")).wrapped.intrinsicHeight(4) == Some(2))
 
   test("wrapping, clipping and alignment behave as they do on text(String)"):

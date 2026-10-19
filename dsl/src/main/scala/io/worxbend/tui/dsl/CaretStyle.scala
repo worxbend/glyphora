@@ -34,19 +34,20 @@ enum CaretStyle:
   *
   * Frame-scoped and thread-scoped the way [[PortalQueue]] is — the same [[FrameSlot]] — and for the same reasons: the
   * host arms it for exactly one paint with [[collect]], a node rendering outside any host finds nothing armed and
-  * reports into the void, and a `ThreadLocal` keeps two runners in one JVM from reading each other's caret. The report
-  * is translated onto the screen *when it is made*, while the [[FrameCoordinates]] stack of the scroll views enclosing
-  * the node is still live — the host reads it after that stack has unwound.
+  * reports into the void, and a per-thread [[FrameContext]] keeps two runners in one JVM from reading each other's
+  * caret. The report is translated onto the screen *when it is made*, while the [[FrameCoordinates]] stack of the
+  * scroll views enclosing the node is still live — the host reads it after that stack has unwound.
   *
   * One frame has one caret: a later report replaces an earlier one, which is also [[io.worxbend.tui.runtime.Frame]]'s
   * own rule, and only the focused node reports, so in practice there is one.
   */
 private[dsl] object CaretRegister:
 
-  private final class Pending:
+  private[dsl] final class Pending:
     var caret: Option[Position] = None
 
-  private val current: FrameSlot[Pending] = FrameSlot(() => new Pending)
+  private val current: FrameSlot[Pending] =
+    FrameSlot(() => new Pending, _.caret, (context, pending) => context.caret = pending)
 
   /** Arms the register around `paint` and answers the screen cell the focused text node reported, or `None` when
     * nothing did — or the node that did is scrolled out of its viewport, which is the same thing to the terminal.

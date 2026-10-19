@@ -1,8 +1,13 @@
 package io.worxbend.tui.dsl
 
+// First on purpose, and named by no exported factory's signature: resolving this import's `io` is what completes the
+// package's `export Element.{…}`, which needs every signature below. Were it an import those signatures use, an
+// incremental compile of this file with dsl.scala would fail with "Cyclic reference involving val <import>" —
+// FactoryImportOrderSpec explains the cycle and keeps it from coming back.
+import io.worxbend.tui.terminal.PointerShape
+
 import io.worxbend.tui.core.{Constraint, Direction, Line, Rect, RgbaImage, Size, Span, Style, Text, Widget}
 import io.worxbend.tui.runtime.{LogRing, ReactiveScope, Signal}
-import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets.TableRow
 import io.worxbend.tui.widgets as w
 

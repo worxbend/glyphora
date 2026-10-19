@@ -26,19 +26,21 @@ private[dsl] final class RevealRequests(val followFocus: Boolean):
   * A scroll view pushes its [[RevealRequests]] for exactly the duration of its content render and pops it in a
   * `finally`, the way [[FrameCoordinates]] scopes a viewport transform; the focused [[TrackedElement]] and every
   * [[RevealElement]] report into whichever collector is on top. With no scroll view rendering — a tree painted outside
-  * one — a report goes nowhere. A thread-local stack, so independently running render threads never share one.
+  * one — a report goes nowhere. A per-thread stack in [[FrameContext]], so independently running render threads never
+  * share one.
   */
 private[dsl] object RevealProbe:
-  private val stack: ThreadLocal[List[RevealRequests]] = ThreadLocal.withInitial(() => Nil)
-
   def collecting[A](requests: RevealRequests)(body: => A): A =
-    val previous = stack.get()
-    stack.set(requests :: previous)
+    val context  = FrameContext.current
+    val previous = context.reveals
+    context.reveals = requests :: previous
     try body
-    finally if previous.isEmpty then stack.remove() else stack.set(previous)
+    finally context.reveals = previous
 
   /** The element in tab position `index` is focused and was handed `area`. */
-  def focused(index: Int, area: Rect): Unit = stack.get().headOption.foreach(_.offerFocused(s"focus:$index", area))
+  def focused(index: Int, area: Rect): Unit =
+    FrameContext.current.reveals.headOption.foreach(_.offerFocused(s"focus:$index", area))
 
   /** An element marked `.ensureVisible`, identified by `id`, was handed `area`. */
-  def visible(id: String, area: Rect): Unit = stack.get().headOption.foreach(_.offerVisible(s"visible:$id", area))
+  def visible(id: String, area: Rect): Unit =
+    FrameContext.current.reveals.headOption.foreach(_.offerVisible(s"visible:$id", area))

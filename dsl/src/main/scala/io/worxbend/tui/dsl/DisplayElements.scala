@@ -598,11 +598,11 @@ final case class RichTextElement(
 
   private[dsl] def withProps(props: ElementProps): RichTextElement = copy(props = props)
 
-  /** The same claim [[TextElement]] makes — the exact box of the unwrapped rows, measured in display columns through
-    * the text's own `width`, or the container's width when wrapping leaves the height to `intrinsicHeight`.
+  /** The same claim [[TextElement]] makes — the exact box of the unwrapped rows, which the paragraph answers through
+    * `Measured`, or the container's width when wrapping leaves the height to `intrinsicHeight`.
     */
   private[dsl] override def claim: SizeClaim =
-    if overflow.wraps then SizeClaim.Fill else SizeClaim.box(content.width, content.height)
+    if overflow.wraps then SizeClaim.Fill else SizeClaim.Measured
 
 /** Markdown that is still arriving — an LLM's reply, token by token — drawn from a caller-owned [[w.MarkdownStream]].
   *
@@ -859,7 +859,4 @@ final case class QrCodeElement(
   override def debugName: String                                 = "qrCode"
   def widget: Widget                                             = code
   private[dsl] def withProps(props: ElementProps): QrCodeElement = copy(props = props)
-  private[dsl] override def claim: SizeClaim                     =
-    (code.widthAt(0), code.heightAt(0)) match
-      case (Some(width), Some(height)) => SizeClaim.box(width, height)
-      case _                           => SizeClaim.Fill
+  private[dsl] override def claim: SizeClaim                     = SizeClaim.Measured

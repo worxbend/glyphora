@@ -192,6 +192,13 @@ under `build/tapes` (or `GLYPHORA_TAPE_OUTPUT`); convert a `.cast` to a GIF with
 only when a page genuinely needs motion. A regenerated picture is reviewed like any other
 diff, and can never drift from the code it shows.
 
+Widget screenshots on these pages come from the gallery: reference
+`/glyphora/gallery/<factory>.svg` from a page (or `docs/assets/gallery/<factory>.svg`
+from the README) and run `scripts/render-gallery.sh`, which renders every gallery page
+and commits exactly the referenced ones under `docs/assets/gallery/`. CI runs
+`scripts/render-gallery.sh --check` and fails when a committed screenshot no longer
+matches what the code draws, or when a page shows one that is not committed.
+
 ## Prepare a pull request
 
 - Keep the change focused and explain the user-visible outcome first.

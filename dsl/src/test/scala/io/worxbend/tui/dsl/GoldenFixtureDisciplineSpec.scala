@@ -4,10 +4,6 @@ import io.worxbend.tui.testsupport.GoldenFixtures
 
 import org.scalatest.funsuite.AnyFunSuite
 
-import java.nio.file.{Files, Path}
-import scala.jdk.CollectionConverters.*
-import scala.util.Using
-
 /** Fails when a checked-in golden-frame fixture is named by no test any more.
   *
   * `GoldenFrames` already fails a test that asks for a fixture which is not on disk. The opposite mistake — deleting or
@@ -25,19 +21,8 @@ final class GoldenFixtureDisciplineSpec extends AnyFunSuite:
       case None       =>
         cancel("not running from a checkout, so there are no module directories to scan")
       case Some(root) =>
-        val modules = modulesWithFixtures(root)
+        val modules = DocumentationSources.fixtureModules(root)
         assert(modules.nonEmpty, s"found no golden fixtures under $root — this check would pass vacuously")
         modules.foreach { module =>
           GoldenFixtures.assertNoOrphans(module.resolve("src/test/resources"), module.resolve("src/test/scala"))
         }
-
-  /** Every directory directly under `root` that keeps golden fixtures. Examples nest one level deeper, so those are
-    * looked at too; anything without a `src/test/resources/golden` directory is skipped.
-    */
-  private def modulesWithFixtures(root: Path): Seq[Path] =
-    val candidates = directChildren(root).flatMap(child => child +: directChildren(child))
-    candidates.filter(candidate => Files.isDirectory(candidate.resolve("src/test/resources/golden")))
-
-  private def directChildren(directory: Path): Seq[Path] =
-    if !Files.isDirectory(directory) then Seq.empty
-    else Using.resource(Files.list(directory))(_.iterator.asScala.filter(Files.isDirectory(_)).toVector)
