@@ -1,6 +1,6 @@
 package io.worxbend.tui.terminal
 
-import io.worxbend.tui.core.RgbaImage
+import io.worxbend.tui.core.{Rect, RgbaImage}
 
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -43,6 +43,10 @@ final class KittyGraphicsSpec extends AnyFunSuite:
     assert(payloads.take(2).forall(_.length == 4096))
     // 8000 bytes of 0x01 encode as "AQEB" repeated; 10668 characters, the last pair padded to "AQE="
     assert(payloads.mkString == "AQEB" * 2666 + "AQE=")
+
+  test("a source rectangle goes out as the documented x, y, w, h keys, in pixels, before the id"):
+    val shown = KittyGraphics.display("AAAA", 4, 6, 3, 2, 2, Some(Rect(0, 2, 4, 4)))
+    assert(shown == s"${Esc}_Ga=T,f=32,s=4,v=6,x=0,y=2,w=4,h=4,i=3,c=2,r=2,C=1,q=2;AAAA$Esc\\")
 
   test("deleting an image frees it and all its placements, quietly"):
     assert(KittyGraphics.delete(7) == s"${Esc}_Ga=d,d=I,i=7,q=2$Esc\\")
