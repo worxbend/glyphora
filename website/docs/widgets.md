@@ -710,7 +710,17 @@ What happens between frames is the backend's job, not the app's:
   nothing for it;
 - a dialog, menu or toast drawn over it takes it down (kitty gets a delete; iTerm2 has
   none, so the cells under it are repainted), and it is sent again when the cover goes;
-- moving it — a scroll view, a resize — takes it down and sends it at the new place.
+- moving it — a scroll view, a resize — takes it down and sends it at the new place;
+- a picture the edge of a `scrollView` cuts is drawn cropped to its visible rows: kitty is
+  sent the whole picture with a source rectangle (`x`, `y`, `w`, `h`), iTerm2 the visible
+  slice re-encoded as a PNG of its own.
+
+Encoding a picture — base64 RGBA for kitty, a deflated PNG for iTerm2 — happens off the
+render thread. The first frame a picture appears in shows the half-block fallback while
+an `Async` worker encodes it; when the payload is ready the next frame places the picture
+with it, so no frame waits for an encode. The payloads of the 16 pictures used last are
+kept. An app that drives its own loop around an `ElementHost` sets
+`host.imageProtocol = ImageProtocol.select(backend.capabilities)` to get the same.
 
 Load pictures with `ImageLoader`. `ImageLoader.readPng(path)` and `decodePng(bytes)` use a
 built-in PNG decoder and work in a native image; `fromFile`/`fromBytes` read any format

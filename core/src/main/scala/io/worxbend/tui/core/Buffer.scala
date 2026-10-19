@@ -555,18 +555,23 @@ final class Buffer(val area: Rect):
     *
     * The cells of `region` are marked [[DiffDirective.Skip]] and the placement is recorded in [[graphics]] together
     * with what those cells hold *now* — so draw the text fallback first and place the picture last: a later write over
-    * the region reads as the picture being covered (see [[covers]]). A `region` this buffer cannot hold whole is not
-    * placed at all, because a picture squeezed into the visible part of its box would be drawn distorted; its cells
-    * flush as ordinary text instead.
+    * the region reads as the picture being covered (see [[covers]]). A `region` this buffer holds only part of — a
+    * picture in a scroll view's content, rendered into a buffer that holds just the window — is placed as a crop of the
+    * whole box ([[GraphicPlacement.crop]]), because the picture squeezed into the visible part would be drawn
+    * distorted; a `region` wholly outside the buffer is not placed.
     *
     * Like directives, placements belong to the frame: [[reset]] forgets them, so a widget re-places its picture on
     * every render. Whether anything is drawn is up to the backend — see [[GraphicPlacement]]. `payload` is the picture
     * already encoded for an image protocol, when the caller encoded it ahead of time; see [[GraphicPayload]].
     */
   def placeGraphic(region: Rect, image: RgbaImage, payload: Option[GraphicPayload] = None): Unit =
-    if !region.isEmpty && region.intersection(area) == region then
-      setDiffDirective(region, DiffDirective.Skip)
-      placements = placements :+ GraphicPlacement(region, image, cellsIn(region), None, payload)
+    val visible = region.intersection(area)
+    if !region.isEmpty && !visible.isEmpty then
+      setDiffDirective(visible, DiffDirective.Skip)
+      val crop = Option.when(visible != region)(
+        GraphicCrop(region.width, region.height, visible.x - region.x, visible.y - region.y)
+      )
+      placements = placements :+ GraphicPlacement(visible, image, cellsIn(visible), crop, payload)
 
   /** The pictures placed into this frame by [[placeGraphic]], in placement order. */
   def graphics: Seq[GraphicPlacement] = placements

@@ -865,7 +865,7 @@ private[dsl] trait ElementFactories:
     * column it claims the rows that keep the picture's shape. See [[w.PixelImage]].
     */
   def pixelImage(image: RgbaImage, options: w.PixelImageOptions = w.PixelImageOptions()): WidgetElement =
-    WidgetElement(w.PixelImage(image, options))
+    WidgetElement(PicturePainter(w.PixelImage(image, options)))
 
   /** A one-row clickable hyperlink (OSC 8): `label` underlined with `url` attached. Terminals without OSC 8 support
     * show the styled text and nothing is lost.

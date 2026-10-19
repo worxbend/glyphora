@@ -48,6 +48,11 @@ private[dsl] final class ViewSession(areaOf: String => Option[Rect] = _ => None)
       changes.update(_ + 1)
     moved
 
+  /** Invalidates the view the last [[resolve]] evaluated, scheduling a frame — for work that finished between frames
+    * and changes what the next paint draws (an encoded picture).
+    */
+  def requestFrame(): Unit = changes.update(_ + 1)
+
   /** Disposes every hook this session holds — effects cancelled, tasks' scopes closed. */
   def dispose(): Unit = state.disposeAll()
 

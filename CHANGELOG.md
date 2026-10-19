@@ -82,7 +82,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 - `toolbar(state)(buttons*)` over `ToolbarState`: the overflow marker opens the controls that did not fit in a popup; `Toolbar.hidden(width)`.
 - `dataTable` selects the row under a click (`DataTable.rowAt`).
 - `diffView(patch, state)` with `Patch.parse`, `Patch.of` (Myers), `DiffView`, `DiffViewState` (scrolls like `ScrollViewState`, `pageUp`/`pageDown` included).
-- `pixelImage(image, options)` with `RgbaImage`, `ImageLoader` and `Buffer.placeGraphic` (kitty graphics, iTerm2 inline images, half-block fallback).
+- `pixelImage(image, options)` with `RgbaImage`, `ImageLoader` and `Buffer.placeGraphic` (kitty graphics, iTerm2 inline images, half-block fallback). Pictures are encoded off the render thread (the first frame shows the fallback), and a picture a `scrollView` edge cuts is drawn cropped (`GraphicCrop`, `GraphicPayload`).
 - `multiProgress(tasks, columns)` with `ProgressTask`, `ProgressColumn`, `MultiProgress`.
 - `logConsole(ring)` over `LogRing`, `LogRecord`, `LogLevel` and `JulBridge`; `errorBoundary(fallback)(subtree)`.
 - Effects: `CellFilter` / `Effect.filtered`, `Pattern` / `Effect.patterned`, `Progress.staggered`, `Effect.hslShift`, `paint`, `glitch`, `evolve`, `reversed`, `pingPong`, `slideIn(MotionDirection)`.

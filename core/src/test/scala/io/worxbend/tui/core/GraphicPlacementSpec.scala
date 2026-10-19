@@ -26,15 +26,18 @@ final class GraphicPlacementSpec extends AnyFunSuite:
     assert(buffer.diffDirective(2, 1) == DiffDirective.Skip)
     assert(buffer.diffDirective(3, 1) == DiffDirective.Default)
 
-  // a picture squeezed into the visible part of its box would be drawn distorted, so a box the buffer cannot hold whole
-  // is not placed at all and its cells keep flushing whatever fallback the widget drew
-  test("a placement the buffer cannot hold whole is not recorded and reserves nothing"):
+  // a picture squeezed into the visible part of its box would be drawn distorted, so a box the buffer holds only part
+  // of is placed as a crop of the whole box (what a scroll view's windowed content buffer does), and a box wholly
+  // outside it is not placed at all
+  test("a placement the buffer holds only part of is cropped; one wholly outside is not recorded"):
     val buffer = frame { b =>
       b.placeGraphic(Rect(8, 3, 4, 4), image)
       b.placeGraphic(Rect(20, 20, 2, 2), image)
     }
-    assert(buffer.graphics.isEmpty)
-    assert(buffer.diffDirective(9, 3) == DiffDirective.Default)
+    assert(buffer.graphics.map(_.area) == Seq(Rect(8, 3, 2, 1)))
+    assert(buffer.graphics.head.crop.contains(GraphicCrop(columns = 4, rows = 4, column = 0, row = 0)))
+    assert(buffer.diffDirective(9, 3) == DiffDirective.Skip)
+    assert(buffer.diffDirective(7, 3) == DiffDirective.Default)
 
   test("reset forgets every placement"):
     val buffer = frame(placed(_, Rect(0, 0, 2, 1)))

@@ -2,7 +2,7 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Buffer, KeyCode, KeyEvent, MouseEvent, MouseEventKind, Position, Rect, Size, Style}
 import io.worxbend.tui.runtime.{Frame, JfrEvents, ReactiveScope}
-import io.worxbend.tui.terminal.PointerShape
+import io.worxbend.tui.terminal.{ImageProtocol, PointerShape}
 
 /** The DSL's render-and-dispatch engine, with no loop and no key policy of its own.
   *
@@ -76,6 +76,18 @@ final class ElementHost:
     gestures.selection.enabled = enabled
     if !enabled then
       val _ = gestures.selection.clear()
+
+  /** Pictures (`pixelImage`) encoded off the render thread for [[imageProtocol]] — see [[PictureEncodings]]. */
+  private[dsl] val pictures: PictureEncodings = PictureEncodings(() => session.requestFrame())
+
+  /** The image protocol the terminal draws pictures with, or `None` for the half-block fallback. While it is set, a
+    * `pixelImage` has its picture encoded for it on a worker (`Async`) and shows the fallback until the payload is
+    * ready, so no frame pays for an encode. `TuiApp` sets it from what the terminal answered at start-up; a host that
+    * owns its loop sets it from `ImageProtocol.select(backend.capabilities)`. Render-thread only.
+    */
+  def imageProtocol: Option[ImageProtocol] = pictures.protocol
+
+  def imageProtocol_=(protocol: Option[ImageProtocol]): Unit = pictures.protocol = protocol
 
   /** The text the mouse selection covers as of the last [[render]]; `None` when nothing is selected. */
   def selectedText: Option[String] = gestures.selection.text
@@ -210,8 +222,13 @@ final class ElementHost:
     lastTree = Some(tree)
     // always opened and closed: with full recording off, the nodes that carry a pointer role still record into it
     bounds.begin()
+    val context  = FrameContext.current
+    val outer    = context.pictures
+    context.pictures = Some(pictures)
     try paint(tree)
-    finally bounds.publish()
+    finally
+      context.pictures = outer
+      bounds.publish()
     gestures.afterPaint()
     session.afterPaint(frame)
 
