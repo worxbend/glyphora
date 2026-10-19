@@ -8,7 +8,9 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import java.time.{LocalDate, LocalTime}
 
-/** The interactive nodes in `ToolElements`, driven through a running app. */
+/** The interactive nodes in `ChoiceElements`, `DisplayElements` and `CollectionElements` (formerly `ToolElements`),
+  * driven through a running app.
+  */
 final class ToolElementsPilotSpec extends AnyFunSuite with PilotFixture:
 
   private def startApp(view0: ReactiveScope ?=> Element): Pilot =

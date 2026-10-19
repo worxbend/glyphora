@@ -16,6 +16,7 @@ import io.worxbend.tui.core.{
   Versioned,
   Widget,
 }
+import io.worxbend.tui.macros.PrettyShape
 import io.worxbend.tui.runtime.{LogLevel, LogRecord, LogRing}
 import io.worxbend.tui.widgets.{TableCell, TableRow}
 import io.worxbend.tui.widgets as w
@@ -717,3 +718,98 @@ final case class DiffViewElement(
 
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some(wheelScrolls(() => state.scrollUp(), () => state.scrollDown()))
+
+/** A prototyping stand-in: a dashed box with `label` centred in it and the size the layout actually gave it written
+  * underneath. Takes whatever room its container hands out, the way the panel it stands in for eventually will, so
+  * swapping it for the real content does not move anything around it.
+  */
+final case class PlaceholderElement(
+    label: String,
+    labelStyle: Style,
+    props: ElementProps = ElementProps(),
+) extends Element:
+  type Self = PlaceholderElement
+  override def debugName: String                                      = "placeholder"
+  def widget: Widget                                                  = w.Placeholder(label, props.style, labelStyle)
+  private[dsl] def withProps(props: ElementProps): PlaceholderElement = copy(props = props)
+
+/** A scrollable hex dump of `bytes` over a caller-owned [[w.HexViewerState]]. While focused, Left/Right move the
+  * selected byte by one, Up/Down by a row, PageUp/PageDown by ten rows and Home/End to either end; the wheel moves a
+  * row on hover. The view scrolls to keep the selection on screen, and the selected byte wears the focus style in both
+  * the hex and the ASCII column.
+  */
+final case class HexViewerElement(
+    bytes: IndexedSeq[Byte],
+    state: w.HexViewerState,
+    props: ElementProps = ElementProps(focusable = true),
+) extends Element:
+  type Self = HexViewerElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
+  override def debugName: String                                             = "hexViewer"
+  private val viewer: w.HexViewer                                            = w.HexViewer(bytes)
+  def widget: Widget                                                         =
+    val current = viewer.copy(style = props.style, highlightStyle = props.focusStyle)
+    (area, buffer) => current.render(area, buffer, state)
+  private[dsl] def withProps(props: ElementProps): HexViewerElement          = copy(props = props)
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
+    Some(wheelScrolls(() => move(-viewer.bytesPerRow), () => move(viewer.bytesPerRow)))
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
+    val row = viewer.bytesPerRow
+    Some(
+      keys {
+        case KeyEvent(KeyCode.Left, _)     => move(-1)
+        case KeyEvent(KeyCode.Right, _)    => move(1)
+        case KeyEvent(KeyCode.Up, _)       => move(-row)
+        case KeyEvent(KeyCode.Down, _)     => move(row)
+        case KeyEvent(KeyCode.PageUp, _)   => move(-row * PageStep)
+        case KeyEvent(KeyCode.PageDown, _) => move(row * PageStep)
+        case KeyEvent(KeyCode.Home, _)     => state.select(0, bytes.size)
+        case KeyEvent(KeyCode.End, _)      => state.select(bytes.size - 1, bytes.size)
+      }
+    )
+
+  private def move(delta: Int): Unit = state.moveBy(delta, bytes.size)
+
+/** A read-only tree view of a described value — see [[w.Inspect]]. Claims exactly the rows its tree measures, so it
+  * stacks in a `column` like text; put it in a [[scrollView]] when the value is taller than the screen.
+  */
+final case class InspectElement(
+    value: w.PrettyValue,
+    labelStyle: Style,
+    guideStyle: Style,
+    props: ElementProps = ElementProps(),
+) extends Element:
+  type Self = InspectElement
+  override def debugName: String                                  = "inspect"
+  private def inspector: w.Inspect                                =
+    w.Inspect(value, style = props.style, labelStyle = labelStyle, guideStyle = guideStyle)
+  def widget: Widget                                              = inspector
+  private[dsl] def withProps(props: ElementProps): InspectElement = copy(props = props)
+  private[dsl] override def claim: SizeClaim = inspector.heightAt(0).fold(SizeClaim.Fill)(SizeClaim.rows)
+
+/** The [[PrettyShape]] that builds `tui-widgets`' [[w.PrettyValue]] — the glue between the derivation in `tui-macros`
+  * and the widget, neither of which can name the other.
+  */
+private[dsl] object PrettyValueShape extends PrettyShape[w.PrettyValue]:
+  def atom(text: String): w.PrettyValue                                              = w.PrettyValue.Atom(text)
+  def sequence(name: String, items: Seq[w.PrettyValue]): w.PrettyValue               = w.PrettyValue.Seq(name, items)
+  def map(name: String, entries: Seq[(w.PrettyValue, w.PrettyValue)]): w.PrettyValue = w.PrettyValue.Map(name, entries)
+  def product(name: String, fields: Seq[(String, w.PrettyValue)]): w.PrettyValue = w.PrettyValue.Product(name, fields)
+
+/** A scannable QR code for `text` — see [[w.QrCode]]. Claims exactly the box the symbol and its quiet zone measure, so
+  * it sits beside text in a `row` without being stretched; the code is only readable whole, so give it that room.
+  */
+final case class QrCodeElement(
+    code: w.QrCode,
+    props: ElementProps = ElementProps(),
+) extends Element:
+  type Self = QrCodeElement
+  override def debugName: String                                 = "qrCode"
+  def widget: Widget                                             = code
+  private[dsl] def withProps(props: ElementProps): QrCodeElement = copy(props = props)
+  private[dsl] override def claim: SizeClaim                     =
+    (code.widthAt(0), code.heightAt(0)) match
+      case (Some(width), Some(height)) => SizeClaim.box(width, height)
+      case _                           => SizeClaim.Fill

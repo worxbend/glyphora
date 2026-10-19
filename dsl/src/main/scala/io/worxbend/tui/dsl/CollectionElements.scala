@@ -434,3 +434,33 @@ final case class LazyListElement(
           else false
         case _                   => wheel(event, area)
     }
+
+/** A tree with columns over a caller-owned [[w.TreeState]]. While focused, Up/Down move the selection through the
+  * visible rows, Enter toggles the selected branch, Right expands it and Left collapses it; the wheel moves the
+  * selection on hover. The selected row wears the focus style across every column.
+  */
+final case class TreeTableElement[K](
+    table: w.TreeTable[K],
+    state: w.TreeState[K],
+    props: ElementProps = ElementProps(focusable = true),
+) extends Element:
+  type Self = TreeTableElement[K]
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
+  override def debugName: String                                             = "treeTable"
+  private def nodes                                                          = table.nodes
+  def widget: Widget                                                         =
+    val current = table.copy(style = props.style, highlightStyle = props.focusStyle)
+    (area, buffer) => current.render(area, buffer, state)
+  private[dsl] def withProps(props: ElementProps): TreeTableElement[K]       = copy(props = props)
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
+    Some(wheelScrolls(() => state.selectPrevious(nodes), () => state.selectNext(nodes)))
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
+    Some(
+      keys {
+        case KeyEvent(KeyCode.Enter, _)                                                    => state.toggle(nodes)
+        case KeyEvent(KeyCode.Right, _) if !state.selected.exists(state.expanded.contains) => state.toggle(nodes)
+        case KeyEvent(KeyCode.Left, _) if state.selected.exists(state.expanded.contains)   => state.toggle(nodes)
+      }.orElse(selectionKeys(() => state.selectNext(nodes), () => state.selectPrevious(nodes)))
+    )

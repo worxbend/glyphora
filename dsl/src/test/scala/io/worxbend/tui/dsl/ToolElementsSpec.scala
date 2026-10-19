@@ -18,7 +18,9 @@ final case class InspectConfig(
     timeout: Option[Int],
 )
 
-/** Construction and rendering of the prototyping and inspection nodes in `ToolElements`. */
+/** Construction and rendering of the prototyping and inspection nodes in `ChoiceElements`, `DisplayElements` and
+  * `CollectionElements` (formerly `ToolElements`).
+  */
 final class ToolElementsSpec extends AnyFunSuite:
   given Theme = Theme.default
 

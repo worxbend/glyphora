@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{CharWidth, KeyCode, KeyEvent, KeyModifiers, Position, Rect, Versioned, Widget}
+import io.worxbend.tui.core.{CharWidth, Constraint, KeyCode, KeyEvent, KeyModifiers, Position, Rect, Versioned, Widget}
 import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets as w
 
@@ -515,3 +515,65 @@ final case class TextAreaElement(
           state.moveHome()
         case KeyEvent(KeyCode.End, _)                                     => state.moveEnd()
       }(event)
+
+/** A tag (chip) field over a caller-owned [[w.TagInputState]]: committed tags draw as chips that wrap onto further rows
+  * through [[w.Flow]], followed by the text being typed. While focused, typing edits the text with every key a text
+  * field knows; Enter or a comma commits it as a tag, Backspace on an empty field removes the last tag, and Tab (or
+  * Right at the end of the text) accepts the dim suggestion when there is one. `onChange` hears the tags after every
+  * commit or removal. An Enter on a blank field, and a Tab with nothing to accept, keep bubbling.
+  *
+  * Measures as many rows as its chips wrap onto at the width it is given, and reports its caret like every text node.
+  */
+final case class TagInputElement(
+    state: w.TagInputState,
+    onChange: Seq[String] => Unit,
+    placeholder: String = "",
+    props: ElementProps = ElementProps(focusable = true),
+) extends Element:
+  type Self = TagInputElement
+  override private[dsl] def watchedStates: Seq[Versioned]            = Seq(state)
+  override def debugName: String                                     = "tagInput"
+  private[dsl] override def componentRole: Option[ComponentRole]     = Some(InputRole)
+  override def pointerShape: Option[PointerShape]                    = textPointer(props)
+  private def field: w.TagInput                                      =
+    w.TagInput(placeholder, showCursor = props.focused && props.caretStyle.paints, style = componentStyled(props))
+  def widget: Widget                                                 =
+    val current = field
+    (area, buffer) =>
+      current.render(area, buffer, state)
+      reportCaret(props, current.caretAt(area, state))
+  private[dsl] def withProps(props: ElementProps): TagInputElement   = copy(props = props)
+  private[dsl] override def claim: SizeClaim                         = SizeClaim(Constraint.Auto, Constraint.Fill(1))
+  private[dsl] override def intrinsicHeight(width: Int): Option[Int] =
+    constrainedHeight(Some(field.heightAt(width, state)))
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     = Some(handleKey)
+  private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler] = Some { text =>
+    if props.focused then
+      state.input.insert(singleLineText(text))
+      true
+    else false
+  }
+
+  private def changed(): Unit = onChange(state.tags)
+
+  private def handleKey(event: KeyEvent): Boolean =
+    val empty = state.input.value.isEmpty
+    event.code match
+      case KeyCode.Char(',') if isPlainTyping(event)                                    =>
+        if state.commit() then changed()
+        true
+      case KeyCode.Enter if event.modifiers.isEmpty && state.input.value.trim.nonEmpty  =>
+        if state.commit() then changed()
+        true
+      case KeyCode.Backspace if event.modifiers.isEmpty && empty && state.tags.nonEmpty =>
+        state.removeLast()
+        changed()
+        true
+      case KeyCode.Tab if event.modifiers.isEmpty                                       => state.acceptSuggestion()
+      case KeyCode.Right if event.modifiers.isEmpty && state.input.cursor == clusters   => state.acceptSuggestion()
+      case KeyCode.Char(c) if isPlainTyping(event)                                      =>
+        state.input.insert(Character.toString(c))
+        true
+      case _ => editingChords(state.input)(event) || cursorKeys(state.input)(event)
+
+  private def clusters: Int = CharWidth.clusterCount(state.input.value)
