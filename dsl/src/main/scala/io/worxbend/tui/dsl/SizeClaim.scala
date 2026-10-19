@@ -27,6 +27,11 @@ private[dsl] object SizeClaim:
     */
   val Measured: SizeClaim = SizeClaim(Constraint.Auto, Constraint.Auto)
 
+  /** As many rows as the node's widget measures, as wide as the container allows — for content whose height is its own
+    * (an inspected value's tree) but which should still span the column it sits in.
+    */
+  val MeasuredRows: SizeClaim = SizeClaim(Constraint.Auto, Constraint.Fill(1))
+
   /** Exactly one row tall, as wide as the container allows — every single-line control. */
   val OneRow: SizeClaim = SizeClaim(Constraint.Length(1), Constraint.Fill(1))
 
