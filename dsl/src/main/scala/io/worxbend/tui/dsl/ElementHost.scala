@@ -52,6 +52,37 @@ final class ElementHost:
   /** Pointer capture and click counting between mouse events — see [[PointerCapture]]. */
   private var pointer = PointerCapture()
 
+  /** Mouse text selection and the other pointer gestures run over ordinary routing — see [[PointerGestures]]. */
+  private[dsl] val gestures: PointerGestures = PointerGestures(bounds)
+
+  /** Whether a mouse drag over `text`, `markdown`, `log` and the tables selects their text, highlighted in the theme's
+    * focus cue and copied through the app clipboard on release — see [[TextSelection]]. Off by default: without mouse
+    * capture the terminal selects natively. `TuiApp` turns it on exactly when it runs with `RunnerConfig.mouseCapture`;
+    * a host that owns its loop and captures the mouse turns it on itself. Render-thread only.
+    */
+  def textSelection: Boolean = gestures.selection.enabled
+
+  def textSelection_=(enabled: Boolean): Unit =
+    gestures.selection.enabled = enabled
+    if !enabled then
+      val _ = gestures.selection.clear()
+
+  /** The text the mouse selection covers as of the last [[render]]; `None` when nothing is selected. */
+  def selectedText: Option[String] = gestures.selection.text
+
+  /** Copies the current mouse selection into the app clipboard — what `Ctrl+Shift+C` does in a `TuiApp`. `false` when
+    * nothing is selected. Outside an app's dispatch the clipboard is the in-memory one of this thread.
+    */
+  def copySelection(): Boolean =
+    selectedText match
+      case Some(text) =>
+        AppClipboard.current.copy(text)
+        true
+      case None       => false
+
+  /** Drops the mouse selection; `true` when one was showing, so a frame is owed. */
+  def clearSelection(): Boolean = gestures.selection.clear()
+
   /** The clock click counting reads, in nanoseconds; a test swaps in a hand-moved one. */
   private[dsl] var clock: () => Long = () => System.nanoTime()
 
@@ -74,6 +105,7 @@ final class ElementHost:
     session.dispose()
     tracker = FocusTracker()
     pointer = PointerCapture()
+    val _ = gestures.selection.clear()
     session = ViewSession(key => boundsOf(key))
     lastTree = None
     lastFocusPath = None
@@ -163,11 +195,14 @@ final class ElementHost:
       onCueDemand = () => cuesDemanded = true,
       theme = theme,
       onFocusPath = path => lastFocusPath = path,
+      gestures = Some(gestures),
     )
     lastTree = Some(tree)
-    recorder.foreach(_.begin())
+    // always opened and closed: with full recording off, the nodes that carry a pointer role still record into it
+    bounds.begin()
     try paint(tree)
-    finally recorder.foreach(_.publish())
+    finally bounds.publish()
+    gestures.afterPaint()
     session.afterPaint(frame)
 
   /** Focus as of the last frame, for the Flight Recorder `FocusChanged` event; `-1` before the first one. */
@@ -258,25 +293,35 @@ final class ElementHost:
     * while the frame draws a `.hoverStyle`/`.pressedStyle` cue (so the next frame looks different).
     *
     * On the way it synthesises the event's `clickCount` and applies pointer capture — see [[PointerCapture]]: while a
-    * consumed press holds the pointer, drags and the release go to the pressed target wherever they land.
+    * consumed press holds the pointer, drags and the release go to the pressed target wherever they land. A pointer
+    * gesture runs over the routing — see [[PointerGestures]]: a press no element consumed on selectable text starts a
+    * selection, and while one is being dragged out its drags and release go to it, not to the elements.
     */
   def dispatchMouse(mouse: MouseEvent): Boolean =
-    val event      = pointer.counted(mouse, clock())
-    val under      = tracker.mouseHit(event.position)
-    val target     = pointer.route(event, under)
-    val focusMoved =
-      if event.kind == MouseEventKind.Down then
-        target.flatMap(_.target.focusIndex) match
-          case Some(index) if index != tracker.focusedIndex =>
-            tracker.focusTo(index)
-            true
-          case _                                            => false
-      else false
+    val event = pointer.counted(mouse, clock())
+    val under = tracker.mouseHit(event.position)
+    gestures.intercept(event) match
+      case Some(redraw) =>
+        // a gesture in progress took the event: no element sees it, but a release still lets the pointer go
+        pointer.delivered(event, None, consumed = true)
+        val restyled = trackPointerStates(event, under) && cuesDemanded
+        redraw || restyled
+      case None         =>
+        val target     = pointer.route(event, under)
+        val focusMoved =
+          if event.kind == MouseEventKind.Down then
+            target.flatMap(_.target.focusIndex) match
+              case Some(index) if index != tracker.focusedIndex =>
+                tracker.focusTo(index)
+                true
+              case _                                            => false
+          else false
 
-    val consumed = lastTree.exists(EventRouter.dispatchMouse(_, event, target))
-    pointer.delivered(event, target, consumed)
-    val restyled = trackPointerStates(event, under) && cuesDemanded
-    consumed || focusMoved || restyled
+        val consumed = lastTree.exists(EventRouter.dispatchMouse(_, event, target))
+        pointer.delivered(event, target, consumed)
+        val restyled = trackPointerStates(event, under) && cuesDemanded
+        val gestured = lastTree.isDefined && gestures.afterDelivery(event, consumed)
+        consumed || focusMoved || restyled || gestured
 
   /** Updates the hovered and pressed targets the next focus pass stamps, `true` when either changed. Hover follows the
     * pointer over every event that has a position on screen; pressed is set by a press and cleared by a release.

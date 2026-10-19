@@ -295,6 +295,14 @@ trait TuiApp:
     */
   protected final def runEffect(key: String, effect: Effect): Unit = effects.start(key, effect)
 
+  /** Starts a post-render [[Effect]] under `key` confined to the element declared with `.key(scope)` — flash this
+    * panel, dissolve this toast. The effect covers only the rect that node was painted into, looked up on every frame,
+    * so it follows the node when the layout moves and paints nothing on a frame the node is not on screen. Starting one
+    * turns the host's bounds recording on. `runEffect("flash", fx, scope = "flash")` keys and scopes it by the same
+    * name.
+    */
+  protected final def runEffect(key: String, effect: Effect, scope: String): Unit = effects.start(key, effect, scope)
+
   /** Pushes a screen; modal screens layer over the current view, full screens replace it.
     *
     * During a run, the screen's `Screen.onEnter` runs immediately afterwards, on the render thread, before the frame
@@ -405,6 +413,8 @@ trait TuiApp:
     def closePalette(): Unit                                                        = TuiApp.this.closePalette()
     def runEffect(effect: Effect): Unit                                             = TuiApp.this.runEffect(effect)
     def runEffect(key: String, effect: Effect): Unit                                = TuiApp.this.runEffect(key, effect)
+    override def runEffect(key: String, effect: Effect, scope: String): Unit        =
+      TuiApp.this.runEffect(key, effect, scope)
     def requestRedraw(): Unit                                                       = TuiApp.this.requestRedraw()
     def copyToClipboard(text: String): Unit                                         = TuiApp.this.copyToClipboard(text)
     def quit(): Unit                                                                = TuiApp.this.quit()
@@ -709,6 +719,8 @@ trait TuiApp:
         // headless run (a test, which is what `boundsOf` exists for), an app that has asked once, and — switched on
         // frame by frame in `effectiveView` — a modal that closes on a click outside it
         run.host.recordBounds = boundsRequested || recordsBoundsByDefault(backend)
+        // a mouse-capturing app has taken the terminal's own selection away, so it selects text itself
+        run.host.textSelection = runConfig.mouseCapture
         // on the render thread, and while this run is still registered on it: the clock this app's animations read
         // is the one belonging to this loop, and the exit path below can no longer resolve it for itself
         run.renderLoop = Some(AnimationClock.attachToCurrentLoop())
@@ -782,6 +794,8 @@ trait TuiApp:
       // a modal that closes on a click outside reads where its dialog was painted, so the frame that first shows it
       // already records — the host's own demand detection would only switch recording on for the frame after
       if !run.host.recordBounds && modalClosesOnClickOutside then run.host.recordBounds = true
+      // an effect scoped to an element resolves that element's rect from this very frame's bounds
+      if !run.host.recordBounds && effects.hasScoped then run.host.recordBounds = true
       // the inspector reads the bounds of the frame it is painted over, so that frame has to record them
       if inspectorMode != InspectorMode.Off || debugLayoutOn then run.host.recordBounds = true
       // inside the generation, so a `Theme.auto` frame subscribes to the colour scheme and a mode 2031 report repaints
@@ -789,7 +803,7 @@ trait TuiApp:
       run.host.renderComposed(frame, resolved, effectiveView(resolved)(using scope), () => syncFocusLayers(run))(using
         scope
       )
-      effects.applyTo(frame)
+      effects.applyTo(frame, key => run.host.bounds.current.boundsOf(key))
       paintInspector(frame, run)
       syncTaskbar(using scope)
       syncMouseMotion(run)
@@ -935,7 +949,13 @@ trait TuiApp:
       FrameworkKeys.currentPageStep.withValue(keys.pageStep)(run.host.dispatchKey(key))
     }
     val bound    = !consumed && !palette.isOpenNow && dispatchBinding(key)
-    if consumed || bound then true else handleFrameworkKey(key, run.tracker, handle)
+    if consumed || bound then true else copySelectionKey(key, run) || handleFrameworkKey(key, run.tracker, handle)
+
+  /** `Ctrl+Shift+C` (the rebindable `copy-selection` framework key) while a mouse selection shows: copies it again.
+    * Tried before the other framework keys, because `Ctrl+C` — quit — also matches a chord that adds Shift.
+    */
+  private def copySelectionKey(key: KeyEvent, run: RunState): Boolean =
+    run.host.selectedText.isDefined && frameworkKeys.fires(frameworkKeys.copySelection, key) && run.host.copySelection()
 
   /** A key no element consumed, offered to the bindings: it fires one, or starts a sequence and waits. */
   private def dispatchBinding(key: KeyEvent): Boolean =

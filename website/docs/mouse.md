@@ -484,6 +484,70 @@ nothing in the tree and no binding claimed reaches it, and it stays inside a
 `.trapFocus` subtree. A host with its own loop calls
 `ElementHost.focusInDirection(SpatialDirection.Right)` itself.
 
+## Select and copy text
+
+A mouse-capturing app takes the terminal's own text selection away, which users notice
+immediately. A `TuiApp` running with `RunnerConfig(mouseCapture = true)` gives it back:
+
+- a left drag over `text`, `markdown`, `log`, `logConsole`, `table`, `styledTable` or
+  `dataTable` selects the cells under it, highlighted in the theme's focus cue;
+- a double click selects the word under the pointer (word boundaries come from
+  `java.text.BreakIterator`), a triple click the whole row;
+- the release copies the selection through the app clipboard — OSC 52 to the terminal,
+  plus the in-app buffer `Ctrl+V` reads — and `Ctrl+Shift+C` (the rebindable
+  `copy-selection` framework key) copies it again;
+- the next press anywhere clears it.
+
+A selection starts only from a press no element consumed, so a button inside a
+selectable panel still clicks, and it stays inside the node it started in — dragging
+past the edge clamps to that node's first or last cell. Selection works in whole
+graphemes: a wide character is copied once, never half of it.
+
+Opt an element out — with everything inside it — with `.selectable(false)`; opt any other
+node in with `.selectable(true)`:
+
+```scala
+column(
+  text(secretToken).selectable(false),
+  widget(myCustomRenderer).selectable(true),
+)
+```
+
+The selection is an overlay on the frame, drawn over the node's cells as it paints;
+the widgets themselves know nothing about it. An app without mouse capture draws no
+selection at all — there the terminal selects natively. A host that owns its loop and
+captures the mouse turns it on with `host.textSelection = true` and reads
+`host.selectedText` / `host.copySelection()`.
+
+## Drag and drop
+
+`.draggable(payload)` makes an element draggable, `.dropTarget[A](accept)(onDrop)` makes
+one accept payloads of type `A`:
+
+```scala
+final case class Card(rank: Int)
+given DragKey[Card] = DragKey("card")
+
+row(
+  text("7♠").draggable(Card(7)),
+  panel("Pile")(pileView).dropTarget[Card](_.rank > 5)(card => pile.update(_ :+ card)),
+)
+```
+
+A press on a draggable element arms the drag and the first motion starts it; a press and
+release without motion is still an ordinary click. While the drag runs, a dimmed ghost of
+the element follows the pointer — drawn through a portal, over everything — and the
+innermost drop target under the pointer that takes the payload draws the theme's focus
+cue. The release over it calls `onDrop` with the value.
+
+The type is carried by a `DragKey[A]`: a draggable and a target meet only when they were
+built against the same key, which is how a drop hands the target an `A` without a
+runtime type test or reflection — it stays native-image friendly. `String`, `Int` and
+`Long` have built-in keys; give an app type one with `given DragKey[Card] = DragKey("card")`.
+A payload of another type, or one `accept` refuses, passes over a target as if it were
+not there. Drags need no all-motion tracking: motion with a button held is reported
+under the default button-event tracking.
+
 ## Pointer shapes
 
 On a terminal that speaks OSC 22 (kitty, foot, WezTerm, Ghostty, recent xterm) the

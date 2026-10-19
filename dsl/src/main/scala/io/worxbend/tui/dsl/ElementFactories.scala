@@ -869,7 +869,8 @@ private[dsl] trait ElementFactories:
     */
   def markdown(source: String)(using theme: Theme): WidgetElement =
     LateBinding.themed(theme) { theme =>
-      WidgetElement(w.Markdown(source, theme.markdown))
+      // markdown is text to read, so it is selectable like `text` (see `.selectable`)
+      WidgetElement(w.Markdown(source, theme.markdown), props = ElementProps(selectable = Some(true)))
     }
 
   /** Markdown that is still arriving, read from a caller-owned [[w.MarkdownStream]] — `stream.append(chunk)` as tokens
