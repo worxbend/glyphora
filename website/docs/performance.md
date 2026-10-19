@@ -82,7 +82,11 @@ it is off by default on a real terminal and switched on only by something that r
 it — a headless run, the first `boundsOf` call, a click-outside modal, `useArea`, an
 element-scoped effect, text selection or drag and drop, the inspector — and an app that
 uses one of those pays for it. Nodes with a pointer role (selectable text, drag sources,
-drop targets) are recorded on every frame regardless, because routing them needs it.
+drop targets) are recorded on every frame regardless, because routing them needs it — with
+one saving: while nothing is selected, an unfocusable text leaf does not carry the
+selectable role, so a mouse-capturing app's frame allocates no wrapper per `text`. A press
+that lands while the leaves are unrecorded is parked, the next frame records them, and the
+selection starts there with the drags and release that came in between replayed.
 `RenderLoopBench` has no recording dimension: it times the widget layer, which has no
 element tree to record.
 

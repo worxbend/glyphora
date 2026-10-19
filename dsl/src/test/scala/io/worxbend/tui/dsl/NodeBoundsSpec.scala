@@ -129,3 +129,20 @@ final class NodeBoundsSpec extends AnyFunSuite:
         .MouseEvent(io.worxbend.tui.core.Position(0, 0), io.worxbend.tui.core.MouseEventKind.Down, KeyModifiers.None)
     )
     assert(outside == 1)
+
+  test("with selection on and nothing selected, unfocusable text leaves carry no wrapper; a press still selects"):
+    import io.worxbend.tui.core.{MouseEvent, MouseEventKind, Position}
+    val host          = ElementHost()
+    host.textSelection = true
+    def view: Element = column(text("alpha beta"), text("gamma"))
+    host.render(Rect(0, 0, 12, 2), buffer(12, 2), Theme.Dark, view)
+    assert(host.decoratedTree.map(boundsWrappers).contains(0))
+    assert(host.dispatchMouse(MouseEvent(Position(0, 0), MouseEventKind.Down, KeyModifiers.None)))
+    assert(!host.dispatchMouse(MouseEvent(Position(4, 0), MouseEventKind.Drag, KeyModifiers.None)))
+    val _             = host.dispatchMouse(MouseEvent(Position(4, 0), MouseEventKind.Up, KeyModifiers.None))
+    // the press resolves against the next frame, which records the leaves again
+    host.render(Rect(0, 0, 12, 2), buffer(12, 2), Theme.Dark, view)
+    assert(host.pollStates(), "resolving the press owes the frame that shows the highlight")
+    host.render(Rect(0, 0, 12, 2), buffer(12, 2), Theme.Dark, view)
+    assert(host.selectedText.contains("alpha"))
+    assert(host.decoratedTree.map(boundsWrappers).exists(_ > 0))

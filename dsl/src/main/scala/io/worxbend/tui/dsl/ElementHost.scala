@@ -222,6 +222,7 @@ final class ElementHost:
     val recorder = Option.when(recordBounds)(bounds)
     motionDemanded = false
     cuesDemanded = false
+    gestures.beginFrame()
     // a tree with a consumer of bounds in it (a click-outside backdrop) turns recording on for the frames after this one
     val tree     = FocusPass.decorate(
       raw,
@@ -263,7 +264,7 @@ final class ElementHost:
     * shows without a `requestRedraw()`. A host that owns its loop asks the same way, after running queued work and
     * before deciding whether to draw. Render-thread-only.
     */
-  def pollStates(): Boolean = session.pollStates()
+  def pollStates(): Boolean = session.pollStates() | gestures.selection.takeOwedFrame()
 
   /** The rect the element declared with `.key(key)` was painted into on the last [[render]], in the coordinates of the
     * buffer that frame was drawn into and mapped out of any scroll view it sits in — so a test can click its centre

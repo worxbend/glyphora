@@ -57,6 +57,54 @@ private[dsl] final class TextSelection:
     */
   private var armed: Option[(NodeBoundsEntry, Position)] = None
 
+  /** A press on a frame that recorded no selectable leaf — nothing was selected, so unfocusable text was left unwrapped
+    * — with its click count and the drags and release that followed it before the next frame. The next frame records
+    * the leaves again, and [[resolvePending]] starts the selection there and replays the rest.
+    */
+  private var pending: Option[(Position, Int)]                    = None
+  private var pendingMoves: Vector[(Position, Option[Clipboard])] = Vector.empty
+  private var owesFrame: Boolean                                  = false
+
+  /** Whether the next frame should record the unfocusable selectable leaves: a selection exists, is armed, or a press
+    * is waiting for them. Otherwise only focusable selectable nodes carry the role, and a frame allocates no wrapper
+    * per text leaf.
+    */
+  def recordsLeaves: Boolean = regionKey.isDefined || armed.isDefined || pending.isDefined
+
+  /** Parks a press that found no selectable leaf because none was recorded, until the next frame records them. */
+  def pend(at: Position, clicks: Int): Unit =
+    pending = Some((at, clicks))
+    pendingMoves = Vector.empty
+
+  /** Whether a parked press is waiting for the next frame. */
+  def isPending: Boolean = pending.isDefined
+
+  /** Queues a drag (`clipboard` `None`) or the release (`Some`) that followed a parked press. */
+  def queue(to: Position, clipboard: Option[Clipboard]): Unit = pendingMoves :+= (to -> clipboard)
+
+  /** Starts the parked press's selection against `frame` — the one that recorded the leaves — and replays the drags and
+    * release that came before it. A press that lands on no selectable node is dropped.
+    */
+  def resolvePending(frame: NodeBoundsFrame): Unit =
+    pending.foreach { (at, clicks) =>
+      pending = None
+      frame.innermostAt(at)(_.selectable).foreach { entry =>
+        begin(entry, at, clicks)
+        pendingMoves.foreach {
+          case (to, None)            => extend(to)
+          case (to, Some(clipboard)) => release(to, clipboard)
+        }
+        owesFrame = true
+      }
+      pendingMoves = Vector.empty
+    }
+
+  /** Whether a resolved press owes a frame — the one that draws its highlight — and forgets that it did. */
+  def takeOwedFrame(): Boolean =
+    val owed = owesFrame
+    owesFrame = false
+    owed
+
   /** Arms a selection at `at` in `entry` that starts only once a drag moves [[TextSelection.DragThreshold]] cells. */
   def arm(entry: NodeBoundsEntry, at: Position): Unit = armed = Some(entry -> at)
 
@@ -154,6 +202,8 @@ private[dsl] final class TextSelection:
   def clear(): Boolean =
     val showing = isVisible
     armed = None
+    pending = None
+    pendingMoves = Vector.empty
     regionKey = None
     dragging = false
     copyTo = None

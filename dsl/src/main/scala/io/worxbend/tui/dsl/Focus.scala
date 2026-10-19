@@ -595,8 +595,10 @@ private[dsl] object FocusPass:
         case scroll: ScrollViewElement => scroll.state.pendingReveal = gathering.flatMap(_.chosen)
         case _                         => ()
       def rolesOf(node: Element, g: PointerGestures, disabled: Boolean): PointerRoles =
+        // an unfocusable leaf takes the role only while a selection may need it — see `TextSelection.recordsLeaves`
         val selectable = g.selection.enabled && !unselectable &&
-          (node.props.selectable.contains(true) || TextSelection.selectableByDefault(node))
+          (node.props.selectable.contains(true) || TextSelection.selectableByDefault(node)) &&
+          (node.props.focusable || g.leavesThisFrame)
         PointerRoles(
           selectable = selectable,
           drag = if disabled then None else node.props.dragPayload,
