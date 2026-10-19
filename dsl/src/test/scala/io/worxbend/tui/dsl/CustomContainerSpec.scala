@@ -97,3 +97,16 @@ final class CustomContainerSpec extends AnyFunSuite with PilotFixture:
     val node           = container(text("hi"))((area, _) => Seq(Rect(area.x + 1, area.y, 2, 1)), Some(chrome))
     val lines          = BufferAssertions.lines(BufferAssertions.rendered(node.widget, 4, 2))
     assert(lines == Seq(".hi.", "...."))
+
+  test("a measure hook lets the container size itself: .auto in a column takes the rows it answers"):
+    val stacked: (Rect, Seq[ChildInfo]) => Seq[Rect] =
+      (area, children) => children.map(child => Rect(area.x, area.y + child.index, area.width, 1))
+    val node                                         =
+      container(text("a"), text("b"), text("c"))(stacked, measure = (_, children) => Some(children.size))
+    assert(node.intrinsicHeight(10).contains(3))
+    val lines = BufferAssertions.lines(BufferAssertions.rendered(column(node.auto, text("below")).widget, 5, 6))
+    assert(lines.take(4) == Seq("a    ", "b    ", "c    ", "below"))
+
+  test("with no measure hook the container cannot say, and fills"):
+    val node = container(text("a"))((area, _) => Seq(area))
+    assert(node.intrinsicHeight(10).isEmpty)

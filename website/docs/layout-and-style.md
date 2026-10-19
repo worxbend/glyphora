@@ -420,8 +420,8 @@ widens the box, and is cut to the run between the corners — by display width, 
 label is cut on a whole character and the corners are never overwritten. It is as wide
 as it measures, and placed along the row by its alignment (right unless told otherwise).
 A slot is still a child of the panel, so a `button` in the footer takes focus and clicks
-like any other control. A slot on a side with no border drawn (`.borders(...)`) is not
-painted.
+like any other control. A slot on a side with no border drawn (`.borders(...)`) has no
+row to be written into, so it is not painted and is not a focus stop either.
 
 ## Wrap and align text
 

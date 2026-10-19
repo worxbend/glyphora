@@ -15,7 +15,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 - `dock(top, bottom, left, right)(center)`: panes docked to the edges of a centre pane.
 - `Constraint.Auto` / `.auto` sizes to measured content; `Constraint.Bounded` / `.minSize(n).maxSize(m).fill` bounds any size.
 - `CrossAlign` with `.alignItems(…)`, `.alignSelf(…)` and `Layout.withCrossAlign`; `Element.intrinsicWidth`.
-- `container(children*)(place, chrome)` with `ChildInfo`: custom placement that keeps focus, hit-testing and `boundsOf`.
+- `container(children*)(place, chrome, measure)` with `ChildInfo`: custom placement that keeps focus, hit-testing and `boundsOf`; `measure` lets it size itself for `.auto`.
 - Panel slots `panel(…).header(e)` / `.footer(e)`; `.border`, `.padding`, `.background`, `.shadow` (`Shadow`), `.clip` on any element.
 - `scrollView(…).followFocus` (on by default) and `.ensureVisible`; `ScrollViewState.reveal(top, height)`.
 - `responsive.local { size => … }`: container queries against the node's own area.

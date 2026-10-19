@@ -86,9 +86,13 @@ final case class PanelElement(
   override def debugName: String = "panel"
 
   /** The stacked content first, then the header and footer slots: the slots are ordinary children for focus order,
-    * hit-testing and theming, they are only painted somewhere else — into the border rows.
+    * hit-testing and theming, they are only painted somewhere else — into the border rows. A slot on a side whose
+    * border is not drawn has no row to be written into, so it is not a child at all: not painted, not a focus stop.
     */
-  override def children: Seq[Element] = content ++ header ++ footer
+  override def children: Seq[Element] = content ++ shownHeader ++ shownFooter
+
+  private def shownHeader: Option[Element] = header.filter(_ => borders.hasAny(w.Borders.Top))
+  private def shownFooter: Option[Element] = footer.filter(_ => borders.hasAny(w.Borders.Bottom))
 
   /** The block this panel frames itself with — one value, so `render` and the height measurement below cannot disagree
     * about how many cells the chrome costs.
@@ -113,9 +117,9 @@ final case class PanelElement(
       // and a cell nobody styled — a gap between children, the background — takes the panel's
       val content = props.style
       if content != Style.Default then buffer.mapStyle(inner)(content.patch)
-      header.foreach(slot => PanelSlots.paintSlot(slot, area, area.y, headerAlignment, borders, buffer))
+      shownHeader.foreach(slot => PanelSlots.paintSlot(slot, area, area.y, headerAlignment, borders, buffer))
       if area.height > 1 then
-        footer.foreach(slot => PanelSlots.paintSlot(slot, area, area.bottom - 1, footerAlignment, borders, buffer))
+        shownFooter.foreach(slot => PanelSlots.paintSlot(slot, area, area.bottom - 1, footerAlignment, borders, buffer))
 
   def withFlex(mode: Flex): PanelElement    = copy(flex = mode)
   def withSpacing(cells: Int): PanelElement = copy(spacing = math.max(0, cells))
@@ -195,8 +199,12 @@ final case class PanelElement(
   private[dsl] def withProps(props: ElementProps): PanelElement                = copy(props = props)
   private[dsl] override def withChildren(children: Seq[Element]): PanelElement =
     val (body, slots) = children.splitAt(content.size)
-    val (top, bottom) = slots.splitAt(header.size)
-    copy(content = body, header = header.flatMap(_ => top.headOption), footer = footer.flatMap(_ => bottom.headOption))
+    val (top, bottom) = slots.splitAt(shownHeader.size)
+    copy(
+      content = body,
+      header = if shownHeader.isDefined then top.headOption else header,
+      footer = if shownFooter.isDefined then bottom.headOption else footer,
+    )
 
   /** An element written into the top border row, right-aligned unless `alignment` says otherwise — a count, a badge, a
     * spinner beside the title. It costs no content row and never widens the box; it is cut to the border's width.
@@ -674,13 +682,17 @@ final class ChildInfo private[dsl] (val index: Int, element: Element):
   *
   * `place` runs on the render thread during the paint and must be a pure function of its arguments: it is called again
   * on every frame, and nothing it returns is kept between them. The container cannot measure itself — its size depends
-  * on a function it cannot invert — so it fills by default; give it `.length(n)` to fix it.
+  * on a function it cannot invert — so it answers through `measure`: the rows the layout needs at a width, from the
+  * same [[ChildInfo]]s, or `None` for "cannot say" (the default, which fills). With an answer, `.auto` and every
+  * container that measures its children size it to its content; `.length(n)` still fixes it. `measure` follows the same
+  * rules as `place`: render thread, pure.
   */
 final case class ContainerElement(
     override val children: Seq[Element],
     place: (Rect, Seq[ChildInfo]) => Seq[Rect],
     chrome: Option[Widget] = None,
     props: ElementProps = ElementProps(),
+    measure: (Int, Seq[ChildInfo]) => Option[Int] = (_, _) => None,
 ) extends Element:
   type Self = ContainerElement
   override def debugName: String = "container"
@@ -701,5 +713,6 @@ final case class ContainerElement(
 
   private[dsl] def withProps(props: ElementProps): ContainerElement                = copy(props = props)
   private[dsl] override def withChildren(children: Seq[Element]): ContainerElement = copy(children = children)
-  private[dsl] override def intrinsicHeight(width: Int): Option[Int]               = constrainedHeight(None)
+  private[dsl] override def intrinsicHeight(width: Int): Option[Int]               =
+    constrainedHeight(measure(width, children.zipWithIndex.map((child, index) => ChildInfo(index, child))))
   private[dsl] override def intrinsicWidth(height: Int): Option[Int]               = constrainedWidth(None)

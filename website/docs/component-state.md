@@ -266,4 +266,16 @@ was painted under it, `boundsOf(key)` answers where each one went, and themes, h
 disabled states reach them as they reach any other node. The placement function runs on
 the render thread during the paint and should be a pure function of its arguments — it
 is called again on every frame. A `container` cannot measure itself (its size depends on
-a function it cannot invert), so it fills its slot; give it `.length(n)` to fix it.
+a function it cannot invert), so by default it fills its slot; give it `.length(n)` to
+fix it, or answer the measurement yourself with `measure` — the rows the layout needs at
+a width, from the same `ChildInfo`s, `None` for "cannot say":
+
+```scala
+container(children*)(
+  (area, kids) => kids.map(kid => Rect(area.x + 6 * kid.index, area.y + kid.index, 10, 1)),
+  measure = (_, kids) => Some(kids.size), // one row per child, on the diagonal
+).auto
+```
+
+With an answer, `.auto` and every container that measures its children size it to
+its content, as they do a built-in node.

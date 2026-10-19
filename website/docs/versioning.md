@@ -146,7 +146,8 @@ Three changes reach almost every app, so check them first:
 
 - **Panel slots.** `panel(…).header(e)` / `.footer(e)` put an element in a border row, and the
   slots are ordinary children for focus, hit-testing and theming — so `PanelElement.children` is
-  now `content ++ header ++ footer`, and the node's constructor field for the stacked children is
+  now `content ++ header ++ footer` (a slot on a side with no border drawn is left out: it is
+  neither painted nor a focus stop), and the node's constructor field for the stacked children is
   renamed `children` → `content`. The factories are unchanged; code that built a node by hand
   moves to the new name, or better, to the factory:
 
