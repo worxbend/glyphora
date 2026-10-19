@@ -1266,6 +1266,11 @@ private val deployments = DataTable.fromStrings(
 def tableView: Element = dataTable(deployments, tableState)
 ```
 
+A click on a body row selects it (`DataTable.rowAt(area, y, state)` is the hit test
+behind that). In an app that captures the mouse, a drag that starts on the table and
+covers a couple of cells selects the cells' text for copying instead — see
+[Select and copy text](./mouse#select-and-copy-text).
+
 `fromStrings` keys each row by its original position, which is all the identity a plain
 text row has. Rows with a real identity of their own — a pid, a path, an id — build as
 `KeyedRow(key, cells)` instead and go to the `DataTable[K]` constructor directly, which
@@ -2395,11 +2400,35 @@ def view(using ReactiveScope, Theme): Element =
 | PageUp / PageDown | one month back / forward | — |
 | `t` | jump to today | — |
 | Enter / Space | choose the cursor's date (`state.selected`, `onSelect`) | — |
+| `0`–`9` | — | type into the focused field |
+| Click | choose the day under the pointer | — |
 
 A time step moves the whole clock and wraps round midnight, so one minute up from
-`23:59` is `00:00`. `DatePickerState(initial, today)` takes the clock `t` reads, so a
-test can pin it; the widgets behind the nodes, `DatePicker(options, selectedStyle)`
-and `TimePicker(style, highlightStyle)`, take a `CalendarOptions` and plain styles.
+`23:59` is `00:00`. Digits type into the focused field the way a form's time input
+takes them: two digits set it — clamped to the field's maximum, so `2` `9` on the hour
+is `23` — and move focus to the next field, so typing `0930` sets `09:30`. A first
+digit no second one could follow (`3`–`9` on the hour, `6`–`9` on a minute) is taken
+at once as `0d`.
+
+`DatePickerState(initial, today, min, max)` bounds the cursor: with `min` or `max`
+set, every move, `t` and a write to `state.cursor` stop at the nearer bound, the days
+outside are drawn dimmed, and a click on one does nothing — a date outside the range
+can never be chosen. `state.isSelectable(date)` answers the same question for the
+app.
+
+```scala
+private val booking = DatePickerState(
+  LocalDate.now(),
+  min = Some(LocalDate.now()),
+  max = Some(LocalDate.now().plusMonths(3)),
+)
+```
+
+`DatePickerState(initial, today)` takes the clock `t` reads, so a test can pin it; the
+widgets behind the nodes, `DatePicker(options, selectedStyle, disabledStyle)` and
+`TimePicker(style, highlightStyle)`, take a `CalendarOptions` and plain styles.
+`DatePicker.dateAt(area, x, y, state)` — and `Calendar.dateAt(area, x, y)` under it —
+maps a cell back to the date drawn there, for an app doing its own hit testing.
 
 ### Selecting a range
 
@@ -2441,6 +2470,32 @@ Arrows move the `[]` cursor, Enter or a click chooses. The value is a
 terminal; `state.chosen` keeps it for the app to read. The grid measures 36×17
 (`ColorPicker(showCaption = false)` drops the caption row) and the node claims exactly
 that box.
+
+For a colour the palette does not hold, pass `ColorPickerMode.Rgb`: three numeric
+fields and a preview of their colour sit beside the grid, and the value chosen is a
+`Color.Rgb` (the node is then 45 columns wide).
+
+```scala
+colorPicker(accent, color => brand.set(color), ColorPickerMode.Rgb)
+```
+
+```text
+…grid…  R [255]
+        G [128]
+        B [  0]
+
+        ███████
+```
+
+Tab moves the keyboard from the grid through the red, green and blue fields and
+Shift+Tab back; Tab from the blue field (and Shift+Tab from the grid) is left alone,
+so focus moves on. On a field, digits type (the first replaces the value it showed),
+Backspace deletes, Up/Down step it, and Enter chooses — only while all three fields
+hold a value in `0..255`; a field that is empty or past 255 is drawn in the error
+colour and the preview goes blank. The fields follow the grid cursor, so arrowing to a
+swatch fills in its approximate RGB value to start from, and a click on a field gives
+it the keyboard. `state.channelValue(ColorChannel.Red)`, `state.field` and
+`state.chooseRgb()` are the same operations for code.
 
 ### Looking at raw bytes
 
@@ -2546,6 +2601,32 @@ whose children are all atoms stays on one row while that row is at most
 `Inspect(value: PrettyValue, …)`, takes the `PrettyValue` description directly —
 `Atom`, `Seq`, `Map`, `Product(name, fields)` — for values described by hand, and is
 `Measured`, so the node claims exactly its rows.
+
+For a value too big to read whole, `inspect(value, state)` makes the tree
+collapsible over a caller-owned `InspectState`:
+
+```scala
+private val folds = InspectState()
+
+scrollView(inspect(config, folds))
+```
+
+The node is then focusable. Up/Down (Home/End) move the selected row, Enter or Space
+folds or unfolds it, Right unfolds, and Left folds — or, on a row that is already
+folded or has nothing to fold, climbs to the parent. A click selects the row under the
+pointer and folds or unfolds it. A folded node keeps its header row, followed by `…`:
+
+```text
+Config
+├─ name: "glyphora"
+├─ database: Database …
+└─ timeout: None
+```
+
+Only a node drawn with children below it can fold; one already kept on a single row
+cannot. The state names nodes by their path of child indices (`Vector()` is the root,
+`Vector(2)` its third child), so it keeps working while the value is re-described every
+frame, and `state.collapse(path)`, `expand`, `toggle` and `select` drive it from code.
 
 ### QR codes
 
@@ -2667,6 +2748,35 @@ and slides to keep the focused control on screen, so the arrows still reach ever
 `[ Bold ]│[ Italic ]│[ Underline ]`. The strip alone is the `Toolbar(items, focus, gap,
 divider)` widget; a `Button` now measures its own width (`[ label ]`), which is what the
 strip — and a `flow` — lays it out by.
+
+Give the toolbar a caller-owned `ToolbarState` and its overflow marker becomes a menu:
+
+```scala
+private val tools = ToolbarState()
+
+toolbar(tools)(
+  button("New")(newDocument()),
+  button("Open")(openPicker()),
+  button("Save")(save()),
+  button("Quit")(quit()),
+)
+```
+
+```text
+[ New ] [ Open ]   »
+below     ┌────────┐
+          │[ Save ]│
+          │[ Quit ]│
+          └────────┘
+```
+
+A click on `»` (or on `«`, when the hidden controls are the ones before the window)
+floats the controls that did not fit in a popup over everything else, through the same
+frame-root portal the menus use. They are the very same controls, so a click on one
+presses it, and the popup closes on that click, on a press anywhere outside it, on
+another click on the marker, and on Esc. The keyboard needs no popup: the arrows still
+reach every control and the strip slides to show the focused one.
+`Toolbar.hidden(width)` names the items the window leaves out.
 
 ### Tag input
 
