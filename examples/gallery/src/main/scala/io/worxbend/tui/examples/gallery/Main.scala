@@ -57,6 +57,7 @@ class GalleryApp(fixtures: GalleryFixtures = GalleryFixtures.live()) extends Tui
           spacer.length(1),
           page.view,
         ).fill,
+        if page.props.isEmpty then spacer.length(0) else panel("Props")(PropEditor(page.props)).length(26),
       ).fill,
       statusBar(bindings),
     )

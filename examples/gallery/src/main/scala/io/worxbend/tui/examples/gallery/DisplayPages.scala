@@ -10,8 +10,8 @@ object DisplayPages:
 
   private val Family = "Display"
 
-  private def page(factory: String, summary: String)(view: View): GalleryPage =
-    GalleryPage(factory, Family, summary, view)
+  private def page(factory: String, summary: String, props: Prop*)(view: View): GalleryPage =
+    GalleryPage(factory, Family, summary, view, props)
 
   private val SampleMarkdown =
     """# Release notes
@@ -62,6 +62,8 @@ object DisplayPages:
     val pixels   = Vector.tabulate[Color.Rgb](6, 16)((y, x) => Color.Rgb(x * 16, y * 40, 200))
     val picture  = gradient(32, 16)
     val config   = ServerConfig("localhost", 8443, tls = true, List("edge", "eu-west"))
+    val versions = Seq("v0.20.0", "beta", "new")
+    val version  = Signal(0)
     Vector(
       page("text", "a block of plain text, wrapped to its width")(
         text("glyphora draws every widget into a buffer,\nand the terminal only ever sees the cells that changed.")
@@ -81,8 +83,12 @@ object DisplayPages:
           notice("build failed", NoticeLevel.Error).length(1),
         )
       ),
-      page("badge", "a short label or severity tag")(
-        row(badge("v0.20.0").length(10), badge(NoticeLevel.Warning).length(8), badge(NoticeLevel.Error).length(8))
+      page("badge", "a short label or severity tag", Prop.Choice("label", versions, version))(
+        row(
+          badge(versions(version.get)).length(10),
+          badge(NoticeLevel.Warning).length(8),
+          badge(NoticeLevel.Error).length(8),
+        )
       ),
       page("placeholder", "a labelled stand-in for a view not built yet")(placeholder("chart goes here")),
       page("tooltip", "a small bordered hint")(tooltip("Ctrl+S saves the file")),

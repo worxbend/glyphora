@@ -70,3 +70,19 @@ final class ErrorBoundarySpec extends AnyFunSuite with PilotFixture:
     assert(BufferAssertions.text(BufferAssertions.rendered(tree.widget, 10, 1)).trim == "fine")
     assert(tree.intrinsicHeight(2) == inner.intrinsicHeight(2))
     assert(tree.children == Seq(inner))
+
+  test("the same failure, rebuilt frame after frame, is logged at SEVERE once and then only at FINE"):
+    val ring   = LogRing(10)
+    val logger = Logger.getLogger("io.worxbend.tui.dsl")
+    logger.setUseParentHandlers(false)
+    val bridge = JulBridge.attach(ring, logger)
+    try
+      def explode: Element = throw IllegalArgumentException("always broken")
+      (1 to 3).foreach { _ =>
+        val tree = errorBoundary(_ => text("fallback"))(explode)
+        val _    = BufferAssertions.rendered(tree.widget, 20, 1)
+      }
+      assert(ring.snapshot.count(_.level == LogLevel.Error) == 1, ring.snapshot)
+    finally
+      bridge.cancel()
+      logger.setUseParentHandlers(true)

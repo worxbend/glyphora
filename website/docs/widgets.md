@@ -680,7 +680,9 @@ value that should not take the screen down with it. A non-fatal throwable while 
 subtree is built or painted paints `fallback(error)` in the subtree's area — over a
 cleared area, so a half-drawn widget leaves nothing behind — and logs the failure at
 `SEVERE` on the `io.worxbend.tui.dsl` logger, where a `JulBridge` ring and a `logConsole`
-can show it. Nothing is remembered between frames: the next redraw rebuilds the view and
+can show it. A subtree that stays broken fails again on every frame; the same failure (same
+type, message and throw site) is logged at `SEVERE` once and at `FINE` after that, so it
+does not fill the log. Nothing is remembered between frames: the next redraw rebuilds the view and
 the subtree gets to try again.
 
 ```scala

@@ -7,9 +7,17 @@ import io.worxbend.tui.dsl.*
   * `factory` is the factory's name exactly as it appears in the `export Element.{…}` block of `dsl.scala` — the test
   * matches pages to that block by this name, so a page cannot be renamed away from the factory it shows. `family` is
   * the group the sidebar lists it under. `view` is evaluated every frame like any other view; the states it closes over
-  * were created once, when the page was, and are owned by the page for the life of the gallery.
+  * were created once, when the page was, and are owned by the page for the life of the gallery. `props` are the simple
+  * values the page's view reads that the gallery lets the user edit beside it ([[PropEditor]]); their starting values
+  * are what the page's golden frame shows.
   */
-final class GalleryPage(val factory: String, val family: String, val summary: String, val view: View):
+final class GalleryPage(
+    val factory: String,
+    val family: String,
+    val summary: String,
+    val view: View,
+    val props: Seq[Prop] = Seq.empty,
+):
   override def toString: String = s"GalleryPage($factory)"
 
   /** The page as the gallery lays it out: inside a column, so a `.length(n)` on the page's own root is honoured the way

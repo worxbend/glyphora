@@ -33,7 +33,7 @@ cd glyphora
 | `airsensor` | `./mill examples.airsensor.run` | polling, threshold bands, trend arrows, loading/ready/error — [guide](./build-a-sensor-dashboard) |
 | `loadtest` | `./mill examples.loadtest.run` | concurrent work off the render thread, histogram and percentiles — [guide](./build-a-load-generator) |
 | `doctor` | `./mill examples.doctor.run` | what glyphora detected about your terminal, then every decoded key and mouse event — [troubleshooting](./troubleshooting#run-the-doctor) |
-| `gallery` | `./mill examples.gallery.run` | every exported factory on its own page, grouped by family — the visual index of the toolkit, and a golden frame per factory |
+| `gallery` | `./mill examples.gallery.run` | every exported factory on its own page, grouped by family — the visual index of the toolkit, and a golden frame per factory; pages whose factory takes simple values (`gauge`, `sparkline`, `barChart`, `progressBar`, `spinner`, `badge`) have a Props panel that edits them live |
 
 Every app exits with `q` or `Esc` (`doctor` only with `q`: it echoes `Esc` like any other key; `gallery` with `Ctrl+Q`,
 because its pages include text fields that take `q`); the source comment above each app lists its full

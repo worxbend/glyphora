@@ -123,7 +123,8 @@ note in [Versioning & releases](website/docs/versioning.md).
 
 - `Messages` — one table for every built-in label (dialog and confirm buttons, palette title and placeholder, help title, wizard buttons, inspector titles, `searchBar` placeholder, prompt hints, glyphs and yes/no); `TuiApp.messages`, `Messages.Default`, `with…` builders, `Messages.scoped`.
 - `Messages` also covers the which-key ellipsis, framework-key descriptions (`withFrameworkKeyDescription`), prompt validation errors (templates with `{input}`, `{min}`, `{max}`, …) and severity icons and tags (`withIcon(level, …)`, `withTag(level, …)`); `Badge.of(…, label)`.
-- `examples/gallery`: every exported factory on its own page, grouped by family, with one golden frame per factory; `GLYPHORA_GALLERY_EXPORT` and `scripts/render-gallery.sh` write each page as an SVG screenshot.
+- `examples/gallery`: every exported factory on its own page, grouped by family, with one golden frame per factory; `GLYPHORA_GALLERY_EXPORT` and `scripts/render-gallery.sh` write each page as an SVG screenshot. A generic Props panel (`Prop.Number`/`Toggle`/`Choice`) edits the simple arguments of the `gauge`, `sparkline`, `barChart`, `progressBar`, `spinner` and `badge` pages live.
+- `errorBoundary` logs a repeated failure at `SEVERE` once, then at `FINE`.
 - `examples/scala-cli/hello.scala`: a single-file app run with `scala run`, no build tool.
 
 ### Changed

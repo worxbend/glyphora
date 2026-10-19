@@ -140,8 +140,10 @@ private[dsl] final case class PointerElement(inner: Element, pointerId: Int, tra
   * *built* (`subtree` is by-name and evaluated here, once per element) and while it is *painted* (the inner widget's
   * `render`). Either way `fallback(error)` is painted in the area the subtree was given — on top of a cleared area, so
   * a half-drawn widget leaves no debris — and the failure is logged at `SEVERE` on the `io.worxbend.tui.dsl` logger,
-  * where a `JulBridge` ring and a `logConsole` can show it. Nothing is remembered between frames: the view is rebuilt
-  * on the next redraw and the subtree gets to try again, so a failure that was transient heals on its own.
+  * where a `JulBridge` ring and a `logConsole` can show it; the same failure again (same type, message and throw site),
+  * as a subtree that stays broken produces on every frame, is logged at `FINE`. Nothing is remembered between frames:
+  * the view is rebuilt on the next redraw and the subtree gets to try again, so a failure that was transient heals on
+  * its own.
   *
   * Transparent otherwise, like every decorator: a healthy subtree measures, focuses and routes events as itself. Fatal
   * throwables (`OutOfMemoryError`, `InterruptedException`) are not caught.
@@ -178,8 +180,23 @@ final case class ErrorBoundaryElement(
 private object ErrorBoundaryElement:
   private val log = Logger.getLogger("io.worxbend.tui.dsl")
 
+  /** The failures already logged at `SEVERE`, by type, message and throw site — bounded, forgotten wholesale when full.
+    * A view is rebuilt on every frame, so a subtree that stays broken would otherwise log the same stack trace on each.
+    */
+  private val reported = java.util.HashSet[String]()
+
+  private val RememberedFailures = 256
+
+  /** Logs `error` at `SEVERE` the first time this failure is seen, and at `FINE` on every repeat. */
   private def report(phase: String, error: Throwable): Unit =
-    log.log(Level.SEVERE, s"errorBoundary: the subtree threw while $phase; painting the fallback instead", error)
+    val site  = error.getStackTrace.headOption.fold("")(_.toString)
+    val seen  = s"$phase|${error.getClass.getName}|${error.getMessage}|$site"
+    val first = reported.synchronized {
+      if reported.size >= RememberedFailures then reported.clear()
+      reported.add(seen)
+    }
+    val level = if first then Level.SEVERE else Level.FINE
+    log.log(level, s"errorBoundary: the subtree threw while $phase; painting the fallback instead", error)
 
 /** Wraps an element marked `.ensureVisible` during the focus pass, so the area it is handed is reported to the
   * enclosing `scrollView` through [[RevealProbe]]. `id` identifies the request across frames — the element's focus key
