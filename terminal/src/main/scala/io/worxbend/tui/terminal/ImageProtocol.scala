@@ -3,7 +3,7 @@ package io.worxbend.tui.terminal
 /** The terminal image protocols glyphora can draw a [[io.worxbend.tui.core.GraphicPlacement]] with. */
 enum ImageProtocol:
 
-  /** The kitty graphics protocol — kitty, Ghostty, WezTerm and Konsole answer its query. See [[KittyGraphics]]. */
+  /** The kitty graphics protocol — kitty, Ghostty and WezTerm among others answer its query. See [[KittyGraphics]]. */
   case Kitty
 
   /** iTerm2's inline images (OSC 1337), which iTerm2 and WezTerm draw. See [[ITerm2Images]]. */

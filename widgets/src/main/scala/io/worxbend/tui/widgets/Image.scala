@@ -6,7 +6,7 @@ import scala.util.control.NonFatal
 
 /** A raster image rendered with half-block cells: every terminal cell shows two vertical pixels (`▀` with the upper
   * pixel as foreground and the lower as background), the universally supported protocol from the reference ecosystems.
-  * Kitty/iTerm2/Sixel protocols remain out of scope.
+  * For a picture the terminal draws in real pixels where it can (kitty graphics, iTerm2), use [[PixelImage]].
   *
   * `pixels` is row-major RGB; the image is scaled to the render area by nearest-neighbor sampling, preserving nothing
   * but coverage — pre-scale for quality.
