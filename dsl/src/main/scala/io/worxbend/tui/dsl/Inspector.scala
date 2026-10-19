@@ -89,14 +89,14 @@ private[dsl] object Inspector:
         val all    = nodes(host)
         val target = targetIndex(all, pointer)
         target.flatMap(all(_).layout).foreach(rect => buffer.setStyle(rect.intersection(area), HighlightStyle))
-        val card   = target.fold(Vector("nothing focused or under the pointer"))(all(_).describe)
+        val card   = target.fold(Vector(Messages.active.inspectorNothing))(all(_).describe)
         val focus  = target.flatMap(all(_).layout)
         val onTop  = focus.forall(rect => rect.y + rect.height / 2 >= area.y + area.height / 2)
         if mode == InspectorMode.NodeAndTree then
           val tree      = ElementTreeSnapshot.render(host).linesIterator.toVector
           val treeWidth = math.min(area.width / 2, tree.map(CharWidth.of).maxOption.getOrElse(0) + 4)
           val treeArea  = Rect(area.right - treeWidth, area.y, treeWidth, area.height)
-          paintBox(buffer, treeArea, "tree", window(tree, target, treeArea.height - 2))
+          paintBox(buffer, treeArea, Messages.active.inspectorTreeTitle, window(tree, target, treeArea.height - 2))
           paintCard(buffer, Rect(area.x, area.y, area.width - treeWidth, area.height), card, onTop)
         else paintCard(buffer, area, card, onTop)
 
@@ -107,7 +107,12 @@ private[dsl] object Inspector:
     val width  = math.min(area.width, card.map(CharWidth.of).maxOption.getOrElse(0) + 4)
     val height = math.min(area.height, card.size + 2)
     val y      = if onTop then area.y else area.bottom - height
-    paintBox(buffer, Rect(area.right - width, y, width, height), "inspector", card.map(line => (line, false)))
+    paintBox(
+      buffer,
+      Rect(area.right - width, y, width, height),
+      Messages.active.inspectorTitle,
+      card.map(line => (line, false)),
+    )
 
   /** At most `rows` lines of the tree, scrolled so the inspected node's line is in view, each flagged when it is that
     * line.

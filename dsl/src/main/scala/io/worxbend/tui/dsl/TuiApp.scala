@@ -257,6 +257,18 @@ trait TuiApp:
     */
   def frameworkKeys: FrameworkKeys = FrameworkKeys.default
 
+  /** The labels the framework draws on its own — dialog buttons, the palette's title and placeholder, the help
+    * overlay's heading, the wizard's buttons, the inspector's titles, the prompts' hints and glyphs. Override it to
+    * translate them: `override def messages: Messages = Messages.Default.withDialogOk("Sí")`.
+    *
+    * Read once per run, on the thread that called [[runWith]] — the default is whatever [[Messages.scoped]] installed
+    * there, [[Messages.Default]] otherwise — and bound on the render thread around every frame and every event.
+    */
+  def messages: Messages = Messages.active
+
+  /** [[messages]] as this run read it at [[runWith]]; written before the runner starts, read on the render thread. */
+  @volatile private var runMessages: Messages = Messages.Default
+
   private lazy val keyModeSignal: Signal[ModeId] = Signal(bindings.modes.headOption.getOrElse(ModeId.Default))
 
   /** The screen's bindings followed by the app's, minus any app binding the screen has completely taken over.
@@ -681,6 +693,7 @@ trait TuiApp:
         val intro     = splash
         // read once: `config` is overridable, so the runner, tick decision and resize path must agree
         val runConfig = config
+        runMessages = messages
         val run       = RunState(SplashPlayer(intro, nanoTime), runConfig)
         // the toast and effect stacks outlive a single run and reach this clock through RunClock
         runClock.use(nanoTime)
@@ -733,11 +746,11 @@ trait TuiApp:
         shownTaskbar = None
         terminalFocused = true
         screenStack.beginRun()
-        onStart()
+        Messages.scoped(runMessages)(onStart())
         screenStack.enterRemaining()
       ,
-      handleEvent(_, run, _),
-      frame => renderFrame(frame, run, scope),
+      (event, handle) => Messages.scoped(runMessages)(handleEvent(event, run, handle)),
+      frame => Messages.scoped(runMessages)(renderFrame(frame, run, scope)),
     )
 
   /** `config` with the app's stdio-capture default applied. A print run ([[PrintBackend]]) never captures: it has no UI

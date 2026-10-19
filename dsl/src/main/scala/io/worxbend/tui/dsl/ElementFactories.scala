@@ -324,7 +324,7 @@ private[dsl] trait ElementFactories:
     * the same one to the view it searches with `.searchable(state)`. Typing updates the search live, Enter /
     * Shift+Enter step to the next / previous match, Esc clears. See [[SearchBarElement]].
     */
-  def searchBar(state: w.SearchState, placeholder: String = "Search"): SearchBarElement =
+  def searchBar(state: w.SearchState, placeholder: String = Messages.active.searchPlaceholder): SearchBarElement =
     SearchBarElement(state, placeholder)
 
   /** A labelled checkbox over a caller-owned `Signal`. The signal is read tracked, so any writer repaints it. */
@@ -598,8 +598,8 @@ private[dsl] trait ElementFactories:
     * app's own state and overlay it with [[layers]] (or push it as a modal [[Screen]]). Colours come from the ambient
     * [[Theme]]: the frame and text in `primary`, the selected button in `focus`.
     */
-  def dialog(title: String, message: String, buttons: Seq[String] = Seq("OK"), selected: Int = 0)(using
-      theme: Theme
+  def dialog(title: String, message: String, buttons: Seq[String] = Seq(Messages.active.dialogOk), selected: Int = 0)(
+      using theme: Theme
   ): WidgetElement =
     LateBinding.themed(theme) { theme =>
       WidgetElement(

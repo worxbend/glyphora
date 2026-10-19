@@ -134,7 +134,7 @@ final case class InputElement(
   */
 final case class SearchBarElement(
     state: w.SearchState,
-    placeholder: String = "Search",
+    placeholder: String = Messages.active.searchPlaceholder,
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = SearchBarElement

@@ -81,6 +81,24 @@ class ExampleDiscoveryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "missing regular"):
             self.tool.discover(self.examples)
 
+    def test_scala_cli_quickstart_is_skipped_only_while_it_holds_scala_files(self):
+        self.add("valid")
+        quickstart = self.examples / "scala-cli"
+        quickstart.mkdir()
+        (quickstart / "hello.scala").write_text("//> using dep com.worxbend::tui-dsl:0.19.0\n")
+        self.assertEqual(self.tool.discover(self.examples), ["valid"])
+        (quickstart / "src").mkdir()
+        with self.assertRaisesRegex(ValueError, "missing regular package.mill: scala-cli"):
+            self.tool.discover(self.examples)
+
+    def test_only_the_scala_cli_directory_may_skip_package_mill(self):
+        self.add("valid")
+        other = self.examples / "quickstart"
+        other.mkdir()
+        (other / "hello.scala").write_text("object Hello\n")
+        with self.assertRaisesRegex(ValueError, "missing regular package.mill: quickstart"):
+            self.tool.discover(self.examples)
+
     def test_native_selectors_separate_every_task(self):
         self.assertEqual(self.tool.native_selectors(["hello-world", "counter"]),
                          ["examples.hello-world.nativeImage", "+", "examples.counter.nativeImage"])
@@ -90,7 +108,8 @@ class ExampleDiscoveryTests(unittest.TestCase):
 
     def test_real_discovery_covers_every_example(self):
         names = self.tool.discover(ROOT / "examples")
-        self.assertEqual(set(names), {p.name for p in (ROOT / "examples").iterdir() if p.is_dir()})
+        modules = {p.name for p in (ROOT / "examples").iterdir() if p.is_dir()} - {self.tool.SCALA_CLI}
+        self.assertEqual(set(names), modules)
         result = subprocess.run([sys.executable, str(ROOT / "scripts/ci-examples.py"), "discover"],
                                 check=True, text=True, capture_output=True, timeout=10)
         self.assertEqual(json.loads(result.stdout), names)

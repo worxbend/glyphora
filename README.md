@@ -102,6 +102,10 @@ def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.20.0")
 libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.20.0"
 ```
 
+No build tool at all? [`examples/scala-cli/hello.scala`](examples/scala-cli/hello.scala) is a
+whole app in one file: `scala run examples/scala-cli/hello.scala` fetches the libraries from
+Central and opens it (see [Getting started](website/docs/getting-started.md#scala-cli-one-file-no-build)).
+
 [GitHub Packages](https://github.com/worxbend/glyphora/packages) also hosts the libraries.
 Its Maven resolver requires a classic PAT with `read:packages`, even for public packages;
 see [Getting started](website/docs/getting-started.md). Local installation with

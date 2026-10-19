@@ -1,0 +1,5 @@
+ServerConfig
+├─ host: "localhost"
+├─ port: 8443
+├─ tls: true
+└─ tags: List("edge", "eu-west")

@@ -1,0 +1,12 @@
+package build.examples.gallery
+
+import mill.*
+
+// Everything an example has in common — the GraalVM pin, `--no-fallback`, and a Pilot-capable
+// test submodule — lives in `TuiExampleModule` in build.mill.
+object `package` extends build.TuiExampleModule {
+
+  def moduleDeps = Seq(build.dsl)
+
+  def mainClass = Some("io.worxbend.tui.examples.gallery.Main")
+}

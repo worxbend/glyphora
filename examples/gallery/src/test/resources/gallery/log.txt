@@ -1,0 +1,4 @@
+boot: reading config
+boot: 3 plugins loaded
+http: listening on :8080
+http: GET / 200

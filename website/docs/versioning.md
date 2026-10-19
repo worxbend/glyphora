@@ -646,7 +646,36 @@ The likeliest clashes are `Console` (see [Print mode](#print-mode)), `Pattern` (
 `Patch`, `Hunk`, `DiffLine`, `Prompt`, `ProgressTask`, `Store`, `Codec`, `Persisted`, `memo`,
 `markup`, `AnsiParser`, `inspect` and `placeholder`.
 
-<!-- TICKET-28: migration notes for ticket 28 go here (still in progress at the time of writing). -->
+### Built-in labels come from `Messages`
+
+Every word the framework draws on its own — a bare `dialog`'s `OK`, `Screen.confirm`'s
+buttons, the command palette, `helpOverlay`, the wizard, the inspector, `searchBar` and the
+prompts — is read from the `Messages` table the run binds, with `Messages.Default` holding
+the English strings earlier releases drew, so nothing changes until an app overrides it
+(see [the app shell](./app-shell#translate-the-built-in-labels)). Two things can still bite:
+
+- `TuiApp` gained a concrete `def messages: Messages`. An app that already declares a member
+  called `messages` — a chat app's `val messages = Signal(Vector.empty[String])` — no longer
+  compiles ("needs `override` modifier"); rename it.
+
+  ```scala
+  // before
+  val messages = Signal(Vector.empty[String])
+  // after
+  val chatLog = Signal(Vector.empty[String])
+  ```
+
+- `Messages` is a new name under the one import; a type of your own called `Messages` in a
+  package that wildcard-imports the DSL is now ambiguous — qualify one or exclude the DSL's
+  (`import io.worxbend.tui.dsl.{Messages as _, *}`).
+
+### `Dialog` sizes its box to its buttons
+
+The `Dialog` widget (and so `dialog`, `confirmDialog` and `Screen.confirm`) used to size its
+box from the message alone and silently drop buttons that did not fit, which a translated
+label made the common case. The box now widens to the button row. A dialog whose buttons were
+wider than its message draws a wider box than before; golden frames of such a dialog need
+re-recording, and no source change is needed.
 
 ## Migrating to 0.19.0
 

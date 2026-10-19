@@ -20,8 +20,10 @@ final case class Dialog(
 ) extends Widget:
 
   def render(area: Rect, buffer: Buffer): Unit =
-    val box =
-      area.centered(math.min(area.width, math.max(message.width + PopupChrome.ExtraWidth, 20)), message.height + 4)
+    // the button row needs its own width plus the two border columns; a box sized from the message alone dropped the
+    // last button whenever the labels outgrew the message — the usual case once they are translated
+    val wanted = math.max(math.max(message.width + PopupChrome.ExtraWidth, buttonsWidth + 2), 20)
+    val box    = area.centered(math.min(area.width, wanted), message.height + 4)
     if box.width >= 4 && box.height >= 4 then
       Clear(style).render(box, buffer)
       Block(Seq(BlockTitle.top(Line.styled(title, style))), borderStyle = style, borderType = borderType)
@@ -33,9 +35,13 @@ final case class Dialog(
       )
       renderButtons(inner, buffer)
 
+  private def labels: Seq[String] = buttons.map(label => s"[ $label ]")
+
+  private def buttonsWidth: Int = labels.map(CharWidth.of).sum + math.max(0, labels.size - 1)
+
   private def renderButtons(inner: Rect, buffer: Buffer): Unit =
-    val labels     = buttons.map(label => s"[ $label ]")
-    val totalWidth = labels.map(CharWidth.of).sum + math.max(0, labels.size - 1)
+    val labels     = this.labels
+    val totalWidth = buttonsWidth
     var x          = Alignment.Center.originAt(inner.x, inner.width, totalWidth)
     val y          = inner.bottom - 1
     labels.zipWithIndex.foreach { (label, index) =>

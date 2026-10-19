@@ -47,7 +47,7 @@ object Prompt:
 
   /** A `validate` for [[text]] that rejects blank input. */
   val required: String => Either[String, Unit] =
-    value => if value.trim.isEmpty then Left("an answer is required") else Right(())
+    value => if value.trim.isEmpty then Left(Messages.active.promptRequired) else Right(())
 
   /** Free text. An empty answer is `default`; `validate` may reject the text with a message shown under the field. */
   def text(

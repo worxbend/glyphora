@@ -169,8 +169,8 @@ object Screen:
   def confirm(
       title: String,
       message: String,
-      confirmLabel: String = "OK",
-      cancelLabel: String = "Cancel",
+      confirmLabel: String = Messages.active.dialogOk,
+      cancelLabel: String = Messages.active.dialogCancel,
   )(onConfirm: => Unit, onCancel: => Unit): Screen =
     new Screen:
       private val selected                                        = Signal(0)

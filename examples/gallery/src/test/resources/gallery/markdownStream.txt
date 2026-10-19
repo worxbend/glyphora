@@ -1,0 +1,3 @@
+Streaming answer
+
+Tokens arrive one at a time and the view re-renders only what changed.

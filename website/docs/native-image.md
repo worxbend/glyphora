@@ -38,7 +38,7 @@ object `package` extends build.TuiExampleModule {
 The GraalVM pin (`jvmVersion = "graalvm-community:25.0.2"`) and `nativeImageOptions =
 Seq("--no-fallback")` are not repeated in each example: they live once in the shared
 `build.TuiExampleModule` trait in `build.mill`, so bumping the toolchain is a single edit
-that cannot be half-applied across ten files. `build.dsl` is the only dependency an example
+that cannot be half-applied across twelve files. `build.dsl` is the only dependency an example
 names, because Mill's `moduleDeps` are transitive and `tui-dsl` already brings `tui-core`,
 `tui-terminal`, `tui-widgets`, `tui-runtime` and `tui-macros`.
 

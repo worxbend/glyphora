@@ -20,9 +20,10 @@ private[dsl] object PromptTask:
   val LogRows: Int = 5
 
   def successText(label: String, detail: String): String =
-    if detail.isEmpty then s"✓ $label" else s"✓ $label $detail"
+    val done = Messages.active.taskSucceeded
+    if detail.isEmpty then s"$done $label" else s"$done $label $detail"
 
-  def failureText(label: String, detail: String): String = s"✗ $label $detail"
+  def failureText(label: String, detail: String): String = s"${Messages.active.taskFailed} $label $detail"
 
   /** Runs `work` and answers its result, or `None` when the user cancelled; a failure of `work` is rethrown once the
     * prompt has left its summary line.
