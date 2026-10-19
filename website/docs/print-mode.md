@@ -159,3 +159,7 @@ terminal)`, `Console.detectedWidth(env, terminalWidth)` and
 `Console.isNonInteractive(env, terminal)` take the environment and the "is standard
 output a terminal" answer as parameters, so a test never depends on how its JVM was
 started.
+
+Next: ask questions before or after a print with [Prompts](./prompts), drive whole apps
+headlessly in [Testing](./testing), and ship the result as one binary with
+[Native image](./native-image).

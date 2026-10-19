@@ -34,6 +34,15 @@ than splitting on spaces. Punctuation between words is skipped.
 With nothing selected, `Ctrl+C` and `Ctrl+X` are not consumed and keep bubbling, so
 `Ctrl+C` still quits an app whose input is focused.
 
+:::caution A focused text field keeps editing chords for itself
+`Ctrl+U`, `Ctrl+W`, `Ctrl+K`, `Ctrl+Y`, `Ctrl+Z`, `Ctrl+A` and the other keys in
+the table above are consumed by a focused `input` or `textArea` before an app binding sees
+them, so `binding("ctrl+w", "close tab")` does nothing while the user is typing. Pick app
+keys outside that set (`Ctrl+Q`, function keys), or a key sequence behind a
+leader. A test that drives a binding with `pilot.press(...)` needs the same care: move
+focus off the field first, or the field eats the key.
+:::
+
 ## Clipboard
 
 A widget never touches a system clipboard. It has no terminal to reach one through.
@@ -127,3 +136,7 @@ def view(using ReactiveScope, Theme): Element =
 
 The provider must not touch UI state, because it runs off the render thread. Everything
 else on `PromptComposerState` is render-thread-only, like every widget state.
+
+Next: bind your own keys around the editors in [Key bindings](./keybindings), validate
+what users type in [Forms & validation](./forms-and-validation), and drive an editor
+key by key in [Testing](./testing).
