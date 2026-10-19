@@ -124,6 +124,62 @@ final case class InputElement(
         true
       case _                                       => editingChords(state)(event) || cursorKeys(state)(event)
 
+/** The query input of a search: a one-row text field over the caller-owned [[w.SearchState]]'s own
+  * [[w.SearchState.input]], so every keystroke changes the query the searched view (`log(…).searchable(state)`,
+  * `scrollView(…).searchable(state)`, `markdown(…).searchable(state)`) finds on its next frame — the search is live.
+  *
+  * While focused: typing and the shared editing chords edit the query; Enter (or Down) steps to the next match and
+  * Shift+Enter (or Up) to the previous one; Esc clears the query and the highlight. With nothing to clear, Esc is left
+  * to bubble.
+  */
+final case class SearchBarElement(
+    state: w.SearchState,
+    placeholder: String = "Search",
+    props: ElementProps = ElementProps(focusable = true),
+) extends Element:
+  type Self = SearchBarElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
+  override def debugName: String                                             = "searchBar"
+  private[dsl] override def componentRole: Option[ComponentRole]             = Some(InputRole)
+  override def pointerShape: Option[PointerShape]                            = textPointer(props)
+  def widget: Widget                                                         =
+    val input = focusedInput(props, placeholder)
+    (area, buffer) =>
+      input.render(area, buffer, state.input)
+      reportCaret(props, input.caretAt(area, state.input))
+  private[dsl] def withProps(props: ElementProps): SearchBarElement          = copy(props = props)
+  private[dsl] override def claim: SizeClaim                                 = SizeClaim.OneRow
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     = Some(handleKey)
+  private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler] = Some { text =>
+    if props.focused then
+      state.input.insert(singleLineText(text))
+      true
+    else false
+  }
+
+  /** A step is consumed whether or not there was a match to move to: Enter in a search field means "next", never more.
+    */
+  private def stepped(move: => Boolean): Boolean =
+    val _ = move
+    true
+
+  private def handleKey(event: KeyEvent): Boolean =
+    val shift = event.modifiers.hasAny(KeyModifiers.Shift)
+    event.code match
+      case KeyCode.Escape                          =>
+        val had = state.isActive
+        state.clear()
+        had
+      case KeyCode.Enter if shift                  => stepped(state.previous())
+      case KeyCode.Enter | KeyCode.Down            => stepped(state.next())
+      case KeyCode.Up                              => stepped(state.previous())
+      case KeyCode.Char(c) if isPlainTyping(event) =>
+        state.input.insert(Character.toString(c))
+        true
+      case _ => editingChords(state.input)(event) || cursorKeys(state.input)(event)
+
 /** A text input with a live suggestion dropdown: typing filters `suggestions` (subsequence match), Up/Down move the
   * highlight, Enter accepts it into the input and fires `onAccept`.
   */

@@ -100,6 +100,9 @@ final class JLine3Backend private (
   // the signal-dispatch thread would be overwritten by an in-flight `draw` and the repaint lost.
   private val baseline = FrameBaseline()
 
+  /** The pictures on screen, kept in step with each frame's placements. Render-thread-confined, like `baseline`. */
+  private val graphics = GraphicsLayer()
+
   /** Serialises the three things that decide which screen the terminal is showing: writing a composed frame, handing
     * the terminal back to the shell, and taking it again. See [[TerminalDressing.releaseTerminal]] for what goes wrong
     * without it. Shared with the collaborators that write to the terminal ([[ReplyQueries]], [[ScrollRegions]],
@@ -136,6 +139,9 @@ final class JLine3Backend private (
   terminal.handle(Terminal.Signal.CONT, _ => onContinue())
 
   override def capabilities: TerminalCapabilities = probed
+
+  /** Replaces what the probe established, for a test driving a terminal that cannot answer. */
+  private[terminal] def capabilitiesOverride(capabilities: TerminalCapabilities): Unit = probed = capabilities
 
   def size: Either[BackendError, Size] = Backend.attempt(currentSize)
 
@@ -205,19 +211,23 @@ final class JLine3Backend private (
   private def composeFrame(buffer: Buffer, blank: Boolean, erasing: Boolean): String =
     // A primary-screen run owns at most its reserved bottom strip, never the shell output above it. Use the current
     // height rather than the previous frame's origin, which can be outside the strip after a simultaneous resize.
-    val erase =
+    val erase    =
       if !erasing then ""
       else if alternateScreenActive then AnsiSequences.ClearScreen
       else if inlineRows > 0 then
         AnsiSequences.moveTo(0, math.max(0, currentSize.height - inlineRows)) +
           AnsiSequences.clear(ClearType.AfterCursor)
       else ""
-    val body  = baseline.prepareFor(buffer.area, blank) match
+    val source   = baseline.prepareFor(buffer.area, blank)
+    // before the diff: dropping a placement the terminal cannot draw changes which cells the diff skips
+    val pictures =
+      graphics.compose(buffer, ImageProtocol.select(probed), repaintAll = source == FrameSource.RepaintAll)
+    val body     = source match
       case FrameSource.DiffAgainst(previous) => frameEncoder.encode(previous, buffer)
       case FrameSource.RepaintAll            => frameEncoder.encodeAll(buffer)
-    if body.nonEmpty || erasing then
+    if body.nonEmpty || erasing || !pictures.isEmpty then
       AnsiSequences.frame(
-        erase + body,
+        erase + pictures.before + body + pictures.after,
         probed.synchronizedOutput.usable,
       )
     else ""
@@ -490,10 +500,18 @@ final class JLine3Backend private (
     }
 
   override def scrollRegionUp(region: RowRange, lines: Int): Either[BackendError, Unit] =
-    scrollRegions.scroll(region, lines, ScrollDirection.Up)
+    takeDownPictures().flatMap(_ => scrollRegions.scroll(region, lines, ScrollDirection.Up))
 
   override def scrollRegionDown(region: RowRange, lines: Int): Either[BackendError, Unit] =
-    scrollRegions.scroll(region, lines, ScrollDirection.Down)
+    takeDownPictures().flatMap(_ => scrollRegions.scroll(region, lines, ScrollDirection.Down))
+
+  /** Deletes every picture on screen before the terminal moves rows itself: a kitty picture scrolls with the text, so
+    * after the move it is no longer where the graphics layer believes it is. The next frame places it again wherever
+    * the app now draws it.
+    */
+  private def takeDownPictures(): Either[BackendError, Unit] =
+    val deletes = graphics.forgetAll(ImageProtocol.select(probed))
+    if deletes.isEmpty then Right(()) else Backend.attempt(write(deletes))
 
   override def copyToClipboard(text: String): Either[BackendError, Unit] =
     Backend.attempt(write(AnsiSequences.clipboardCopy(text)))
@@ -702,6 +720,10 @@ object JLine3Backend:
     * out: inside tmux or screen the multiplexer swallows an OSC string it does not know, so a pointer shape, a desktop
     * notification or a taskbar progress written there reaches nobody. Everywhere else they stay as the probe left them
     * — `Unknown`, which means "send it".
+    *
+    * Both image protocols are ruled out the same way inside a multiplexer, which would need its own passthrough
+    * wrapping to deliver them. Outside one, iTerm2's inline images — which cannot be probed — are marked `Yes` when the
+    * environment names a terminal that draws them ([[ImageProtocol.namesInlineImageTerminal]]).
     */
   private[terminal] def gatedByEnvironment(
       probed: TerminalCapabilities,
@@ -710,7 +732,14 @@ object JLine3Backend:
     val keyboard =
       if EnvironmentOverrides.legacyKeyboard(env) then probed.copy(kittyKeyboard = Support.No) else probed
     if DesktopNotificationProtocol.insideMultiplexer(env) then
-      keyboard.copy(pointerShapes = Support.No, desktopNotifications = Support.No, taskbarProgress = Support.No)
+      keyboard.copy(
+        pointerShapes = Support.No,
+        desktopNotifications = Support.No,
+        taskbarProgress = Support.No,
+        kittyGraphics = Support.No,
+        inlineImages = Support.No,
+      )
+    else if ImageProtocol.namesInlineImageTerminal(env) then keyboard.copy(inlineImages = Support.Yes)
     else keyboard
 
   /** Opens the process's controlling terminal. Fails with `UnsupportedTerminal` when there is no usable TTY.

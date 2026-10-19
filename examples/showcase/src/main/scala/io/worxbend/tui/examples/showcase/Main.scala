@@ -105,7 +105,7 @@ class ShowcaseApp extends TuiApp:
       "Widgets" -> widgetsPage,
       "Loading" -> loadingPage,
       "Log"     -> log(logState),
-      "About"   -> markdown(AboutMarkdown),
+      "About"   -> row(spacer(2), pixelImage(Logo).length(16), spacer(2), markdown(AboutMarkdown)),
     )(selectedTab)
 
   /** A live gallery of every loading preset, animating against the app's own tick counter — the quickest way to pick
@@ -208,6 +208,20 @@ object ShowcaseApp:
 
   /** A line lands in the log page every this many ticks. */
   private val LogTickInterval: Int = 10
+
+  /** The About page's picture, built once: a terminal that speaks kitty graphics or iTerm2 images draws it in pixels,
+    * any other shows its half-block fallback. A radial cyan-to-magenta disc on a transparent ground.
+    */
+  private val Logo: RgbaImage = RgbaImage.tabulate(32, 32) { (x, y) =>
+    val dx       = x - 15.5
+    val dy       = y - 15.5
+    val distance = math.sqrt(dx * dx + dy * dy) / 16
+    if distance > 1 then 0x00000000
+    else
+      val red  = (distance * 255).toInt
+      val blue = 255 - (distance * 80).toInt
+      0xff000000 | (red << 16) | (0xc0 << 8) | blue
+  }
 
   private val AboutMarkdown =
     """# glyphora

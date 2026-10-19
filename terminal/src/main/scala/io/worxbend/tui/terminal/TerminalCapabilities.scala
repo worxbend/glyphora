@@ -42,6 +42,12 @@ enum Support:
   *   - `pointerShapes` (OSC 22), `desktopNotifications` (OSC 9/777/99) and `taskbarProgress` (OSC 9;4) cannot be
   *     probed; they stay `Unknown` unless the environment rules them out — a multiplexer that swallows unknown OSC
   *     strings — in which case the backend marks them `No` and never writes the sequence.
+  *   - `kittyGraphics` — the answer to the kitty graphics protocol's documented query; `inlineImages` — iTerm2's
+  *     inline-image protocol, which cannot be probed and is set to `Yes` by the environment (`TERM_PROGRAM` naming
+  *     iTerm2 or WezTerm, or `LC_TERMINAL=iTerm2`). These two are the second exception to "silence means go ahead":
+  *     like `inBandResize` they are acted on only on `Yes`, because a picture sent to a terminal that does not draw it
+  *     is not a mode quietly left off but a screenful of base64 — see [[ImageProtocol.select]]. A multiplexer marks
+  *     both `No`.
   */
 final case class TerminalCapabilities(
     synchronizedOutput: Support = Support.Unknown,
@@ -57,6 +63,8 @@ final case class TerminalCapabilities(
     desktopNotifications: Support = Support.Unknown,
     taskbarProgress: Support = Support.Unknown,
     terminalVersion: Option[String] = None,
+    kittyGraphics: Support = Support.Unknown,
+    inlineImages: Support = Support.Unknown,
 ):
 
   /** Whether the terminal is light or dark, as far as it said.
@@ -139,6 +147,15 @@ private[terminal] object CapabilityReplies:
     */
   def terminalVersion(payload: String): Option[String] =
     Option.when(payload.startsWith(">|"))(payload.drop(2).trim).filter(_.nonEmpty)
+
+  /** `capabilities` updated with whatever a completed OSC, DCS or APC reply said: the kitty graphics query's answer, or
+    * whatever [[foldOsc]] reads (the XTVERSION name, the OSC 11 background colour). They cannot be confused — a kitty
+    * graphics reply starts with `G`, an XTVERSION one with `>|`, an OSC 11 one with `11;`.
+    */
+  def foldControlString(capabilities: TerminalCapabilities, payload: String): TerminalCapabilities =
+    KittyGraphics.queryReply(payload) match
+      case Some(support) => capabilities.copy(kittyGraphics = support)
+      case None          => foldOsc(capabilities, payload)
 
   /** The scheme a `CSI ? 997 ; state n` report names, or `None` for any other DSR.
     *

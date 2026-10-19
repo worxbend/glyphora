@@ -491,6 +491,9 @@ column(
   two texts compared with `Patch.of` — unified or side by side; see [A diff pane](#a-diff-pane).
 - `link(label, url)` emits a clickable OSC 8 hyperlink when the terminal supports it.
 - `bigText` renders banners; `image` renders raster data with half-block cells.
+- `pixelImage(image)` shows a picture in real pixels on terminals with the kitty graphics
+  protocol or iTerm2 inline images, and as half-blocks everywhere else; see
+  [Pictures in pixels](#pictures-in-pixels).
 
 ### Tables, nested lists and task lists
 
@@ -606,6 +609,53 @@ the last patch it drew, so hand the node the same `Patch` value each frame. With
 `DiffView(patch, options)` is a `StatefulWidget[DiffViewState]` that also implements
 `Measured`.
 
+### Searching a log, a scroll view or a document
+
+`.searchable(state)` adds incremental search to `log(…)`, `scrollView(…)` and
+`markdown(…)`, over one caller-owned `SearchState`; `searchBar(state)` is the one-row field
+that edits its query. Create the state once outside `view` and hand the same one to both:
+
+```scala
+private val output = LogState()
+private val search = SearchState()
+
+def view(using ReactiveScope, Theme): Element =
+  column(
+    log(output).searchable(search).fill,
+    searchBar(search),
+  )
+```
+
+Every match is highlighted and the current one stands out; when the query changes, the first
+match at or after the top of the window becomes current and the view scrolls to it. While the
+searched view is focused, `n` and `N` step to the next and previous match, wrapping round;
+in the `searchBar`, Enter (or Down) and Shift+Enter (or Up) do the same, and Esc clears the
+query. Each move scrolls once, so a reader who scrolls away from the match is not dragged
+back.
+
+- A log searches every line it holds, not just the ones on screen.
+- A scroll view searches its whole content, below and above the fold. While a query is set
+  it paints the content in full rather than only the window; with no query there is no
+  extra cost.
+- `markdown(source).searchable(state)` searches what the document draws and restyles the
+  cells already drawn, so a match inside a table cell keeps the table's columns aligned.
+  Inside a `scrollView` the whole document is searched and the scroll view scrolls to the
+  current match. The node becomes focusable, so `n`/`N` work once it has focus, and the
+  arrows bubble to the scroll view around it.
+
+Matching is by grapheme cluster, never by `char`: a combining sequence, an emoji or a wide
+CJK character is matched whole, a precomposed `é` matches `e` followed by a combining
+acute accent, and the highlight covers the columns the terminal actually draws. Matching
+ignores case unless the query contains a capital letter. `textArea`'s own `/` search uses
+the same matcher.
+
+`SearchState` is render-thread-only. `query`, `matches` (each a `SearchMatch(row, column,
+width)` in the view's content coordinates), `current`, `next()`, `previous()` and
+`clear()` are its API, and every edit moves its `version`, so the view redraws when you
+change it. Give one state to one view only: two views sharing it would overwrite each
+other's matches. Without the DSL, `Log` and `ScrollView` have a `render` overload that takes
+a `SearchState`, and `Searchable(widget)` makes any widget searchable.
+
 ### Confining a failing subtree
 
 A throwable out of `view` ends the run, as it should: an app that cannot draw a frame has
@@ -625,6 +675,47 @@ errorBoundary(error => text(s"chart unavailable: ${error.getMessage}").dim) {
 
 A healthy subtree is unaffected: it measures, focuses and routes events exactly as it
 would without the boundary.
+
+### Pictures in pixels
+
+`pixelImage(image, options)` draws an `RgbaImage` with whatever the terminal can do best.
+At start-up the backend asks the terminal the kitty graphics protocol's documented
+question; terminals that implement it (kitty, Ghostty, WezTerm among them) answer, and get
+the picture sent as RGBA.
+iTerm2 (and WezTerm) cannot be asked, so the environment decides — `TERM_PROGRAM=iTerm.app`
+or `WezTerm`, or `LC_TERMINAL=iTerm2` — and they get an OSC 1337 inline PNG. Every other
+terminal, and anything inside tmux or screen, gets the half-block rendering the widget
+always draws into its cells, so nothing is ever blank.
+
+```scala
+// build once and keep it: an unchanged picture in an unchanged box sends nothing
+private val logo: RgbaImage = ImageLoader.readPng(Path.of("logo.png")).getOrElse(fallbackLogo)
+
+def view(using ReactiveScope, Theme): Element =
+  row(pixelImage(logo).length(20), markdown(about))
+```
+
+The node measures itself: with the default `ImageFit.Contain` it claims the rows (or, in a
+row, the columns) that keep the picture's shape at a cell twice as tall as it is wide —
+`PixelImageOptions(cellAspect = …)` changes that — and centres the picture in any extra
+room. `ImageFit.Stretch` fills the area instead. Translucent pixels are blended over
+`PixelImageOptions(background = …)` in the fallback.
+
+What happens between frames is the backend's job, not the app's:
+
+- the picture is sent once, when it first appears; frames that leave it where it was write
+  nothing for it;
+- a dialog, menu or toast drawn over it takes it down (kitty gets a delete; iTerm2 has
+  none, so the cells under it are repainted), and it is sent again when the cover goes;
+- moving it — a scroll view, a resize — takes it down and sends it at the new place.
+
+Load pictures with `ImageLoader`. `ImageLoader.readPng(path)` and `decodePng(bytes)` use a
+built-in PNG decoder and work in a native image; `fromFile`/`fromBytes` read any format
+`javax.imageio` does but need AWT metadata in a native image — see
+[Native images](./native-image#pictures-and-javaximageio). `RgbaImage.tabulate(w, h)(argb)`
+builds one from code. Without the DSL, `PixelImage(image, options)` is a `Widget` that also
+implements `Measured`; it draws its fallback and calls `Buffer.placeGraphic`, which any
+widget can use to reserve a box for a picture of its own.
 
 ### How wrapping breaks a line
 

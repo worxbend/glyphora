@@ -316,6 +316,25 @@ showing a scrollbar only when needed. The same holds for any raw widget you drop
 widget that cannot report a height measures as exactly one viewport, which means it will
 not scroll at all — give that content an explicit `.length(n)` or pass `contentHeight`.
 
+## Search a long document
+
+```scala
+private val scroll = ScrollViewState()
+private val search = SearchState()
+
+def view(using ReactiveScope, Theme): Element =
+  column(
+    scrollView(markdown(manualSource).searchable(search), scroll).fill,
+    searchBar(search, placeholder = "Find in manual"),
+  )
+```
+
+Typing in the bar highlights every match as you type and scrolls to the first one at or
+below the top of the window. Enter steps to the next match and Shift+Enter to the previous
+one; with the document focused, `n` and `N` do the same. Esc clears the search. To search
+a `log` or any other scroll view, put `.searchable(search)` on that node instead; see
+[Searching a log, a scroll view or a document](widgets.md#searching-a-log-a-scroll-view-or-a-document).
+
 ## Stream an LLM reply as Markdown
 
 ```scala

@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, Rect, StatefulWidget, VersionedState, Widget}
+import io.worxbend.tui.core.{Buffer, Rect, StatefulWidget, Style, VersionedState, Widget}
 
 /** Caller-owned scroll offset for a [[ScrollView]].
   *
@@ -99,9 +99,21 @@ final case class ScrollView(
     content: Widget,
     contentHeight: Int,
     showScrollbar: Boolean = true,
+    matchStyle: Style = SearchHighlight.DefaultMatchStyle,
+    currentMatchStyle: Style = SearchHighlight.DefaultCurrentStyle,
 ) extends StatefulWidget[ScrollViewState]:
 
-  def render(area: Rect, buffer: Buffer, state: ScrollViewState): Unit =
+  def render(area: Rect, buffer: Buffer, state: ScrollViewState): Unit = paint(area, buffer, state, None)
+
+  /** Draws the view searched for `search`'s query: while a query is set the content is painted whole — not just the
+    * window — so matches below and above the fold are found too, every match is highlighted in `matchStyle` (the
+    * current one in `currentMatchStyle`), and the view scrolls to the current match once per query change or step. That
+    * whole-content paint is the price of searching, paid only while a query is set. Render thread only.
+    */
+  def render(area: Rect, buffer: Buffer, state: ScrollViewState, search: SearchState): Unit =
+    paint(area, buffer, state, Some(search))
+
+  private def paint(area: Rect, buffer: Buffer, state: ScrollViewState, search: Option[SearchState]): Unit =
     if !area.isEmpty && contentHeight > 0 then
       val overflows      = contentHeight > area.height
       val scrollbarWidth = if showScrollbar && overflows then 1 else 0
@@ -110,11 +122,26 @@ final case class ScrollView(
         state.lastViewportHeight = area.height
         state.lastContentHeight = contentHeight
         state.offset = math.max(0, math.min(state.offset, contentHeight - area.height))
-        // the window in the content's own coordinate space: rows `state.offset` up to the bottom of the viewport
-        val window    = Rect(0, state.offset, contentWidth, math.min(area.height, contentHeight - state.offset))
-        val offscreen = Buffer(window)
-        // the content still receives the whole `contentHeight` rect, so anything that positions itself relative to the
-        // document (a header at row 0, a footer at the last row) lands where it always did; the buffer clips the rest
-        content.render(Rect(0, 0, contentWidth, contentHeight), offscreen)
-        buffer.blit(offscreen, area.position, window)
+        val document  = Rect(0, 0, contentWidth, contentHeight)
+        val offscreen = search.filter(_.isActive) match
+          case Some(active) =>
+            val whole = Buffer(document)
+            content.render(document, whole)
+            active.record(SearchHighlight.find(SearchHighlight.glyphsIn(whole, document), active.query), state.offset)
+            active.takeReveal().foreach(hit => state.reveal(hit.row, 1))
+            SearchHighlight.paint(whole, document, 0, 0, active, matchStyle, currentMatchStyle)
+            whole
+          case None         =>
+            search.foreach(_.record(Vector.empty, 0))
+            // only the window in the content's own coordinate space: rows `state.offset` up to the viewport's bottom
+            val windowed = Buffer(windowOf(state, area, contentWidth))
+            // the content still receives the whole `contentHeight` rect, so anything that positions itself relative
+            // to the document (a header at row 0, a footer at the last row) lands where it always did; the buffer
+            // clips the rest
+            content.render(document, windowed)
+            windowed
+        buffer.blit(offscreen, area.position, windowOf(state, area, contentWidth))
         if scrollbarWidth == 1 then Scrollbar(contentHeight, state.offset).render(area, buffer)
+
+  private def windowOf(state: ScrollViewState, area: Rect, contentWidth: Int): Rect =
+    Rect(0, state.offset, contentWidth, math.min(area.height, contentHeight - state.offset))
