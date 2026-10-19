@@ -65,12 +65,17 @@ object Async:
     * constructor. Close in `onStop` / `onLeave` for early cancellation; owner retirement also closes it.
     */
   def scope(): TaskScope =
-    val owner = RenderThread.currentOwner.getOrElse(
-      throw IllegalStateException("Async.scope requires a registered render owner")
-    )
-    val scope = new TaskScope(owner)
-    owner.attach(scope)
-    scope
+    scopeIfRunning().getOrElse(throw IllegalStateException("Async.scope requires a registered render owner"))
+
+  /** [[scope]] for code that may run with no runner at all — a construction test, a node rendered outside a host:
+    * `None` when this thread has no registered render owner, rather than an exception to catch.
+    */
+  def scopeIfRunning(): Option[TaskScope] =
+    RenderThread.currentOwner.map { owner =>
+      val scope = new TaskScope(owner)
+      owner.attach(scope)
+      scope
+    }
 
   /** Runs `work` on a background thread; when it finishes, `onResult` runs on the render thread with the value. Use for
     * one-shot IO (HTTP, disk) whose result feeds a signal: `Async.run(api.fetch())(rows.set)`. See [[runCatching]] for

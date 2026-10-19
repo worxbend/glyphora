@@ -58,7 +58,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 
 - `useEffect`, `useMemo`, `useTask` (returning `Loadable`) and `useArea` hooks; `memo(deps*)(subtree)`.
 - `Versioned` caller-owned widget states that redraw on mutation; `ElementHost.pollStates()`.
-- `TaskScope.latest(key)` latest-wins tasks; `Store[S]` with `dispatch`, `select`, undo and redo.
+- `TaskScope.latest(key)` latest-wins tasks; `Store[S]` with `dispatch`, `select`, undo and redo. `Async.scopeIfRunning()` answers `None` where no runner is registered.
 - `Codec[A]` / `deriveCodec` (`tui-macros`), `Persisted.signal` and `persisted[A](path, initial)`.
 - `signal.animateTo(target, duration, easing)` for `Signal[Double]` / `Signal[Int]`.
 - `TreeState.keyed` / `TreeState.byLabelPath`; `TableRows[K]` for lazily read table rows.
