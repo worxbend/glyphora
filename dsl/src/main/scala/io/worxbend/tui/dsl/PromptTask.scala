@@ -1,7 +1,16 @@
 package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Span, Style}
-import io.worxbend.tui.runtime.{CaptureStdio, LogLevel, LogRing, ReactiveScope, RenderThread, RunnerConfig, Signal}
+import io.worxbend.tui.runtime.{
+  CaptureStdio,
+  LogLevel,
+  LogRing,
+  ReactiveScope,
+  RenderThread,
+  RunnerConfig,
+  RunnerError,
+  Signal,
+}
 import io.worxbend.tui.runtime.Viewport
 import io.worxbend.tui.terminal.Backend
 
@@ -43,59 +52,61 @@ private[dsl] object PromptTask:
       work: (TaskLog, (() => Unit) => Unit) => A,
       detail: A => String,
   ): Option[A] =
-    session.mode match
-      case PromptSession.Mode.Scripted(_)  => inLine(session, label, work, detail, show = true, None)
-      case plain: PromptSession.Mode.Plain => inLine(session, label, work, detail, false, Some(plain))
-      case PromptSession.Mode.Terminal(open, fallback, theme) =>
-        def plainly = inLine(session, label, work, detail, show = false, Some(PromptSession.standardPlain))
-        if fallback() then plainly
-        else
-          open() match
-            case Left(_)        => plainly
-            case Right(backend) => inTerminal(session, backend, theme, label, rows, body, work, detail)
+    session.resolve() match
+      case PromptSession.Shape.Scripted(_)                     => inLine(session, label, work, detail, None)
+      case PromptSession.Shape.Plain(plain)                    => inLine(session, label, work, detail, Some(plain))
+      case PromptSession.Shape.Terminal(backend, theme, plain) =>
+        val app = TaskApp(backend, theme, label, rows, body, work, detail)
+        app.runWith(backend) match
+          case Left(RunnerError.Backend(_, _))        =>
+            // the terminal went away under the prompt: finish in the plain shape, running the work only if the run
+            // never started it — work already under way is waited for, never started a second time
+            app.abandon() match
+              case None         => inLine(session, label, work, detail, Some(plain()))
+              case Some(result) => report(session, label, detail, result, Some(plain()))
+          case Left(RunnerError.Handler(error))       => throw error
+          case Left(RunnerError.QueuedTask(failures)) => throw failures.first
+          case Right(())                              =>
+            session.record(app.summary)
+            app.outcome match
+              case Some(Success(value)) => Some(value)
+              case Some(Failure(error)) => throw error
+              case None                 => None
 
-  /** The line shapes: the work runs on the calling thread and each log line is written as it comes. */
+  /** The line shapes: the work runs on the calling thread and each log line is written as it comes — to `plain`, or to
+    * the console in the scripted shape, whose session echoes the summary line itself.
+    */
   private def inLine[A](
       session: PromptSession,
       label: String,
       work: (TaskLog, (() => Unit) => Unit) => A,
       detail: A => String,
-      show: Boolean,
       plain: Option[PromptSession.Mode.Plain],
   ): Option[A] =
-    val write: String => Unit = line => plain.fold(Console.write(line + "\n"))(_.write(line + "\n"))
-    val log: TaskLog          = line => write("  " + line)
-    Try(work(log, body => body())) match
-      case Success(value) =>
-        val summary = successText(label, detail(value))
-        session.record(summary, show)
-        if !show then write(summary)
-        Some(value)
-      case Failure(error) =>
-        val summary = failureText(label, Option(error.getMessage).getOrElse(error.getClass.getSimpleName))
-        session.record(summary, show)
-        if !show then write(summary)
-        throw error
+    val log: TaskLog = line => writeLine(plain, "  " + line)
+    report(session, label, detail, Try(work(log, body => body())), plain)
 
-  private def inTerminal[A](
+  private def writeLine(plain: Option[PromptSession.Mode.Plain], line: String): Unit =
+    plain.fold(Console.write(line + "\n"))(_.write(line + "\n"))
+
+  /** Records the summary line of `result` (writing it to `plain` when there is one) and answers the value, or rethrows
+    * the failure once its summary is down.
+    */
+  private def report[A](
       session: PromptSession,
-      backend: Backend,
-      theme: Theme,
       label: String,
-      rows: Int,
-      body: LogRing => (ReactiveScope, Theme) ?=> Element,
-      work: (TaskLog, (() => Unit) => Unit) => A,
       detail: A => String,
+      result: Try[A],
+      plain: Option[PromptSession.Mode.Plain],
   ): Option[A] =
-    val app = TaskApp(backend, theme, label, rows, body, work, detail)
-    app.runWith(backend) match
-      case Left(error) => throw IllegalStateException(s"the task prompt could not run: ${error.message}")
-      case Right(())   => ()
-    session.record(app.summary, show = false)
-    app.outcome match
-      case Some(Success(value)) => Some(value)
-      case Some(Failure(error)) => throw error
-      case None                 => None
+    val summary = result match
+      case Success(value) => successText(label, detail(value))
+      case Failure(error) => failureText(label, Option(error.getMessage).getOrElse(error.getClass.getSimpleName))
+    session.record(summary)
+    plain.foreach(_ => writeLine(plain, summary))
+    result match
+      case Success(value) => Some(value)
+      case Failure(error) => throw error
 
 /** The inline app behind a terminal [[Prompt.task]]: a spinner line over `body`, the work on a thread of its own, and a
   * last frame of one summary line. Ctrl-C cancels: the worker is interrupted, and the prompt answers `None` without
@@ -111,9 +122,11 @@ private final class TaskApp[A](
     detail: A => String,
 ) extends TuiApp:
 
-  private val ring                             = LogRing(256)
-  private val finished                         = Signal(Option.empty[Option[Try[A]]])
-  @volatile private var worker: Option[Thread] = None
+  private val ring                               = LogRing(256)
+  private val finished                           = Signal(Option.empty[Option[Try[A]]])
+  @volatile private var worker: Option[Thread]   = None
+  // the worker's result as it left the work, for a run that ended before the render thread could hear it
+  @volatile private var produced: Option[Try[A]] = None
 
   override def config: RunnerConfig =
     // a `println` from the work lands in the log rather than over the strip
@@ -127,6 +140,15 @@ private final class TaskApp[A](
   override def theme: Theme          = appTheme
   override def whichKey: Boolean     = false
   override def bindings: KeyBindings = KeyBindings(binding("ctrl+c", "cancel")(cancel()))
+
+  /** For a run the backend ended early: `None` when the work never started, otherwise its result once it finishes —
+    * waited for on the calling thread. Read after the run.
+    */
+  def abandon(): Option[Try[A]] =
+    worker.map { thread =>
+      thread.join()
+      produced.getOrElse(Failure(IllegalStateException(s"the task '$label' ended without a result")))
+    }
 
   /** The work's result, `None` when cancelled. Read after the run. */
   def outcome: Option[Try[A]] = finished.peek.flatten
@@ -148,6 +170,7 @@ private final class TaskApp[A](
       .name(s"glyphora-task-$label")
       .unstarted { () =>
         val result = Try(work(log, post))
+        produced = Some(result)
         val _      = loop.execute(complete(Some(result)))
       }
     worker = Some(thread)
