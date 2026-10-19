@@ -137,3 +137,38 @@ final class PatchSpec extends AnyFunSuite:
 
   test("Patch.parse rejects a malformed hunk header"):
     assert(Patch.parse("@@ -x +1 @@\n+a\n").left.map(_.line) == Left(1))
+
+  test("past maxEditDistance the middle of the texts is one replacement, and the patch says it is approximate"):
+    val before = "s\na\nb\nm\nc\nd\ne"
+    val after  = "s\nx\nb\nm\ny\nd\ne"
+    val exact  = Patch.of(before, after, context = 0)
+    assert(!exact.approximate)
+    val capped = Patch.of(before, after, context = 0, maxEditDistance = 1)
+    assert(capped.approximate)
+    // the common prefix `s` and suffix `d e` are still matched; everything between them is removed, then added
+    assert(
+      capped.hunks.map(h => (h.oldStart, h.newStart, h.lines)) == Seq(
+        (
+          2,
+          2,
+          Seq(
+            DiffLine.Removed("a"),
+            DiffLine.Removed("b"),
+            DiffLine.Removed("m"),
+            DiffLine.Removed("c"),
+            DiffLine.Added("x"),
+            DiffLine.Added("b"),
+            DiffLine.Added("m"),
+            DiffLine.Added("y"),
+          ),
+        )
+      )
+    )
+
+  test("two unrelated 20 000-line texts diff within the default cap instead of exhausting the heap"):
+    val before = (0 until 20000).map(i => s"a$i").mkString("\n")
+    val after  = (0 until 20000).map(i => s"b$i").mkString("\n")
+    val patch  = Patch.of(before, after)
+    assert(patch.approximate)
+    assert(patch.hunks.map(h => (h.oldCount, h.newCount)) == Seq((20000, 20000)))
+    assert(Patch.of("a\nb", "a\nc").approximate == false, "a small diff stays exact")
