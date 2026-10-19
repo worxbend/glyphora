@@ -1138,6 +1138,12 @@ printAbove("deployment finished", s"id: ${deployment.id}")
   frame so a change schedules the frame that pushes it, and the indicator is cleared
   when the app exits or the terminal is handed over. The same binding is available to
   helpers as `AppServices.taskbarProgress`.
+- `taskbarState(signal)` binds a `Reactive[TaskbarState]` instead, for the indicator's
+  other states: `TaskbarState.Error(fraction)` (Windows Terminal paints it red),
+  `TaskbarState.Indeterminate` (busy, no known extent), `TaskbarState.Paused(fraction)`,
+  plus `Progress(fraction)` and `Cleared`. It follows the same rules — read every frame,
+  pushed on change, cleared on exit — and binding either kind replaces the other. A
+  terminal that only draws a determinate bar shows a state by its fraction.
 
 These are no-ops or unavailable before a runner is active, so invoke them from event
 handlers or from `onStart()` — never from a constructor.

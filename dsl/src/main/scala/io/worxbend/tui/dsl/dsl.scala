@@ -312,6 +312,7 @@ export io.worxbend.tui.runtime.{
 // package exposes, and the code that constructs one (a `main` wiring a custom terminal, a test wiring `Pilot`) is
 // already reaching into `tui-terminal` or `tui-test` on purpose.
 export io.worxbend.tui.terminal.{Backend, BackendError, ColorDepth, MouseCaptureMode, PointerShape, TerminalGlyphs}
+export io.worxbend.tui.terminal.TaskbarState
 
 /** `light` on a light terminal, `dark` on a dark one — and on one that could not say, because dark is what every
   * terminal was assumed to be before any of them could be asked.

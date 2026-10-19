@@ -264,6 +264,14 @@ trait Backend:
     val _ = progress
     Right(())
 
+  /** [[setTaskbarProgress]] with the protocol's other states: error, indeterminate and paused — see [[TaskbarState]].
+    *
+    * The same terminal state under the same rules. The default shows the state by its fraction through
+    * [[setTaskbarProgress]] (an indeterminate bar reads as cleared), so a backend written before this method existed
+    * keeps working with the subset it can draw. Must run on the render thread.
+    */
+  def setTaskbarState(state: TaskbarState): Either[BackendError, Unit] = setTaskbarProgress(state.progress)
+
   /** Reserves `rows` lines at the bottom of the *primary* screen for an app that is not taking the alternate screen.
     *
     * The complement of [[enterAlternateScreen]]. Instead of switching to a blank second screen, this scrolls whatever

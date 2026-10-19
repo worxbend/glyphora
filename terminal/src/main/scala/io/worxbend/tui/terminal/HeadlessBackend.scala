@@ -57,33 +57,33 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
   // blinking is the terminal's own default, so that is where a freshly built backend starts
   @volatile private var cursorBlinking                         = true
 
-  @volatile private var cursorShape: CursorShape             = CursorShape.Default
+  @volatile private var cursorShape: CursorShape       = CursorShape.Default
   // what a test said this terminal supports; nothing, until it says — see `capabilitiesTo`
-  @volatile private var reported: TerminalCapabilities       = TerminalCapabilities.unknown
-  @volatile private var pointerShape: PointerShape           = PointerShape.Default
-  @volatile private var taskbarProgressShown: Option[Double] = None
-  private val notifications                           = scala.collection.mutable.ArrayBuffer.empty[DesktopNotification]
-  private val taskbarRequests                         = scala.collection.mutable.ArrayBuffer.empty[Option[Double]]
-  @volatile private var lastClipboard: Option[String] = None
-  @volatile private var lastTitle: Option[String]     = None
-  @volatile private var caret: Option[Position]       = None
-  @volatile private var inlineRows                    = 0
-  @volatile private var keptRows: Option[Int]         = None
-  private val caretMoveCounter                        = AtomicLong(0)
-  private val appendedLineCounter                     = AtomicLong(0)
-  private val drawCounter                             = AtomicLong(0)
-  private val idleReadCounter                         = AtomicLong(0)
-  private val suspendCounter                          = AtomicLong(0)
-  private val wakeCounter                             = AtomicLong(0)
-  private val fullRedrawCounter                       = AtomicLong(0)
-  private val emergencyRestoreCounter                 = AtomicLong(0)
-  private val printedLines                            = scala.collection.mutable.ArrayBuffer.empty[String]
-  private val rawWrites                               = scala.collection.mutable.ArrayBuffer.empty[String]
-  private val graphics                                = GraphicsLayer()
-  private val clears                                  = scala.collection.mutable.ArrayBuffer.empty[ClearType]
-  private val insertedBlocks                          = scala.collection.mutable.ArrayBuffer.empty[Buffer]
-  private val sizeRequests                            = scala.collection.mutable.ArrayBuffer.empty[Size]
-  private val scrolls                                 =
+  @volatile private var reported: TerminalCapabilities = TerminalCapabilities.unknown
+  @volatile private var pointerShape: PointerShape     = PointerShape.Default
+  @volatile private var taskbarShown: TaskbarState     = TaskbarState.Cleared
+  private val notifications                            = scala.collection.mutable.ArrayBuffer.empty[DesktopNotification]
+  private val taskbarRequests                          = scala.collection.mutable.ArrayBuffer.empty[TaskbarState]
+  @volatile private var lastClipboard: Option[String]  = None
+  @volatile private var lastTitle: Option[String]      = None
+  @volatile private var caret: Option[Position]        = None
+  @volatile private var inlineRows                     = 0
+  @volatile private var keptRows: Option[Int]          = None
+  private val caretMoveCounter                         = AtomicLong(0)
+  private val appendedLineCounter                      = AtomicLong(0)
+  private val drawCounter                              = AtomicLong(0)
+  private val idleReadCounter                          = AtomicLong(0)
+  private val suspendCounter                           = AtomicLong(0)
+  private val wakeCounter                              = AtomicLong(0)
+  private val fullRedrawCounter                        = AtomicLong(0)
+  private val emergencyRestoreCounter                  = AtomicLong(0)
+  private val printedLines                             = scala.collection.mutable.ArrayBuffer.empty[String]
+  private val rawWrites                                = scala.collection.mutable.ArrayBuffer.empty[String]
+  private val graphics                                 = GraphicsLayer()
+  private val clears                                   = scala.collection.mutable.ArrayBuffer.empty[ClearType]
+  private val insertedBlocks                           = scala.collection.mutable.ArrayBuffer.empty[Buffer]
+  private val sizeRequests                             = scala.collection.mutable.ArrayBuffer.empty[Size]
+  private val scrolls                                  =
     scala.collection.mutable.ArrayBuffer.empty[(RowRange, Int, ScrollDirection)]
 
   /** The failures armed by [[failNext]], at most one per operation and removed as each is consumed. A concurrent map
@@ -189,9 +189,13 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
 
   /** Records the progress request, unless the installed capabilities deny taskbar progress. */
   override def setTaskbarProgress(progress: Option[Double]): Either[BackendError, Unit] =
+    setTaskbarState(TaskbarState.fromProgress(progress))
+
+  /** Records the state request, unless the installed capabilities deny taskbar progress. */
+  override def setTaskbarState(state: TaskbarState): Either[BackendError, Unit] =
     if reported.taskbarProgress.usable then
-      taskbarRequests.synchronized { val _ = taskbarRequests += progress }
-      taskbarProgressShown = progress
+      taskbarRequests.synchronized { val _ = taskbarRequests += state }
+      taskbarShown = state
     Right(())
 
   /** Records where the hardware caret was asked to go, so a test can assert on it exactly as it asserts on a drawn
@@ -363,7 +367,7 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
 
       cursorShape = CursorShape.Default
       pointerShape = PointerShape.Default
-      taskbarProgressShown = None
+      taskbarShown = TaskbarState.Cleared
       alternateScreen = false
       rawMode = false
       caret = None
@@ -465,11 +469,19 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
     */
   def desktopNotifications: Seq[DesktopNotification] = notifications.synchronized(notifications.toSeq)
 
-  /** Every progress value handed to [[setTaskbarProgress]] and not refused, in order — `None` entries are clears. */
-  def taskbarProgressRequests: Seq[Option[Double]] = taskbarRequests.synchronized(taskbarRequests.toSeq)
+  /** Every progress value handed to [[setTaskbarProgress]] or [[setTaskbarState]] and not refused, in order, by its
+    * fraction — `None` entries are clears (and indeterminate bars; [[taskbarStateRequests]] tells them apart).
+    */
+  def taskbarProgressRequests: Seq[Option[Double]] = taskbarStateRequests.map(_.progress)
 
-  /** The progress currently shown on the simulated taskbar: the last request, or `None` once cleared or closed. */
-  def currentTaskbarProgress: Option[Double] = taskbarProgressShown
+  /** The progress currently shown on the simulated taskbar, by its fraction: `None` once cleared or closed. */
+  def currentTaskbarProgress: Option[Double] = taskbarShown.progress
+
+  /** Every taskbar state requested and not refused, in order — a fraction-only request recorded as its state. */
+  def taskbarStateRequests: Seq[TaskbarState] = taskbarRequests.synchronized(taskbarRequests.toSeq)
+
+  /** The state currently shown on the simulated taskbar: the last request, or `Cleared` once cleared or closed. */
+  def currentTaskbarState: TaskbarState = taskbarShown
 
   /** Sets the pixel size [[windowSize]] reports, or clears it with `None`.
     *

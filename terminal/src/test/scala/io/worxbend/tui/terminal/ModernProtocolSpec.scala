@@ -1,6 +1,6 @@
 package io.worxbend.tui.terminal
 
-import io.worxbend.tui.core.{ColorScheme, Event, Size}
+import io.worxbend.tui.core.{Buffer, ColorScheme, Event, Size}
 
 import org.jline.terminal.Terminal
 import org.jline.terminal.impl.LineDisciplineTerminal
@@ -8,6 +8,8 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets.UTF_8
+
+import scala.concurrent.duration.Duration
 
 /** The modern OSC and mode set on the wire: what the JLine backend writes for pointer shapes, desktop notifications,
   * taskbar progress and the three new modes, and what it refuses to write when the environment says nobody is
@@ -124,6 +126,46 @@ final class ModernProtocolSpec extends AnyFunSuite:
     assert(AnsiSequences.taskbarProgress(Some(1.7)) == s"${Osc}9;4;1;100$St")
     assert(AnsiSequences.taskbarProgress(Some(-0.2)) == s"${Osc}9;4;1;0$St")
     assert(AnsiSequences.taskbarProgress(Some(Double.NaN)) == s"${Osc}9;4;1;0$St")
+
+  test("the error, indeterminate and paused taskbar states go out as OSC 9;4 states 2, 3 and 4"):
+    assert(AnsiSequences.taskbarState(TaskbarState.Error(0.4)) == s"${Osc}9;4;2;40$St")
+    assert(AnsiSequences.taskbarState(TaskbarState.Indeterminate) == s"${Osc}9;4;3;0$St")
+    assert(AnsiSequences.taskbarState(TaskbarState.Paused(1.2)) == s"${Osc}9;4;4;100$St")
+    assert(AnsiSequences.taskbarState(TaskbarState.Progress(0.5)) == s"${Osc}9;4;1;50$St")
+    assert(AnsiSequences.taskbarState(TaskbarState.Cleared) == s"${Osc}9;4;0$St")
+
+  test("setTaskbarState writes the state, and closing with a state showing clears it"):
+    wired(plainEnv) { (backend, sink) =>
+      assert(backend.enableRawMode().isRight)
+      sink.reset()
+      assert(backend.setTaskbarState(TaskbarState.Indeterminate).isRight)
+      assert(sink.toString(UTF_8) == s"${Osc}9;4;3;0$St")
+      sink.reset()
+      assert(backend.close().isRight)
+      assert(sink.toString(UTF_8).contains(s"${Osc}9;4;0$St"))
+    }
+
+  test("a fraction-only backend shows a state by its fraction"):
+    val recorded = scala.collection.mutable.ArrayBuffer.empty[Option[Double]]
+    val backend  = new Backend:
+      def size: Either[BackendError, Size]                                                  = Right(Size(10, 2))
+      def draw(buffer: Buffer): Either[BackendError, Unit]                                  = Right(())
+      def enableRawMode(): Either[BackendError, Unit]                                       = Right(())
+      def disableRawMode(): Either[BackendError, Unit]                                      = Right(())
+      def enterAlternateScreen(): Either[BackendError, Unit]                                = Right(())
+      def leaveAlternateScreen(): Either[BackendError, Unit]                                = Right(())
+      def enableMouseCapture(): Either[BackendError, Unit]                                  = Right(())
+      def disableMouseCapture(): Either[BackendError, Unit]                                 = Right(())
+      def hideCursor(): Either[BackendError, Unit]                                          = Right(())
+      def showCursor(): Either[BackendError, Unit]                                          = Right(())
+      def close(): Either[BackendError, Unit]                                               = Right(())
+      def readEvent(timeout: Duration): Either[BackendError, Option[Event]]                 = Right(None)
+      override def setTaskbarProgress(progress: Option[Double]): Either[BackendError, Unit] =
+        recorded += progress
+        Right(())
+    val _        = backend.setTaskbarState(TaskbarState.Error(0.3))
+    val _        = backend.setTaskbarState(TaskbarState.Indeterminate)
+    assert(recorded.toSeq == Seq(Some(0.3), None))
 
   test("closing with progress showing clears the indicator"):
     wired(plainEnv) { (backend, sink) =>

@@ -46,3 +46,25 @@ final class TaskbarProgressSpec extends AnyFunSuite with PilotFixture:
     pilot.interrupt()
     assert(pilot.awaitTermination())
     assert(backend.currentTaskbarProgress.isEmpty)
+
+  private final class BuildApp extends TuiApp:
+    val state: Signal[TaskbarState] = Signal(TaskbarState.Cleared)
+
+    override def onStart(): Unit                  = services.taskbarState(state)
+    override def bindings: KeyBindings            = KeyBindings(
+      binding("w", "working")(state.set(TaskbarState.Indeterminate)),
+      binding("f", "failed")(state.set(TaskbarState.Error(0.8))),
+    )
+    def view(using ReactiveScope, Theme): Element = text("building")
+
+  test("a bound TaskbarState signal reaches the taskbar with its error and indeterminate states"):
+    val backend = HeadlessBackend(Size(30, 4))
+    val pilot   = startPilot(backend)(BuildApp().runWith(backend))
+    pilot.waitForIdle()
+    assert(backend.taskbarStateRequests.isEmpty)
+    pilot.press("w").waitUntil("indeterminate shown")(backend.currentTaskbarState == TaskbarState.Indeterminate)
+    pilot.press("f").waitUntil("error shown")(backend.currentTaskbarState == TaskbarState.Error(0.8))
+    assert(backend.taskbarStateRequests == Seq(TaskbarState.Indeterminate, TaskbarState.Error(0.8)))
+    pilot.interrupt()
+    assert(pilot.awaitTermination())
+    assert(backend.currentTaskbarState == TaskbarState.Cleared)

@@ -368,15 +368,22 @@ private[terminal] object AnsiSequences:
     *
     * `Some(fraction)` is a determinate bar at `fraction` of the way, clamped to `0.0..1.0` and rounded to the whole
     * percent the protocol takes (`9;4;1;percent`); `NaN` reads as empty. `None` clears the indicator (`9;4;0`). The
-    * protocol's error, indeterminate and paused states are deliberately not offered: the one caller is a progress
-    * signal, and a signal is either a fraction or nothing.
+    * protocol's error, indeterminate and paused states are [[taskbarState]].
     */
-  def taskbarProgress(progress: Option[Double]): String =
-    progress match
-      case Some(fraction) =>
-        val clamped = if fraction.isNaN then 0.0 else math.min(1.0, math.max(0.0, fraction))
-        s"$Esc]9;4;1;${math.round(clamped * 100)}$Esc\\"
-      case None           => s"$Esc]9;4;0$Esc\\"
+  def taskbarProgress(progress: Option[Double]): String = taskbarState(TaskbarState.fromProgress(progress))
+
+  /** OSC 9;4 for any of the protocol's five states — see [[TaskbarState]]. Indeterminate carries a `0` percent, which
+    * the protocol ignores and some parsers require.
+    */
+  def taskbarState(state: TaskbarState): String =
+    def percent(fraction: Double): Long =
+      math.round((if fraction.isNaN then 0.0 else math.min(1.0, math.max(0.0, fraction))) * 100)
+    state match
+      case TaskbarState.Cleared            => s"$Esc]9;4;0$Esc\\"
+      case TaskbarState.Progress(fraction) => s"$Esc]9;4;1;${percent(fraction)}$Esc\\"
+      case TaskbarState.Error(fraction)    => s"$Esc]9;4;2;${percent(fraction)}$Esc\\"
+      case TaskbarState.Indeterminate      => s"$Esc]9;4;3;0$Esc\\"
+      case TaskbarState.Paused(fraction)   => s"$Esc]9;4;4;${percent(fraction)}$Esc\\"
 
   /** Moves the cursor to an absolute zero-based position (ANSI rows/columns are one-based). */
   def moveTo(x: Int, y: Int): String =

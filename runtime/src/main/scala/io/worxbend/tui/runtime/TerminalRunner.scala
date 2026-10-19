@@ -1,7 +1,7 @@
 package io.worxbend.tui.runtime
 
 import io.worxbend.tui.core.{Buffer, Event, Position, Widget}
-import io.worxbend.tui.terminal.{Backend, BackendError, MouseCaptureMode, PointerShape}
+import io.worxbend.tui.terminal.{Backend, BackendError, MouseCaptureMode, PointerShape, TaskbarState}
 
 import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
 import scala.util.control.NonFatal
@@ -654,9 +654,10 @@ private final class BackendHandle(backend: Backend, state: LoopState, capture: O
 
   def insertBefore(height: Int, widget: Widget): Unit = state.record(backend.insertBefore(height, widget))
 
-  def setPointerShape(shape: PointerShape): Unit         = state.record(backend.setPointerShape(shape))
-  def notifyDesktop(title: String, body: String): Unit   = state.record(backend.notifyDesktop(title, body))
-  def setTaskbarProgress(progress: Option[Double]): Unit = state.record(backend.setTaskbarProgress(progress))
+  def setPointerShape(shape: PointerShape): Unit            = state.record(backend.setPointerShape(shape))
+  def notifyDesktop(title: String, body: String): Unit      = state.record(backend.notifyDesktop(title, body))
+  def setTaskbarProgress(progress: Option[Double]): Unit    = state.record(backend.setTaskbarProgress(progress))
+  override def setTaskbarState(taskbar: TaskbarState): Unit = state.record(backend.setTaskbarState(taskbar))
 
   override def setMouseCaptureMode(mode: MouseCaptureMode): Unit = state.record(backend.enableMouseCapture(mode))
 

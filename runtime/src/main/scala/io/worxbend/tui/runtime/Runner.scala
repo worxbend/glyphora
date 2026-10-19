@@ -1,7 +1,7 @@
 package io.worxbend.tui.runtime
 
 import io.worxbend.tui.core.{Event, Widget}
-import io.worxbend.tui.terminal.{BackendError, MouseCaptureMode, PointerShape}
+import io.worxbend.tui.terminal.{BackendError, MouseCaptureMode, PointerShape, TaskbarState}
 
 import java.nio.file.Path
 import scala.concurrent.duration.FiniteDuration
@@ -507,6 +507,12 @@ trait RunnerHandle:
     * fraction changes.
     */
   def setTaskbarProgress(progress: Option[Double]): Unit
+
+  /** [[setTaskbarProgress]] with the protocol's error, indeterminate and paused states — see
+    * [[io.worxbend.tui.terminal.Backend.setTaskbarState]]. The default shows the state by its fraction, so a handle
+    * written before the method existed keeps compiling.
+    */
+  def setTaskbarState(state: TaskbarState): Unit = setTaskbarProgress(state.progress)
 
   /** Switches how much mouse traffic the terminal sends, mid-run — `MouseCaptureMode.AllMotion` for hover. Only
     * meaningful while mouse capture is on; the DSL calls it the first time a frame asks for a hover cue. The default

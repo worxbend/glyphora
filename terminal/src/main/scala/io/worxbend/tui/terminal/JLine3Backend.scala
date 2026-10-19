@@ -60,12 +60,12 @@ final class JLine3Backend private (
   @volatile private[terminal] var pointerShape = PointerShape.Default
 
   /** The taskbar progress last shown, so a handover can clear it and the reacquire put it back; `None` once cleared. */
-  @volatile private[terminal] var taskbarProgress: Option[Double] = None
+  @volatile private[terminal] var taskbarState: TaskbarState = TaskbarState.Cleared
   // how many rows an inline run reserved on the primary screen, so the dressing choreography can park the cursor below
   // the frame such a run leaves behind
-  @volatile private[terminal] var inlineRows                      = 0
+  @volatile private[terminal] var inlineRows                 = 0
   // how many of those rows the run asked a close to keep (`keepInlineRows`); `None` keeps them all
-  @volatile private[terminal] var inlineKept: Option[Int]         = None
+  @volatile private[terminal] var inlineKept: Option[Int]    = None
 
   /** The terminal modes [[TerminalDressing]] found active when SIGTSTP handed the terminal back, so SIGCONT can put
     * them back. Written and read on JLine's signal-dispatch thread alone.
@@ -449,9 +449,13 @@ final class JLine3Backend private (
     * reacquire put it back, and so `close()` knows whether there is anything to clear.
     */
   override def setTaskbarProgress(progress: Option[Double]): Either[BackendError, Unit] =
+    setTaskbarState(TaskbarState.fromProgress(progress))
+
+  /** Writes OSC 9;4 in any of its five states, under the same gate and memory as [[setTaskbarProgress]]. */
+  override def setTaskbarState(state: TaskbarState): Either[BackendError, Unit] =
     Backend.attempt {
-      if probed.taskbarProgress.usable then write(AnsiSequences.taskbarProgress(progress))
-      taskbarProgress = progress
+      if probed.taskbarProgress.usable then write(AnsiSequences.taskbarState(state))
+      taskbarState = state
     }
 
   /** Writes CUP (`CSI row ; column H`) to park the terminal's own caret on `position`.

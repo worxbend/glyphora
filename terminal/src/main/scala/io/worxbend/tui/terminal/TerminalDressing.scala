@@ -47,7 +47,7 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
         backend.cursorBlinkSuppressed,
         backend.keyEventTypesActive,
         backend.pointerShape,
-        backend.taskbarProgress,
+        backend.taskbarState,
       )
     val failures = Seq.newBuilder[BackendError]
 
@@ -61,7 +61,7 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
     undress(state.mouse.isDefined, backend.disableMouseCapture())
     undress(state.cursorShape != CursorShape.Default, backend.setCursorShape(CursorShape.Default))
     undress(state.pointerShape != PointerShape.Default, backend.setPointerShape(PointerShape.Default))
-    undress(state.taskbarProgress.isDefined, backend.setTaskbarProgress(None))
+    undress(state.taskbarState != TaskbarState.Cleared, backend.setTaskbarState(TaskbarState.Cleared))
     undress(state.cursorBlinkSuppressed, backend.setCursorBlink(true))
     undress(state.cursorHidden, backend.showCursor())
     undress(state.alternateScreen, backend.leaveAlternateScreen())
@@ -104,7 +104,7 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
     if state.cursorHidden then bestEffort(backend.hideCursor())
     if state.cursorShape != CursorShape.Default then bestEffort(backend.setCursorShape(state.cursorShape))
     if state.pointerShape != PointerShape.Default then bestEffort(backend.setPointerShape(state.pointerShape))
-    if state.taskbarProgress.isDefined then bestEffort(backend.setTaskbarProgress(state.taskbarProgress))
+    if state.taskbarState != TaskbarState.Cleared then bestEffort(backend.setTaskbarState(state.taskbarState))
     // DECSCUSR also selects blinking/steady: restore the app's explicit blink suppression after its shape.
     if state.cursorBlinkSuppressed then bestEffort(backend.setCursorBlink(false))
     state.mouse.foreach(mode => bestEffort(backend.enableMouseCapture(mode)))
@@ -132,7 +132,7 @@ private[terminal] object TerminalDressing:
       cursorBlinkSuppressed: Boolean,
       keyEventTypes: Boolean,
       pointerShape: PointerShape = PointerShape.Default,
-      taskbarProgress: Option[Double] = None,
+      taskbarState: TaskbarState = TaskbarState.Cleared,
   )
 
   object TerminalState:
