@@ -13,8 +13,8 @@ import java.time.{LocalDate, LocalTime}
   */
 final class ToolElementsPilotSpec extends AnyFunSuite with PilotFixture:
 
-  private def startApp(view0: ReactiveScope ?=> Element): Pilot =
-    val backend = HeadlessBackend(Size(40, 20))
+  private def startApp(view0: ReactiveScope ?=> Element, width: Int = 40): Pilot =
+    val backend = HeadlessBackend(Size(width, 20))
     val testApp = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = view0
@@ -103,6 +103,25 @@ final class ToolElementsPilotSpec extends AnyFunSuite with PilotFixture:
     pilot.pressKey(KeyCode.Enter).waitForIdle()
     assert(chosen.contains(Color.Indexed(196)))
     assert(pilot.screenText.contains("196  #ff0000"))
+    quitApp(pilot)
+
+  test("colorPicker in Rgb mode: Tab walks the fields, digits fill them, Enter emits Color.Rgb only when valid"):
+    val state  = ColorPickerState()
+    var chosen = Option.empty[Color]
+    val other  = TextInputState()
+    val pilot  =
+      startApp(column(colorPicker(state, color => chosen = Some(color), ColorPickerMode.Rgb), input(other)), width = 50)
+    pilot.pressKey(KeyCode.Tab).typeText("300").pressKey(KeyCode.Enter).waitForIdle()
+    assert(chosen.isEmpty)                                  // 300 is out of range
+    assert(pilot.screenText.contains("R [300]"))
+    pilot.pressKey(KeyCode.Backspace).pressKey(KeyCode.Backspace).pressKey(KeyCode.Backspace).typeText("255")
+    pilot.pressKey(KeyCode.Tab).typeText("128").pressKey(KeyCode.Tab).pressKey(KeyCode.Up).waitForIdle()
+    pilot.pressKey(KeyCode.Enter).waitForIdle()
+    assert(chosen.contains(Color.Rgb(255, 128, 1)))
+    pilot.pressKey(KeyCode.Tab).typeText("x").waitForIdle() // Tab from the blue field leaves the picker
+    assert(other.value == "x")
+    pilot.click(40, 2).waitForIdle()                        // a click on the blue field gives it the keyboard
+    assert(state.field == ColorPickerField.Channel(ColorChannel.Blue))
     quitApp(pilot)
 
   test("hexViewer: Down moves the selection a row and the view scrolls with it"):

@@ -1221,13 +1221,16 @@ private[dsl] trait ElementFactories:
 
   /** A grid of the 256 xterm colours — the system sixteen, the 6×6×6 cube and the grey ramp — with a caption naming the
     * cursor's index and RGB value. Arrows move, Enter (or a click) chooses: the `Color.Indexed` lands in `state.chosen`
-    * and in `onSelect`. See [[w.ColorPicker]].
+    * and in `onSelect`. With `mode = ColorPickerMode.Rgb` three R/G/B fields sit beside the grid: Tab walks from the
+    * grid through them, digits fill the focused one, and Enter chooses their `Color.Rgb` once all three are in
+    * `0..255`. See [[w.ColorPicker]].
     */
   def colorPicker(
       state: w.ColorPickerState,
       onSelect: io.worxbend.tui.core.Color => Unit = _ => (),
+      mode: w.ColorPickerMode = w.ColorPickerMode.Palette,
   ): ColorPickerElement =
-    ColorPickerElement(state, onSelect)
+    ColorPickerElement(state, onSelect, mode)
 
   /** A scrollable `offset | hex | ASCII` dump of `bytes` with a selected byte the arrows move — a row per 16 bytes, the
     * selection kept on screen. `ArraySeq.unsafeWrapArray(array)` views an `Array[Byte]` without copying. See
