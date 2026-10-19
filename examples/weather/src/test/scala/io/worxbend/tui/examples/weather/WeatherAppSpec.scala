@@ -38,6 +38,7 @@ final class WeatherAppSpec extends AnyFunSuite:
     val app     = WeatherApp(client)
     Pilot.using(backend) { app.runWith(backend) } { pilot =>
       pilot.waitForIdle()
+      assert(pilot.a11yReport(app).isEmpty, pilot.a11yReport(app).mkString("\n"))
       pilot.typeText("Lisbon").pressKey(KeyCode.Enter)
       pilot.waitUntil("the fetched conditions to render")(pilot.screenText.contains("Lisbon, Portugal"))
 

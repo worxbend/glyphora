@@ -27,6 +27,17 @@ final class ShowcaseAppSpec extends AnyFunSuite:
       assert(pilot.awaitTermination())
     }
 
+  test("every tab passes the accessibility lint"):
+    withApp() { (app, pilot) =>
+      (0 until 4).foreach { tab =>
+        pilot.waitForIdle()
+        assert(pilot.a11yReport(app).isEmpty, s"tab $tab: ${pilot.a11yReport(app).mkString("\n")}")
+        pilot.pressKey(KeyCode.Down).waitForIdle()
+      }
+      pilot.pressKey(KeyCode.Escape)
+      assert(pilot.awaitTermination())
+    }
+
   test("the sidebar mirrors the selected tab and steers it"):
     withApp() { (app, pilot) =>
       assert(app.sidebarList.selected.contains(0), "the sidebar highlight starts on the first tab")

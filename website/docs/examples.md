@@ -5,7 +5,7 @@ description: Run ten complete glyphora applications and learn which source to re
 
 # Learn from complete apps
 
-The repository includes ten runnable applications. Each uses the same public APIs
+The repository includes eleven runnable applications. Each uses the same public APIs
 described in this guide and has a headless end-to-end test. Start with the behavior
 closest to your app and read its source beside the running terminal.
 
@@ -32,8 +32,9 @@ cd glyphora
 | `procmon` | `./mill examples.procmon.run` | a sortable table over refreshing rows, selection that survives a refresh — [guide](./build-a-process-monitor) |
 | `airsensor` | `./mill examples.airsensor.run` | polling, threshold bands, trend arrows, loading/ready/error — [guide](./build-a-sensor-dashboard) |
 | `loadtest` | `./mill examples.loadtest.run` | concurrent work off the render thread, histogram and percentiles — [guide](./build-a-load-generator) |
+| `doctor` | `./mill examples.doctor.run` | what glyphora detected about your terminal, then every decoded key and mouse event — [troubleshooting](./troubleshooting#run-the-doctor) |
 
-Every app exits with `q` or `Esc`; the source comment above each app lists its full
+Every app exits with `q` or `Esc` (`doctor` only with `q`: it echoes `Esc` like any other key); the source comment above each app lists its full
 keyboard vocabulary.
 
 ### Which idiom should you copy?

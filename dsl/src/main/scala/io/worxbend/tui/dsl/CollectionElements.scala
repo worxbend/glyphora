@@ -333,3 +333,96 @@ final case class LogElement(
   private[dsl] def withProps(props: ElementProps): LogElement                = copy(props = props)
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
     Some(scrollKeys(rows => state.scrollUp(rows), rows => state.scrollDown(rows)))
+
+/** The items a [[LazyListElement]] built for one frame: item `from` onwards, in order. */
+private[dsl] final case class LazyWindow(from: Int, items: Vector[Element]):
+  def item(index: Int): Option[Element] = items.lift(index - from)
+
+/** A virtual list of `count` items, each `itemHeight` rows tall, that builds, decorates and paints only the items the
+  * viewport shows — plus one either side — however large `count` is.
+  *
+  * The items are built during the frame's resolution pass, not at the factory call, because which items are visible is
+  * a question about the frame: the pass asks the caller-owned [[w.LazyListState]] for its build window (the last
+  * frame's viewport, re-anchored on the current offset and selection; the frame's height before the first render) and
+  * calls `build` for exactly those indices. What it builds is then an ordinary part of the tree: focusables in it take
+  * Tab stops, keys bubble out of it, the bounds recorder sees it, a focused text field in it drives the caret. An item
+  * that falls outside the window between frames — the enclosing scroll view jumped a page — is left blank for one frame
+  * and the miss asks the host for the frame that fills it.
+  *
+  * While focused, Up/Down move the selection, Home/End jump to the ends and PageUp/PageDown move a page; the wheel
+  * moves the selection on hover, and a press selects the item under the pointer. The selected item is drawn in the same
+  * highlight a `list` uses.
+  *
+  * Focus follows a *keyed* item (`.key(...)`) across frames as the window moves; an unkeyed focusable inside an item is
+  * identified by its tab position, which shifts as items scroll in and out — key anything focusable.
+  *
+  * Drawn with no host behind it (a construction test rendering `widget` straight into a buffer), the node builds each
+  * visible item at render time instead; with no focus pass behind that, focusables in it are inert.
+  */
+final case class LazyListElement(
+    count: Int,
+    itemHeight: Int,
+    build: Range => Seq[Element],
+    state: w.LazyListState,
+    window: Option[LazyWindow] = None,
+    props: ElementProps = ElementProps(focusable = true),
+) extends Element:
+  type Self = LazyListElement
+
+  /** The caller-owned state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]        = Seq(state)
+  override def debugName: String                                 = "lazyList"
+  private[dsl] override def componentRole: Option[ComponentRole] = Some(ListRole)
+  override def children: Seq[Element]                            = window.fold(Seq.empty[Element])(_.items)
+
+  private[dsl] def withProps(props: ElementProps): LazyListElement                = copy(props = props)
+  private[dsl] override def withChildren(children: Seq[Element]): LazyListElement =
+    window.fold(this)(built => copy(window = Some(built.copy(items = children.toVector))))
+
+  /** This node holding the items its state's build window names for a frame `rows` tall — the resolution pass's one
+    * write.
+    */
+  private[dsl] def builtFor(rows: Int): LazyListElement =
+    val range = state.buildWindow(count, rows, itemHeight)
+    copy(window = Some(LazyWindow(range.start, build(range).toVector)))
+
+  /** Every item's rows, unless an explicit constraint says otherwise — what a scroll view sizes itself to. */
+  private[dsl] override def intrinsicHeight(width: Int): Option[Int] =
+    constrainedHeight(view(_ => None).heightAt(width))
+
+  private def view(item: Int => Option[Widget]): w.LazyListView =
+    w.LazyListView(count, itemHeight, item, highlightStyle = selectedRowStyle(props))
+
+  def widget: Widget =
+    val items: Int => Option[Widget] = window match
+      case Some(built) => index => built.item(index).map(_.widget)
+      case None        => index => build(index until index + 1).headOption.map(_.widget)
+    val list                         = view(items)
+    (area, buffer) => list.render(area, buffer, state)
+
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler] =
+    Some(
+      selectionKeys(() => state.selectNext(count), () => state.selectPrevious(count))
+        .orElse(
+          keys {
+            case KeyEvent(KeyCode.Home, _)     => state.selectFirst(count)
+            case KeyEvent(KeyCode.End, _)      => state.selectLast(count)
+            case KeyEvent(KeyCode.PageDown, _) => state.pageBy(count, 1)
+            case KeyEvent(KeyCode.PageUp, _)   => state.pageBy(count, -1)
+          }
+        )
+    )
+
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
+    val wheel = wheelScrolls(() => state.selectPrevious(count), () => state.selectNext(count))
+    Some { (event, area) =>
+      event.kind match
+        case MouseEventKind.Down =>
+          val row   = event.position.y - area.y
+          val index = state.offset + row / math.max(1, itemHeight)
+          if row >= 0 && index < count then
+            state.selected = Some(index)
+            true
+          else false
+        case _                   => wheel(event, area)
+    }

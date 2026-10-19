@@ -61,9 +61,9 @@ object ElementTreeSnapshot:
   /** A node with its focus-pass wrappers peeled off: the index its `TrackedElement` carries, the id its `BoundsElement`
     * carries, and the themed node underneath whose name and props are printed.
     */
-  private final case class Unwrapped(node: Element, focusIndex: Option[Int], boundsId: Option[Int])
+  private[dsl] final case class Unwrapped(node: Element, focusIndex: Option[Int], boundsId: Option[Int])
 
-  private object Unwrapped:
+  private[dsl] object Unwrapped:
     def of(node: Element): Unwrapped =
       node match
         case tracked: TrackedElement => of(tracked.inner).copy(focusIndex = Some(tracked.index))

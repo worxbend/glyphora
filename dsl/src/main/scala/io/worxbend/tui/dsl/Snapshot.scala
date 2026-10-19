@@ -42,10 +42,13 @@ object Snapshot:
     // Untracked: a snapshot is evaluated once and thrown away, so a subscription taken here would outlive everything
     // that could ever act on it.
     given scope: ReactiveScope = ReactiveScope.untracked
-    val resolved               = ResponsivePass.resolve(view(using scope, theme), Size(area.width, area.height))
+    val size                   = Size(area.width, area.height)
+    val frame                  =
+      ResponsivePass.resolveFrame(view(using scope, theme), size, _.widget.render(area, Buffer(area)))
+    val resolved               = frame.tree
     val tracker                = FocusTracker()
     tracker.focusedKey = focusedKey
-    tracker.reconcile(FocusPass.focusKeys(resolved), FocusPass.autofocusRequest(resolved))
+    tracker.reconcile(frame.analysis.focusKeys, frame.analysis.autofocus)
     // no bounds recorder: a snapshot is a picture, and nothing is left behind to ask where a node landed in it
     FocusPass
       .decorate(resolved, tracker, theme.focus, bounds = None, disabledStyle = theme.disabled)

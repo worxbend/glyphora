@@ -1,6 +1,6 @@
 # examples
 
-Ten runnable example apps — also the primary "how do I use this"
+Eleven runnable example apps — also the primary "how do I use this"
 documentation and the GraalVM native-image compile targets. Each has headless `Pilot`
 end-to-end tests in its `test` submodule.
 
@@ -16,6 +16,7 @@ end-to-end tests in its `test` submodule.
 | `procmon` | `./mill examples.procmon.run` | a sortable/filterable table over refreshing data, with a selection that survives the refresh |
 | `airsensor` | `./mill examples.airsensor.run` | polling on a timer, threshold bands, trend arrows, a loading/ready/error state machine |
 | `loadtest` | `./mill examples.loadtest.run` | concurrent background work streamed back to the render thread, with a live histogram and percentiles |
+| `doctor` | `./mill examples.doctor.run` | detected capabilities, colour depth, glyph tier, XTVERSION and background, then a live echo of every decoded key, click and paste |
 
 `counter` is the idiom to copy for anything real: bindings declared once drive dispatch, the status-bar hints, the
 help overlay and the `Ctrl+P` command palette together. `hello-world` deliberately stays one level lower, on a local

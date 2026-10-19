@@ -22,6 +22,7 @@ final class CounterAppSpec extends AnyFunSuite:
     val app     = CounterApp()
     Pilot.using(backend) { app.runWith(backend) } { pilot =>
       pilot.waitForIdle()
+      assert(pilot.a11yReport(app).isEmpty, pilot.a11yReport(app).mkString("\n"))
       assert(pilot.screenText.contains("Count: 0"))
       assert(pilot.screenText.contains("+ increment"), "the status bar renders the declared bindings")
       pilot.press("+", "+", "+").waitForIdle()

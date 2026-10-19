@@ -66,6 +66,37 @@ why recording is off by default on a real terminal and switched on only by somet
 reads it — a headless run, the first `boundsOf` call, a click-outside modal — and why the
 number is worth re-measuring on a quiet machine before deciding it is too dear to leave on.
 
+Two further configurations time a tree whose per-frame *walks*, not its paint, dominate:
+**wide** is two thousand keyed rows of a label and a button in a `scrollView`, and **lazy**
+is the same two thousand rows as a `lazyList`. The pair is the cost of element-level
+virtualisation in one line: on a loaded machine the wide tree took about 5–6 ms a frame
+and the lazy one about 0.07 ms, because a `lazyList` builds, decorates and paints only the
+rows on screen.
+
+### What a frame walks
+
+A frame of an `ElementHost` (and so of every `TuiApp`) walks the element tree twice before
+it paints:
+
+1. **Resolve.** The view is evaluated, `responsive` nodes take their branch, each
+   `lazyList` builds its window, and — in the same walk — the tab order, the autofocus
+   request, the focus groups and traps, and every caller-owned state the tree paints are
+   collected. Subtrees the walk changes nothing in are kept as they are, not copied.
+2. **Decorate.** Focus has to be reconciled against the whole tab order before any node
+   can be told it is the focused one, so the focus cue, the input wrappers and the bounds
+   recorder are stamped on in a second walk. It also records the path to the focused
+   element, so a key, a key release and a paste go straight down that path instead of
+   searching the tree for it.
+
+Until 0.20.0 those were six walks — resolve, tab order, autofocus, focus scopes,
+decoration, watched states — and every key event searched the tree once more.
+`FramePassSpec` holds the fused walk to exactly the answers the separate walks give.
+
+A tree with a `responsive.local` container query in it pays for one more paint into a
+scratch buffer, the layout pre-pass that finds each query's area (see
+[Responsive layouts](./responsive#branch-on-the-nodes-own-area)); a tree without one pays
+nothing for the feature.
+
 ## Reference numbers
 
 Taken on one developer machine so that the *shape* of the table is on record — a 16-core
@@ -115,6 +146,29 @@ not measure a `LatestFrameObserver`'s off-thread callback. Cursor placement, que
 input and the timing callback itself are excluded; the phase sum is not a loop total.
 Disabled timing adds no profiling clock reads. Waiting, scheduling and GC may contribute
 to these elapsed measurements.
+
+### Flight Recorder events
+
+Without writing a callback, run the JVM under JDK Flight Recorder and every frame is
+recorded with the rest of the process's profile:
+
+```bash
+java -XX:StartFlightRecording=filename=run.jfr,settings=profile -jar app.jar
+jfr print --categories glyphora run.jfr
+```
+
+| Event | Fields | Committed |
+|---|---|---|
+| `io.worxbend.tui.FrameDrawn` | duration (composition + draw), `frame`, `dirtyCells` | after each flushed frame, on the render thread |
+| `io.worxbend.tui.EventRouted` | duration (the dispatch), `kind`, `repaint` | per event handed to the app |
+| `io.worxbend.tui.FocusChanged` | `fromIndex`, `fromKey`, `toIndex`, `toKey` | when a DSL host's focus lands somewhere new |
+| `io.worxbend.tui.AsyncAdmitted` / `AsyncRejected` | `queue` (`worker` or `owner`), `outstanding` / `capacity` | per `Async`/`TaskScope` admission, on the submitting thread |
+
+They are plain `jdk.jfr.Event` subclasses with no reflection in the library, and until
+a recording enables them `isEnabled` is false and no field — the dirty-cell diff
+included — is computed. The names are constants on `JfrEvents` for a test that starts a
+`jdk.jfr.Recording` itself. In a native image the events compile in; recording them
+needs the image built with `--enable-monitoring=jfr`.
 
 Keep terminal writes ordered: a frame, its diff baseline, terminal handover and error
 reporting must agree about what reached the terminal. Background export or logging is
@@ -169,6 +223,14 @@ walk every row, because they are defined on the cells the table draws — sort a
 at the source and leave both unset — and `selectKey` scans for a key, which is as
 expensive as the provider makes `apply`. Replace the provider instance (or call
 `state.invalidate()`) when its contents change: the memoised view is keyed by identity.
+
+**Thousands of elements: `lazyList`.** The three widgets above virtualise rows of text.
+When every row is a whole element — a card, a row with a button — `scrollView(column(rows*))`
+builds, measures, decorates and paints every one of them on every frame.
+`lazyList(count, itemHeight, state)(i => element)` builds only the items on screen plus one
+either side (`LazyListElementSpec`: a 100 000-item list builds at most viewport + 2
+elements per frame), and the items are ordinary elements for focus, mouse routing and the
+caret. See [A virtual list of elements](./widgets#a-virtual-list-of-elements).
 
 ## Why none of this is a CI gate
 

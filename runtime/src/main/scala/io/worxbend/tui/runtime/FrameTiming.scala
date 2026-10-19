@@ -11,5 +11,8 @@ package io.worxbend.tui.runtime
   *
   * `count` is the same composed-frame number as [[Frame.count]]. Delivered only when composition, draw, observation and
   * cursor placement all succeed. Installing timing alone does not capture any frame snapshots.
+  *
+  * The same frame is also a Flight Recorder `io.worxbend.tui.FrameDrawn` event whose duration spans composition and
+  * draw, with the number of cells that changed — see [[JfrEvents]]. That one needs no callback, only a recording.
   */
 final case class FrameTiming(count: Long, compositionNanos: Long, drawNanos: Long, observerNanos: Long)

@@ -62,6 +62,7 @@ final case class TerminalCapabilities(
     pointerShapes: Support = Support.Unknown,
     desktopNotifications: Support = Support.Unknown,
     taskbarProgress: Support = Support.Unknown,
+    terminalVersion: Option[String] = None,
     kittyGraphics: Support = Support.Unknown,
     inlineImages: Support = Support.Unknown,
 ):
@@ -136,11 +137,20 @@ private[terminal] object CapabilityReplies:
     * else. `payload` is everything between `ESC ]` and the terminator.
     */
   def foldOsc(capabilities: TerminalCapabilities, payload: String): TerminalCapabilities =
-    backgroundColor(payload).fold(capabilities)(color => capabilities.copy(backgroundColor = Some(color)))
+    terminalVersion(payload) match
+      case Some(version) => capabilities.copy(terminalVersion = Some(version))
+      case None          =>
+        backgroundColor(payload).fold(capabilities)(color => capabilities.copy(backgroundColor = Some(color)))
 
-  /** `capabilities` updated with whatever a completed OSC, DCS or APC reply said: the OSC 11 background colour, or the
-    * kitty graphics query's answer. The two cannot be confused — an OSC 11 body starts with `11;`, a kitty graphics
-    * reply with `G`.
+  /** The name and version an XTVERSION reply carries — the DCS payload `>|kitty(0.35.2)` — or `None` for any other
+    * control string. The text is the terminal's own, free-form, and only ever shown, never parsed for features.
+    */
+  def terminalVersion(payload: String): Option[String] =
+    Option.when(payload.startsWith(">|"))(payload.drop(2).trim).filter(_.nonEmpty)
+
+  /** `capabilities` updated with whatever a completed OSC, DCS or APC reply said: the kitty graphics query's answer, or
+    * whatever [[foldOsc]] reads (the XTVERSION name, the OSC 11 background colour). They cannot be confused — a kitty
+    * graphics reply starts with `G`, an XTVERSION one with `>|`, an OSC 11 one with `11;`.
     */
   def foldControlString(capabilities: TerminalCapabilities, payload: String): TerminalCapabilities =
     KittyGraphics.queryReply(payload) match
