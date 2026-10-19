@@ -632,7 +632,8 @@ Each finding carries a sentence naming the node or colours and, where it has one
 `area` on screen. Scrollables — `list`, `tree`, `menu`, `dataTable`, `log`,
 `scrollView` and their kin — are exempt from `NoFocusCue`, because their selection
 highlight or scroll position is their focus cue by design; cells left on the terminal's
-default colours are exempt from `LowContrast`, because their colour is the user's. Every
+default colours are exempt from `LowContrast`, because their colour is the user's, and so
+are the cells of a `pixelImage` or `image`, whose two colours are pixels, not text. Every
 example in the repository asserts an empty report. It is a lint, not a certification:
 see [Accessibility](./unicode-and-accessibility#lint-it) for what it cannot see.
 

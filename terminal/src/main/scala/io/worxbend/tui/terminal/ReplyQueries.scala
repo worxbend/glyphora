@@ -31,10 +31,10 @@ private[terminal] final class ReplyQueries(
   /** Writes the capability queries and reads what comes back, or skips the round trip entirely.
     *
     * Six DECRQM mode queries, the kitty keyboard query, the OSC 11 background-colour query, the DSR 996 colour-scheme
-    * query, XTVERSION and DA1. DA1 goes last because it is the fence: terminals answer in the order the queries
-    * arrived, so its reply means everything that was going to be answered has been. A terminal that answers nothing at
-    * all costs the timeout once, at start-up, and leaves every field unknown — which is exactly today's behaviour,
-    * since unknown means "use it".
+    * query, the kitty graphics query, XTVERSION and DA1. DA1 goes last because it is the fence: terminals answer in the
+    * order the queries arrived, so its reply means everything that was going to be answered has been. A terminal that
+    * answers nothing at all costs the timeout once, at start-up, and leaves every field unknown — which is exactly
+    * today's behaviour, since unknown means "use it".
     *
     * `GLYPHORA_NO_CAPABILITY_PROBE` set to any non-empty value skips the round trip, for a CI harness or a terminal
     * where even a short start-up read is unwanted. Skipping is safe by construction: it produces the same unknown value
@@ -56,6 +56,8 @@ private[terminal] final class ReplyQueries(
         // the two colour questions: the colour itself, and — on a terminal that can say — the terminal's own verdict
         emit(AnsiSequences.QueryBackgroundColor)
         emit(AnsiSequences.QueryColorScheme)
+        // an APC string every terminal without the protocol ignores; kitty, Ghostty and WezTerm answer it
+        emit(KittyGraphics.Query)
         emit(AnsiSequences.QueryTerminalVersion)
         emit(AnsiSequences.QueryPrimaryDeviceAttributes)
       }

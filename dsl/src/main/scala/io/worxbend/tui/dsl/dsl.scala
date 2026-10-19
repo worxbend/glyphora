@@ -74,6 +74,7 @@ export Element.{
   paginator,
   panel,
   pieChart,
+  pixelImage,
   placeholder,
   portal,
   positioned,
@@ -193,6 +194,8 @@ export io.worxbend.tui.core.{
   Versioned,
   VersionedState,
   Widget,
+  RgbaImage,
+  GraphicPlacement,
 }
 
 /** The modifier bitset carried by [[KeyEvent]] and [[MouseEvent]].
@@ -442,6 +445,10 @@ export io.worxbend.tui.widgets.{
   DiffView,
   DiffViewOptions,
   DiffViewState,
+  PixelImage,
+  PixelImageOptions,
+  ImageFit,
+  ImageLoader,
 }
 
 /** The shape of an app's `view` (and any sub-view helper): a computation, run under a tracking [[ReactiveScope]] *and*

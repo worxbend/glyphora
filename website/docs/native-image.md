@@ -139,6 +139,24 @@ glyphora avoids the problem:
 This rule also improves JVM behavior: fewer hidden code paths, clearer dependencies,
 and errors that appear during compilation instead of at runtime.
 
+## Pictures and `javax.imageio`
+
+`pixelImage` needs nothing from `java.desktop`: the kitty encoder sends raw RGBA, the iTerm2
+encoder writes its PNG with `java.util.zip`, and `ImageLoader.readPng` / `decodePng` decode
+PNG files the same way. A native image that shows pictures that way stays one
+self-contained file with no configuration.
+
+`ImageLoader.fromFile` and `fromBytes` go through `javax.imageio` for JPEG, GIF and the
+rest, and that is a different matter. Checked on GraalVM CE 25.0.2 (Linux x64) with this
+repository's `--no-fallback` options: the build succeeds, but it ships `libawt.so`,
+`libawt_headless.so`, `libawt_xawt.so`, `libjavajpeg.so` and `liblcms.so` beside the
+binary, and the first decode aborts with
+`NoClassDefFoundError: java/awt/GraphicsEnvironment` raised from AWT's JNI start-up. To
+use them in a native image, collect AWT's metadata with the tracing agent
+(`-agentlib:native-image-agent`) and ship the libraries with the binary — or convert the
+pictures to PNG and use `readPng`. (The showcase builds its picture with `RgbaImage.tabulate`
+and needs neither.)
+
 ## Test the executable without a TTY
 
 CI does not keep a list of examples to build. It discovers them — every directory under

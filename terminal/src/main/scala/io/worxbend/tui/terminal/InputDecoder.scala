@@ -378,7 +378,7 @@ private[terminal] final class InputDecoder(
     * terminator gets here: a truncated one has no trustworthy payload and is dropped whole.
     */
   private def captureControlString(skip: ControlStringSkip): Unit =
-    if probing then probed = CapabilityReplies.foldOsc(probed, skip.payload.result())
+    if probing then probed = CapabilityReplies.foldControlString(probed, skip.payload.result())
 
   /** Continues `skip` until the terminator, the length cap, a timeout, or the next wake — see [[skipControlString]]. */
   private def resumeControlString(skip: ControlStringSkip): Option[Event] =

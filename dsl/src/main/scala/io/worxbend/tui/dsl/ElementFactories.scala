@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Constraint, Direction, Line, Rect, Size, Span, Style, Text, Widget}
+import io.worxbend.tui.core.{Constraint, Direction, Line, Rect, RgbaImage, Size, Span, Style, Text, Widget}
 import io.worxbend.tui.runtime.{LogRing, ReactiveScope, Signal}
 import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets.TableRow
@@ -845,6 +845,15 @@ private[dsl] trait ElementFactories:
     */
   def image(source: w.Image): WidgetElement =
     WidgetElement(source)
+
+  /** A picture the terminal draws itself — kitty graphics or iTerm2 inline images, whichever the terminal answered for
+    * at start-up — with a half-block rendering in its cells for every terminal that can do neither. Build the
+    * [[RgbaImage]] once and keep it: an unchanged picture sends nothing, and a covered one (a popup over it) is taken
+    * down and put back by the backend. Load one from a file with [[w.ImageLoader]]. The node measures itself, so in a
+    * column it claims the rows that keep the picture's shape. See [[w.PixelImage]].
+    */
+  def pixelImage(image: RgbaImage, options: w.PixelImageOptions = w.PixelImageOptions()): WidgetElement =
+    WidgetElement(w.PixelImage(image, options))
 
   /** A one-row clickable hyperlink (OSC 8): `label` underlined with `url` attached. Terminals without OSC 8 support
     * show the styled text and nothing is lost.

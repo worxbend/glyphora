@@ -68,6 +68,7 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
   private val emergencyRestoreCounter                 = AtomicLong(0)
   private val printedLines                            = scala.collection.mutable.ArrayBuffer.empty[String]
   private val rawWrites                               = scala.collection.mutable.ArrayBuffer.empty[String]
+  private val graphics                                = GraphicsLayer()
   private val clears                                  = scala.collection.mutable.ArrayBuffer.empty[ClearType]
   private val insertedBlocks                          = scala.collection.mutable.ArrayBuffer.empty[Buffer]
   private val sizeRequests                            = scala.collection.mutable.ArrayBuffer.empty[Size]
@@ -99,8 +100,11 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
 
   def draw(buffer: Buffer): Either[BackendError, Unit] =
     attempt(Op.Draw) {
+      // the same picture bookkeeping the JLine backend runs, so an app's images can be tested against either answer
+      val pictures = graphics.compose(buffer, ImageProtocol.select(reported), repaintAll = false)
+      if !pictures.isEmpty then rawWrites.synchronized { val _ = rawWrites += pictures.before + pictures.after }
       lastFrame = Some(buffer.snapshot)
-      val _ = drawCounter.incrementAndGet()
+      val _        = drawCounter.incrementAndGet()
     }
 
   def enableRawMode(): Either[BackendError, Unit] =
@@ -515,6 +519,11 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
 
   /** Every sequence handed to [[writeRaw]], in order — the out-of-band payloads (an image protocol's escape sequence,
     * say) an application sent past the frame diff.
+    *
+    * A [[draw]] whose frame places pictures ([[io.worxbend.tui.core.Buffer.placeGraphic]]) appends one entry too, when
+    * the installed capabilities select an [[ImageProtocol]] and the pictures on screen had to change: the deletes and
+    * draws the JLine backend would have put around that frame's cells, concatenated. An unchanged frame appends
+    * nothing.
     */
   def rawSequences: Seq[String] = rawWrites.synchronized(rawWrites.toSeq)
 
