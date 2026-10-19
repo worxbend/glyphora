@@ -6,11 +6,16 @@
 //> using jvm 25
 //> using dep com.worxbend::tui-dsl:0.19.0
 //> using javaOpt --enable-native-access=ALL-UNNAMED
+//> using mainClass io.worxbend.tui.examples.scalacli.Main
+
+// The package and `object Main` follow the layout every Mill example uses
+// (`io.worxbend.tui.examples.<name-without-dashes>.Main`); scala-cli needs only the `mainClass` line above to find it.
+package io.worxbend.tui.examples.scalacli
 
 import io.worxbend.tui.dsl.*
 
 /** A counter in a bordered panel: `+` and `-` change it, `q` quits. */
-object Hello extends TuiApp:
+object Main extends TuiApp:
 
   private val count = Signal(0)
 
