@@ -543,6 +543,11 @@ Three changes reach almost every app, so check them first:
 - **A dropdown's floating list can let the closing click through**: `.passThroughOutside` closes
   the list and delivers the click to the control under the pointer; without it the click is still
   spent on closing.
+- **Keys a selection or a drag now takes.** In a mouse-capturing app, Shift+arrows that the
+  focused node does not use select text when that node is selectable (`text(…).focusable`,
+  `log`, `dataTable`), so they no longer reach an app binding on Shift+arrows while such a node
+  has focus; `Esc` while a drag and drop is in flight cancels the drag and is spent on that. Bind
+  the app's own Shift+arrow command on another key, or mark the node `.selectable(false)`.
 - **Mouse-capturing apps select text.** With `RunnerConfig(mouse = MouseCaptureMode.Buttons)`, a left drag over
   `text`, `markdown`, `log`, `logConsole` or a table selects text and copies it through OSC 52 on
   release, because capturing the mouse took the terminal's own selection away. A press an element
