@@ -58,7 +58,7 @@ handling is exactly where that shows.
 form, meters, a forty-row `scrollView` — through an `ElementHost` (resolve, focus pass,
 paint) at two sizes, with per-node **bounds recording** off and on. The gap between the
 two rows is what `boundsOf(key)`, the element-tree snapshot and the click-outside backdrop
-cost per frame: a wrapper per node plus one bounds entry each. Three runs on a quiet 16-core
+cost per frame: a wrapper per node plus one bounds entry each. Three runs on a 16-core
 x86-64 machine under glyphora 0.20.0 (2 GB heap, SerialGC, configurations timed in the
 order least favourable to recording), after the recorder stopped copying its buffer on
 every publish:
