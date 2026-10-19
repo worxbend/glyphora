@@ -107,6 +107,9 @@ object ResponsiveElement:
   * `contentHeight` is the caller's own measurement; `None` means "measure the content each frame", which is what the
   * two-argument `scrollView(content, state)` factory asks for.
   *
+  * A searched view (`.searchable(state)`) finds its matches by painting the whole content once per query and content,
+  * then reuses them: a frame that only scrolls, steps or redraws paints just the window.
+  *
   * The view keeps what matters on screen by itself. When focus moves onto a child outside the window, or a child marked
   * `.ensureVisible` appears, the view scrolls just far enough to show it — on the same frame, by painting the content a
   * second time at the new offset — and records the request in `state`, so a child that *stays* focused or marked does
@@ -143,7 +146,7 @@ final case class ScrollViewElement(
       content match
         case viewport: ScrollViewportElement => viewport.publishScreenArea(area)
         case _                               => ()
-      val view     = searched(w.ScrollView(content.widget, rows))
+      val view     = searched(w.ScrollView(content.widget, rows, contentIdentity = searchIdentity))
       val portals  = PortalQueue.mark
       val requests = RevealRequests(followsFocus)
       RevealProbe.collecting(requests)(view.render(area, buffer, state))
@@ -173,6 +176,21 @@ final case class ScrollViewElement(
           if state.offset != before then
             PortalQueue.rollback(portals)
             RevealProbe.collecting(RevealRequests(followsFocus))(view.render(area, buffer, state))
+
+  /** What the searched view compares to decide whether the matches it found last frame still hold: the content subtree
+    * itself (plain data, compared structurally — a node holding a fresh closure never compares equal, which only costs
+    * a re-search) and the versions of the caller-owned states it paints, since a state's text can change under an equal
+    * node. Built only while a query is set; an unsearched view pays nothing for it. This is a walk of this view's own
+    * subtree, made only on a searched frame, and in exchange the view paints its window instead of its whole content.
+    */
+  private def searchIdentity: Option[Any] =
+    search.filter(_.isActive).map { _ =>
+      // the focus pass wraps the content in a fresh viewport translator every frame; what it translates is the identity
+      val subject = content match
+        case viewport: ScrollViewportElement => viewport.inner
+        case other                           => other
+      (subject, StateWatch.collect(subject).map(_._2))
+    }
 
   /** The view as drawn: plain, or searched for `search`'s query. */
   private def searched(view: w.ScrollView): StatefulWidget[w.ScrollViewState] =

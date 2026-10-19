@@ -5,6 +5,8 @@ import io.worxbend.tui.terminal.HeadlessBackend
 
 import org.scalatest.funsuite.AnyFunSuite
 
+import scala.jdk.CollectionConverters.*
+
 /** `.searchable(state)` on `log`, `scrollView` and `markdown`, and the `searchBar(state)` that edits the query. */
 final class SearchElementsSpec extends AnyFunSuite with PilotFixture:
 
@@ -96,6 +98,57 @@ final class SearchElementsSpec extends AnyFunSuite with PilotFixture:
     pilot.waitForIdle()
     assert(pilot.readOnRenderThread(search.matches.size) == 1)
     assert(pilot.screenLines.exists(line => line.contains("Ann") && line.contains("Rome")))
+    pilot.press("f10")
+    assert(pilot.awaitTermination())
+
+  test("a searchable scrollView searches its whole content once per query, then paints only its window"):
+    val backend = HeadlessBackend(Size(20, 4))
+    val scroll  = ScrollViewState()
+    val search  = SearchState()
+    search.query = "needle"
+    val heights = java.util.concurrent.ConcurrentLinkedQueue[Int]()
+    val counted = widget((area, buffer) =>
+      heights.add(buffer.area.height)
+      buffer.setString(area.x, area.y, "counted", Style.Default)
+    )
+    val app     = new TuiApp:
+      override def bindings: KeyBindings            = KeyBindings(binding("f10", "quit")(quit()))
+      def view(using ReactiveScope, Theme): Element =
+        val rows = (0 until 40).map(i => text(if i == 30 then "a needle here" else s"hay $i").length(1))
+        scrollView(column((rows :+ counted.length(1))*), scroll).searchable(search).autofocus
+    val pilot   = startPilot(backend) { app.runWith(backend) }
+
+    pilot.waitForIdle()
+    assert(pilot.readOnRenderThread(search.matches.map(_.row)) == Vector(30))
+    heights.clear()
+    pilot.press("home").waitForIdle()
+    pilot.press("down").waitForIdle()
+    assert(pilot.screenLines.head.startsWith("hay 1"))
+    assert(!heights.isEmpty)
+    // the content is 41 rows; a frame that searched it whole would hand every widget a 41-row buffer
+    assert(heights.iterator.asScala.forall(_ == 4), heights)
+    pilot.press("n").waitForIdle()
+    assert(pilot.screenLines.exists(_.startsWith("a needle here")))
+    pilot.press("f10")
+    assert(pilot.awaitTermination())
+
+  test("a searchable scrollView searches again when a state its content paints changes"):
+    val backend = HeadlessBackend(Size(20, 4))
+    val scroll  = ScrollViewState()
+    val search  = SearchState()
+    val field   = TextInputState()
+    search.query = "needle"
+    val app     = new TuiApp:
+      override def bindings: KeyBindings            = KeyBindings(binding("f10", "quit")(quit()))
+      def view(using ReactiveScope, Theme): Element =
+        scrollView(column(input(field).length(1), text("hay").length(1)), scroll).searchable(search)
+    val pilot   = startPilot(backend) { app.runWith(backend) }
+
+    pilot.waitForIdle()
+    assert(pilot.readOnRenderThread(search.matches).isEmpty)
+    pilot.readOnRenderThread(field.setValue("needle"))
+    pilot.waitForIdle()
+    assert(pilot.readOnRenderThread(search.matches.map(_.row)) == Vector(0))
     pilot.press("f10")
     assert(pilot.awaitTermination())
 
