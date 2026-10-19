@@ -28,6 +28,15 @@ final class ColorDepthSpec extends AnyFunSuite:
   test("an empty NO_COLOR does not disable color (per the no-color.org convention)"):
     assert(ColorDepth.detect(Map("NO_COLOR" -> "", "COLORTERM" -> "truecolor")) == ColorDepth.TrueColor)
 
+  test("colorForced is the one reading of CLICOLOR_FORCE and FORCE_COLOR"):
+    assert(ColorDepth.colorForced(Map("CLICOLOR_FORCE" -> "1")))
+    assert(ColorDepth.colorForced(Map("FORCE_COLOR" -> "")))
+    assert(ColorDepth.colorForced(Map("FORCE_COLOR" -> "3")))
+    assert(!ColorDepth.colorForced(Map("CLICOLOR_FORCE" -> "0")))
+    assert(!ColorDepth.colorForced(Map("CLICOLOR_FORCE" -> "")))
+    assert(!ColorDepth.colorForced(Map("FORCE_COLOR" -> "0")))
+    assert(!ColorDepth.colorForced(Map.empty))
+
   test("CLICOLOR_FORCE overrides NO_COLOR"):
     assert(
       ColorDepth.detect(
