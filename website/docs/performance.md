@@ -116,6 +116,29 @@ input and the timing callback itself are excluded; the phase sum is not a loop t
 Disabled timing adds no profiling clock reads. Waiting, scheduling and GC may contribute
 to these elapsed measurements.
 
+### Flight Recorder events
+
+Without writing a callback, run the JVM under JDK Flight Recorder and every frame is
+recorded with the rest of the process's profile:
+
+```bash
+java -XX:StartFlightRecording=filename=run.jfr,settings=profile -jar app.jar
+jfr print --categories glyphora run.jfr
+```
+
+| Event | Fields | Committed |
+|---|---|---|
+| `io.worxbend.tui.FrameDrawn` | duration (composition + draw), `frame`, `dirtyCells` | after each flushed frame, on the render thread |
+| `io.worxbend.tui.EventRouted` | duration (the dispatch), `kind`, `repaint` | per event handed to the app |
+| `io.worxbend.tui.FocusChanged` | `fromIndex`, `fromKey`, `toIndex`, `toKey` | when a DSL host's focus lands somewhere new |
+| `io.worxbend.tui.AsyncAdmitted` / `AsyncRejected` | `queue` (`worker` or `owner`), `outstanding` / `capacity` | per `Async`/`TaskScope` admission, on the submitting thread |
+
+They are plain `jdk.jfr.Event` subclasses with no reflection in the library, and until
+a recording enables them `isEnabled` is false and no field — the dirty-cell diff
+included — is computed. The names are constants on `JfrEvents` for a test that starts a
+`jdk.jfr.Recording` itself. In a native image the events compile in; recording them
+needs the image built with `--enable-monitoring=jfr`.
+
 Keep terminal writes ordered: a frame, its diff baseline, terminal handover and error
 reporting must agree about what reached the terminal. Background export or logging is
 separate from terminal output and should have bounded admission rather than enqueueing
