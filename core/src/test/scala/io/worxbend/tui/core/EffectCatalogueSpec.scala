@@ -49,6 +49,44 @@ final class EffectCatalogueSpec extends AnyFunSuite:
     assert(fgAt(at(fx, end), 0, 0).contains(Color.Rgb(0, 0, 255)))
     assert(at(fx, end).get(4, 0) == Cell.Empty)
 
+  private def bgAt(buffer: Buffer, x: Int, y: Int): Option[Color] = buffer.get(x, y).style.bg
+
+  /** Row 0 "ab" on a pure-blue background with the rest of the row a blue blank, row 1 plain red text, no background.
+    */
+  private def panel(): Buffer =
+    val buffer = Buffer(Rect(0, 0, 4, 2))
+    buffer.setString(0, 0, "ab  ", Style.Default.withFg(red).withBg(Color.Rgb(0, 0, 255)))
+    buffer.setString(0, 1, "cd", Style.Default.withFg(red))
+    buffer
+
+  private def onPanel(effect: Effect, elapsed: FiniteDuration): Buffer =
+    val buffer = panel()
+    effect.process(elapsed, buffer, buffer.area)
+    buffer
+
+  test("paint can target the background, blank cells included, leaving the foreground alone"):
+    val fx = Effect.paint(Color.Rgb(255, 0, 0), 1.second, target = ColorTarget.Background)
+    assert(bgAt(onPanel(fx, mid), 0, 0).contains(Color.Rgb(128, 0, 128)))
+    assert(bgAt(onPanel(fx, end), 3, 0).contains(Color.Rgb(255, 0, 0)), "a blank cell's background is painted too")
+    assert(fgAt(onPanel(fx, end), 0, 0).contains(red))
+    // a cell with no background of its own is painted from black
+    assert(bgAt(onPanel(fx, mid), 0, 1).contains(Color.Rgb(128, 0, 0)))
+
+  test("paint can target both layers"):
+    val fx = Effect.paint(Color.Rgb(0, 255, 0), 1.second, target = ColorTarget.Both)
+    val at = onPanel(fx, end)
+    assert(fgAt(at, 0, 0).contains(Color.Rgb(0, 255, 0)))
+    assert(bgAt(at, 0, 0).contains(Color.Rgb(0, 255, 0)))
+
+  test("hslShift can target the background"):
+    val fx = Effect.hslShift(hue = 120.0, saturation = 0.0, lightness = 0.0, 1.second, target = ColorTarget.Background)
+    // blue (240°) turned 120° is red (0°)
+    assert(bgAt(onPanel(fx, end), 3, 0).contains(Color.Rgb(255, 0, 0)))
+    assert(fgAt(onPanel(fx, end), 0, 0).contains(red), "the foreground is untouched")
+    val both = Effect.hslShift(hue = 120.0, saturation = 0.0, lightness = 0.0, 1.second, target = ColorTarget.Both)
+    assert(fgAt(onPanel(both, end), 0, 0).contains(Color.Rgb(0, 255, 0)))
+    assert(bgAt(onPanel(both, end), 0, 0).contains(Color.Rgb(255, 0, 0)))
+
   test("glitch scrambles text while it runs, deterministically, and leaves a clean frame at the end"):
     val full    = Effect.glitch(intensity = 1.0, duration = 1.second)
     Seq(start, mid).foreach: elapsed =>

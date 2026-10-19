@@ -4,8 +4,16 @@ import io.worxbend.tui.core.{Buffer, Rect, StatefulWidget, Style, VersionedState
 
 import scala.collection.mutable
 
-/** A node of a [[Tree]]: a label plus child nodes. */
-final case class TreeNode(label: String, children: Seq[TreeNode] = Seq.empty)
+/** A node of a [[Tree]]: a label plus child nodes, and optionally a stable `id`.
+  *
+  * The `id` is what [[TreeState.byId]] names the node by — the identity a tree needs when its labels repeat (two
+  * `config` directories, two `README.md` files) and must still expand, collapse and highlight one at a time. It never
+  * reaches the screen; a node without one is named by its label.
+  */
+final case class TreeNode(label: String, children: Seq[TreeNode] = Seq.empty, id: Option[String] = None):
+
+  /** The name [[TreeState.byId]] keys this node by: its `id` when it has one, otherwise its label. */
+  def stableKey: String = id.getOrElse(label)
 
 /** Caller-owned tree state: which branches are expanded, the selected node, and the scroll offset.
   *
@@ -113,6 +121,12 @@ object TreeState:
     * would collide.
     */
   def byLabelPath: TreeState[Seq[String]] = new TreeState((chain, _) => chain.map(_.label))
+
+  /** A state keyed by each node's [[TreeNode.stableKey]] — its `id` when it carries one, its label otherwise — for a
+    * tree whose labels repeat and that cannot lean on sibling-unique labels either: give the nodes ids
+    * (`TreeNode("config", id = Some("app/config"))`) and expansion and selection name exactly one node each.
+    */
+  def byId: TreeState[String] = new TreeState((chain, _) => chain.last.stableKey)
 
 /** A collapsible tree with keyboard-driven selection: branch markers (`▸` collapsed, `▾` expanded), two-column
   * indentation per depth, and ListView-style scroll-to-selection.

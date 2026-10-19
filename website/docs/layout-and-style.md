@@ -929,11 +929,18 @@ It understands the 16 named colours, the 256-colour and truecolour forms in both
 underlines with the SGR 58 underline colour, and OSC 8 hyperlinks, which land on
 `Style.link`. An SGR reset returns to `Style.Default` — silence, not `Style.Reset` — so
 the uncoloured stretches take whatever style the widget drawing the text gives them,
-exactly as plain text in that widget would. Every other escape sequence (cursor
-movement, screen clearing, other OSC strings) is dropped whole, and so are control
-characters other than `\n`, so CRLF output splits into clean rows. Plain text with no
-escape in it comes out exactly as `Text.raw` reads it, and widths are measured through
-`CharWidth` as they are for every `Text`.
+exactly as plain text in that widget would.
+
+Three controls move within the line as a terminal's cursor would. A tab advances to the
+next eight-column stop, counted in display columns (a CJK character takes two). A
+carriage return goes back to the first column and the text after it *overwrites* the
+line — `"100%\r5%"` reads `5%0%`, exactly what the terminal would show — so a progress
+bar that redraws itself with `\r` shows its latest state, and CRLF output still splits
+into clean rows. Erase-in-line (`ESC [ K`, `ESC [ 2 K`), which progress bars send after
+their `\r`, is applied too. Every other escape sequence (cursor movement, screen
+clearing, other OSC strings) is dropped whole, and so is every other control character.
+Plain text with no escape or control in it comes out exactly as `Text.raw` reads it, and
+widths are measured through `CharWidth` as they are for every `Text`.
 
 Output that is still arriving goes through `AnsiParser`, which keeps its place between
 chunks — a chunk boundary can fall inside an escape sequence or in the middle of a line,
@@ -973,6 +980,12 @@ background (`[red on blue]`) or the explicit `fg=`/`bg=`; and `link=<url>`. `[[`
 literal `[`; a `]` outside a tag is already literal. A `\n` in the literal starts a new
 row, as it does in `Text.raw`.
 
+A named close — `[/bold]`, `[/bold red]`, or `[/link]` for a `[link=…]` — closes the
+innermost tag just as `[/]` does, and is checked: it must name that innermost tag (its
+words as written, ignoring case and spacing, or the key of a single `key=value` word).
+`markup"[bold][red]x[/bold][/]"` is a compile error naming both tags, not a silent
+mis-nesting.
+
 An interpolated `$value` is **text, never markup**. Whatever it contains — `[red]`
 included — is rendered as the characters it is, in the style in force where it appears,
 so `markup"[bold]$input[/]"` is safe to write over input the program did not author. The
@@ -981,7 +994,7 @@ one place a value stands inside a tag is as the whole value of `link=`, `fg=` or
 types too.
 
 A word that is not a style (`[bogus]`), a tag never closed, a `[/]` with nothing to
-close, or a `[` with no `]` stops the build with an error naming the problem, instead of
+close, a named close that names another tag, or a `[` with no `]` stops the build with an error naming the problem, instead of
 being found the first time that view is drawn. What survives into the compiled code is
 the span constructors with every literal style already a constant, so nothing is parsed
 when the program runs — the same bargain `key"…"` and `hex"…"` make. `markup"…"` is

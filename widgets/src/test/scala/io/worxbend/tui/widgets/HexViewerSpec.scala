@@ -16,7 +16,7 @@ final class HexViewerSpec extends AnyFunSuite:
     assert(
       trimmedLines(rendered(viewer, HexViewerState(), 78, 3)) == Seq(
         "00000000  48 65 6c 6c 6f 2c 20 57  6f 72 6c 64 21 0a 54 68  |Hello, World!.Th|",
-        "00000010  69 73 20 69 73 20 67 6c  79 70 68 6f 72 61 2e     |is is glyphora.|",
+        "00000010  69 73 20 69 73 20 67 6c  79 70 68 6f 72 61 2e     |is is glyphora. |",
         "",
       )
     )
@@ -25,7 +25,7 @@ final class HexViewerSpec extends AnyFunSuite:
     val viewer = HexViewer(bytes("é→") :+ 0.toByte :+ 0x7f.toByte)
     assert(
       trimmedLines(rendered(viewer, HexViewerState(), 78, 1)) == Seq(
-        "00000000  c3 a9 e2 86 92 00 7f                              |.......|"
+        "00000000  c3 a9 e2 86 92 00 7f                              |.......         |"
       )
     )
 

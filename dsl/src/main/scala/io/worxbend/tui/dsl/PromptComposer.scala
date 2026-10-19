@@ -1,6 +1,17 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Buffer, CharWidth, KeyCode, KeyEvent, KeyModifiers, Position, Rect, Versioned, Widget}
+import io.worxbend.tui.core.{
+  Buffer,
+  CharWidth,
+  Constraint,
+  KeyCode,
+  KeyEvent,
+  KeyModifiers,
+  Position,
+  Rect,
+  Versioned,
+  Widget,
+}
 import io.worxbend.tui.runtime.{Async, Cancelable, ReactiveScope, Signal, TaskScope}
 import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets as w
@@ -256,11 +267,16 @@ private[dsl] final case class Popup(
   * newline; `Up`/`Down` on the first/last line walk the history; `Ctrl+R` searches it; a dim suggestion from history is
   * accepted with `Tab` or `Right`; `/` and `@` open the completion popup (`Up`/`Down`, `Enter`/`Tab`, `Esc`). Every
   * [[editingChords]] chord works too.
+  *
+  * The composer is as tall as its draft once soft-wrapped at the width it is given, up to the state's `maxRows`, after
+  * which it scrolls inside them. [[prompt]] puts a glyph (`"❯ "`) before the first row; wrapped and further rows hang
+  * under the text rather than under the glyph.
   */
 final case class PromptComposerElement(
     state: PromptComposerState,
     onSubmit: String => Unit,
     props: ElementProps = ElementProps(focusable = true),
+    promptGlyph: String = "",
 ) extends Element:
   type Self = PromptComposerElement
 
@@ -270,18 +286,35 @@ final case class PromptComposerElement(
   private[dsl] override def editsText: Boolean            = true
   override def pointerShape: Option[PointerShape]         = textPointer(props)
 
-  private def editorRows: Int = math.max(1, math.min(state.maxRows, state.editor.lineCount))
+  /** Prefixes the draft with `glyph` — `promptComposer(state)(send).prompt("❯ ")` — drawn on the first row in the
+    * composer's style; the text, and every row it wraps onto, starts after it.
+    */
+  def prompt(glyph: String): PromptComposerElement = copy(promptGlyph = CharWidth.withoutControls(glyph))
 
-  private[dsl] override def claim: SizeClaim = SizeClaim.rows(editorRows + state.reverse.size)
+  private def glyphWidth: Int = CharWidth.of(promptGlyph)
+
+  private def editor: w.TextArea = w.TextArea(
+    showCursor = props.focused && props.caretStyle.paints && state.reverse.isEmpty,
+    style = props.style,
+    options = w.TextAreaOptions(wrap = true),
+  )
+
+  /** The draft's rows soft-wrapped at `width` (less the glyph), between one and `maxRows`. */
+  private def editorRows(width: Int): Int =
+    math.max(1, math.min(state.maxRows, editor.heightAt(math.max(1, width - glyphWidth), state.editor)))
+
+  private[dsl] override def claim: SizeClaim = SizeClaim(Constraint.Auto, Constraint.Fill(1))
+
+  private[dsl] override def intrinsicHeight(width: Int): Option[Int] =
+    constrainedHeight(Some(editorRows(width) + state.reverse.size))
 
   def widget: Widget =
-    val editor = w.TextArea(
-      showCursor = props.focused && props.caretStyle.paints && state.reverse.isEmpty,
-      style = props.style,
-      options = w.TextAreaOptions(wrap = true),
-    )
+    val editor = this.editor
     (area, buffer) =>
-      val text  = Rect(area.x, area.y, area.width, math.max(0, area.height - state.reverse.size))
+      val inset = math.min(glyphWidth, area.width)
+      val text  = Rect(area.x + inset, area.y, area.width - inset, math.max(0, area.height - state.reverse.size))
+      if inset > 0 && text.height > 0 then
+        buffer.setString(area.x, area.y, CharWidth.substringByWidth(promptGlyph, inset), props.style)
       editor.render(text, buffer, state.editor)
       val caret = editor.caretAt(text, state.editor)
       for cell <- caret; rest <- state.ghost do paintGhost(buffer, text, cell.x, cell.y, rest)

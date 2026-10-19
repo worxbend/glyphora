@@ -82,3 +82,39 @@ final class DataTableLazyRowsSpec extends AnyFunSuite:
     val fromProvider = DataTable(columns, TableRows.from(plain), widths)
     val state        = DataTableState()
     assert(trimmedLines(rendered(fromSeq, state, 40, 4)) == trimmedLines(rendered(fromProvider, state, 40, 4)))
+
+  /** The million rows again, able to answer a sorted or filtered view at the source — the way a provider over a
+    * database answers `ORDER BY` and `WHERE` — counting how often it was asked.
+    */
+  private final class Sortable(descending: Boolean = false) extends TableRows[Int]:
+    var touched: Int                                                                    = 0
+    var views: List[(Option[ColumnSort], String)]                                       = Nil
+    def count: Int                                                                      = 1_000_000
+    def apply(index: Int): KeyedRow[Int]                                                =
+      touched += 1
+      val id = if descending then count - 1 - index else index
+      KeyedRow(id, Seq(id.toString, s"row $id"))
+    override def view(sort: Option[ColumnSort], filter: String): Option[TableRows[Int]] =
+      views = (sort, filter) :: views
+      Option.when(filter.isEmpty)(Sortable(descending = sort.exists(_.direction == SortDirection.Descending)))
+
+  test("a provider that sorts at the source is asked for its sorted view instead of being materialised"):
+    val rows  = Sortable()
+    val state = DataTableState()
+    state.sort = Some(ColumnSort(0, SortDirection.Descending))
+    val table = DataTable(columns, rows, widths)
+    val first = rendered(table, state, 40, height)
+    assert(trimmedLines(first).take(2) == Seq("id ▼     name", "999999   row 999999"))
+    assert(rows.touched == 0, s"the unsorted provider was read ${rows.touched} times")
+    assert(rows.views == List((Some(ColumnSort(0, SortDirection.Descending)), "")))
+    val _     = rendered(table, state, 40, height)
+    assert(rows.views.size == 1, "the source's view is memoised like the table's own")
+
+  test("a provider that declines a view is filtered by the table, as before"):
+    val rows  = Sortable()
+    val state = DataTableState()
+    state.setFilter("row 4242")
+    val view  = DataTable(columns, rows, widths).visibleRows(state)
+    // "row 4242" is in the name of every id that starts with 4242
+    assert(view.map(_.key) == Seq(4242) ++ (42420 to 42429) ++ (424200 to 424299))
+    assert(rows.views == List((None, "row 4242")))

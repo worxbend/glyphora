@@ -408,17 +408,23 @@ final case class TemplateInputElement(
   * Search: `Ctrl+F` opens the `/query` prompt (so does `/` in a [[readOnly]] area); typing searches incrementally,
   * `Enter` keeps the match and closes the prompt, `Esc` cancels back to where the search started. Afterwards `F3` /
   * `Shift+F3` (and `n` / `N` when read-only) step to the next and previous match.
+  *
+  * [[searchable]] hands the search to a caller-owned [[w.SearchState]] instead, the path `log`, `scrollView` and
+  * `markdown` take: a `searchBar` over the same state types the query, the matches are highlighted in the theme's
+  * search styles, and every move of the search puts the caret on the current match. `F3` / `Shift+F3` (and `n` / `N`
+  * when read-only) then step that shared search, and `Ctrl+F` / `/` are left to bubble to the app, which owns the bar.
   */
 final case class TextAreaElement(
     state: w.TextAreaState,
     options: w.TextAreaOptions = w.TextAreaOptions(),
     editable: Boolean = true,
     props: ElementProps = ElementProps(focusable = true),
+    search: Option[w.SearchState] = None,
 ) extends Element:
   type Self = TextAreaElement
 
   /** The caller-owned state this node paints, watched for writes made between frames. */
-  override private[dsl] def watchedStates: Seq[Versioned]        = Seq(state)
+  override private[dsl] def watchedStates: Seq[Versioned]        = Seq(state) ++ search.toSeq
   override def debugName: String                                 = "textArea"
   private[dsl] override def editsText: Boolean                   = true
   private[dsl] override def componentRole: Option[ComponentRole] = Some(InputRole)
@@ -439,6 +445,11 @@ final case class TextAreaElement(
   /** A viewer: motion, selection, copy and search work, edits do not — and `/`, `n`, `N` search like `less`. */
   def readOnly: TextAreaElement = copy(editable = false)
 
+  /** Searches this area through `state` — the shared [[w.SearchState]] path; see the class notes. Pair it with a
+    * [[searchBar]] over the same state (or over the state a [[w.SearchState.view]] came from).
+    */
+  def searchable(state: w.SearchState): TextAreaElement = copy(search = Some(state))
+
   private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler] = Some { text =>
     if props.focused && editable then
       state.insert(text.replace("\r", ""))
@@ -453,11 +464,33 @@ final case class TextAreaElement(
         options = options,
       )
     (area, buffer) =>
-      editor.render(area, buffer, state)
+      search match
+        case Some(found) =>
+          val styles = SearchStyles.of(props.focusState.theme)
+          editor.render(area, buffer, state, found, styles.matched, styles.current)
+        case None        => editor.render(area, buffer, state)
       reportCaret(props, editor.caretAt(area, state))
   private[dsl] def withProps(props: ElementProps): TextAreaElement           = copy(props = props)
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
-    Some(event => if state.search.isDefined then searchPromptKey(event) else searchKey(event) || editKey(event))
+    Some(event =>
+      search match
+        case Some(found)                    => sharedSearchKey(found, event) || editKey(event)
+        case None if state.search.isDefined => searchPromptKey(event)
+        case None                           => searchKey(event) || editKey(event)
+    )
+
+  /** The step keys of a [[searchable]] area: they move the shared search, whose next frame moves the caret. */
+  private def sharedSearchKey(found: w.SearchState, event: KeyEvent): Boolean =
+    val mods                               = event.modifiers
+    def stepped(forward: Boolean): Boolean =
+      val _ = if forward then found.next() else found.previous()
+      true
+    found.isActive && (event.code match
+      case KeyCode.F(3) if mods.hasAny(KeyModifiers.Shift)        => stepped(forward = false)
+      case KeyCode.F(3)                                           => stepped(forward = true)
+      case KeyCode.Char('n') if !editable && mods.isEmpty         => stepped(forward = true)
+      case KeyCode.Char('N') if !editable && isPlainTyping(event) => stepped(forward = false)
+      case _                                                      => false)
 
   private def searchPromptKey(event: KeyEvent): Boolean =
     val query = state.search.getOrElse("")

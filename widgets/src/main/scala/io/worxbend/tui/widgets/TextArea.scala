@@ -112,6 +112,37 @@ final class TextAreaState(initial: String = "", killRing: KillRing = KillRing())
 
   def newline(): Unit = insert("\n")
 
+  // --- multi-line lexing ----------------------------------------------------------------------------------------
+
+  // The state each line ends in under `lexedWith`, with the very cluster vector the line had when it was lexed. A line
+  // an edit did not touch keeps its vector, so after an edit the prefix of unchanged lines keeps its states and only the
+  // lines from the first changed one down are lexed again — and only as far as a drawn row needs.
+  private var lexedWith: Option[Lexer]            = None
+  private var lexedSource: Vector[Vector[String]] = Vector.empty
+  private val lexedLines                          = scala.collection.mutable.ArrayBuffer.empty[Vector[String]]
+  private val lexedEnds                           = scala.collection.mutable.ArrayBuffer.empty[LexState]
+
+  /** The [[LexState]] line `line` starts in under `lexer` — the state the line above it ended in. */
+  private[widgets] def lexStateBefore(line: Int, lexer: Lexer, syntax: SyntaxTheme): LexState =
+    val lines  = clusterLines
+    if !lexedWith.exists(_ eq lexer) then
+      lexedWith = Some(lexer)
+      lexedLines.clear()
+      lexedEnds.clear()
+    else if !(lexedSource eq lines) then
+      var valid = 0
+      while valid < lexedLines.size && valid < lines.size && (lexedLines(valid) eq lines(valid)) do valid += 1
+      lexedLines.dropRightInPlace(lexedLines.size - valid)
+      lexedEnds.dropRightInPlace(lexedEnds.size - valid)
+    lexedSource = lines
+    val target = math.min(line, lines.size)
+    while lexedEnds.size < target do
+      val index = lexedEnds.size
+      val start = if index == 0 then LexState.Initial else lexedEnds(index - 1)
+      lexedEnds += lexer.highlightLine(lines(index).mkString, syntax, start)._2
+      lexedLines += lines(index)
+    if target == 0 then LexState.Initial else lexedEnds(target - 1)
+
   // --- incremental search ----------------------------------------------------------------------------------------
 
   private var searchOrigin: Option[TextPosition]                  = None
@@ -166,6 +197,13 @@ final class TextAreaState(initial: String = "", killRing: KillRing = KillRing())
   def previousMatch(): Boolean =
     val found = matches
     found.findLast(_.start < caret).orElse(found.lastOption).map(hit => moveTo(hit.start)).isDefined
+
+  /** Makes `query` the query [[matches]] answers for, without opening the prompt and without moving `version` — what a
+    * [[TextArea]] rendered with a [[SearchState]] does each frame, so a search bar elsewhere drives this area's search.
+    * An open `/` prompt keeps its own query.
+    */
+  private[widgets] def followQuery(query: String): Unit =
+    if openQuery.isEmpty then lastQuery = query
 
   /** Every match of the last query, in document order — what [[TextArea]] underlines. Recomputed only when the text or
     * the query changed since the last call.
@@ -251,17 +289,63 @@ final case class TextArea(
     options: TextAreaOptions = TextAreaOptions(),
 ) extends StatefulWidget[TextAreaState]:
 
-  def render(area: Rect, buffer: Buffer, state: TextAreaState): Unit =
+  def render(area: Rect, buffer: Buffer, state: TextAreaState): Unit = draw(area, buffer, state, None)
+
+  /** Draws the area searched for `search`'s query — the [[SearchState]] path [[Log]] and [[ScrollView]] take, so a
+    * `searchBar` elsewhere drives this editor's search. The area's matches are recorded on `search` in content
+    * coordinates (line, display column), painted in `matchStyle` and the current one in `currentMatchStyle`, and each
+    * move of the search — a new query, `next`, `previous` — puts the caret on the current match, which scrolls it into
+    * view. The editor's own `/` prompt, while open, keeps its own query. Render thread only.
+    */
+  def render(
+      area: Rect,
+      buffer: Buffer,
+      state: TextAreaState,
+      search: SearchState,
+      matchStyle: Style = SearchHighlight.DefaultMatchStyle,
+      currentMatchStyle: Style = SearchHighlight.DefaultCurrentStyle,
+  ): Unit =
+    state.followQuery(if search.isActive then search.query else "")
+    val found                               = state.matches
+    val lines                               = state.clusterLines
+    def column(position: TextPosition): Int = ClusterRow.visibleWidth(lines(position.line), 0, position.column)
+    search.record(
+      found.map(hit => SearchMatch(hit.start.line, column(hit.start), column(hit.end) - column(hit.start))),
+      state.caret.line,
+    )
+    search.takeReveal().foreach(_ => search.current.flatMap(found.lift).foreach(hit => state.moveTo(hit.start)))
+    val current                             = search.current.flatMap(found.lift)
+    draw(area, buffer, state, Some(Highlighting(matchStyle, currentMatchStyle, current)))
+
+  /** How a searched render paints its matches: the match styles and which match is current. */
+  private final case class Highlighting(matchStyle: Style, currentStyle: Style, current: Option[TextAreaState.Match])
+
+  private def draw(area: Rect, buffer: Buffer, state: TextAreaState, searched: Option[Highlighting]): Unit =
     if !area.isEmpty then
       val layout = layoutFor(area, state)
       state.wrapWidth = Option.when(options.wrap)(layout.text.width)
       state.scrollRow = layout.scrollRow
       state.scrollColumn = layout.scrollColumn
       (layout.scrollRow until math.min(layout.rowCount, layout.scrollRow + layout.text.height)).foreach { index =>
-        renderRow(buffer, layout, layout.row(index), layout.text.y + index - layout.scrollRow, state)
+        renderRow(buffer, layout, layout.row(index), layout.text.y + index - layout.scrollRow, state, searched)
       }
       for prompt <- layout.prompt; query <- state.search do
         buffer.setString(prompt.x, prompt.y, CharWidth.substringByWidth("/" + query, prompt.width), style)
+
+  /** The rows this editor's text takes at `width` columns, gutter included: one per line without wrap, one per wrapped
+    * row with it — counting the extra row the caret claims when it sits past the end of a full row, so a host that
+    * sizes the editor by this never hides the caret. The prompt row of an open search is not counted. What a host
+    * growing an editor with its content (a chat composer) measures; the wrap spans come from the state's cache.
+    */
+  def heightAt(width: Int, state: TextAreaState): Int =
+    val lines = state.clusterLines
+    if !options.wrap then lines.size
+    else
+      val digits                     = lines.size.toString.length
+      val gutterWidth                = if options.lineNumbers && digits + 1 < width then digits + 1 else 0
+      val textWidth                  = math.max(1, width - gutterWidth)
+      val (cursorLine, cursorColumn) = state.cursor
+      wrappedRows(lines, state.wrapLayout(textWidth), textWidth, cursorLine, cursorColumn).size
 
   /** The buffer cell the caret occupies when this editor is drawn into `area` for `state` — the counterpart of
     * `TextInput.caretAt`, for a host that parks the terminal's own cursor on the insertion point. While a search is
@@ -362,7 +446,14 @@ final case class TextArea(
     * on it, so an editor does not paint its own background over whatever is behind the end of a short line — see
     * [[ClusterRow.draw]] for the wide-glyph and cursor rules.
     */
-  private def renderRow(buffer: Buffer, layout: Layout, row: VisualRow, y: Int, state: TextAreaState): Unit =
+  private def renderRow(
+      buffer: Buffer,
+      layout: Layout,
+      row: VisualRow,
+      y: Int,
+      state: TextAreaState,
+      searched: Option[Highlighting],
+  ): Unit =
     val (cursorLine, cursorColumn) = state.cursor
     val clusters                   = state.clusterLines(row.line)
     if layout.gutterWidth > 0 then
@@ -394,18 +485,28 @@ final case class TextArea(
       style = style,
       cursorStyle = cursorStyle,
       paintEndCell = false,
-      tokenStyles = options.lexer.fold(IndexedSeq.empty)(lexer => tokenStyles(clusters, lexer)),
-      highlights = highlightsOn(row.line, clusters.size, state),
+      tokenStyles = options.lexer.fold(IndexedSeq.empty)(lexer =>
+        tokenStyles(clusters, lexer, state.lexStateBefore(row.line, lexer, options.syntax))
+      ),
+      highlights = highlightsOn(row.line, clusters.size, state, searched),
       until = if row.last then clusters.size + 1 else row.end,
     )
 
   /** Search matches, then the selection over them, as cluster ranges of `line`. */
-  private def highlightsOn(line: Int, size: Int, state: TextAreaState): Seq[ClusterRow.Highlight] =
-    val found     = state.matches.iterator
+  private def highlightsOn(
+      line: Int,
+      size: Int,
+      state: TextAreaState,
+      searched: Option[Highlighting],
+  ): Seq[ClusterRow.Highlight] =
+    def styleOf(hit: TextAreaState.Match): Style = searched match
+      case Some(painting) => if painting.current.contains(hit) then painting.currentStyle else painting.matchStyle
+      case None           => options.matchStyle
+    val found                                    = state.matches.iterator
       .filter(_.start.line == line)
-      .map(hit => ClusterRow.Highlight(hit.start.column, hit.end.column, options.matchStyle))
+      .map(hit => ClusterRow.Highlight(hit.start.column, hit.end.column, styleOf(hit)))
       .toList
-    val selection = state.selection.toList.collect {
+    val selection                                = state.selection.toList.collect {
       case (from, to) if from.line <= line && to.line >= line =>
         val start = if from.line == line then from.column else 0
         val end   = if to.line == line then to.column else size
@@ -416,8 +517,9 @@ final case class TextArea(
   /** One style per cluster from `lexer`, or none when its spans do not segment back into the same clusters — a lexer
     * that rewrote the text has its styling ignored rather than painted onto the wrong cells.
     */
-  private def tokenStyles(clusters: Vector[String], lexer: Lexer): IndexedSeq[Style] =
-    val graphemes = lexer.highlightLine(clusters.mkString, options.syntax).styledGraphemes(Style.Default).toVector
+  private def tokenStyles(clusters: Vector[String], lexer: Lexer, start: LexState): IndexedSeq[Style] =
+    val graphemes =
+      lexer.highlightLine(clusters.mkString, options.syntax, start)._1.styledGraphemes(Style.Default).toVector
     if graphemes.map(_.cluster) == clusters then graphemes.map(_.style) else IndexedSeq.empty
 
   /** Scrolls all lines left just enough that the cursor's column, measured on the cursor's own line, stays visible. The

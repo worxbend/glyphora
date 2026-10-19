@@ -16,8 +16,11 @@ import scala.quoted.{Expr, Quotes, Varargs}
   *     background, so `[red on blue]` is red text on blue. `fg=<colour>` and `bg=<colour>` are the explicit forms;
   *   - `link=<url>`, an OSC 8 hyperlink, carried on [[Style.link]].
   *
-  * `[/]` closes the innermost open tag. `[[` is a literal `[`; a `]` outside a tag is already literal and needs no
-  * escaping. The usual string escapes work, and a `\n` in the literal starts a new row of the resulting [[Text]].
+  * `[/]` closes the innermost open tag. A named close — `[/bold]`, `[/bold red]`, `[/link]` for a `[link=…]` — closes
+  * it too, and is checked: it must name the innermost open tag (its words as written, ignoring case and spacing, or the
+  * key of a single `key=value` word), so `[bold][red]x[/bold]` is a compile error rather than a silent mis-nesting.
+  * `[[` is a literal `[`; a `]` outside a tag is already literal and needs no escaping. The usual string escapes work,
+  * and a `\n` in the literal starts a new row of the resulting [[Text]].
   *
   * An interpolated `$value` is '''text, never markup''': whatever it contains — `[red]` included — is rendered as the
   * characters it is, in the style in force where it appears. That is what makes it safe to write
@@ -26,9 +29,10 @@ import scala.quoted.{Expr, Quotes, Varargs}
   * [[Color]] for a colour, and the compiler checks that too.
   *
   * Every error in the literal parts — a word that is not a style (`[bogus]`), a tag that is never closed, a `[/]` with
-  * nothing to close, a `[` with no `]` — stops the build with a message naming it, instead of being found the first
-  * time that view is drawn. What survives into the compiled code is the constructor calls for the spans, with every
-  * literal style already a constant: nothing is parsed when the program runs, and nothing is reflected over.
+  * nothing to close, a named close that names some other tag, a `[` with no `]` — stops the build with a message naming
+  * it, instead of being found the first time that view is drawn. What survives into the compiled code is the
+  * constructor calls for the spans, with every literal style already a constant: nothing is parsed when the program
+  * runs, and nothing is reflected over.
   */
 extension (inline sc: StringContext) inline def markup(inline args: Any*): Text = ${ MarkupLiteral.expand('sc, 'args) }
 
@@ -78,7 +82,7 @@ object MarkupLiteral:
   private val Vocabulary: String =
     "an attribute (bold, dim, italic, underline, blink, reverse, hidden, strike, underline=double|curly|dotted|dashed), " +
       "a colour (red, bright_cyan, #ff8800, ansi(208)) for the foreground, 'on <colour>' for the background, " +
-      "fg=<colour>, bg=<colour>, link=<url>, or [/] to close the innermost tag"
+      "fg=<colour>, bg=<colour>, link=<url>, or [/] (or [/name]) to close the innermost tag"
 
   /** Parses the literal `parts` of a template with `holeCount` interpolated values between them into rows of pieces.
     * `Left` carries the first problem found, worded for a compile error.
@@ -86,6 +90,7 @@ object MarkupLiteral:
   private def parse(parts: Seq[String], holeCount: Int): Either[String, Seq[Seq[Piece]]] =
     val lines   = ArrayBuffer(ArrayBuffer.empty[Piece])
     val stack   = ArrayBuffer.empty[List[Attribute]] // open tags, outermost first
+    val written = ArrayBuffer.empty[String]          // each open tag's words as written, in step with `stack`
     val run     = StringBuilder()
     var pending = Option.empty[String]               // a tag left open at a part boundary, awaiting its hole and `]`
 
@@ -96,21 +101,31 @@ object MarkupLiteral:
         lines.last += Piece.Literal(run.result(), steps)
         run.clear()
 
-    def openTag(body: String, trailingHole: Option[Attribute]): Either[String, Unit] =
+    def closeTag(): Unit =
+      flushRun()
+      stack.remove(stack.length - 1)
+      written.remove(written.length - 1)
+
+    def openTag(body: String, trailingHole: Option[Attribute], asWritten: String): Either[String, Unit] =
       val words = body.trim.split("\\s+").toList.filter(_.nonEmpty)
       if words == List("/") then
         if stack.isEmpty then Left("[/] closes nothing: there is no open tag before it")
+        else Right(closeTag())
+      else if words.headOption.exists(_.startsWith("/")) && trailingHole.isEmpty then
+        val name = normalizedTag(body.trim.drop(1))
+        if stack.isEmpty then Left(s"[/$name] closes nothing: there is no open tag before it")
+        else if namesTag(name, written.last) then Right(closeTag())
         else
-          flushRun()
-          stack.remove(stack.length - 1)
-          Right(())
+          Left(
+            s"[/$name] does not close the innermost open tag [${written.last}]: a named close must name the tag it " +
+              "closes, or use [/]"
+          )
       else if words.isEmpty && trailingHole.isEmpty then Left("an empty tag [] is not a style; did you mean [[?")
-      else if words.exists(_.startsWith("/")) then
-        Left(s"a closing tag is written [/], not [${words.mkString(" ")}]: it always closes the innermost open tag")
       else
         attributes(words).map { resolved =>
           flushRun()
           stack += resolved ++ trailingHole.toList
+          written += normalizedTag(asWritten)
         }
 
     def attributes(words: List[String]): Either[String, List[Attribute]] =
@@ -145,7 +160,8 @@ object MarkupLiteral:
               else
                 val close = text.indexOf(']', at + 1)
                 if close >= 0 then
-                  openTag(text.slice(at + 1, close), None) match
+                  val body = text.slice(at + 1, close)
+                  openTag(body, None, body) match
                     case Left(problem) => error = Some(problem)
                     case Right(())     => at = close + 1
                 else
@@ -167,7 +183,7 @@ object MarkupLiteral:
                         )
                       case Some(hole) =>
                         val words = body.trim.split("\\s+").toList.dropRight(1).filter(_.nonEmpty)
-                        openTag(words.mkString(" "), Some(hole(index))) match
+                        openTag(words.mkString(" "), Some(hole(index)), body) match
                           case Left(problem) => error = Some(problem)
                           case Right(())     =>
                             pending = Some(body)
@@ -193,6 +209,16 @@ object MarkupLiteral:
       case None                      =>
         flushRun()
         Right(lines.map(_.toSeq).toSeq)
+
+  /** A tag's words as the error messages and the named-close check compare them: lower case, single-spaced. */
+  private def normalizedTag(body: String): String =
+    body.trim.split("\\s+").filter(_.nonEmpty).mkString(" ").toLowerCase(java.util.Locale.ROOT)
+
+  /** Whether a named close `[/name]` names the open tag written as `open` (both normalised): the same words, or — for a
+    * tag that is a single `key=value` word, `[link=…]`, `[fg=…]` — the key alone.
+    */
+  private def namesTag(name: String, open: String): Boolean =
+    name == open || (!open.contains(' ') && open.contains('=') && open.takeWhile(_ != '=') == name)
 
   /** One word of an open tag, or the reason it is not one. */
   private def attribute(word: String): Either[String, Attribute] =

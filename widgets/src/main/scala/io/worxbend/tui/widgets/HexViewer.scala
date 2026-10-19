@@ -101,7 +101,8 @@ final case class HexViewer(
       put(textStart + 1 + index, HexViewer.printable(byte), cellStyle)
     }
     put(textStart, "|", style)
-    put(textStart + 1 + count, "|", style)
+    // a short final row keeps the ASCII column its full width, so its closing bar lines up with every other row's
+    put(textStart + 1 + perRow, "|", style)
 
   /** The column of the `index`th byte of a row's hex group: three columns a byte, plus one between the halves. */
   private def hexColumn(index: Int): Int = hexStart + index * 3 + (if index >= half then 1 else 0)

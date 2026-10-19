@@ -75,6 +75,11 @@ note in [Versioning & releases](website/docs/versioning.md).
 - `MarkdownStream` and `markdownStream(stream)` / `markdownStream(stream, scroll)` for streamed output. Inside a `scrollView`, `markdownStream(stream)` pins the view to its newest row while the view is at its end; `ScrollViewState.isAtEnd`.
 - The open `Lexer` trait with `Lexer.Yaml`, `Sql`, `Markdown`, `Diff`, `TypeScript`, `Python`, `Lexer.forName`.
 - `.searchable(state)` on `log`, `scrollView` and `markdown`, `searchBar(state)`, `SearchState`, `Searchable`.
+- `textArea(state).searchable(search)` (and `TextArea.render(…, search)`) puts an editor on the shared `SearchState` path; `SearchState.view(key)` gives each of several views its own matches under one query.
+- Multi-line lexing: `Lexer.highlightLine(line, theme, state)` with `LexState`, threaded through `highlight`, Markdown fences and `textArea` — block comments, triple-quoted strings and template literals span lines. The YAML lexer highlights flow collections, block scalars and quoted scalars that span lines.
+- `AnsiParser` expands tabs to eight-column stops and honours `\r` overwrite and erase-in-line (`ESC [ K`), so progress bars show their latest state.
+- `markup` accepts a named close (`[/bold]`, `[/link]`) that names the innermost open tag.
+- Markdown list items wrap with a hanging indent.
 
 **Widgets**
 
@@ -86,11 +91,16 @@ note in [Versioning & releases](website/docs/versioning.md).
 - `toolbar(state)(buttons*)` over `ToolbarState`: the overflow marker opens the controls that did not fit in a popup; `Toolbar.hidden(width)`.
 - `dataTable` selects the row under a click (`DataTable.rowAt`).
 - `diffView(patch, state)` with `Patch.parse`, `Patch.of` (Myers), `DiffView`, `DiffViewState` (scrolls like `ScrollViewState`, `pageUp`/`pageDown` included).
+- `diffView` expands a folded context run (Enter, a click; `DiffViewState.expandAt` / `expandFirstVisible` / `collapseAll`), scrolls line text sideways (Left/Right, Shift+wheel; `scrollLeft` / `scrollRight` / `column`) and picks each file's lexer from its extension (`DiffViewOptions.lexerFromPath`). `Patch.of(…, maxEditDistance)` caps Myers' search at `Patch.DefaultMaxEditDistance` (2 000) and marks a capped patch `approximate`.
+- `TableRows.view(sort, filter)`: a provider sorts and filters at the source. `DataTableOptions(multiLine = true)`: a `\n` in a cell adds a row to its record.
+- `TreeNode` gained an optional stable `id`; `TreeState.byId` keys nodes by it (falling back to the label).
+- `promptComposer(…).prompt("❯ ")` draws a prompt glyph; the composer grows with its soft-wrapped rows up to `maxRows` (`TextArea.heightAt(width, state)`).
 - `pixelImage(image, options)` with `RgbaImage`, `ImageLoader` and `Buffer.placeGraphic` (kitty graphics, iTerm2 inline images, half-block fallback). Pictures are encoded off the render thread (the first frame shows the fallback), and a picture a `scrollView` edge cuts is drawn cropped (`GraphicCrop`, `GraphicPayload`).
 - `multiProgress(tasks, columns)` with `ProgressTask`, `ProgressColumn`, `MultiProgress`.
 - `logConsole(ring)` over `LogRing`, `LogRecord`, `LogLevel` and `JulBridge`; `errorBoundary(fallback)(subtree)`.
 - Effects: `CellFilter` / `Effect.filtered`, `Pattern` / `Effect.patterned`, `Progress.staggered`, `Effect.hslShift`, `paint`, `glitch`, `evolve`, `reversed`, `pingPong`, `slideIn(MotionDirection)`.
 - Keyed `runEffect(key, fx)` and element-scoped `.withEffect(fx)` / `runEffect(key, fx, scope)`.
+- `Effect.hslShift` and `paint` take a trailing `target: ColorTarget` (`Foreground`, `Background`, `Both`).
 
 **Terminal, runner and output**
 
@@ -138,6 +148,9 @@ note in [Versioning & releases](website/docs/versioning.md).
 - A soft-wrapped `textArea` moves Up/Down by wrapped row and re-wraps only the lines an edit changed.
 - Every `scrollView` around a focused or `.ensureVisible` child scrolls to it, nested ones included.
 - `terminal.Sgr`, `BufferExport.ansi` and `FrameEncoder.encodeLines` write through one SGR codec (`core.SgrCodec`); their bytes are unchanged.
+- `Effect.patterned` caches each progress step's evaluation while the content is unchanged: a radial reveal over 120x40 costs about a fifth of what it did (`EffectPatternBench`).
+- `ScrollWindow.offsetForItems` reads a multi-row `ListView`'s heights in place, bounded by the viewport.
+- `log` draws each line at its own `Line.alignment`, and its search highlight follows.
 
 ### Fixed
 
@@ -150,6 +163,8 @@ note in [Versioning & releases](website/docs/versioning.md).
 - A `scrollView` that scrolls to reveal a child no longer paints its content twice on that frame, so `boundsOf` and the other recorded rects are never one frame stale.
 - A mouse selection stays on its node when nodes are added elsewhere in the tree, and moves with the content when a `scrollView` scrolls.
 - `scrollbar(…)` and `notice(…)` can be placed in a `grid` with `.at(row, col)`.
+- `hexViewer` pads the ASCII column of a short final row, so its closing bar lines up.
+- `Patch.of` over two very different large texts no longer exhausts the heap.
 
 ### Breaking
 
@@ -177,4 +192,6 @@ Each item has a before/after migration note in
 - `dialog(…)` returns `DialogElement` (was `WidgetElement`); `ConfirmDialogElement` keeps its theme style in `bodyStyle`.
 - `widget(…)` leaves no longer ignore `.fg`/`.bg`/`.style`/`withStyle`; search highlights take theme colours (Dark's current match is red, not bright red).
 - `Messages` gained trailing fields (positional construction past `searchPlaceholder` breaks).
+- `AnsiParser` / `Text.fromAnsi` expand tabs and apply `\r` as an overwrite instead of dropping both; `log` honours `Line.alignment`.
+- `DiffViewOptions` gained `lexerFromPath` (after `lexer`, on by default) and `approximateNotice`; `Patch` gained `approximate`; a focused `diffView` consumes Left/Right/Enter and a click; `DataTableOptions` gained `multiLine` after `alignments`; `TreeNode` gained `id`; `TextAreaElement` and `PromptComposerElement` gained trailing fields; the YAML lexer reads a block scalar's lines as one string.
 - `RunnerConfig.mouseCapture: Boolean` is now `mouse: MouseCaptureMode` (`MouseCaptureMode` gained `Off`); `RunnerConfig(mouseCapture = true)` becomes `RunnerConfig(mouse = MouseCaptureMode.Buttons)`. `withMouseCapture`, `withoutMouseCapture`, a derived `mouseCapture` and the positional Boolean arities still work.

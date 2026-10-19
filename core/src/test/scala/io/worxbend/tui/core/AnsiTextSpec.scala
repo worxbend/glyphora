@@ -53,7 +53,52 @@ final class AnsiTextSpec extends AnyFunSuite:
     for sample <- Seq("", "a", "a\n", "a\nb", "\n\n", "日本\n語") do assert(Text.fromAnsi(sample) == Text.raw(sample))
 
   test("CRLF splits into clean rows and other control characters are dropped"):
-    assert(Text.fromAnsi("a\r\nb\u0007c\td") == Text.raw("a\nbcd"))
+    assert(Text.fromAnsi("a\r\nb\u0007cd") == Text.raw("a\nbcd"))
+
+  test("a tab expands to the next eight-column stop"):
+    assert(Text.fromAnsi("a\tb") == Text.raw("a       b"))
+    assert(Text.fromAnsi("\tx") == Text.raw("        x"))
+    assert(Text.fromAnsi("12345678\tx") == Text.raw("12345678        x"))
+    assert(Text.fromAnsi("a\t\tb") == Text.raw("a               b"))
+
+  test("tab stops are counted in display columns, so a wide character takes two"):
+    assert(Text.fromAnsi("漢\tx") == Text.raw("漢      x"))
+    assert(Text.fromAnsi("e\u0301\tx") == Text.raw("e\u0301       x"))
+
+  test("a tab keeps its column across a style change and a chunk boundary"):
+    val parser = AnsiParser()
+    assert(parser.feed(s"$Esc[1mab") == Seq.empty)
+    assert(parser.feed(s"$Esc[0m\tc\n") == Seq(Line(Seq(Span("ab", Style.Default.bold), Span.raw("      c")))))
+
+  test("a carriage return rewrites the line from its first column, so a progress bar shows its latest state"):
+    assert(Text.fromAnsi("10%\r55%\r100%\n") == Text.raw("100%\n"))
+    assert(Text.fromAnsi("ab\rxyz") == Text.raw("xyz"))
+
+  test("a shorter rewrite leaves the tail of the longer one, as a terminal does, until an erase-line clears it"):
+    assert(Text.fromAnsi("100%\r5%") == Text.raw("5%0%"))
+    assert(Text.fromAnsi(s"100%\r$Esc[K5%") == Text.raw("5%"))
+    assert(Text.fromAnsi(s"100%\r$Esc[2K5%") == Text.raw("5%"))
+    assert(Text.fromAnsi(s"abcd\r12$Esc[0K") == Text.raw("12"))
+
+  test("an overwrite keeps the styles of what it does not cover"):
+    val line = Text.fromAnsi(s"$Esc[31mabc$Esc[0m\rX").lines.head
+    assert(line == Line(Seq(Span.raw("X"), Span("bc", Style.fg(Color.Red)))))
+
+  test("overwriting half of a wide character blanks its other half"):
+    assert(Text.fromAnsi("漢字\rab") == Text.raw("ab字"))
+    assert(Text.fromAnsi("漢字\r a") == Text.raw(" a字"))
+    assert(Text.fromAnsi("ab字\r漢") == Text.raw("漢字"))
+    assert(Text.fromAnsi("a字\r漢") == Text.raw("漢 "))
+
+  test("a tab after a carriage return moves over the line without erasing it"):
+    assert(Text.fromAnsi("0123456789\r\tX") == Text.raw("01234567X9"))
+    assert(Text.fromAnsi("ab\r\tX") == Text.raw("ab      X"))
+
+  test("a carriage return survives a chunk boundary"):
+    val parser = AnsiParser()
+    assert(parser.feed("loading 10%\r") == Seq.empty)
+    assert(parser.feed("loading 99%\r") == Seq.empty)
+    assert(parser.feed("done       \n") == Seq(Line.raw("done       ")))
 
   test("256-colour and truecolour foregrounds and backgrounds, in both their spellings"):
     def only(s: String): Style = Text.fromAnsi(s"${s}x").lines.head.spans.head.style

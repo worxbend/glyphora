@@ -24,11 +24,35 @@ final class MarkupLiteralSpec extends AnyFunSuite:
     val message = errorsOf("""import io.worxbend.tui.core.markup; markup"[bold]x"""")
     assert(message.contains("never closed"), message)
 
-  test("a [/] with nothing to close, a [ without ], an empty [] and a named closing tag are all compile errors"):
+  test("a [/] with nothing to close, a [ without ] and an empty [] are all compile errors"):
     assert(errorsOf("""import io.worxbend.tui.core.markup; markup"x[/]"""").contains("closes nothing"))
     assert(errorsOf("""import io.worxbend.tui.core.markup; markup"[bold x"""").contains("never closed with ]"))
     assert(errorsOf("""import io.worxbend.tui.core.markup; markup"[]x"""").contains("empty tag"))
-    assert(errorsOf("""import io.worxbend.tui.core.markup; markup"[bold]x[/bold]"""").contains("written [/]"))
+
+  test("a named closing tag closes the innermost tag when it names that tag"):
+    assert(markup"[bold]a[/bold]b" == Text(Seq(Line(Seq(Span("a", Style.Default.bold), Span.raw("b"))))))
+    assert(markup"[bold red]a[/bold red]".lines.head.spans == Seq(Span("a", Style.fg(Color.Red).bold)))
+    assert(markup"[Bold  Red]a[/bold red]".lines.head.spans == Seq(Span("a", Style.fg(Color.Red).bold)))
+    assert(markup"[fg=red]a[/fg]".lines.head.spans == Seq(Span("a", Style.fg(Color.Red))))
+    val url = "https://example.com"
+    assert(markup"[link=$url]a[/link]".lines.head.spans == Seq(Span("a", Style.Default.withLink(url))))
+    assert(
+      markup"[bold]a[red]b[/red]c[/bold]".lines.head.spans ==
+        Seq(
+          Span("a", Style.Default.bold),
+          Span("b", Style.Default.bold.withFg(Color.Red)),
+          Span("c", Style.Default.bold),
+        )
+    )
+
+  test("a named closing tag that does not name the innermost open tag is a compile error"):
+    val wrong   = errorsOf("""import io.worxbend.tui.core.markup; markup"[bold]x[/italic]"""")
+    assert(wrong.contains("[/italic]") && wrong.contains("[bold]"), wrong)
+    val crossed = errorsOf("""import io.worxbend.tui.core.markup; markup"[bold][red]x[/bold][/]"""")
+    assert(crossed.contains("[/bold]") && crossed.contains("[red]"), crossed)
+    val partial = errorsOf("""import io.worxbend.tui.core.markup; markup"[bold red]x[/bold]"""")
+    assert(partial.contains("[bold red]"), partial)
+    assert(errorsOf("""import io.worxbend.tui.core.markup; markup"x[/bold]"""").contains("closes nothing"))
 
   test("a valid literal does compile through the same check, so the rejections above are not vacuous"):
     assert(scala.compiletime.testing.typeChecks("""import io.worxbend.tui.core.markup; markup"[bold]x[/]""""))

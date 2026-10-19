@@ -24,11 +24,14 @@ final case class SyntaxTheme(
 /** Turns one line of source into styled [[io.worxbend.tui.core.Span]]s — the open extension point behind
   * [[SyntaxHighlighter]], a Markdown fence and `TextAreaOptions.lexer`.
   *
-  * Highlighting is line-oriented: a lexer sees one line at a time and keeps no state between lines, so block comments
-  * and strings that span lines fall back to plain text. That is the right trade-off for help screens, READMEs, Markdown
-  * fences and a small editor, and it is what lets an editor re-highlight only the rows it draws. The spans of the
-  * returned [[Line]] must concatenate back to `line` exactly — an editor maps them onto its grapheme clusters, and a
-  * lexer that drops or adds characters has its styling ignored there.
+  * Highlighting is line-oriented, with a [[LexState]] carried from the end of one line to the start of the next: the
+  * three-argument [[highlightLine]] takes the state the previous line ended in and answers the state this one ends in,
+  * so a block comment, a triple-quoted string or a YAML block scalar that spans lines is highlighted on every line it
+  * covers. [[highlight]] threads it through a whole text, and so do a Markdown fence and a `TextArea`. The two-argument
+  * form lexes one line on its own, from [[LexState.Initial]]; a lexer that keeps no state implements only that one, and
+  * the stateful form defaults to it. The spans of the returned [[Line]] must concatenate back to `line` exactly — an
+  * editor maps them onto its grapheme clusters, and a lexer that drops or adds characters has its styling ignored
+  * there.
   *
   * Implementations are immutable values and safe to share between threads; [[aliases]] are the lower-case info-string
   * names (```` ```yaml ````) a Markdown fence resolves through [[Lexer.among]].
@@ -41,12 +44,45 @@ trait Lexer:
   /** Lower-case info-string names this lexer answers to. */
   def aliases: Set[String]
 
-  /** Highlights a single line of code. */
+  /** Highlights a single line of code on its own, as if it were the first line of a document. */
   def highlightLine(line: String, theme: SyntaxTheme): Line
 
-  /** Highlights multi-line `code`, one [[Line]] per source line. */
+  /** Highlights one line that begins in `state` — what the line before it ended in — and answers the line with the
+    * state it ends in. The default keeps no state: it lexes the line alone and always answers [[LexState.Initial]].
+    */
+  def highlightLine(line: String, theme: SyntaxTheme, state: LexState): (Line, LexState) =
+    val _ = state // a stateless lexer starts every line afresh, whatever the line above ended in
+    (highlightLine(line, theme), LexState.Initial)
+
+  /** Highlights multi-line `code`, one [[Line]] per source line, carrying the [[LexState]] from line to line. */
   def highlight(code: String, theme: SyntaxTheme): Text =
-    Text(Text.splitLines(code).toIndexedSeq.map(line => highlightLine(line, theme)))
+    var state = LexState.Initial
+    Text(Text.splitLines(code).toIndexedSeq.map { line =>
+      val (highlighted, next) = highlightLine(line, theme, state)
+      state = next
+      highlighted
+    })
+
+/** Where a [[Lexer]] stands at the end of a line: inside nothing ([[LexState.Initial]]) or inside a construct that
+  * continues onto the next line. An immutable value the lexer that produced it reads back; nothing else interprets it.
+  *
+  * @param open
+  *   what the line ended inside, in the lexer's own words — the built-in lexers use the delimiter that closes it (the
+  *   end of a block comment, a triple quote, a quote) or a mode name (`yaml-block`, `yaml-flow`); empty for nothing
+  * @param indent
+  *   an indentation the construct depends on — the column a YAML block scalar's key sits at
+  * @param depth
+  *   a nesting depth — how many YAML flow collections are open
+  */
+final case class LexState(open: String = "", indent: Int = 0, depth: Int = 0):
+
+  /** Whether the line ended inside nothing. */
+  def isInitial: Boolean = open.isEmpty && depth == 0
+
+object LexState:
+
+  /** The state at the top of a document, and after any line that closes everything it opened. */
+  val Initial: LexState = LexState()
 
 object Lexer:
 
@@ -61,6 +97,8 @@ object Lexer:
       ),
       lineComment = Some("//"),
       stringDelims = Set('"'),
+      blockComment = Some(("/*", "*/")),
+      multilineStrings = Seq("\"\"\""),
     ),
   )
 
@@ -100,6 +138,7 @@ object Lexer:
       ),
       lineComment = Some("#"),
       stringDelims = Set('"', '\''),
+      multilineStrings = Seq("\"\"\"", "'''"),
     ),
   )
 
@@ -115,6 +154,8 @@ object Lexer:
       ),
       lineComment = Some("//"),
       stringDelims = Set('"', '\'', '`'),
+      blockComment = Some(("/*", "*/")),
+      multilineStrings = Seq("`"),
     ),
   )
 
@@ -132,6 +173,7 @@ object Lexer:
       lineComment = Some("--"),
       stringDelims = Set('\''),
       caseInsensitive = true,
+      blockComment = Some(("/*", "*/")),
     ),
   )
 
