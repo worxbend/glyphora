@@ -296,6 +296,7 @@ final case class DataTableElement[K](
   /** The caller-owned state this node paints, watched for writes made between frames. */
   override private[dsl] def watchedStates: Seq[Versioned]              = Seq(state)
   override def debugName: String                                       = "dataTable"
+  private[dsl] override def selectionIsFocusCue: Boolean               = true
   def widget: Widget                                                   =
     (area, buffer) => table.render(area, buffer, state)
   private[dsl] def withProps(props: ElementProps): DataTableElement[K] = copy(props = props)
@@ -351,6 +352,7 @@ final case class LogElement(
   /** The caller-owned states this node paints, watched for writes made between frames. */
   override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state) ++ search
   override def debugName: String                                             = "log"
+  private[dsl] override def selectionIsFocusCue: Boolean                     = true
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some(wheelScrolls(() => state.scrollUp(), () => state.scrollDown()))
   def widget: Widget                                                         =
@@ -475,6 +477,7 @@ final case class TreeTableElement[K](
   /** The caller-owned state this node paints, watched for writes made between frames. */
   override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
   override def debugName: String                                             = "treeTable"
+  private[dsl] override def selectionIsFocusCue: Boolean                     = true
   private def nodes                                                          = table.nodes
   def widget: Widget                                                         =
     val current = table.copy(style = props.style, highlightStyle = props.focusStyle)

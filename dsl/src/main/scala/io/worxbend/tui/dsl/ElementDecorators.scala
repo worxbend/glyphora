@@ -29,6 +29,7 @@ private[dsl] trait DecoratingElement extends Element:
   override def debugName: String                                             = inner.debugName
   override def accessibleName: String                                        = inner.accessibleName
   private[dsl] override def componentRole: Option[ComponentRole]             = inner.componentRole
+  private[dsl] override def selectionIsFocusCue: Boolean                     = inner.selectionIsFocusCue
   override def pointerShape: Option[PointerShape]                            = inner.pointerShape
   private[dsl] override def pointerShapeAt(position: Position, area: Rect): Option[PointerShape] =
     inner.pointerShapeAt(position, area)
