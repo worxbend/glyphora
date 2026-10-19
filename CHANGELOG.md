@@ -137,7 +137,8 @@ note in [Versioning & releases](website/docs/versioning.md).
 - Widget states redraw on mutation; a `requestRedraw()` after a state write is no longer needed.
 - `markdown` renders GFM tables, nested lists, task lists and more highlighted fence languages.
 - `ColorDepth.detect` honours `FORCE_COLOR`.
-- Frames make two tree walks instead of six; key routing follows the recorded focus path.
+- Frames make two tree walks instead of six; key routing follows the recorded focus path, and mouse routing each input target's recorded path.
+- A `lazyList` inside a `scrollView` shows the rows a jump scrolled to on the same frame (no blank frame); the container-query pre-pass paints only the way to the `responsive.local` nodes, so other widgets render once per frame.
 - `ListView` costs the viewport, not the list; `DataTable` no longer scans for its selected key every frame.
 - A mouse-capturing `TuiApp` turns on all-motion tracking when a frame draws a hover or pressed cue or `.pointer`; hovered and pressed marks follow a keyed control across a reshaped tree.
 - Searched views cache their matches by content and query: a searched `scrollView` paints its whole content once per query instead of every frame, and a searched `log` re-matches only when its lines change.

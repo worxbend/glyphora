@@ -172,14 +172,16 @@ it paints:
    can be told it is the focused one, so the focus cue, the input wrappers and the bounds
    recorder are stamped on in a second walk. It also records the path to the focused
    element, so a key, a key release and a paste go straight down that path instead of
-   searching the tree for it.
+   searching the tree for it — and the path to every input target, which a click, the
+   wheel and the pointer shape follow to the target the hit resolved.
 
 Until 0.20.0 those were six walks — resolve, tab order, autofocus, focus scopes,
 decoration, watched states — and every key event searched the tree once more.
 `FramePassSpec` holds the fused walk to exactly the answers the separate walks give.
 
 A tree with a `responsive.local` container query in it pays for one more paint into a
-scratch buffer, the layout pre-pass that finds each query's area (see
+scratch buffer — of the containers above each query only, every other subtree laid out but
+not painted — the layout pre-pass that finds each query's area (see
 [Responsive layouts](./responsive#branch-on-the-nodes-own-area)); a tree without one pays
 nothing for the feature.
 

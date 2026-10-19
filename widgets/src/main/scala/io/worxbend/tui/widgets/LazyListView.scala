@@ -80,6 +80,11 @@ final class LazyListState private (initialSelected: Option[Int], initialOffset: 
   /** Whether the last render had to leave an item blank because it was not built — the builder's cue to build again. */
   private[tui] def missedItems: Boolean = missed
 
+  /** Records that the last render had to stand in for items the build window lacked — a caller that built them on the
+    * spot — so the host still schedules the frame that builds them properly. Not a mutation; [[version]] is unchanged.
+    */
+  private[tui] def noteMissed(): Unit = missed = true
+
   /** The offset clamped to the last page of `count` items and moved just far enough to show the selection. */
   private def settled(count: Int, page: Int): Int =
     val maxOffset = math.max(0, count - page)

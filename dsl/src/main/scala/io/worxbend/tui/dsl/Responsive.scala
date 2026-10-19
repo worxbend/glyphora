@@ -141,16 +141,20 @@ private[dsl] object ResponsivePass:
     * scratch buffer the caller owns) under [[LocalProbe.measure]], each unresolved local node records the area it was
     * handed, and a further round builds those nodes' branches for the areas recorded. A branch can hold local nodes of
     * its own, so this repeats — at most [[LocalRounds]] times, bounding a pathological nesting the way [[NestingLimit]]
-    * bounds a self-returning builder. A local node the dry paint never reached (scrolled out of a scroll view's window,
-    * on a hidden tab) stays unresolved and falls back to building at render time. A tree with no local node costs
-    * nothing extra: no dry paint, no second round. The analysis is the last round's, so it describes the tree returned.
+    * bounds a self-returning builder. The dry paint paints only the way down to the unresolved local nodes: every
+    * subtree without one is stubbed out by [[DryStub.around]] — laid out as itself, painted as nothing — so a widget
+    * whose render adjusts caller-owned state (a scroll offset, a cached layout) runs once per frame, not twice, unless
+    * it is an ancestor of a local node. A local node the dry paint never reached (scrolled out of a scroll view's
+    * window, on a hidden tab) stays unresolved and falls back to building at render time. A tree with no local node
+    * costs nothing extra: no dry paint, no second round. The analysis is the last round's, so it describes the tree
+    * returned.
     */
   def resolveFrame(element: Element, size: Size, dryPaint: Element => Unit): ResolvedFrame =
     var round = Round(first = true)
     var tree  = resolveAt(element, size, NestingLimit, round, Some(FocusScope.Unscoped))
     var count = 0
     while round.pending > 0 && count < LocalRounds do
-      val areas = LocalProbe.measure(dryPaint(tree))
+      val areas = LocalProbe.measure(dryPaint(DryStub.around(tree)))
       round = Round(first = false, areas = areas, next = round.next)
       tree = resolveAt(tree, size, NestingLimit, round, Some(FocusScope.Unscoped))
       count += 1
@@ -259,3 +263,27 @@ private[dsl] object LocalProbe:
     try paint
     finally context.localSizes = previous
     areas.toMap
+
+/** A subtree the container-query pre-pass has no reason to paint: [[DryStub.around]] puts one in place of every subtree
+  * holding no unresolved local query, so the dry paint lays the stub out exactly as the subtree (constraint, claim and
+  * measurement all forward to it) and paints nothing — and no widget in it runs its render, or touches caller-owned
+  * state, a second time in the frame. Built and thrown away within one dry paint, on the render thread.
+  */
+private[dsl] final case class DryStubElement(inner: Element) extends DecoratingElement:
+  type Self = DryStubElement
+  override def children: Seq[Element]                             = Seq.empty
+  def widget: io.worxbend.tui.core.Widget                         = (_, _) => ()
+  private[dsl] def withProps(props: ElementProps): DryStubElement = copy(inner = inner.withProps(props))
+
+private[dsl] object DryStub:
+
+  /** `tree` with every subtree that holds no unresolved local query replaced by a [[DryStubElement]]; one walk. */
+  def around(tree: Element): Element = visit(tree)._1
+
+  /** The node as the dry paint should see it, and whether it is, or holds, a local query still to be measured. */
+  private def visit(node: Element): (Element, Boolean) =
+    node match
+      case responsive: ResponsiveElement if responsive.local && responsive.resolved.isEmpty => (node, true)
+      case _                                                                                =>
+        val visited = node.children.map(visit)
+        if visited.exists(_._2) then (node.withChildren(visited.map(_._1)), true) else (DryStubElement(node), false)

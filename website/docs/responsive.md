@@ -137,7 +137,10 @@ The area is found by a layout pre-pass: the frame is laid out once with the
 query unresolved, the node records the rectangle it was given, and the branch is
 built for it — still before the focus pass, so the branch's focusables take Tab
 stops on the very first frame, exactly as with `responsive`. A query nested
-inside another query's branch takes one more pass. A frame with no
+inside another query's branch takes one more pass. The pre-pass paints only the
+containers on the way down to each query; every other subtree is laid out but not
+painted, so a widget whose render adjusts its own state (a scroll offset clamped to
+its content, say) renders once per frame, not twice. A frame with no
 `responsive.local` in it pays nothing for the feature.
 
 Because the area must be known before the branch is chosen, the node's size can

@@ -52,6 +52,11 @@ final class ElementHost:
   private var session                   = ViewSession(key => boundsOf(key))
   private var lastTree: Option[Element] = None
 
+  /** Each input target's child positions in [[lastTree]], innermost first, recorded while it was decorated — what mouse
+    * routing follows to the target a hit resolved.
+    */
+  private val targetPaths = scala.collection.mutable.HashMap.empty[InputTarget, List[Int]]
+
   /** The child positions leading to the focused element in [[lastTree]], recorded while it was decorated. */
   private var lastFocusPath: Option[Vector[Int]] = None
 
@@ -219,6 +224,7 @@ final class ElementHost:
     val analysis = frame.analysis
     tracker.reconcile(analysis.focusKeys, analysis.autofocus, analysis.scopes)
     recordFocusChange()
+    targetPaths.clear()
     val recorder = Option.when(recordBounds)(bounds)
     motionDemanded = false
     cuesDemanded = false
@@ -237,6 +243,7 @@ final class ElementHost:
       onFocusPath = path => lastFocusPath = path,
       gestures = Some(gestures),
       fullBounds = recordAllBounds,
+      onTargetPath = (target, trail) => targetPaths(target) = trail,
     )
     lastTree = Some(tree)
     // always opened and closed: with full recording off, the nodes that carry a pointer role still record into it
@@ -391,7 +398,9 @@ final class ElementHost:
           if event.kind == MouseEventKind.Down then
             tracker.bounds
               .passThroughAt(event.position)
-              .foldLeft(false)((any, hit) => lastTree.exists(EventRouter.dispatchMouse(_, event, Some(hit))) || any)
+              .foldLeft(false)((any, hit) =>
+                lastTree.exists(EventRouter.dispatchMouse(_, event, Some(hit), targetPaths.get)) || any
+              )
           else false
         val target     = pointer.route(event, under)
         val focusMoved =
@@ -403,7 +412,7 @@ final class ElementHost:
               case _                                            => false
           else false
 
-        val consumed = lastTree.exists(EventRouter.dispatchMouse(_, event, target))
+        val consumed = lastTree.exists(EventRouter.dispatchMouse(_, event, target, targetPaths.get))
         pointer.delivered(event, target, consumed)
         val restyled = trackPointerStates(event, under) && cuesDemanded
         val gestured = lastTree.isDefined && gestures.afterDelivery(event, consumed)
@@ -418,7 +427,7 @@ final class ElementHost:
     event.kind == MouseEventKind.Drag && gestures.selection.edgeScroll(event.position).exists { (edge, down) =>
       val kind  = if down then MouseEventKind.ScrollDown else MouseEventKind.ScrollUp
       val wheel = MouseEvent(edge, kind, KeyModifiers.None)
-      lastTree.exists(EventRouter.dispatchMouse(_, wheel, tracker.mouseHit(edge)))
+      lastTree.exists(EventRouter.dispatchMouse(_, wheel, tracker.mouseHit(edge), targetPaths.get))
     }
 
   /** Updates the hovered and pressed targets the next focus pass stamps, `true` when either changed. Hover follows the
@@ -443,7 +452,9 @@ final class ElementHost:
     * its own loop hands the answer to `Backend.setPointerShape` when it changes; `TuiApp` does so on every mouse event.
     */
   def pointerShapeAt(position: Position): PointerShape =
-    lastTree.fold(PointerShape.Default)(EventRouter.pointerShapeAt(_, position, tracker.mouseHit(position)))
+    lastTree.fold(PointerShape.Default)(
+      EventRouter.pointerShapeAt(_, position, tracker.mouseHit(position), targetPaths.get)
+    )
 
   /** Offers a key release to the focused element and its ancestors — see [[EventRouter.dispatchKeyRelease]]. */
   def dispatchKeyRelease(key: KeyEvent): Boolean =

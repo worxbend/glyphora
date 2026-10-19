@@ -443,6 +443,8 @@ private[dsl] object FocusPass:
     *
     * `onFocusPath` is handed the child positions, root first, that lead to the focused element in the returned tree
     * (`None` when nothing is focused) — the path key routing would otherwise search the whole tree for on every event.
+    * `onTargetPath` is handed the same for every input target, innermost first (the trail as kept, not reversed, so a
+    * frame allocates nothing for it): what mouse routing follows instead of searching for the target hit.
     *
     * `gestures` is the host's [[PointerGestures]]. A node the gestures have a role for — selectable text — is wrapped
     * in a [[BoundsElement]] carrying its [[PointerRoles]] even when `bounds` is `None`, recording into the same
@@ -461,6 +463,7 @@ private[dsl] object FocusPass:
       onFocusPath: Option[Vector[Int]] => Unit = _ => (),
       gestures: Option[PointerGestures] = None,
       fullBounds: Boolean = true,
+      onTargetPath: (InputTarget, List[Int]) => Unit = (_, _) => (),
   ): Element =
     var counter        = 0
     var pointerCounter = 0
@@ -547,6 +550,7 @@ private[dsl] object FocusPass:
           if index == tracker.focusedIndex then
             focusedTrail = Some(trail.reverse.toVector)
             revealing.foreach(_.focus(RevealProbe.focusId(index)))
+          onTargetPath(InputTarget.Focus(index), trail)
           TrackedElement(
             themed(element, focused = index == tracker.focusedIndex, disabled, target, states, inherited),
             index,
@@ -560,6 +564,7 @@ private[dsl] object FocusPass:
         then
           val id = pointerCounter
           pointerCounter += 1
+          onTargetPath(InputTarget.Pointer(id), trail)
           PointerElement(
             themed(element, focused = false, disabled, Some(InputTarget.Pointer(id)), states, inherited),
             id,
