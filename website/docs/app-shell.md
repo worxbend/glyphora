@@ -510,7 +510,7 @@ dialog on top of it. `dismissibleOverlay(content)(onOutsidePress)` is the same b
 a plain element builder, for a dialog an application layers itself rather than pushing as
 a screen; its presence in the tree is what switches bounds recording on, so the very first
 frame of a hand-layered overlay on a real terminal still judges by "on no control" until
-the next frame is painted. See [Mouse](mouse.md#a-click-outside-a-dialog) for the delivery
+the next frame is painted. See [Mouse](./mouse#a-click-outside-a-dialog) for the delivery
 rules this rests on.
 
 ### Keys that belong to one screen
@@ -1214,7 +1214,7 @@ object Board extends TuiApp:
 direction", after the tree and the bindings have had their chance at the key.
 `withMouseMotion` asks the terminal for every pointer movement; with plain
 `withMouseCapture` the app switches to it by itself the first time a frame draws a
-`.hoverStyle`. Both are covered on [Mouse & focus](mouse.md#move-focus-by-direction).
+`.hoverStyle`. Both are covered on [Mouse & focus](./mouse#move-focus-by-direction).
 
 ## Lifecycle hooks
 

@@ -377,7 +377,7 @@ closes on a press that lands outside the dialog. Two rules decide what "outside"
 So the border of a dialog is part of the dialog, which it was not before 0.20.0, when a
 border carried no control and so counted as outside. The bounds the second rule reads are
 the same per-node record that `boundsOf(key)` and the element-tree snapshot use (see
-[Testing](testing.md#find-elements-by-key)); an app on a real terminal starts recording
+[Testing](./testing#find-elements-by-key)); an app on a real terminal starts recording
 them on the frame that first shows a click-outside modal and keeps recording for the rest
 of the run, while a headless run records from its first frame.
 
