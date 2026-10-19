@@ -185,8 +185,10 @@ object Prompt:
     * `Ctrl-C`; a throwable out of `work` is rethrown after the summary (`✗ Downloading <message>`) is drawn.
     *
     * In a terminal the work runs on a thread of its own, so it may block; standard output written while it runs is
-    * captured into the log rather than drawn over the strip. Cancelling interrupts that thread and does not wait for
-    * it. In the plain and scripted shapes the work runs on the calling thread and each log line is printed as it comes.
+    * captured into the log rather than drawn over the strip. Cancelling interrupts that thread, then joins it for at
+    * most two seconds before answering `None`, so work that honours the interrupt has wound down by then; work that
+    * ignores it keeps running on its daemon thread. In the plain and scripted shapes the work runs on the calling
+    * thread and each log line is printed as it comes.
     */
   def task[A](label: String)(work: TaskLog => A)(using session: PromptSession): Option[A] =
     PromptTask.run[A](

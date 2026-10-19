@@ -101,8 +101,11 @@ lines it logs scrolling underneath. When the work ends the strip collapses to on
 rethrown after the line is drawn. Anything the work prints to standard output lands in
 the log rather than over the strip.
 
-`Ctrl-C` answers `None` straight away. The work's thread is interrupted, not waited
-for, so blocking work should respond to interruption.
+`Ctrl-C` draws the `✗ label (cancelled)` line at once, interrupts the work's thread and
+then waits for it to finish — at most two seconds (`CancelJoinBound`) — before answering
+`None`. Work that honours the interrupt (a `sleep`, a blocking read, an awaited future)
+has therefore cleaned up by the time the caller continues; work that ignores it is left
+running on its daemon thread after the two seconds, and ends with the process.
 
 `Prompt.loader` is the same with a progress row instead of the log: it runs `f` over
 every item and draws the bar, the percentage and the ETA as it goes.
