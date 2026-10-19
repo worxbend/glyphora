@@ -291,6 +291,13 @@ table, `palette.Xterm256`; supply your own to render a screenshot in a specific 
 theme), the `foreground`/`background` a cell with no colour of its own is painted in, and
 a `title`. Every field defaults, so `ExportOptions()` is a sensible dark screenshot.
 
+The ANSI forms go through the same SGR codec and colour policy the terminal writes with.
+`ExportOptions(ansiColors = ColorDepth.Ansi256.ansiColors)` exports a frame with exactly
+the colour codes a 256-colour terminal would be sent, and `BufferExport.ansiLines(buffer,
+colors)` is the print-mode text (`Console.print` and a no-TTY run write it): trailing blanks
+dropped, styles written as changes from the default, nothing at all for colour under
+`ColorDepth.NoColor.ansiColors`.
+
 Render the real widget in a test and write the SVG into `docs/assets/`, and a
 documentation screenshot can never drift from the code it shows — see
 [Contributing](./contributing#improve-the-documentation).

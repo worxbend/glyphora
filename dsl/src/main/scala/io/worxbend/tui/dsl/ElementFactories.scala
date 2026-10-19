@@ -475,7 +475,7 @@ private[dsl] trait ElementFactories:
     *
     * Vertical by default: the bar is drawn down the *right* edge of the area it is given, so give it a one-column slice
     * beside the content rather than laying it over the content. `.horizontal` runs it along the bottom edge instead,
-    * and `.at(offset)` moves the thumb.
+    * and `.thumbAt(offset)` moves the thumb.
     *
     * A [[scrollView]] draws its own scrollbar and needs none of this. Reach for this factory when the application owns
     * the scroll offset itself — a hand-scrolled list, a tailing log, a table with more rows than fit. The track takes

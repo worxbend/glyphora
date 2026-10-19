@@ -26,6 +26,7 @@ private[dsl] final case class NodeBoundsEntry(
     layout: Rect,
     visible: Rect,
     roles: PointerRoles = PointerRoles.Empty,
+    anchor: Option[String] = None,
 )
 
 /** One frame's worth of recorded node bounds, immutable once published.
@@ -113,9 +114,10 @@ private[dsl] final class NodeBounds:
       layoutOnly: Boolean,
       area: Rect,
       roles: PointerRoles = PointerRoles.Empty,
+      anchor: Option[String] = None,
   ): Unit =
     placed(area).foreach { (layout, visible) =>
-      recording += NodeBoundsEntry(id, lastDescendantId, key, layoutOnly, layout, visible, roles)
+      recording += NodeBoundsEntry(id, lastDescendantId, key, layoutOnly, layout, visible, roles, anchor)
     }
 
   /** Closes the frame and makes it the one readers see. */
@@ -173,6 +175,9 @@ private[dsl] final class NodeBounds:
   * allocations. A node with [[PointerRoles]] is wrapped even while full recording is off, with `gestures` set: after
   * the node paints, the gestures draw their overlay on it — the selection highlight, a drop target's hover cue, a
   * dragged node's ghost — which is how they are composed into the frame without any widget knowing about them.
+  *
+  * `anchor` is the identity a mouse selection holds on to across frames — the node's key, or its path of child
+  * positions from the root — set only on a selectable node; see [[TextSelection]].
   */
 private[dsl] final case class BoundsElement(
     inner: Element,
@@ -181,6 +186,7 @@ private[dsl] final case class BoundsElement(
     recorder: NodeBounds,
     roles: PointerRoles = PointerRoles.Empty,
     gestures: Option[PointerGestures] = None,
+    anchor: Option[String] = None,
 ) extends DecoratingElement:
   type Self = BoundsElement
 
@@ -189,9 +195,9 @@ private[dsl] final case class BoundsElement(
 
   def widget: Widget =
     (area, buffer) =>
-      recorder.record(id, lastDescendantId, inner.props.focusKey, inner.layoutOnly, area, roles)
+      recorder.record(id, lastDescendantId, inner.props.focusKey, inner.layoutOnly, area, roles, anchor)
       inner.widget.render(area, buffer)
-      if !roles.isEmpty then gestures.foreach(_.painted(id, roles, inner, area, buffer))
+      if !roles.isEmpty then gestures.foreach(_.painted(id, roles, inner, area, buffer, anchor))
 
   /** A [[BoundsAwareElement]] underneath gets the behaviour that reads where its subtree was painted; every other
     * node's built-in passes through untouched. The frame is looked up when the event arrives, so the behaviour sees the

@@ -25,6 +25,9 @@ output has the same shape and two runs diff cleanly in a terminal.
 ./mill widgets.test.runMain io.worxbend.tui.widgets.RenderLoopBench
 ./mill terminal.test.runMain io.worxbend.tui.terminal.FramePipelineBench
 ./mill dsl.test.runMain io.worxbend.tui.dsl.ElementHostBench
+./mill widgets.test.runMain io.worxbend.tui.widgets.SearchBench
+./mill widgets.test.runMain io.worxbend.tui.widgets.TextAreaWrapBench
+./mill dsl.test.runMain io.worxbend.tui.dsl.RevealBench
 ```
 
 None prints anything but a table. None asserts anything, and none is run by any
@@ -89,6 +92,44 @@ is the same two thousand rows as a `lazyList`. The pair is the cost of element-l
 virtualisation in one line: on a loaded machine the wide tree took about 5–6 ms a frame
 and the lazy one about 0.07 ms, because a `lazyList` builds, decorates and paints only the
 rows on screen.
+
+### Searching, soft wrap and reveals
+
+Three more benchmarks time frames that used to cost the whole document rather than the
+viewport:
+
+- `SearchBench` — one frame of a searched `ScrollView` over 5 000 rows and of a searched
+  `Log` of 10 000 lines, query set, the reader scrolling. *cached* is the steady state;
+  *uncached* defeats the match cache (a new content identity, or an appended line, every
+  frame) and so costs what every searched frame cost before the cache.
+- `TextAreaWrapBench` — one typing frame of a soft-wrapped `TextArea` over 2 000 lines;
+  *uncached* changes the width every frame, which re-wraps every line.
+- `RevealBench` — a `scrollView` over 200 buttons with focus moving every frame, so every
+  frame scrolls to reveal the focused button.
+
+Three runs each, before (the 0.20.0 integration branch at `565ed897`) and after these
+changes, interleaved on the same shared 16-core x86-64 machine (2 GB heap, SerialGC); the
+machine was not idle, so read the ranges, not single figures:
+
+| Frame | Before | After |
+|---|---|---|
+| searched `scrollView`, 5 000 rows | 15.2–19.1 ms | 0.31–0.47 ms |
+| searched `log`, 10 000 lines | 12.4–15.0 ms | 0.05–0.10 ms |
+| …either, cache defeated | 11.0–19.0 ms | 11.4–20.2 ms |
+| soft-wrapped `textArea`, typing, 2 000 lines | 1.46–2.05 ms | 0.43–0.88 ms |
+| …width changing every frame | 1.44–1.87 ms | 1.02–1.58 ms |
+| `scrollView` revealing every frame, recording off | 176–209 µs | 116–173 µs |
+| …recording on | 170–283 µs | 123–143 µs |
+
+The searched views now pay for the whole document once per query and content, then for
+the viewport; the soft-wrapped editor re-wraps only the line being typed in; a revealing
+frame paints its content once instead of twice. A frame that defeats the cache costs what
+it did. The shared SGR codec behind the terminal, print mode and the exports leaves
+`FramePipelineBench`'s encode rows within run-to-run noise (200x50 full frame, truecolor:
+379–454 µs before, 299–422 µs after), and `ElementHostBench` is unchanged within noise
+(dashboard 80x24, recording off: 132–166 µs before, 112–123 µs after; wide tree:
+6.1–8.7 ms before, 5.3–6.1 ms after) even though every focusable inside a `scrollView`
+now reports where it painted, which the next frame's reveal looks up.
 
 ### What a frame walks
 

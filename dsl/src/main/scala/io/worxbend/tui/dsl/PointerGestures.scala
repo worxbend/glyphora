@@ -38,8 +38,15 @@ private[dsl] final class PointerGestures(val recorder: NodeBounds):
   val drag: DragGesture = DragGesture()
 
   /** The overlay for node `id`, just painted as `node` into `area`. */
-  def painted(id: Int, roles: PointerRoles, node: Element, area: Rect, buffer: Buffer): Unit =
-    if roles.selectable then selection.painted(id, area, buffer, node.props.focusStyle)
+  def painted(
+      id: Int,
+      roles: PointerRoles,
+      node: Element,
+      area: Rect,
+      buffer: Buffer,
+      anchor: Option[String] = None,
+  ): Unit =
+    if roles.selectable then selection.painted(TextSelection.anchorOf(id, anchor), area, buffer, node.props.focusStyle)
     if roles.drag.isDefined || roles.drop.isDefined then drag.painted(id, node, area, buffer)
 
   /** Called once the frame is painted. */

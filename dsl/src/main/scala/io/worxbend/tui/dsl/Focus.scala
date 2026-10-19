@@ -439,6 +439,9 @@ private[dsl] object FocusPass:
     // focused node — the path key routing follows instead of searching the tree for it
     var trail          = List.empty[Int]
     var focusedTrail   = Option.empty[Vector[Int]]
+    // the scroll views enclosing the node being transformed, innermost first, each gathering the visibility request it
+    // will act on before it paints — the focused descendant's, or the first `.ensureVisible` mark's
+    var revealing      = List.empty[PendingReveal]
 
     def themed(
         element: Element,
@@ -504,7 +507,9 @@ private[dsl] object FocusPass:
           val index  = counter
           counter += 1
           val target = Some(InputTarget.Focus(index))
-          if index == tracker.focusedIndex then focusedTrail = Some(trail.reverse.toVector)
+          if index == tracker.focusedIndex then
+            focusedTrail = Some(trail.reverse.toVector)
+            revealing.foreach(_.focus(RevealProbe.focusId(index)))
           TrackedElement(
             themed(element, focused = index == tracker.focusedIndex, disabled, target, states, inherited),
             index,
@@ -524,6 +529,14 @@ private[dsl] object FocusPass:
             tracker,
           )
         else themed(element, focused = false, disabled, None, states, inherited)
+      if element.props.ensureVisible && !inert then
+        val id = RevealProbe.visibleId(element.props.focusKey.getOrElse(nodeId.toString))
+        revealing.foreach(_.visible(id))
+      val enclosing    = revealing
+      val gathering    = element match
+        case scroll: ScrollViewElement if !inert => Some(PendingReveal(scroll.followsFocus))
+        case _                                   => None
+      gathering.foreach(pending => revealing = pending :: revealing)
       // Inert trees still paint, including deferred portals: keep theme and coordinate wrappers, but no input records.
       val outer        = trail
       var position     = 0
@@ -540,6 +553,10 @@ private[dsl] object FocusPass:
           },
         )
       trail = outer
+      revealing = enclosing
+      element match
+        case scroll: ScrollViewElement => scroll.state.pendingReveal = gathering.flatMap(_.chosen)
+        case _                         => ()
       def rolesOf(node: Element, g: PointerGestures, disabled: Boolean): PointerRoles =
         val selectable = g.selection.enabled && !unselectable &&
           (node.props.selectable.contains(true) || TextSelection.selectableByDefault(node))
@@ -551,8 +568,12 @@ private[dsl] object FocusPass:
         )
       val roles        =
         gestures.fold(PointerRoles.Empty)(g => if inert then PointerRoles.Empty else rolesOf(element, g, disabled))
+      // a selection holds on to the node by its key, or else by its path of child positions — both survive nodes being
+      // added elsewhere in the tree, which a pre-order id does not
+      val anchor       =
+        Option.when(roles.selectable)(TextSelection.anchorFor(element.props.focusKey, outer))
       val recorded     = bounds.orElse(gestures.filter(_ => !roles.isEmpty).map(_.recorder)) match
-        case Some(recorder) => boundsWrapped(current, nodeId, nodeCounter - 1, recorder, roles, gestures)
+        case Some(recorder) => boundsWrapped(current, nodeId, nodeCounter - 1, recorder, roles, gestures, anchor)
         case None           => current
       val revealed     =
         if element.props.ensureVisible && !inert then
@@ -578,9 +599,10 @@ private[dsl] object FocusPass:
       recorder: NodeBounds,
       roles: PointerRoles,
       gestures: Option[PointerGestures],
+      anchor: Option[String],
   ): Element =
     def wrap(node: Element): BoundsElement =
-      BoundsElement(node, id, lastDescendantId, recorder, roles, if roles.isEmpty then None else gestures)
+      BoundsElement(node, id, lastDescendantId, recorder, roles, if roles.isEmpty then None else gestures, anchor)
     current match
       case tracked: TrackedElement => tracked.copy(inner = wrap(tracked.inner))
       case pointer: PointerElement => pointer.copy(inner = wrap(pointer.inner))
@@ -603,3 +625,17 @@ private[dsl] object FocusPass:
     element match
       case scroll: ScrollViewElement => children.map(child => ScrollViewportElement(child, scroll.state))
       case _                         => children
+
+/** One scroll view's visibility request as the focus pass finds it, before anything paints: an `.ensureVisible` mark
+  * wins over the focused descendant, which counts only when the view follows focus. Built and read inside one
+  * [[FocusPass.decorate]] call.
+  */
+private[dsl] final class PendingReveal(followFocus: Boolean):
+  private var marked: Option[String]  = None
+  private var focused: Option[String] = None
+
+  def visible(id: String): Unit = if marked.isEmpty then marked = Some(id)
+
+  def focus(id: String): Unit = if followFocus && focused.isEmpty then focused = Some(id)
+
+  def chosen: Option[String] = marked.orElse(focused)
