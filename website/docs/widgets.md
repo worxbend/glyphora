@@ -573,9 +573,22 @@ logConsole(ring)
   .loggerPrefix("app.net")      // this logger and its children only
 ```
 
-It owns no scroll state and always follows the tail, so it is built in the view like any
-other node; [the app shell guide](./app-shell#a-log-console-on-a-key) shows it behind a
-key the app binds. SLF4J users route through `jul-to-slf4j` — there is no SLF4J artifact.
+Built that way it owns no scroll state and always follows the tail, so it is built in the
+view like any other node; [the app shell guide](./app-shell#a-log-console-on-a-key) shows
+it behind a key the app binds. To read back through the history, hand it a caller-owned
+`LogConsoleState` — `logConsole(ring, state)` — and it becomes focusable: Up/Down,
+PageUp/PageDown and the wheel scroll, scrolling up detaches from the tail (new records no
+longer move the view), `Home` jumps to the oldest record and `End` follows the tail again.
+`state.toggleFollow()` flips following from a key of your own, and `state.following` says
+which mode it is in:
+
+```scala
+private val consoleScroll = LogConsoleState() // once, outside view
+
+binding("f", "follow log")(consoleScroll.toggleFollow())
+logConsole(ring, consoleScroll).minLevel(LogLevel.Info)
+```
+ SLF4J users route through `jul-to-slf4j` — there is no SLF4J artifact.
 
 ### A diff pane
 
@@ -675,8 +688,10 @@ value that should not take the screen down with it. A non-fatal throwable while 
 subtree is built or painted paints `fallback(error)` in the subtree's area — over a
 cleared area, so a half-drawn widget leaves nothing behind — and logs the failure at
 `SEVERE` on the `io.worxbend.tui.dsl` logger, where a `JulBridge` ring and a `logConsole`
-can show it. Nothing is remembered between frames: the next redraw rebuilds the view and
-the subtree gets to try again.
+can show it. `errorBoundary(fallback, ring)(subtree)` appends the failure to that
+`LogRing` instead (at `Error`, under the same logger name), so the `logConsole(ring)` that
+shows it needs no `JulBridge`. Nothing is remembered between frames: the next redraw
+rebuilds the view and the subtree gets to try again.
 
 ```scala
 errorBoundary(error => text(s"chart unavailable: ${error.getMessage}").dim) {

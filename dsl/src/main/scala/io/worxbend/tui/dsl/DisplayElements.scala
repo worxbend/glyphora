@@ -514,10 +514,12 @@ final case class CanvasElement(
   *
   * Each row is `HH:mm:ss LEVEL logger message`, the time and logger in the theme's `muted`, the level in `warning` or
   * `error` for those two severities, and a record's throwable appended as ` (Class: message)` — the class and message,
-  * never the stack trace, which belongs in a file. The console always follows the tail: it shows the newest records
-  * that fit, and there is no scroll state to own, so a view may build one per frame. The ring is read once per render,
-  * as a snapshot, and it is thread-safe, so records appended from a worker thread show up on the next frame without any
-  * marshalling — a frame that must happen *because* a record arrived is still the app's to request.
+  * never the stack trace, which belongs in a file. Built with `logConsole(ring)` the console always follows the tail:
+  * it shows the newest records that fit and has no scroll state to own. Built with `logConsole(ring, state)` it scrolls
+  * through a caller-owned [[LogConsoleState]] — focusable, Up/Down/PageUp/PageDown and the wheel scroll, `Home` jumps
+  * to the oldest record and `End` follows the tail again. Either way a view may build one per frame. The ring is read
+  * once per render, as a snapshot, and it is thread-safe, so records appended from a worker thread show up on the next
+  * frame without any marshalling — a frame that must happen *because* a record arrived is still the app's to request.
   *
   * `.minLevel(level)` hides everything below `level`; `.loggerPrefix("app.net")` keeps records from that logger and its
   * children (the prefix is matched at a `.` boundary, so `app` does not match `apple`); `.zone(zone)` chooses the zone
@@ -532,9 +534,24 @@ final case class LogConsoleElement(
     errorStyle: Style,
     mutedStyle: Style,
     props: ElementProps = ElementProps(),
+    scroll: Option[LogConsoleState] = None,
 ) extends Element:
   type Self = LogConsoleElement
   override def debugName: String = "logConsole"
+
+  /** The caller-owned scroll state this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned] = scroll.toSeq
+
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler] =
+    scroll.map { state =>
+      keys {
+        case KeyEvent(KeyCode.Home, _) => state.scrollToTop()
+        case KeyEvent(KeyCode.End, _)  => state.followTail()
+      }.orElse(scrollKeys(rows => state.scrollUp(rows), rows => state.scrollDown(rows)))
+    }
+
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
+    scroll.map(state => wheelScrolls(() => state.scrollUp(), () => state.scrollDown()))
 
   /** Hides records below `level`. */
   def minLevel(level: LogLevel): LogConsoleElement = copy(minimumLevel = level)
@@ -549,8 +566,11 @@ final case class LogConsoleElement(
     (area, buffer) =>
       val rows = ring.snapshot.filter(matches)
       if !area.isEmpty && rows.nonEmpty then
-        val state = w.LogState(rows.size)
-        rows.foreach(record => state.append(row(record)))
+        val shown = scroll.fold(rows)(state => rows.slice(state.windowTop(rows.size, area.height), rows.size))
+        val state = w.LogState(math.max(1, shown.size))
+        // a detached window draws from its top row down; `Log` follows the tail of what it holds, so hand it no more
+        // than fits below that top
+        shown.take(if scroll.isDefined then area.height else shown.size).foreach(record => state.append(row(record)))
         w.Log(props.style).render(area, buffer, state)
 
   private def matches(record: LogRecord): Boolean =
