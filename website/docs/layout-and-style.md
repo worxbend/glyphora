@@ -929,11 +929,18 @@ It understands the 16 named colours, the 256-colour and truecolour forms in both
 underlines with the SGR 58 underline colour, and OSC 8 hyperlinks, which land on
 `Style.link`. An SGR reset returns to `Style.Default` — silence, not `Style.Reset` — so
 the uncoloured stretches take whatever style the widget drawing the text gives them,
-exactly as plain text in that widget would. Every other escape sequence (cursor
-movement, screen clearing, other OSC strings) is dropped whole, and so are control
-characters other than `\n`, so CRLF output splits into clean rows. Plain text with no
-escape in it comes out exactly as `Text.raw` reads it, and widths are measured through
-`CharWidth` as they are for every `Text`.
+exactly as plain text in that widget would.
+
+Three controls move within the line as a terminal's cursor would. A tab advances to the
+next eight-column stop, counted in display columns (a CJK character takes two). A
+carriage return goes back to the first column and the text after it *overwrites* the
+line — `"100%\r5%"` reads `5%0%`, exactly what the terminal would show — so a progress
+bar that redraws itself with `\r` shows its latest state, and CRLF output still splits
+into clean rows. Erase-in-line (`ESC [ K`, `ESC [ 2 K`), which progress bars send after
+their `\r`, is applied too. Every other escape sequence (cursor movement, screen
+clearing, other OSC strings) is dropped whole, and so is every other control character.
+Plain text with no escape or control in it comes out exactly as `Text.raw` reads it, and
+widths are measured through `CharWidth` as they are for every `Text`.
 
 Output that is still arriving goes through `AnsiParser`, which keeps its place between
 chunks — a chunk boundary can fall inside an escape sequence or in the middle of a line,
