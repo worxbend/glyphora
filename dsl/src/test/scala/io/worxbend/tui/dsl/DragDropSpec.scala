@@ -60,6 +60,19 @@ final class DragDropSpec extends AnyFunSuite with PilotFixture:
       assert(pilot.screenLines(2).trim.isEmpty, "the ghost is gone once the drag ends")
     }
 
+  test("Esc cancels a drag in flight: the ghost goes, and the release drops nothing"):
+    var dropped = Vector.empty[String]
+    driving(Board(s => dropped :+= s)) { pilot =>
+      pilot.mouseDown(1, 0).waitForIdle()
+      dragTo(pilot, Position(6, 2))
+      assert(pilot.screenLines(2).contains("[a]"), "the ghost is showing")
+      pilot.press("esc").waitForIdle()
+      assert(!pilot.screenLines(2).contains("[a]"), "the ghost is gone")
+      dragTo(pilot, Position(12, 0))
+      pilot.mouseUp(12, 0).waitForIdle()
+      assert(dropped.isEmpty)
+    }
+
   test("a target that accepts the payload shows the hover cue while the pointer is over it; one that does not, none"):
     driving(Board(_ => ())) { pilot =>
       pilot.mouseDown(1, 0).waitForIdle()

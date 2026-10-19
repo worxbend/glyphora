@@ -511,8 +511,15 @@ the row under it: there the press still selects the row, and a drag that then co
 two or more cells (`TextSelection.DragThreshold`) turns into a text selection instead,
 so a click whose pointer drifts one cell is still only a click. A selection stays
 inside the node it started in — dragging
-past the edge clamps to that node's first or last cell. Selection works in whole
+past the edge clamps to that node's first or last cell. Inside a `scrollView`, a drag
+past the top or bottom of the viewport scrolls it one row per pointer movement, so the
+selection can reach rows that were not on screen when it began. Selection works in whole
 graphemes: a wide character is copied once, never half of it.
+
+The keyboard selects too. On a focused selectable node — `text(…).focusable`, a `log`, a
+`dataTable` — Shift+Left/Right/Up/Down, when the node itself does not use them, starts a
+selection on the node's first visible cell and moves its far end a cell or a row per
+press; `Ctrl+Shift+C` copies it.
 
 A selection belongs to its node and to a place in that node's text, not to the screen.
 Content added elsewhere in the view leaves it where it is, and inside a `scrollView` the
@@ -556,7 +563,9 @@ A press on a draggable element arms the drag and the first motion starts it; a p
 release without motion is still an ordinary click. While the drag runs, a dimmed ghost of
 the element follows the pointer — drawn through a portal, over everything — and the
 innermost drop target under the pointer that takes the payload draws the theme's focus
-cue. The release over it calls `onDrop` with the value.
+cue. The release over it calls `onDrop` with the value. `Esc` (the `close-modal`
+framework key) while a drag runs cancels it: the ghost goes, and the release drops
+nothing.
 
 The type is carried by a `DragKey[A]`: a draggable and a target meet only when they were
 built against the same key, which is how a drop hands the target an `A` without a

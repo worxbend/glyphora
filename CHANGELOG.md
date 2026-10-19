@@ -114,6 +114,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 - `AppServices.screenLabels`: the screen trail for a `breadcrumb` drawn by a helper outside the app.
 - `FormState.disable(name)` / `enable` / `setDisabled` / `disabled`: disabled form fields, announced by `Form.accessible`.
 - `Theme.withDisabled(style)` and a theme file's `disabled = …`: the disabled role is stored, falling back to `muted.dim`.
+- `Esc` cancels a drag and drop in flight; Shift+arrows select text on a focused selectable node; a drag-selection past a `scrollView`'s edge scrolls it.
 - `TuiApp.inspector = false` and `FrameworkKeys.unbind(ids*)` (`KeySequence.unbound`) turn the inspector — or any framework key — off.
 - JDK Flight Recorder events `FrameDrawn`, `EventRouted`, `FocusChanged`, `AsyncAdmitted`, `AsyncRejected` (`JfrEvents`).
 - Environment overrides `GLYPHORA_COLOR_DEPTH`, `GLYPHORA_KEYBOARD`, `GLYPHORA_MOUSE`, `GLYPHORA_ESCAPE_DELAY`.

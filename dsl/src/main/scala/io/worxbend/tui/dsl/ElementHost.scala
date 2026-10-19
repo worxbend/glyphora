@@ -1,6 +1,17 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Buffer, KeyCode, KeyEvent, MouseEvent, MouseEventKind, Position, Rect, Size, Style}
+import io.worxbend.tui.core.{
+  Buffer,
+  KeyCode,
+  KeyEvent,
+  KeyModifiers,
+  MouseEvent,
+  MouseEventKind,
+  Position,
+  Rect,
+  Size,
+  Style,
+}
 import io.worxbend.tui.runtime.{Frame, JfrEvents, ReactiveScope}
 import io.worxbend.tui.terminal.PointerShape
 
@@ -279,8 +290,45 @@ final class ElementHost:
     * [[focusNext]] or [[focusPrevious]] from your own key handling if you want the usual meaning.
     */
   def dispatchKey(key: KeyEvent): Boolean =
-    lastTree.exists(EventRouter.dispatchCapture(_, key)) ||
-      lastTree.exists(EventRouter.dispatchKey(_, key, lastFocusPath)) || (lastTree.isDefined && groupArrow(key))
+    cancelDrag(key) || lastTree.exists(EventRouter.dispatchCapture(_, key)) ||
+      lastTree.exists(EventRouter.dispatchKey(_, key, lastFocusPath)) || keyboardSelect(key) ||
+      (lastTree.isDefined && groupArrow(key))
+
+  /** Shift+arrow that nothing on the focus path consumed, while the focused node is selectable text and selection is on
+    * (a mouse-capturing app): extends a selection over that node one cell or row at a time — see
+    * [[TextSelection.extendBy]].
+    */
+  private def keyboardSelect(key: KeyEvent): Boolean =
+    val step = key match
+      case KeyEvent(KeyCode.Left, KeyModifiers.Shift)  => Some((-1, 0))
+      case KeyEvent(KeyCode.Right, KeyModifiers.Shift) => Some((1, 0))
+      case KeyEvent(KeyCode.Up, KeyModifiers.Shift)    => Some((0, -1))
+      case KeyEvent(KeyCode.Down, KeyModifiers.Shift)  => Some((0, 1))
+      case _                                           => None
+    step.exists { (dx, dy) =>
+      gestures.selection.enabled && focusedSelectable.exists { entry =>
+        gestures.selection.extendBy(entry, dx, dy)
+        true
+      }
+    }
+
+  /** The innermost selectable node painted inside the focused element's area on the last frame. */
+  private def focusedSelectable: Option[NodeBoundsEntry] =
+    tracker.areaOf(tracker.focusedIndex).flatMap { focused =>
+      bounds.current.entries
+        .filter(entry => entry.roles.selectable && focused.contains(entry.visible.position))
+        .maxByOption(_.id)
+    }
+
+  /** The `close-modal` framework key (Esc) while a drag and drop is in flight abandons it — the ghost goes and the
+    * release that follows drops nothing — and is spent on that, ahead of every element.
+    */
+  private def cancelDrag(key: KeyEvent): Boolean =
+    val keys = FrameworkKeys.current.value
+    gestures.drag.isActive && keys.fires(keys.closeModal, key) && {
+      gestures.drag.end()
+      true
+    }
 
   /** An unmodified arrow nobody on the focus path consumed moves focus inside the focused element's focus group. That
     * is the group's own behaviour rather than app policy, so it belongs here and an embedding host gets it too.
@@ -310,6 +358,7 @@ final class ElementHost:
   def dispatchMouse(mouse: MouseEvent): Boolean =
     val event = pointer.counted(mouse, clock())
     val under = tracker.mouseHit(event.position)
+    val _     = autoScroll(event)
     gestures.intercept(event) match
       case Some(redraw) =>
         // a gesture in progress took the event: no element sees it, but a release still lets the pointer go
@@ -339,6 +388,18 @@ final class ElementHost:
         val restyled = trackPointerStates(event, under) && cuesDemanded
         val gestured = lastTree.isDefined && gestures.afterDelivery(event, consumed)
         consumed || focusMoved || restyled || gestured || heard
+
+  /** A drag that is selecting text and has run past the top or bottom of the selected node's rows on screen scrolls the
+    * nearest scrollable around that edge one step — a wheel event at the edge cell, routed the way a real wheel there
+    * would be — so the selection can reach content the viewport does not show yet. One step per drag event: a terminal
+    * reports motion, not a held pointer, so the scrolling follows the pointer's movement.
+    */
+  private def autoScroll(event: MouseEvent): Boolean =
+    event.kind == MouseEventKind.Drag && gestures.selection.edgeScroll(event.position).exists { (edge, down) =>
+      val kind  = if down then MouseEventKind.ScrollDown else MouseEventKind.ScrollUp
+      val wheel = MouseEvent(edge, kind, KeyModifiers.None)
+      lastTree.exists(EventRouter.dispatchMouse(_, wheel, tracker.mouseHit(edge)))
+    }
 
   /** Updates the hovered and pressed targets the next focus pass stamps, `true` when either changed. Hover follows the
     * pointer over every event that has a position on screen; pressed is set by a press and cleared by a release.

@@ -114,6 +114,34 @@ private[dsl] final class TextSelection:
       head = clamped
       moved = true
 
+  /** While a selection is being dragged out, where to scroll when the pointer at `to` is past the top or bottom of the
+    * part of its node on screen: the screen cell on that edge under the pointer's column, and the wheel direction that
+    * brings more of the node into view. `None` inside the rows on screen.
+    */
+  def edgeScroll(to: Position): Option[(Position, Boolean)] =
+    if !dragging || shown.isEmpty then None
+    else
+      val top    = origin.y + shown.y
+      val bottom = origin.y + shown.bottom - 1
+      val x      = math.min(math.max(to.x, origin.x + shown.x), origin.x + shown.right - 1)
+      if to.y < top then Some((Position(x, top), false))
+      else if to.y > bottom then Some((Position(x, bottom), true))
+      else None
+
+  /** Moves the selection's head by (`dx`, `dy`) cells inside the node recorded as `entry` — Shift+arrows on a focused
+    * selectable node. With no selection on that node yet, one is anchored on the node's first visible cell and covers
+    * just that cell; each further step moves the head, clamped to the part of the node on screen. Nothing is copied;
+    * the `copy-selection` key does that.
+    */
+  def extendBy(entry: NodeBoundsEntry, dx: Int, dy: Int): Unit =
+    if !regionKey.contains(TextSelection.anchorOf(entry.id, entry.anchor)) then
+      begin(entry, entry.visible.position, 1)
+      dragging = false
+      moved = true
+    else
+      head = clamp(Position(head.x + dx, head.y + dy))
+      moved = true
+
   /** Ends the drag at `to` and, when anything is selected, copies it into `clipboard` once the next paint has seen the
     * final extent.
     */
