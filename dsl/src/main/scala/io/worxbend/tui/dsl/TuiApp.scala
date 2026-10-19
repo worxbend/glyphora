@@ -958,9 +958,7 @@ trait TuiApp:
 
   private def routeFresh(key: KeyEvent, run: RunState, handle: RunnerHandle): Boolean =
     val keys     = frameworkKeys
-    val consumed = FrameworkKeys.current.withValue(keys) {
-      FrameworkKeys.currentPageStep.withValue(keys.pageStep)(run.host.dispatchKey(key))
-    }
+    val consumed = FrameworkKeys.current.withValue(keys)(run.host.dispatchKey(key))
     val bound    = !consumed && !palette.isOpenNow && dispatchBinding(key)
     if consumed || bound then true else copySelectionKey(key, run) || handleFrameworkKey(key, run.tracker, handle)
 
@@ -1065,7 +1063,7 @@ trait TuiApp:
     * that left mouse capture off: turning the mouse on would take the terminal's own text selection away.
     */
   private def syncMouseMotion(run: RunState): Unit =
-    if !motionRequested && run.host.wantsMouseMotion && run.config.mouseCapture && !run.config.mouseMotion then
+    if !motionRequested && run.host.wantsMouseMotion && run.config.mouse == MouseCaptureMode.Buttons then
       motionRequested = true
       activeHandle.get().foreach(_.setMouseCaptureMode(MouseCaptureMode.AllMotion))
 

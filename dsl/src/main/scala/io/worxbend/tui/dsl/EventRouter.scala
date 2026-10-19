@@ -107,18 +107,18 @@ private[dsl] object EventRouter:
     targetOf(element).flatMap { target =>
       hit.collect { case MouseHit(`target`, area) => area }.orElse {
         element match
-          case tracked: TrackedElement => tracked.tracker.layoutAreaOf(target)
-          case pointer: PointerElement => pointer.tracker.layoutAreaOf(target)
+          case tracked: TrackedElement => tracked.tracker.bounds.targetBounds(target).map(_.layoutArea)
+          case pointer: PointerElement => pointer.tracker.bounds.targetBounds(target).map(_.layoutArea)
           case _                       => scala.None
       }
     }
 
   /** Original layout bounds, only while the pointer is inside the control's visible portion. */
   private def coveredArea(element: TrackedElement, event: MouseEvent): Option[Rect] =
-    element.tracker
-      .areaOf(element.index)
-      .filter(_.contains(event.position))
-      .flatMap(_ => element.tracker.layoutAreaOf(element.index))
+    element.tracker.bounds
+      .targetBounds(InputTarget.Focus(element.index))
+      .filter(_.hitArea.contains(event.position))
+      .map(_.layoutArea)
 
   /** The user's `onMouseEvent` first, then the framework's own behavior for this element. */
   private def handlesMouse(element: Element, event: MouseEvent, hit: Option[MouseHit]): Boolean =

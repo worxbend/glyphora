@@ -376,8 +376,9 @@ final class JLine3Backend private (
     // `GLYPHORA_MOUSE` may hold the capture to buttons or refuse it; refused is still a success, as for an OSC the
     // terminal cannot show
     EnvironmentOverrides.mouseMode(mode, env) match
-      case None          => Right(())
-      case Some(allowed) =>
+      case MouseCaptureMode.Off if mode == MouseCaptureMode.Off => disableMouseCapture()
+      case MouseCaptureMode.Off                                 => Right(())
+      case allowed                                              =>
         Backend.attempt {
           write(AnsiSequences.enableMouseCapture(allowed))
           mouseCaptureActive = Some(allowed)

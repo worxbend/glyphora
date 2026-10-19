@@ -1,5 +1,7 @@
 package io.worxbend.tui.runtime
 
+import io.worxbend.tui.terminal.MouseCaptureMode
+
 import org.scalatest.funsuite.AnyFunSuite
 
 import scala.concurrent.duration.DurationInt
@@ -19,7 +21,7 @@ final class RunnerConfigSpec extends AnyFunSuite:
   /** Every field set to something other than its default. */
   private val populated = RunnerConfig(
     tickRate = Some(100.millis),
-    mouseCapture = true,
+    mouse = MouseCaptureMode.Buttons,
     onTaskError = Some(onTaskError),
     onFrame = Some(onFrame),
     viewport = Viewport.Inline(3),
@@ -31,7 +33,7 @@ final class RunnerConfigSpec extends AnyFunSuite:
 
   test("every with* builder round-trips its field from the default configuration"):
     assert(RunnerConfig.Default.withTickRate(100.millis) == RunnerConfig(tickRate = Some(100.millis)))
-    assert(RunnerConfig.Default.withMouseCapture == RunnerConfig(mouseCapture = true))
+    assert(RunnerConfig.Default.withMouseCapture == RunnerConfig(mouse = MouseCaptureMode.Buttons))
     assert(RunnerConfig.Default.withOnTaskError(onTaskError) == RunnerConfig(onTaskError = Some(onTaskError)))
     assert(RunnerConfig.Default.withOnFrame(onFrame) == RunnerConfig(onFrame = Some(onFrame)))
     assert(RunnerConfig.Default.withViewport(Viewport.Inline(3)) == RunnerConfig(viewport = Viewport.Inline(3)))
@@ -115,7 +117,7 @@ final class RunnerConfigSpec extends AnyFunSuite:
     assert(RunnerConfig() == RunnerConfig.Default)
     assert(RunnerConfig(tickRate = None) == RunnerConfig.Default)
     assert(
-      RunnerConfig(tickRate = Some(100.millis), mouseCapture = true)
+      RunnerConfig(tickRate = Some(100.millis), mouse = MouseCaptureMode.Buttons)
         == RunnerConfig.Default.withTickRate(100.millis).withMouseCapture
     )
     assert(RunnerConfig(keyEventTypes = true).keyEventTypes)
@@ -151,13 +153,13 @@ final class RunnerConfigSpec extends AnyFunSuite:
   test("toString lists only the fields that differ from the default"):
     assert(RunnerConfig.Default.toString == "RunnerConfig.Default")
     assert(
-      RunnerConfig(tickRate = Some(100.millis), mouseCapture = true).toString
-        == "RunnerConfig(tickRate=Some(100 milliseconds), mouseCapture=true)"
+      RunnerConfig(tickRate = Some(100.millis), mouse = MouseCaptureMode.Buttons).toString
+        == "RunnerConfig(tickRate=Some(100 milliseconds), mouse=Buttons)"
     )
     assert(RunnerConfig(onFrame = Some(onFrame)).toString == "RunnerConfig(onFrame=<installed>)")
     assert(
       RunnerConfig(viewport = Viewport.Inline(3), keyEventTypes = true).toString
         == "RunnerConfig(viewport=Inline(3), keyEventTypes=true)"
     )
-    assert(populated.toString.startsWith("RunnerConfig(tickRate=Some(100 milliseconds), mouseCapture=true, "))
+    assert(populated.toString.startsWith("RunnerConfig(tickRate=Some(100 milliseconds), mouse=Buttons, "))
     assert(populated.toString.endsWith(", captureStdio=PrintAbove, recording=demo.cast)"))

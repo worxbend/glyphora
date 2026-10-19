@@ -43,7 +43,7 @@ jobs:
         # native-image is reflect-config-free by construction; tui-macros derives at
         # compile time through Mirror instead.
         run: |
-          if grep -rn "java\.lang\.reflect\|Class\.forName" --include="*.scala" */src/main/scala examples/*/src/main/scala 2>/dev/null; then
+          if grep -rn "java\.lang\.reflect\|Class\.forName" --include="*.scala" */src/main/scala examples/*/src/main/scala examples/scala-cli 2>/dev/null; then
             echo "::error::runtime reflection found in main sources" >&2
             exit 1
           fi
@@ -54,7 +54,7 @@ jobs:
         # CharWidth itself (it is the one place allowed to cut a string), and the weather
         # example's hand-written JSON parser, which indexes ASCII bytes of a wire format.
         run: |
-          violations=$(grep -rn "\.substring(" --include="*.scala" */src/main/scala examples/*/src/main/scala \
+          violations=$(grep -rn "\.substring(" --include="*.scala" */src/main/scala examples/*/src/main/scala examples/scala-cli \
             | grep -v "core/CharWidth.scala" \
             | grep -v "examples/weather/src/main/scala/io/worxbend/tui/examples/weather/Json.scala" || true)
           if [ -n "$violations" ]; then

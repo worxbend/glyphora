@@ -144,7 +144,11 @@ To drive the interactive prompt itself, run it on a `HeadlessBackend` under
 When there is nothing to draw on, prompts degrade to plain line-based questions instead
 of failing: `? Name: ` is written to standard output and a line is read from standard
 input. That happens when standard output or standard input is not a terminal, when `CI`
-is set, or when the terminal cannot be opened (`TERM=dumb`). `PromptSession.terminal`
+is set, or when the terminal cannot be opened (`TERM=dumb`). A terminal that fails while
+a prompt is running falls back the same way: the questions are asked again as lines, and
+a `Prompt.task` already under way is waited for rather than run twice. Only a bug in the
+app's own code — a validator or a view that throws — escapes, as the exception it threw.
+`PromptSession.terminal`
 takes a `fallbackWhen` to decide differently — the same idea as Laravel Prompts'
 `fallbackWhen` — and `PromptSession.plain(read, write)` builds the line shape over any
 reader and writer.

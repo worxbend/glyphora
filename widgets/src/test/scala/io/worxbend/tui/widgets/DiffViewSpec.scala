@@ -149,6 +149,26 @@ final class DiffViewSpec extends AnyFunSuite:
     state.last()
     assert(state.offset == 6)
 
+  test("pageDown and pageUp move a viewport at a time, clamped like every other scroll"):
+    val state = DiffViewState()
+    val _     = rendered(DiffView(twoHunks), state, 30, 4)
+    state.pageDown()
+    assert(state.offset == 4)
+    state.pageDown()
+    assert(state.offset == 6)
+    state.pageUp()
+    assert(state.offset == 2)
+
+  test("an offset a hunk jump left below the scrollable range stays put on scrollDown, and every move is versioned"):
+    val state  = DiffViewState()
+    val _      = rendered(DiffView(twoHunks), state, 30, 2)
+    state.offset = 9
+    val before = state.version
+    state.scrollDown()
+    assert(state.offset == 9)
+    state.scrollUp()
+    assert(state.offset == 8 && state.version > before)
+
   test("contextLines folds long runs of unchanged lines into one row and keeps numbering the lines after it"):
     val before = (1 to 30).map(n => s"l$n").mkString("\n")
     val after  = before.replace("l15\n", "L15\n")

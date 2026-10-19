@@ -12,7 +12,7 @@ final class TextSelectionSpec extends AnyFunSuite with PilotFixture:
 
   /** A title on row 0 and `body` on row 1, with mouse capture on — the configuration selection exists for. */
   private final class SelectApp(body: => Element) extends TuiApp:
-    override def config: RunnerConfig             = RunnerConfig(mouseCapture = true)
+    override def config: RunnerConfig             = RunnerConfig(mouse = MouseCaptureMode.Buttons)
     def view(using ReactiveScope, Theme): Element = column(text("title").length(1), body.length(1), text("").fill)
 
   private def driving(app: TuiApp, size: Size = Size(16, 3))(body: (Pilot, HeadlessBackend) => Unit): Unit =

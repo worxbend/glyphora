@@ -189,7 +189,9 @@ final class VersionedStatesSpec extends AnyFunSuite:
     row("DiffViewState", DiffViewState())(
       "offset ="             -> (_.offset = 2),
       "scrollUp"             -> (state => { state.offset = 3; state.scrollUp() }),
-      "scrollDown"           -> (state => { state.lastContentHeight = 10; state.scrollDown() }),
+      "scrollDown"           -> (state => { state.recordFrame(10, 1); state.scrollDown() }),
+      "pageUp"               -> (state => { state.offset = 3; state.pageUp() }),
+      "pageDown"             -> (state => { state.recordFrame(10, 1); state.pageDown() }),
       "first"                -> (_.first()),
       "last"                 -> (_.last()),
     ),
@@ -222,7 +224,7 @@ final class VersionedStatesSpec extends AnyFunSuite:
       "move"                 -> (_.move(1, 3)),
       "menu.selected ="      -> (_.menu.selected = Some(0)),
     ),
-    row("WindowState", WindowState(0, 0, 10, 4))(
+    row("WindowState", WindowStack().window(0, 0, 10, 4))(
       "mode ="               -> (_.mode = WindowMode.Moving),
       "raise"                -> (_.raise()),
       "moveBy"               -> (_.moveBy(1, 1)),

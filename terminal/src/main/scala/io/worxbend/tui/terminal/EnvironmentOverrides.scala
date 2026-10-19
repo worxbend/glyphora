@@ -45,12 +45,15 @@ object EnvironmentOverrides:
   /** Whether `GLYPHORA_KEYBOARD=legacy` keeps the kitty keyboard protocol off. */
   def legacyKeyboard(env: Map[String, String]): Boolean = read(env, KeyboardVar).contains("legacy")
 
-  /** The capture mode to actually enable when an app asks for `requested`: `None` under `GLYPHORA_MOUSE=off`. */
-  def mouseMode(requested: MouseCaptureMode, env: Map[String, String]): Option[MouseCaptureMode] =
+  /** The capture mode to actually enable when an app asks for `requested`: `Off` under `GLYPHORA_MOUSE=off`, at most
+    * `Buttons` under `GLYPHORA_MOUSE=buttons`. An app that asked for `Off` gets `Off` whatever the variable says.
+    */
+  def mouseMode(requested: MouseCaptureMode, env: Map[String, String]): MouseCaptureMode =
     read(env, MouseVar) match
-      case Some("off" | "none" | "0" | "false") => None
-      case Some("buttons")                      => Some(MouseCaptureMode.Buttons)
-      case _                                    => Some(requested)
+      case _ if requested == MouseCaptureMode.Off => MouseCaptureMode.Off
+      case Some("off" | "none" | "0" | "false")   => MouseCaptureMode.Off
+      case Some("buttons")                        => MouseCaptureMode.Buttons
+      case _                                      => requested
 
   /** How long, in milliseconds, a lone `Esc` waits for the rest of a sequence. */
   def escapeDelayMillis(env: Map[String, String]): Long =

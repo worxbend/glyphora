@@ -175,7 +175,8 @@ Three changes reach almost every app, so check them first:
   ```
 
   Code that read `panelElement.props.style` to get the border reads `panelElement.frameStyle`.
-  New container nodes follow the same split.
+  New container nodes follow the same split — `window(title, state)(content)` included: its border
+  is `.frameStyle(…)`, the theme's `border` by default and bold while focus is inside it.
 - **`withStyle(transform)(subtree)` returns one scope node.** It used to return `subtree` rebuilt
   with the style patched into every node's props, on every frame (research G3). It now returns a
   `StyleScopeElement` wrapping `subtree` unchanged, and the style reaches the descendants at
@@ -328,8 +329,11 @@ Three changes reach almost every app, so check them first:
 - **`each` scopes its rows' hooks under the item key** (research bug B6).
   `each(items)(key)(render)` runs `render` inside `keyed(key)` as well as stamping `.key(key)`, so
   focus and `useSignal`/`useState` share one identity and follow the item through reorders. Hook
-  state declared inside an `each` row therefore starts fresh once on upgrade. A row also wrapped
-  in `keyed(sameKey)` now has that scope twice — harmless, and the inner `keyed` can go:
+  state declared directly inside an `each` row (with no `keyed` of its own) therefore moves from a
+  positional slot to the key's and starts fresh once on upgrade. A row that was already wrapped in
+  `keyed(sameKey)` keeps its state: a `keyed` opened as the first thing inside a scope of the same
+  key *is* that scope, not a second one under it, so the path stays `sameKey`. The inner `keyed`
+  can go:
 
   ```scala
   // before
@@ -426,7 +430,7 @@ Three changes reach almost every app, so check them first:
   movement (more input traffic over ssh). Apps with mouse capture off never switch; to stay on
   button-only tracking, use neither. `ElementHost.dispatchMouse` may now answer `true` for an
   unconsumed event when a hover or pressed cue needs a repaint.
-- **Mouse-capturing apps select text.** With `RunnerConfig(mouseCapture = true)`, a left drag over
+- **Mouse-capturing apps select text.** With `RunnerConfig(mouse = MouseCaptureMode.Buttons)`, a left drag over
   `text`, `markdown`, `log`, `logConsole` or a table selects text and copies it through OSC 52 on
   release, because capturing the mouse took the terminal's own selection away. A press an element
   consumes (a button, a list row) never starts one. Opt a subtree out:
@@ -521,13 +525,32 @@ Three changes reach almost every app, so check them first:
   Only a configuration whose `captureStdio` is *unset* takes the app default, so an existing
   `override def config = RunnerConfig(tickRate = Some(d))` keeps the capture. A bare
   `TerminalRunner` reads the unset field as `Off` and behaves as before.
-- **`RunnerConfig` gained four fields**: `captureStdio` (`withCaptureStdio` / `withoutCaptureStdio`),
-  `recording` (`withRecording` / `withoutRecording`), `nonInteractive` (`withNonInteractive`,
-  default `NonInteractivePolicy.Fail`, the old behaviour) and `mouseMotion` (`withMouseMotion` /
-  `withoutMouseMotion`). As the [growth policy](#types-that-will-break-when-they-grow) promised,
-  every earlier arity of the companion `apply` — seven, eight, nine and ten fields — is kept as a
-  default-free overload, so compiled callers keep linking; named arguments and `with*` chains
-  compile unchanged. A positional call to one of the intermediate pre-release arities is
+- **`RunnerConfig`'s mouse setting is one `MouseCaptureMode`, not a Boolean.** 0.19.0's
+  `mouseCapture: Boolean` could say "off" or "buttons", and a second Boolean for hover would have
+  allowed motion tracking with capture off. The field is now `mouse: MouseCaptureMode` — `Off` (the
+  default), `Buttons` or `AllMotion` — and `MouseCaptureMode` gained the `Off` case
+  (`Backend.enableMouseCapture(MouseCaptureMode.Off)` is `disableMouseCapture()`, so an exhaustive
+  match on the enum needs that case). `withMouseCapture` (buttons) and `withoutMouseCapture` (off)
+  keep working, `withMouse(mode)` sets any mode, and `config.mouseCapture` stays as a derived
+  `Boolean`. The positional Boolean arities of `apply` still compile, `true` meaning `Buttons`; the
+  named argument `mouseCapture = true` does not, since the defaulted `apply` can only take one type
+  for it:
+
+  ```scala
+  // before
+  RunnerConfig(tickRate = Some(rate), mouseCapture = true)
+  // after
+  RunnerConfig(tickRate = Some(rate), mouse = MouseCaptureMode.Buttons)
+  // or, unaffected by the next field: RunnerConfig.Default.withTickRate(rate).withMouseCapture
+  ```
+
+- **`RunnerConfig` gained three fields**: `captureStdio` (`withCaptureStdio` / `withoutCaptureStdio`),
+  `recording` (`withRecording` / `withoutRecording`) and `nonInteractive` (`withNonInteractive`,
+  default `NonInteractivePolicy.Fail`, the old behaviour). As the
+  [growth policy](#types-that-will-break-when-they-grow) promised, every earlier arity of the
+  companion `apply` — seven, eight, nine and ten fields, each with its Boolean `mouseCapture` — is
+  kept as a default-free overload, so compiled callers keep linking; `with*` chains compile
+  unchanged. A positional call to one of the intermediate pre-release arities is
   clearest rewritten as a builder chain:
 
   ```scala
@@ -587,6 +610,14 @@ Three changes reach almost every app, so check them first:
   See [Print mode](./print-mode).
 
 ### Widgets
+
+- **An unfocused `confirmDialog` underlines its selected button instead of painting it in the
+  focus cue.** In 0.19 the selected button wore the theme's `focus` style whether or not the
+  dialog held focus, so moving focus onto it changed nothing on screen — `pilot.a11yReport`'s
+  `NoFocusCue`. The focus cue now shows only while the dialog is focused, and a resting dialog
+  marks its selection with an underline. The 0.20 pickers (`datePicker`, `timePicker`,
+  `colorPicker`) follow the same rule. Nothing to change in code; a golden frame that records
+  styles of an unfocused dialog needs re-recording.
 
 - **`Language` is an alias for the open `Lexer` trait.** `widgets.Language` was a closed enum; it is
   now `type Language = Lexer` with an `object Language` whose `Scala`, `Json`, `Bash` and
@@ -832,8 +863,9 @@ added. Their companion `apply` keeps today's defaults for convenience but is sti
 arity-sensitive — adding a field changes its descriptor, so a call to it needs a recompile —
 and at that growth the previous arity is kept as a plain default-free overload so compiled
 callers keep working. 0.20.0 is the first release to exercise that promise: `RunnerConfig`
-grew four fields (`captureStdio`, `recording`, `nonInteractive`, `mouseMotion`) and keeps a
-default-free `apply` for each earlier arity — seven, eight, nine and ten fields — and
+grew three fields (`captureStdio`, `recording`, `nonInteractive`) and turned its mouse Boolean into
+a `MouseCaptureMode`, and keeps a default-free `apply` for each earlier arity — seven, eight, nine
+and ten fields — and
 `Layout.apply` keeps its 0.19.0 five-argument arity beside the new `crossAlign` parameter.
 `Theme.apply` gained a defaulted `components` parameter without an overload, so a compiled call
 to it needs a recompile; `Theme.Dark.with*` chains do not.

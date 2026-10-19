@@ -30,17 +30,17 @@ final case class FrameworkKeys(
   require(pageStep > 0, s"pageStep must be positive, was $pageStep")
 
   /** Each framework key with its id and a description, in the order the framework tries them. */
-  def entries: Seq[(BindingId, KeyEvent, String)] = Seq(
-    (FrameworkKeys.FocusPrevious, focusPrevious, "focus the previous control"),
-    (FrameworkKeys.FocusNext, focusNext, "focus the next control"),
-    (FrameworkKeys.CommandPalette, commandPalette, "open the command palette"),
-    (FrameworkKeys.Quit, quit, "quit"),
-    (FrameworkKeys.CloseModal, closeModal, "close the modal on top"),
-    (FrameworkKeys.MenuBar, menuBar, "open the menu bar"),
-    (FrameworkKeys.WindowMove, windowMove, "move the focused window with the arrows"),
-    (FrameworkKeys.WindowResize, windowResize, "resize the focused window with the arrows"),
-    (FrameworkKeys.Inspector, inspector, "cycle the inspector overlay"),
-    (FrameworkKeys.CopySelection, copySelection, "copy the mouse text selection"),
+  def entries: Seq[KeymapEntry] = Seq(
+    KeymapEntry(FrameworkKeys.FocusPrevious, focusPrevious, "focus the previous control"),
+    KeymapEntry(FrameworkKeys.FocusNext, focusNext, "focus the next control"),
+    KeymapEntry(FrameworkKeys.CommandPalette, commandPalette, "open the command palette"),
+    KeymapEntry(FrameworkKeys.Quit, quit, "quit"),
+    KeymapEntry(FrameworkKeys.CloseModal, closeModal, "close the modal on top"),
+    KeymapEntry(FrameworkKeys.MenuBar, menuBar, "open the menu bar"),
+    KeymapEntry(FrameworkKeys.WindowMove, windowMove, "move the focused window with the arrows"),
+    KeymapEntry(FrameworkKeys.WindowResize, windowResize, "resize the focused window with the arrows"),
+    KeymapEntry(FrameworkKeys.Inspector, inspector, "cycle the inspector overlay"),
+    KeymapEntry(FrameworkKeys.CopySelection, copySelection, "copy the mouse text selection"),
   )
 
   /** These keys with every id in `keymap` moved to its sequence; ids that name no framework key are ignored, so one
@@ -89,16 +89,16 @@ object FrameworkKeys:
   /** Tab, Shift+Tab, Ctrl+P, Ctrl+C, Esc, a page step of 10 and F12 for the inspector. */
   val default: FrameworkKeys = FrameworkKeys()
 
-  /** The page step the key dispatch on this thread runs under. `TuiApp` binds it around each dispatch to its own
-    * [[FrameworkKeys.pageStep]]; per thread, so two runners in one JVM keep their own.
-    */
-  private[dsl] val currentPageStep: DynamicVariable[Int] = DynamicVariable(default.pageStep)
-
-  /** The framework keys the key dispatch on this thread runs under — what a `menuBar` reads its `menu-bar` key and a
-    * `window` its arrange keys from. `TuiApp` binds it around each dispatch to its own [[TuiApp.frameworkKeys]]; an
-    * embedding host that binds nothing gets [[default]].
+  /** The framework keys the key dispatch on this thread runs under — what a `menuBar` reads its `menu-bar` key, a
+    * `window` its arrange keys and every scrollable its page step from. `TuiApp` binds it around each dispatch to its
+    * own [[TuiApp.frameworkKeys]]; an embedding host that binds nothing gets [[default]].
     */
   private[dsl] val current: DynamicVariable[FrameworkKeys] = DynamicVariable(default)
+
+/** One framework key as [[FrameworkKeys.entries]] lists it: the id a keymap rebinds it by, the key it is bound to now
+  * and what it does.
+  */
+final case class KeymapEntry(id: BindingId, key: KeyEvent, description: String)
 
 /** User keymaps: a plain-text file of `id = spec` lines read into the `Map[BindingId, KeySequence]` that
   * `KeyBindings.rebind` and `FrameworkKeys.rebind` take, and a Markdown export of the keys an app ends up with.
@@ -114,23 +114,24 @@ object Keymap:
 
   /** Reads a keymap. Blank lines and lines whose first non-blank character is `#` are skipped; every other line is
     * `id = spec`, split at its first `=` with both sides trimmed, the spec in [[KeySequence.parse]]'s vocabulary. A
-    * line that is not of that shape, a spec that does not parse, or an id given twice is a `Left` naming the line.
+    * line that is not of that shape, a spec that does not parse, or an id given twice is a [[LineError]] naming the
+    * line.
     */
-  def parse(text: String): Either[String, Map[BindingId, KeySequence]] =
-    val entries = text.linesIterator.zipWithIndex.collect {
-      case (line, index) if line.trim.nonEmpty && !line.trim.startsWith("#") => (line, index + 1)
-    }
-    entries.foldLeft[Either[String, Map[BindingId, KeySequence]]](Right(Map.empty)) { case (acc, (line, number)) =>
-      acc.flatMap { parsed =>
-        line.indexOf('=') match
-          case -1 => Left(s"line $number: expected 'id = keys', got '${line.trim}'")
-          case at =>
-            val (left, right) = line.splitAt(at)
-            val id            = BindingId(left.trim)
-            val spec          = right.drop(1).trim
-            if id.value.isEmpty || spec.isEmpty then Left(s"line $number: expected 'id = keys', got '${line.trim}'")
-            else if parsed.contains(id) then Left(s"line $number: '$id' is bound twice")
-            else KeySequence.parse(spec).left.map(problem => s"line $number: $problem").map(seq => parsed + (id -> seq))
+  def parse(text: String): Either[LineError, Map[BindingId, KeySequence]] =
+    KeyValueLines.read(text, "id = keys").flatMap { lines =>
+      lines.foldLeft[Either[LineError, Map[BindingId, KeySequence]]](Right(Map.empty)) { (acc, line) =>
+        acc.flatMap { parsed =>
+          val id = BindingId(line.key)
+          if id.value.isEmpty || line.value.isEmpty then
+            Left(LineError(line.number, s"expected 'id = keys', found '${line.key} = ${line.value}'"))
+          else if parsed.contains(id) then Left(LineError(line.number, s"'$id' is bound twice"))
+          else
+            KeySequence
+              .parse(line.value)
+              .left
+              .map(problem => LineError(line.number, problem))
+              .map(sequence => parsed + (id -> sequence))
+        }
       }
     }
 
@@ -141,7 +142,7 @@ object Keymap:
 
   /** [[markdown]] followed by the framework's own keys, listed under their ids. */
   def markdown(bindings: KeyBindings, framework: FrameworkKeys): String =
-    table(bindings, framework.entries.map((id, key, description) => (None, KeySequence.show(key), description, id)))
+    table(bindings, framework.entries.map(entry => (None, KeySequence.show(entry.key), entry.description, entry.id)))
 
   private def table(bindings: KeyBindings, extra: Seq[(Option[ModeId], String, String, BindingId)]): String =
     val rows   = bindings.bindings.map(bound =>

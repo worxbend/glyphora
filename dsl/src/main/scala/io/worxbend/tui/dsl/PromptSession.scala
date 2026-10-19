@@ -14,8 +14,8 @@ import scala.collection.mutable.ArrayBuffer
   *   - [[PromptSession.terminal]] (the `given` every prompt finds when the caller names none): each prompt is a
   *     one-shot app in a `Viewport.Inline` strip at the bottom of the terminal, which it collapses to its one-line
   *     summary when it is answered. When the process has no terminal to be interactive on — `fallbackWhen` says so, or
-  *     the backend cannot be opened (`TERM=dumb`, no TTY) — it degrades to the plain shape over standard input and
-  *     output instead of failing.
+  *     the backend cannot be opened (`TERM=dumb`, no TTY), or the backend fails while the prompt runs — it degrades to
+  *     the plain shape over standard input and output instead of failing.
   *   - [[PromptSession.plain]]: line-based question and answer over a reader and a writer, with no cursor movement and
   *     no escape sequences. What a pipe, a CI log or a screen reader wants.
   *   - [[PromptSession.scripted]] (also spelled [[Prompt.answers]]): every answer is pre-supplied, in order, and parsed
@@ -37,19 +37,48 @@ final class PromptSession private (private[dsl] val mode: PromptSession.Mode, ec
   /** The summary lines of every prompt answered under this session, oldest first. */
   def transcript: Seq[String] = lines.synchronized(lines.toVector)
 
-  /** Appends `summary` to the transcript and, in the scripted shape, shows it — the user typed nothing, so this line is
-    * the only record of what was answered.
+  /** Appends `summary` to the transcript and hands it to the session's echo — which only the scripted shape has: the
+    * user typed nothing there, so this line is the only record of what was answered. The other shapes echo nothing
+    * here, because the line is already on screen.
     */
-  private[dsl] def record(summary: String, show: Boolean): Unit =
+  private[dsl] def record(summary: String): Unit =
     lines.synchronized { val _ = lines += summary }
-    if show then echo(summary)
+    echo(summary)
+
+  /** The shape the next prompt runs in, with every fallback already applied: a terminal session whose `fallbackWhen`
+    * holds, or whose backend does not open, resolves to its plain fallback. The one place the three shapes are told
+    * apart, so no prompt re-implements the fallback rule.
+    */
+  private[dsl] def resolve(): PromptSession.Shape =
+    mode match
+      case PromptSession.Mode.Scripted(answers)                          => PromptSession.Shape.Scripted(answers)
+      case plain: PromptSession.Mode.Plain                               => PromptSession.Shape.Plain(plain)
+      case PromptSession.Mode.Terminal(open, fallbackWhen, theme, plain) =>
+        if fallbackWhen() then PromptSession.Shape.Plain(plain())
+        else
+          open() match
+            case Left(_)        => PromptSession.Shape.Plain(plain())
+            case Right(backend) => PromptSession.Shape.Terminal(backend, theme, plain)
 
 object PromptSession:
 
   /** How a session asks. Internal: the factories below are the way to build one. */
   private[dsl] enum Mode:
-    case Terminal(open: () => Either[BackendError, Backend], fallbackWhen: () => Boolean, theme: Theme)
+    case Terminal(
+        open: () => Either[BackendError, Backend],
+        fallbackWhen: () => Boolean,
+        theme: Theme,
+        plain: () => Plain,
+    )
     case Plain(read: () => Option[String], write: String => Unit, echoInput: Boolean)
+    case Scripted(answers: Iterator[String])
+
+  /** A resolved [[Mode]]: what one prompt actually runs in. A terminal shape keeps its plain fallback, for a backend
+    * that fails once the prompt is already running.
+    */
+  private[dsl] enum Shape:
+    case Terminal(backend: Backend, theme: Theme, fallback: () => Mode.Plain)
+    case Plain(plain: Mode.Plain)
     case Scripted(answers: Iterator[String])
 
   /** The session every prompt uses when the caller provides none: the controlling terminal, falling back to plain
@@ -75,13 +104,23 @@ object PromptSession:
       theme: Theme = Theme.auto,
       open: () => Either[BackendError, Backend] = () => JLine3Backend.create(),
   ): PromptSession =
-    new PromptSession(Mode.Terminal(open, () => fallbackWhen, theme), _ => ())
+    new PromptSession(Mode.Terminal(open, () => fallbackWhen, theme, () => standardPlain), _ => ())
 
   /** Prompts drawn on one already-open `backend` — a `HeadlessBackend` under `Pilot`, an embedding host's own. Each
     * prompt's runner closes the backend when it ends, so a backend serves one prompt (or one `Prompt.form`).
     */
   def on(backend: Backend, theme: Theme = Theme.Dark): PromptSession =
-    new PromptSession(Mode.Terminal(() => Right(backend), () => false, theme), _ => ())
+    new PromptSession(Mode.Terminal(() => Right(backend), () => false, theme, () => standardPlain), _ => ())
+
+  /** A terminal session over `open` whose plain fallback is `plain` rather than standard input and output — the seam a
+    * test uses to see what a failing terminal falls back to.
+    */
+  private[dsl] def terminalOver(
+      open: () => Either[BackendError, Backend],
+      plain: Mode.Plain,
+      theme: Theme,
+  ): PromptSession =
+    new PromptSession(Mode.Terminal(open, () => false, theme, () => plain), _ => ())
 
   /** Line-based prompts: each question is written with `write` (no trailing newline) and its answer read with `read`,
     * whose `None` means the input ended — read as a cancellation, the way `Ctrl-C` is in the terminal shape. With

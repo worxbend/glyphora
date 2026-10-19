@@ -52,11 +52,14 @@ dependencies, which is the quickest way to see glyphora in a terminal:
 //> using jvm 25
 //> using dep com.worxbend::tui-dsl:0.20.0
 //> using javaOpt --enable-native-access=ALL-UNNAMED
+//> using mainClass io.worxbend.tui.examples.scalacli.Main
+
+package io.worxbend.tui.examples.scalacli
 
 import io.worxbend.tui.dsl.*
 
 /** A counter in a bordered panel: `+` and `-` change it, `q` quits. */
-object Hello extends TuiApp:
+object Main extends TuiApp:
 
   private val count = Signal(0)
 

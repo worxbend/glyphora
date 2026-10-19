@@ -3,8 +3,6 @@ package io.worxbend.tui.dsl
 import io.worxbend.tui.core.Rect
 import io.worxbend.tui.runtime.{Async, Cancelable, TaskScope}
 
-import scala.util.Try
-
 /** The value of a [[useTask]]: still running, finished with a value, or failed.
   *
   * `Loading` is also the answer on a host with no render loop to deliver a result to — a `Console.print` or a
@@ -149,7 +147,7 @@ private[dsl] final class TaskCell[A](var deps: Seq[Any]) extends ViewState.HookR
     value = Loadable.Loading
     launches += 1
     val stamp = launches
-    if scope.isEmpty then scope = Try(Async.scope()).toOption
+    if scope.isEmpty then scope = Async.scopeIfRunning()
     running = scope.map(_.runCatching(work()) { result =>
       if alive && stamp == launches then
         value = result.fold(Loadable.Failed(_), Loadable.Ready(_))

@@ -58,6 +58,25 @@ final class EachHooksSpec extends AnyFunSuite with PilotFixture:
     assert(built.size == 4)
     assert(store.slotCount == 4, "every row owns a slot of its own")
 
+  test("a row that also wraps itself in keyed(k) shares the scope each opened, so it keeps keyed(k)'s state"):
+    val store                               = ViewState()
+    val seen                                = scala.collection.mutable.ArrayBuffer.empty[Signal[Int]]
+    def row(id: String): Element            =
+      seen += useSignal(0)
+      text(id)
+    def frame(build: => Seq[Element]): Unit =
+      store.beginGeneration()
+      val _ = ViewState.during(store)(build)
+      store.sweep()
+    // the 0.19 spelling: a keyed scope per row, written by hand
+    frame(Seq("a", "b").map(id => keyed(id)(row(id))))
+    seen.foreach(_.set(7))
+    seen.clear()
+    // both at once, as code written for 0.19 reads after the upgrade: one scope, not `a/a`, so nothing resets
+    frame(each(Seq("a", "b"))(identity)(id => keyed(id)(row(id))))
+    assert(seen.map(_.peek) == Seq(7, 7))
+    assert(store.slotCount == 2)
+
   test("each still builds plain elements with no view being evaluated"):
     val rows = each(Seq(1, 2))(_.toString)(n => text(n.toString))
     assert(rows.flatMap(_.props.focusKey) == Seq("1", "2"))

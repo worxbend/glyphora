@@ -1266,11 +1266,12 @@ private[dsl] trait ElementFactories:
       BreadcrumbElement(items, onSelect, separatorStyle = theme.muted, currentStyle = theme.accent.bold)
     }
 
-  /** Titled sections of which at most one is open: `accordion(state)("General" -> general, "Network" -> network)`. Each
-    * header is a [[collapsible]] — Enter or Space toggles it — and opening one closes the other; the open body fills
-    * the rows the headers leave. `state` is caller-owned: keep it in a field. See [[w.AccordionState]].
+  /** Titled sections of which at most one is open:
+    * `accordion(state)(AccordionSection("General", general), AccordionSection("Network", network))`. Each header is a
+    * [[collapsible]] — Enter or Space toggles it — and opening one closes the other; the open body fills the rows the
+    * headers leave. `state` is caller-owned: keep it in a field. See [[w.AccordionState]].
     */
-  def accordion(state: w.AccordionState)(sections: (String, Element)*): AccordionElement =
+  def accordion(state: w.AccordionState)(sections: AccordionSection*): AccordionElement =
     AccordionElement.of(state, sections)
 
   /** An ordered multi-step flow: a progress header (`✓ Account ─ ● Profile ─ ○ Confirm`), the current step's content,
@@ -1339,9 +1340,12 @@ private[dsl] trait ElementFactories:
     * [[w.WindowState]]. Put windows in a [[windowStack]]: a press raises a window, dragging its title moves it and
     * dragging its `◢` grip resizes it; with focus inside, `Alt+M` / `Alt+R` (the `window-move` / `window-resize`
     * framework keys) enter a keyboard mode where the arrows move or resize it and Enter or Esc leave. See [[w.Window]].
+    *
+    * The frame is drawn in the ambient [[Theme]]'s `border` style; `.frameStyle(...)` recolours it and
+    * `.fg(...)`/`.styled(...)` the content, as on a panel.
     */
-  def window(title: String, state: w.WindowState)(content: Element): WindowElement =
-    WindowElement.of(title, state, content)
+  def window(title: String, state: w.WindowState)(content: Element)(using theme: Theme): WindowElement =
+    LateBinding.themed(theme)(theme => WindowElement.of(title, state, content, theme.border))
 
   /** Draws `windows` at their states' rectangles in stacking order — the window raised last on top — over the area it
     * is given; usually the overlay of `layers(base, windowStack(...))`. Paints nothing between the windows.

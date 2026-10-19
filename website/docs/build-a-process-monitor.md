@@ -673,7 +673,7 @@ and chain the handler onto `tableElement`'s `dataTable(...)` between `.onKeyEven
 and `.fill`.
 
 ```scala title="Main.scala"
-  override def config: RunnerConfig = RunnerConfig(tickRate = Some(TickRate), mouseCapture = true)
+  override def config: RunnerConfig = RunnerConfig(tickRate = Some(TickRate), mouse = MouseCaptureMode.Buttons)
 ```
 
 ```scala title="Main.scala"

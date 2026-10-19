@@ -128,8 +128,15 @@ final class ViewState private[dsl] ():
 
   /** Runs `body` with `key` pushed onto the scope path, so hooks inside it belong to this key rather than to the
     * position the body happens to occupy among its siblings.
+    *
+    * A scope opened as the very first thing inside a scope of the same key is that scope, not a second one under it:
+    * `each(items)(_.id)(item => keyed(item.id)(row(item)))` — code written for 0.19, where `each` opened no hook scope
+    * and the `keyed` was needed — keeps the one path `keyed(item.id)` alone had, rather than nesting it as `id/id`.
     */
-  private[dsl] def scoped[A](key: String)(body: => A): A = nested(s"key:$key")(body)
+  private[dsl] def scoped[A](key: String)(body: => A): A =
+    val segment = s"key:$key"
+    if ordinal == 0 && path.headOption.contains(segment) then body
+    else nested(segment)(body)
 
   private[dsl] def screen[A](id: Long)(body: => A): A = nested(s"screen:$id")(body)
 

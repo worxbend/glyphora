@@ -126,7 +126,7 @@ object Console:
     * CI log viewer that renders ANSI asks for it.
     */
   def detectedColors(env: Map[String, String] = sys.env, terminal: Boolean = StandardOutput.isTerminal): ColorDepth =
-    if terminal || colorForced(env) then ColorDepth.detect(env) else ColorDepth.NoColor
+    if terminal || ColorDepth.colorForced(env) then ColorDepth.detect(env) else ColorDepth.NoColor
 
   /** Whether a run has no terminal to be interactive on: standard output is not a terminal, or `CI` is set to anything
     * but the empty string, `0` or `false`. What `TuiApp.printTarget` consults before applying a
@@ -145,10 +145,6 @@ object Console:
     val out = PrintStream(FileOutputStream(FileDescriptor.out), false, UTF_8)
     out.print(text)
     out.flush()
-
-  private def colorForced(env: Map[String, String]): Boolean =
-    env.get("CLICOLOR_FORCE").exists(value => value.nonEmpty && value != "0") ||
-      env.get("FORCE_COLOR").exists(_ != "0")
 
   private def positive(env: Map[String, String], name: String): Option[Int] =
     env.get(name).flatMap(_.trim.toIntOption).filter(_ > 0)

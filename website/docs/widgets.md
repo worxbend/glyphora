@@ -2599,7 +2599,8 @@ testing.
 
 ### An accordion
 
-`accordion(state)(sections*)` stacks titled sections of which at most one is open. Each
+`accordion(state)(sections*)` stacks titled sections — each an `AccordionSection(title,
+content)` — of which at most one is open. Each
 header is a `collapsible` — a tab stop that Enter or Space toggles — and opening one
 closes whichever was open:
 
@@ -2607,9 +2608,9 @@ closes whichever was open:
 private val settings = AccordionState(open = Some(0))
 
 accordion(settings)(
-  "General" -> generalForm,
-  "Network" -> networkForm,
-  "About"   -> text(s"version $version"),
+  AccordionSection("General", generalForm),
+  AccordionSection("Network", networkForm),
+  AccordionSection("About", text(s"version $version")),
 )
 ```
 
@@ -2694,8 +2695,9 @@ widget is `TagInput(placeholder, showCursor, style, chipStyle, suggestionStyle)`
 draws a set of them over the area it is given, usually as the overlay of a `layers`:
 
 ```scala
-private val inspector = WindowState(x = 4, y = 2, width = 30, height = 10)
-private val console   = WindowState(x = 20, y = 8, width = 40, height = 8)
+private val desk      = WindowStack()
+private val inspector = desk.window(x = 4, y = 2, width = 30, height = 10)
+private val console   = desk.window(x = 20, y = 8, width = 40, height = 8)
 
 layers(
   mainView,
@@ -2719,7 +2721,12 @@ move or resize it a cell at a time, the title shows `· move` or `· resize`, an
 or `Esc` leave. Both keys are the rebindable `window-move` and `window-resize`
 framework keys. A window whose content has nothing to focus is a tab stop itself, so it
 can always be arranged from the keyboard. `WindowState` keeps the rectangle (`rect`),
-the stacking order (`z`, raised with `raise()`), and the mode; the frame alone is the
+the stacking order (`z`, raised with `raise()`), and the mode. The order is counted by the
+caller-owned `WindowStack` that built the window (`desk.window(x, y, width, height)`), so
+two sets of windows — two apps, two test suites in one JVM — never interleave. Styling
+follows every other container: the border is drawn in the theme's `border` style (bold
+while focus is inside the window) and `.frameStyle(…)` recolours it, while `.fg(…)` or
+`.styled(…)` is the content style the body is drawn over. The frame alone is the
 `Window(title, style, borderStyle, titleStyle, gripSymbol, borderType)` widget.
 
 ### Menu bars and context menus

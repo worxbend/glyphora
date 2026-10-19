@@ -1,7 +1,7 @@
 package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.Size
-import io.worxbend.tui.terminal.HeadlessBackend
+import io.worxbend.tui.terminal.{BackendError, HeadlessBackend}
 import io.worxbend.tui.testsupport.Pilot
 
 import org.scalatest.funsuite.AnyFunSuite
@@ -161,3 +161,32 @@ final class PromptSpec extends AnyFunSuite with PilotFixture:
     assert(Prompt.text("Name") == Some("alpha"))
     assert(Prompt.password("Token") == Some("secret"))
     assert(written.toString == "? Name: alpha\n? Token: \n")
+
+  /** A terminal session over `backend` whose plain fallback reads `input` and appends to `written`. */
+  private def failingTerminal(
+      backend: HeadlessBackend,
+      input: Iterator[String],
+      written: StringBuilder,
+  ): PromptSession =
+    backend.failNext(HeadlessBackend.Op.ReserveInlineRows, BackendError.Io(java.io.IOException("the tty went away")))
+    PromptSession.terminalOver(
+      () => Right(backend),
+      PromptSession.Mode.Plain(() => input.nextOption(), written ++= _, echoInput = false),
+      Theme.Dark,
+    )
+
+  test("a terminal that fails under a prompt answers it in the plain shape instead of throwing"):
+    val written         = StringBuilder()
+    given PromptSession = failingTerminal(HeadlessBackend(Size(30, 6)), Iterator("alpha"), written)
+    assert(Prompt.text("Name") == Some("alpha"))
+    assert(written.toString.startsWith("? Name: "))
+    assert(summon[PromptSession].transcript == Seq("? Name alpha"))
+
+  test("a terminal that fails under a task runs the work once and reports it in the plain shape"):
+    val written         = StringBuilder()
+    val runs            = java.util.concurrent.atomic.AtomicInteger(0)
+    given PromptSession = failingTerminal(HeadlessBackend(Size(30, 6)), Iterator.empty, written)
+    assert(Prompt.task("Fetch")(_ => runs.incrementAndGet()) == Some(1))
+    assert(runs.get == 1)
+    assert(written.toString.contains("✓ Fetch"))
+    assert(summon[PromptSession].transcript == Seq("✓ Fetch"))

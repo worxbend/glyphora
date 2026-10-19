@@ -193,7 +193,7 @@ final class PromptComposerState(
 
   /** The scope completions run under, created on first use on the render thread; `None` outside a running app. */
   private def taskScope: Option[TaskScope] =
-    if scope.isEmpty then scope = scala.util.Try(Async.scope()).toOption
+    if scope.isEmpty then scope = Async.scopeIfRunning()
     scope
 
   // --- large paste -----------------------------------------------------------------------------------------------

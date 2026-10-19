@@ -13,7 +13,7 @@ import io.worxbend.tui.widgets as w
 /** How far PageUp/PageDown move a scrollable, in rows. One place to change the page step for every scrollable: the
   * running app's `FrameworkKeys.pageStep`, which `TuiApp` installs around each key dispatch (10 outside a run).
   */
-private def PageStep: Int = FrameworkKeys.currentPageStep.value
+private def currentPageStep: Int = FrameworkKeys.current.value.pageStep
 
 /** The divider bounds and keyboard step of every [[SplitPaneElement]]: the split is never driven past these, so neither
   * pane can be collapsed away entirely by a drag or by a held `[`/`]`.
@@ -62,6 +62,14 @@ private def focusStyled(props: ElementProps): Style =
     val pressCue = props.pressedStyle.orElse(StateStyles.stated(states.pressed))
     val hovered  = hoverCue.filter(_ => props.hovered).fold(focused)(focused.patch)
     pressCue.filter(_ => props.pressed).fold(hovered)(hovered.patch)
+
+/** The cursor of a picker-like node — the day a `datePicker` is on, a `timePicker`'s field, a `colorPicker`'s swatch, a
+  * `confirmDialog`'s button: the theme's focus cue while the node is focused, and only an underline at rest. The cursor
+  * stays findable on an unfocused picker, and moving focus onto it visibly changes it — the cue `pilot.a11yReport`
+  * checks every focusable for.
+  */
+private def cursorCue(props: ElementProps): Style =
+  if props.focused then props.focusStyle else Style.Default.underline
 
 /** The node's own style with only its theme component's states layered on — no fallback to the theme's focus cue. For
   * the nodes whose focus cue is something other than a restyled body (a text field's caret, a list's selected row), so
@@ -147,24 +155,24 @@ private def selectionKeys(next: () => Unit, previous: () => Unit): BuiltinKeyHan
       case _            => false
 
 /** The jump half of the selection vocabulary: Home and End go to the ends of the list, PageUp and PageDown move the
-  * highlight [[PageStep]] entries at a time.
+  * highlight [[currentPageStep]] entries at a time.
   *
   * It is a second combinator layered over [[selectionKeys]] with `.orElse` rather than four more thunks on that one,
   * because only the elements whose state addresses a row *by index* can answer these. The tree and menu nodes address a
   * row by the value it shows — a node path, a file path — and have no index to jump to, so they keep the Up/Down pair
-  * on its own. Reusing [[PageStep]] keeps a list page and a scroll-viewport page the same size.
+  * on its own. Reusing [[currentPageStep]] keeps a list page and a scroll-viewport page the same size.
   */
 private def selectionJumpKeys(first: () => Unit, last: () => Unit, by: Int => Unit): BuiltinKeyHandler =
   keys {
     case KeyEvent(KeyCode.Home, _)     => first()
     case KeyEvent(KeyCode.End, _)      => last()
-    case KeyEvent(KeyCode.PageDown, _) => by(PageStep)
-    case KeyEvent(KeyCode.PageUp, _)   => by(-PageStep)
+    case KeyEvent(KeyCode.PageDown, _) => by(currentPageStep)
+    case KeyEvent(KeyCode.PageUp, _)   => by(-currentPageStep)
   }
 
 /** The scrolling key vocabulary shared by every viewport-shaped element: Up/Down move one row, PageUp/PageDown move
-  * [[PageStep]] rows. `up`/`down` are handed the row count to move and do the scrolling on the caller-owned state;
-  * anything else is left unconsumed so it keeps bubbling.
+  * [[currentPageStep]] rows. `up`/`down` are handed the row count to move and do the scrolling on the caller-owned
+  * state; anything else is left unconsumed so it keeps bubbling.
   */
 private def scrollKeys(up: Int => Unit, down: Int => Unit): BuiltinKeyHandler =
   event =>
@@ -176,10 +184,10 @@ private def scrollKeys(up: Int => Unit, down: Int => Unit): BuiltinKeyHandler =
         down(1)
         true
       case KeyCode.PageUp   =>
-        up(PageStep)
+        up(currentPageStep)
         true
       case KeyCode.PageDown =>
-        down(PageStep)
+        down(currentPageStep)
         true
       case _                => false
 

@@ -26,7 +26,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 - Component styles: `StateStyles` per role via `Theme.withComponent`, roles `ButtonRole`, `InputRole`, `ListRole`, `TableHeaderRole`, `ComponentRole.named`, and `.variant(ButtonRole.Primary)`.
 - Hierarchical `StyleName` (`"list.selected"` falls back to `"list"`), `theme.component(role)`, `theme.style(name)`.
 - `.frameStyle(…)` for borders and `.style(s)` for content on every container.
-- Theme files: `Theme.parse` / `Theme.render`; `Style.parse` / `Style.render`.
+- Theme files: `Theme.parse` / `Theme.render`; `Style.parse` / `Style.render`. Theme files and keymaps share one `LineError(line, message)`.
 - Presets `Theme.Dracula`, `Catppuccin`, `Nord`, `Gruvbox`, `Solarized`, `Ansi16`; `Theme.presets` lists all nine.
 - `Theme.auto` follows the terminal's light or dark background; `lightDark(light, dark)`, `ColorScheme`, `Event.ColorSchemeChanged`.
 
@@ -34,14 +34,14 @@ note in [Versioning & releases](website/docs/versioning.md).
 
 - Key sequences: `binding("g g", …)`, `KeySequence`, the compile-checked `keyseq"…"` literal, `KeyLeader`, `TuiApp.sequenceTimeout`.
 - `whichKeyPopup` for pending prefixes; modes via `KeyBindings.modes(Mode(…), …)`, `ModeId`, `keyMode`.
-- User keymaps: `BindingId`, `Keymap.parse`, `KeyBindings.rebind`, `Keymap.markdown`; `FrameworkKeys` ids via `TuiApp.frameworkKeys`.
+- User keymaps: `BindingId`, `Keymap.parse`, `KeyBindings.rebind`, `Keymap.markdown`; `FrameworkKeys` ids via `TuiApp.frameworkKeys`. Key help is typed: `KeyHint`, `HelpSection` (`KeyBindings.continuations`, `helpSections`) and `KeymapEntry` (`FrameworkKeys.entries`).
 - `.disabled(cond)`, `.hoverStyle(…)`, `.pressedStyle(…)`, `TuiApp.accessibleLabel(key)`.
 - `focusGroup(children*)` (one tab stop, arrows inside), `.trapFocus`, `TuiApp.spatialNavigation` (Alt+arrows).
 
 **Mouse, selection and drag and drop**
 
 - Pointer capture for drags; `.onMouse(ctx => …)` with `MouseContext`; synthesised `MouseEvent.clickCount`.
-- `RunnerConfig.withMouseMotion`, `RunnerHandle.setMouseCaptureMode`.
+- `RunnerConfig.withMouse(MouseCaptureMode)` — one mouse setting, `Off`, `Buttons` or `AllMotion`; `RunnerHandle.setMouseCaptureMode`.
 - Mouse text selection over `text`, `markdown`, `log`, `logConsole` and tables, copied through OSC 52; `.selectable(…)`, framework key `copy-selection`.
 - Typed drag and drop: `.draggable(payload)`, `.dropTarget[A](accept)(onDrop)`, `DragKey[A]`.
 - Pointer shapes (OSC 22) with `.pointer(PointerShape.…)`.
@@ -58,7 +58,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 
 - `useEffect`, `useMemo`, `useTask` (returning `Loadable`) and `useArea` hooks; `memo(deps*)(subtree)`.
 - `Versioned` caller-owned widget states that redraw on mutation; `ElementHost.pollStates()`.
-- `TaskScope.latest(key)` latest-wins tasks; `Store[S]` with `dispatch`, `select`, undo and redo.
+- `TaskScope.latest(key)` latest-wins tasks; `Store[S]` with `dispatch`, `select`, undo and redo. `Async.scopeIfRunning()` answers `None` where no runner is registered.
 - `Codec[A]` / `deriveCodec` (`tui-macros`), `Persisted.signal` and `persisted[A](path, initial)`.
 - `signal.animateTo(target, duration, easing)` for `Signal[Double]` / `Signal[Int]`.
 - `TreeState.keyed` / `TreeState.byLabelPath`; `TableRows[K]` for lazily read table rows.
@@ -75,8 +75,8 @@ note in [Versioning & releases](website/docs/versioning.md).
 **Widgets**
 
 - `datePicker`, `timePicker`, `rangeSlider`, `colorPicker`, `hexViewer`, `treeTable`, `placeholder`, `inspect` (with `Pretty` / `derivePretty`) and `qrCode`.
-- `menuBar`, `contextMenu`, `window` / `windowStack`, `tagInput`, `wizard`, `breadcrumb`, `toolbar`, `buttonGroup` and `accordion`.
-- `diffView(patch, state)` with `Patch.parse`, `Patch.of` (Myers), `DiffView`, `DiffViewState`.
+- `menuBar`, `contextMenu`, `window` / `windowStack` (windows built by a caller-owned `WindowStack`), `tagInput`, `wizard`, `breadcrumb`, `toolbar`, `buttonGroup` and `accordion` (`AccordionSection`).
+- `diffView(patch, state)` with `Patch.parse`, `Patch.of` (Myers), `DiffView`, `DiffViewState` (scrolls like `ScrollViewState`, `pageUp`/`pageDown` included).
 - `pixelImage(image, options)` with `RgbaImage`, `ImageLoader` and `Buffer.placeGraphic` (kitty graphics, iTerm2 inline images, half-block fallback).
 - `multiProgress(tasks, columns)` with `ProgressTask`, `ProgressColumn`, `MultiProgress`.
 - `logConsole(ring)` over `LogRing`, `LogRecord`, `LogLevel` and `JulBridge`; `errorBoundary(fallback)(subtree)`.
@@ -87,14 +87,14 @@ note in [Versioning & releases](website/docs/versioning.md).
 
 - `RunnerConfig.withCaptureStdio(CaptureStdio)`: `println` goes to the scrollback or a `LogRing`.
 - Print mode: `Console.print` / `Console.render` / `Console.printLines`, and `RunnerConfig.withNonInteractive(NonInteractivePolicy)`.
-- Inline prompts: `Prompt.text`, `password`, `confirm`, `select`, `multiSelect`, `number`, `path`, `form`, `task`, `loader`; `PromptSession`, `Prompt.answers`.
+- Inline prompts: `Prompt.text`, `password`, `confirm`, `select`, `multiSelect`, `number`, `path`, `form`, `task`, `loader`; `PromptSession`, `Prompt.answers`. A terminal that fails under a prompt falls back to plain lines rather than throwing.
 - Desktop notifications `Notifications.desktop`, taskbar progress `AppServices.taskbarProgress`, in-band resize (mode 2048), grapheme widths (mode 2027).
 - `Backend.keepInlineRows(n)`; `StandardOutput.isTerminal` / `isInputTerminal` / `width`.
 - `TerminalCapabilities.terminalVersion` (XTVERSION), `kittyGraphics`, `inlineImages`; `ImageProtocol.select`.
 
 **Testing and tooling**
 
-- `TuiApp.boundsOf(key)` / `ElementHost.boundsOf`, `Pilot.click(rect)` / `Pilot.hover(rect)`; `NodeBounds`.
+- `TuiApp.boundsOf(key)` / `ElementHost.boundsOf`, `Pilot.click(rect)` / `Pilot.hover(rect)`; `NodeBounds`; `ElementHost.enableBoundsRecording()` for an embedding host.
 - `ElementTreeSnapshot.render(app)` and `Element.debugName`.
 - `BufferExport.svg` / `html` / `ansi` with `ExportOptions`; styled goldens `GoldenFrames.assertMatchesStyled` / `Pilot.assertGoldenStyled`.
 - Asciicast recording via `RunnerConfig.withRecording(path)`, `-Dglyphora.record=…` or `AsciicastRecorder`; `Tape.parse` / `Tape.run`.
@@ -152,3 +152,5 @@ Each item has a before/after migration note in
 
 - `TuiApp` gained an overridable `messages` member; an app that declares its own `messages` needs `override` or a rename.
 - `Dialog` widens its box to fit its buttons, so a button row wider than the message is no longer dropped.
+- An unfocused `confirmDialog` (and the new pickers) underlines its selection instead of painting the focus cue, so focus is visible.
+- `RunnerConfig.mouseCapture: Boolean` is now `mouse: MouseCaptureMode` (`MouseCaptureMode` gained `Off`); `RunnerConfig(mouseCapture = true)` becomes `RunnerConfig(mouse = MouseCaptureMode.Buttons)`. `withMouseCapture`, `withoutMouseCapture`, a derived `mouseCapture` and the positional Boolean arities still work.

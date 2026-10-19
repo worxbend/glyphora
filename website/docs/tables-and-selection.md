@@ -308,7 +308,7 @@ one row rather than showing nothing on every page for ever.
 
 `dataTable` has no built-in wheel behavior, unlike `list` — a wheel over an
 uncustomised table does nothing at all, which reads as a hung application. Add
-one handler, and turn mouse reporting on with `RunnerConfig(mouseCapture = true)`:
+one handler, and turn mouse reporting on with `RunnerConfig(mouse = MouseCaptureMode.Buttons)`:
 
 ```scala
 dataTable(table, tableState)

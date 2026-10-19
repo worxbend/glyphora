@@ -86,9 +86,12 @@ private[terminal] object AnsiSequences:
   /** DECSCUSR (`CSI n SP q`): selects the shape the terminal draws its hardware cursor in — see [[CursorShape]]. */
   def cursorShape(shape: CursorShape): String = s"$Esc[${CursorShape.parameter(shape)} q"
 
-  /** The mouse-capture request for `mode` — see [[MouseCaptureMode]] for what each one costs and buys. */
+  /** The mouse-capture request for `mode` — see [[MouseCaptureMode]] for what each one costs and buys; `Off` is the
+    * request to stop.
+    */
   def enableMouseCapture(mode: MouseCaptureMode): String =
     mode match
+      case MouseCaptureMode.Off       => DisableMouseCapture
       case MouseCaptureMode.Buttons   => EnableMouseCapture
       case MouseCaptureMode.AllMotion => EnableMouseAllMotion
 

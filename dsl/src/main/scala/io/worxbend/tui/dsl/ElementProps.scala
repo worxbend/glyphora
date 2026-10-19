@@ -13,12 +13,12 @@ import io.worxbend.tui.terminal.PointerShape
   *
   * `hovered` is true on the one input target the pointer was last over — the node a mouse hit resolves to, so a
   * container is hovered only where none of its children is — and is only ever written on a host that receives
-  * `MouseEventKind.Moved`, which takes mouse-motion tracking (`RunnerConfig.withMouseMotion`; a `TuiApp` turns it on by
-  * itself once a frame contains a node with a hover or pressed style or an explicit `.pointer`). `pressed` is true on
-  * the target a button went down on, from that press until the matching release wherever it lands. `disabled` is the
-  * effective flag `.disabled(true)` sets on a node *and every node under it*: the node leaves the tab order, its
-  * handlers and built-ins are not run, and it draws in `disabledStyle` — the theme's `disabled` style, stamped on every
-  * node the way `focusStyle` is.
+  * `MouseEventKind.Moved`, which takes mouse-motion tracking (`RunnerConfig.withMouse(MouseCaptureMode.AllMotion)`; a
+  * `TuiApp` turns it on by itself once a frame contains a node with a hover or pressed style or an explicit
+  * `.pointer`). `pressed` is true on the target a button went down on, from that press until the matching release
+  * wherever it lands. `disabled` is the effective flag `.disabled(true)` sets on a node *and every node under it*: the
+  * node leaves the tab order, its handlers and built-ins are not run, and it draws in `disabledStyle` — the theme's
+  * `disabled` style, stamped on every node the way `focusStyle` is.
   *
   * `component` is the [[StateStyles]] the theme holds for this node's role — its `.variant(...)`, or the role the node
   * type declares (`button` is `ButtonRole.Default`) — and `theme` the theme the pass resolved it from, which a node

@@ -72,7 +72,7 @@ import scala.concurrent.duration.FiniteDuration
   */
 final class RunnerConfig private (
     val tickRate: Option[FiniteDuration],
-    val mouseCapture: Boolean,
+    val mouse: MouseCaptureMode,
     val onTaskError: Option[RenderTaskErrorHandler],
     val onFrame: Option[CompletedFrame => Unit],
     val viewport: Viewport,
@@ -81,7 +81,6 @@ final class RunnerConfig private (
     val captureStdio: Option[CaptureStdio],
     val recording: Option[Path],
     val nonInteractive: NonInteractivePolicy,
-    val mouseMotion: Boolean,
 ):
 
   /** Synthetic [[Event.Tick]]s every `rate` — the whole-app clock for animation; see the class notes on why the type is
@@ -92,11 +91,22 @@ final class RunnerConfig private (
   /** No synthetic ticks at all: the loop blocks on input for its default poll between events. The default. */
   def withoutTickRate: RunnerConfig = updated(tickRate = None)
 
-  /** Asks the terminal to report mouse events, which reach the app as [[Event.Mouse]]. */
-  def withMouseCapture: RunnerConfig = updated(mouseCapture = true)
+  /** How much mouse traffic the terminal is asked to report — see [[MouseCaptureMode]]. Reports reach the app as
+    * [[Event.Mouse]]; [[MouseCaptureMode.AllMotion]] is what delivers [[io.worxbend.tui.core.MouseEventKind.Moved]] and
+    * so hover. A DSL `TuiApp` running with [[MouseCaptureMode.Buttons]] upgrades itself to `AllMotion` the first time a
+    * frame asks for a hover cue, so asking for `AllMotion` here is for an app that wants hover from the very first
+    * frame, or drives its own loop.
+    */
+  def withMouse(mode: MouseCaptureMode): RunnerConfig = updated(mouse = mode)
 
-  /** Leaves mouse reporting off. The default. */
-  def withoutMouseCapture: RunnerConfig = updated(mouseCapture = false)
+  /** Asks the terminal to report mouse buttons, the wheel and drags — `withMouse(MouseCaptureMode.Buttons)`. */
+  def withMouseCapture: RunnerConfig = updated(mouse = MouseCaptureMode.Buttons)
+
+  /** Leaves mouse reporting off — `withMouse(MouseCaptureMode.Off)`. The default. */
+  def withoutMouseCapture: RunnerConfig = updated(mouse = MouseCaptureMode.Off)
+
+  /** Whether the terminal is asked to report the mouse at all: [[mouse]] is anything but [[MouseCaptureMode.Off]]. */
+  def mouseCapture: Boolean = mouse != MouseCaptureMode.Off
 
   /** Takes over the reporting of queued-body failures as they happen — see the class notes for what that changes about
     * what `run` returns, and keep the handler total.
@@ -147,24 +157,9 @@ final class RunnerConfig private (
   /** What a run does without a terminal to be interactive on — see [[NonInteractivePolicy]]. */
   def withNonInteractive(policy: NonInteractivePolicy): RunnerConfig = updated(nonInteractive = policy)
 
-  /** Asks for every pointer movement, not only presses, releases and drags — `MouseCaptureMode.AllMotion`, which is
-    * what delivers [[io.worxbend.tui.core.MouseEventKind.Moved]] and so hover. Implies [[withMouseCapture]]. Off by
-    * default because the terminal then sends a report per cell crossed; a DSL `TuiApp` running with mouse capture turns
-    * it on by itself the first time a frame asks for a hover cue, so this is for an app that wants hover from the very
-    * first frame or drives its own loop.
-    */
-  def withMouseMotion: RunnerConfig = updated(mouseCapture = true, mouseMotion = true)
-
-  /** Button-only mouse reporting, when mouse capture is on at all. The default. */
-  def withoutMouseMotion: RunnerConfig = updated(mouseMotion = false)
-
-  /** The capture mode setup asks the backend for when [[mouseCapture]] is on. */
-  def mouseCaptureMode: MouseCaptureMode =
-    if mouseMotion then MouseCaptureMode.AllMotion else MouseCaptureMode.Buttons
-
   private def updated(
       tickRate: Option[FiniteDuration] = tickRate,
-      mouseCapture: Boolean = mouseCapture,
+      mouse: MouseCaptureMode = mouse,
       onTaskError: Option[RenderTaskErrorHandler] = onTaskError,
       onFrame: Option[CompletedFrame => Unit] = onFrame,
       viewport: Viewport = viewport,
@@ -173,11 +168,10 @@ final class RunnerConfig private (
       captureStdio: Option[CaptureStdio] = captureStdio,
       recording: Option[Path] = recording,
       nonInteractive: NonInteractivePolicy = nonInteractive,
-      mouseMotion: Boolean = mouseMotion,
   ): RunnerConfig =
     new RunnerConfig(
       tickRate,
-      mouseCapture,
+      mouse,
       onTaskError,
       onFrame,
       viewport,
@@ -186,7 +180,6 @@ final class RunnerConfig private (
       captureStdio,
       recording,
       nonInteractive,
-      mouseMotion,
     )
 
   /** Structural over every field; the three function-valued fields compare by reference (see the class notes). */
@@ -194,15 +187,15 @@ final class RunnerConfig private (
     other match
       case that: RunnerConfig =>
         (this eq that) ||
-        (mouseCapture == that.mouseCapture && keyEventTypes == that.keyEventTypes && tickRate == that.tickRate &&
+        (mouse == that.mouse && keyEventTypes == that.keyEventTypes && tickRate == that.tickRate &&
           viewport == that.viewport && onTaskError == that.onTaskError && onFrame == that.onFrame &&
           onFrameTiming == that.onFrameTiming && captureStdio == that.captureStdio && recording == that.recording &&
-          nonInteractive == that.nonInteractive && mouseMotion == that.mouseMotion)
+          nonInteractive == that.nonInteractive)
       case _                  => false
 
   override def hashCode(): Int =
     var hash = tickRate.hashCode()
-    hash = 31 * hash + mouseCapture.hashCode()
+    hash = 31 * hash + mouse.hashCode()
     hash = 31 * hash + onTaskError.hashCode()
     hash = 31 * hash + onFrame.hashCode()
     hash = 31 * hash + viewport.hashCode()
@@ -210,8 +203,7 @@ final class RunnerConfig private (
     hash = 31 * hash + onFrameTiming.hashCode()
     hash = 31 * hash + captureStdio.hashCode()
     hash = 31 * hash + recording.hashCode()
-    hash = 31 * hash + nonInteractive.hashCode()
-    31 * hash + mouseMotion.hashCode()
+    31 * hash + nonInteractive.hashCode()
 
   /** Only the fields that differ from [[RunnerConfig.Default]], so the common configuration prints as one short line; a
     * function field prints as `<installed>`, a lambda having no readable text of its own.
@@ -219,7 +211,7 @@ final class RunnerConfig private (
   override def toString: String =
     val fields = List(
       Option.when(tickRate.nonEmpty)(s"tickRate=$tickRate"),
-      Option.when(mouseCapture)("mouseCapture=true"),
+      Option.when(mouseCapture)(s"mouse=$mouse"),
       Option.when(onTaskError.nonEmpty)("onTaskError=<installed>"),
       Option.when(onFrame.nonEmpty)("onFrame=<installed>"),
       Option.when(viewport != Viewport.Fullscreen)(s"viewport=$viewport"),
@@ -228,7 +220,6 @@ final class RunnerConfig private (
       captureStdio.map(mode => s"captureStdio=$mode"),
       recording.map(path => s"recording=$path"),
       Option.when(nonInteractive != NonInteractivePolicy.Fail)(s"nonInteractive=$nonInteractive"),
-      Option.when(mouseMotion)("mouseMotion=true"),
     ).flatten
     if fields.isEmpty then "RunnerConfig.Default" else fields.mkString("RunnerConfig(", ", ", ")")
 
@@ -245,7 +236,7 @@ object RunnerConfig:
     */
   def apply(
       tickRate: Option[FiniteDuration] = None,
-      mouseCapture: Boolean = false,
+      mouse: MouseCaptureMode = MouseCaptureMode.Off,
       onTaskError: Option[RenderTaskErrorHandler] = None,
       onFrame: Option[CompletedFrame => Unit] = None,
       viewport: Viewport = Viewport.Fullscreen,
@@ -254,11 +245,10 @@ object RunnerConfig:
       captureStdio: Option[CaptureStdio] = None,
       recording: Option[Path] = None,
       nonInteractive: NonInteractivePolicy = NonInteractivePolicy.Fail,
-      mouseMotion: Boolean = false,
   ): RunnerConfig =
     new RunnerConfig(
       tickRate,
-      mouseCapture,
+      mouse,
       onTaskError,
       onFrame,
       viewport,
@@ -267,11 +257,10 @@ object RunnerConfig:
       captureStdio,
       recording,
       nonInteractive,
-      mouseMotion,
     )
 
-  /** The ten-field arity `apply` had before `mouseMotion` was added, kept default-free so code compiled against it
-    * keeps working — the policy the eleven-field `apply` above documents.
+  /** The ten-field arity `apply` had while mouse capture was a Boolean, kept default-free so code compiled against it
+    * keeps working — the policy the `apply` above documents. `mouseCapture = true` is [[MouseCaptureMode.Buttons]].
     */
   def apply(
       tickRate: Option[FiniteDuration],
@@ -287,7 +276,7 @@ object RunnerConfig:
   ): RunnerConfig =
     new RunnerConfig(
       tickRate,
-      mouseCapture,
+      buttonsWhen(mouseCapture),
       onTaskError,
       onFrame,
       viewport,
@@ -296,11 +285,10 @@ object RunnerConfig:
       captureStdio,
       recording,
       nonInteractive,
-      false,
     )
 
   /** The nine-field arity `apply` had before `nonInteractive` was added, kept default-free so code compiled against it
-    * keeps working — the policy the eleven-field `apply` above documents.
+    * keeps working — the policy the `apply` above documents.
     */
   def apply(
       tickRate: Option[FiniteDuration],
@@ -315,7 +303,7 @@ object RunnerConfig:
   ): RunnerConfig =
     new RunnerConfig(
       tickRate,
-      mouseCapture,
+      buttonsWhen(mouseCapture),
       onTaskError,
       onFrame,
       viewport,
@@ -324,11 +312,10 @@ object RunnerConfig:
       captureStdio,
       recording,
       NonInteractivePolicy.Fail,
-      false,
     )
 
   /** The eight-field arity `apply` had before `recording` and `nonInteractive` were added, kept default-free so code
-    * compiled against it keeps working — the policy the eleven-field `apply` above documents.
+    * compiled against it keeps working — the policy the `apply` above documents.
     */
   def apply(
       tickRate: Option[FiniteDuration],
@@ -342,7 +329,7 @@ object RunnerConfig:
   ): RunnerConfig =
     new RunnerConfig(
       tickRate,
-      mouseCapture,
+      buttonsWhen(mouseCapture),
       onTaskError,
       onFrame,
       viewport,
@@ -351,11 +338,10 @@ object RunnerConfig:
       captureStdio,
       None,
       NonInteractivePolicy.Fail,
-      false,
     )
 
   /** The seven-field arity `apply` had before `captureStdio`, `recording` and `nonInteractive` were added, kept
-    * default-free so code compiled against it keeps working — the policy the eleven-field `apply` above documents.
+    * default-free so code compiled against it keeps working — the policy the `apply` above documents.
     */
   def apply(
       tickRate: Option[FiniteDuration],
@@ -368,7 +354,7 @@ object RunnerConfig:
   ): RunnerConfig =
     new RunnerConfig(
       tickRate,
-      mouseCapture,
+      buttonsWhen(mouseCapture),
       onTaskError,
       onFrame,
       viewport,
@@ -377,8 +363,11 @@ object RunnerConfig:
       None,
       None,
       NonInteractivePolicy.Fail,
-      false,
     )
+
+  /** What a kept Boolean `mouseCapture` meant: button reporting when `true`, nothing when `false`. */
+  private def buttonsWhen(mouseCapture: Boolean): MouseCaptureMode =
+    if mouseCapture then MouseCaptureMode.Buttons else MouseCaptureMode.Off
 
   /** Full screen, no ticks, no mouse or key-release reporting, no observers: what `RunnerConfig()` builds and where
     * every `with*` chain starts.

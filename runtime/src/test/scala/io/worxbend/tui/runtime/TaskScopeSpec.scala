@@ -7,6 +7,17 @@ import java.util.concurrent.atomic.AtomicInteger
 import scala.concurrent.duration.DurationInt
 
 final class TaskScopeSpec extends AnyFunSuite:
+  test("scopeIfRunning answers None with no runner on this thread, and a live scope with one"):
+    assert(Async.scopeIfRunning().isEmpty)
+    val loop = RenderThread.register(Thread.currentThread(), () => ())
+    try
+      val scope = Async.scopeIfRunning()
+      assert(scope.isDefined)
+      scope.foreach(_.close())
+    finally
+      loop.close()
+      RenderThread.unregister()
+
   test("closing a task scope gates results already queued on its owner"):
     val queued = CountDownLatch(1)
     val loop   = RenderThread.register(Thread.currentThread(), () => queued.countDown())

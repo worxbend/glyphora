@@ -27,7 +27,8 @@ final class NodeBoundsSpec extends AnyFunSuite:
 
   test("boundsOf answers the frame rect of a keyed leaf inside a scroll view scrolled by three rows"):
     val host  = ElementHost()
-    host.recordBounds = true
+    host.enableBoundsRecording()
+    assert(host.recordingBounds)
     val state = ScrollViewState()
     val view  = scrolled(state)
     host.render(Rect(0, 0, 20, 7), buffer(20, 7), Theme.Dark, view)
@@ -52,10 +53,10 @@ final class NodeBoundsSpec extends AnyFunSuite:
 
   test("with recording off nothing is recorded, and asking turns it on for the next frame"):
     val host = ElementHost()
-    assert(!host.recordBounds)
+    assert(!host.recordingBounds)
     host.render(Rect(0, 0, 20, 3), buffer(20, 3), Theme.Dark, button("save")(()).key("save"))
     assert(host.boundsOf("save").isEmpty)
-    assert(host.recordBounds, "asking for bounds is the opt-in")
+    assert(host.recordingBounds, "asking for bounds is the opt-in")
     host.render(Rect(0, 0, 20, 3), buffer(20, 3), Theme.Dark, button("save")(()).key("save"))
     // the root node is handed the whole render area, whatever it would claim inside a container
     assert(host.boundsOf("save").contains(Rect(0, 0, 20, 3)))
@@ -79,3 +80,15 @@ final class NodeBoundsSpec extends AnyFunSuite:
     def view: Element = column(text("a"), button("b")(()), scrollView(text("c"), 1, ScrollViewState()))
     assert(boundsWrappers(FocusPass.decorate(view, FocusTracker(), Style.Default.reverse)) == 0)
     assert(boundsWrappers(FocusPass.decorate(view, FocusTracker(), Style.Default.reverse, Some(NodeBounds()))) == 5)
+
+  test("the input targets hit-testing, MouseContext and spatial navigation read live in the one NodeBounds"):
+    val host = ElementHost()
+    host.enableBoundsRecording()
+    val view = positioned(2, 1, 10, 3)(button("ok")(()).key("ok"))
+    host.render(Rect(0, 0, 20, 7), buffer(20, 7), Theme.Dark, view)
+    assert(host.tracker.bounds eq host.bounds, "the focus tracker records into the host's recorder, not one of its own")
+    val node = host.boundsOf("ok")
+    assert(node.isDefined)
+    // one recorder, one translation: the input target and the node it wraps cannot disagree about where it landed
+    assert(host.bounds.targetBounds(InputTarget.Focus(0)).map(_.layoutArea) == node)
+    assert(host.tracker.areaOf(0) == node)

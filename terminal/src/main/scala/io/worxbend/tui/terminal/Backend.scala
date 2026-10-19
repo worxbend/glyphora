@@ -83,12 +83,13 @@ trait Backend:
     *
     * The no-argument [[enableMouseCapture]] is `MouseCaptureMode.Buttons`. Overriding this one is what lets an app ask
     * for `MouseCaptureMode.AllMotion` and receive [[io.worxbend.tui.core.MouseEventKind.Moved]] — hover. The default
-    * body ignores the mode and requests buttons-only, so a backend written before all-motion tracking existed keeps
-    * compiling and keeps behaving exactly as it did.
+    * body requests buttons-only for either capturing mode, so a backend written before all-motion tracking existed
+    * keeps compiling and keeps behaving exactly as it did. `MouseCaptureMode.Off` is [[disableMouseCapture]].
     */
   def enableMouseCapture(mode: MouseCaptureMode): Either[BackendError, Unit] =
-    val _ = mode
-    enableMouseCapture()
+    mode match
+      case MouseCaptureMode.Off => disableMouseCapture()
+      case _                    => enableMouseCapture()
 
   /** Parks the terminal's own cursor — the hardware caret — on the zero-based cell `position`.
     *

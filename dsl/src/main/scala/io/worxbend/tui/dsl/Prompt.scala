@@ -177,7 +177,7 @@ object Prompt:
             None
           }
       }
-    if PromptRun.ask(session, steps, allowBack = true, check) then built else None
+    if PromptRun.ask(session, steps, StepNavigation.CanStepBack, check) == PromptOutcome.Answered then built else None
 
   /** Runs `work` under a spinner labelled `label`, with the last few lines it logs scrolling underneath, and leaves one
     * summary line — `✓ Downloading` — when it ends. Answers the work's result, or `None` when the user pressed
@@ -232,7 +232,8 @@ object Prompt:
       case other                => other.accepted.fold("")(_.toString)
 
   private def single[A](session: PromptSession, step: PromptStep[A]): Option[A] =
-    if PromptRun.ask(session, Vector(step), allowBack = false) then step.accepted else None
+    if PromptRun.ask(session, Vector(step), StepNavigation.ForwardOnly) == PromptOutcome.Answered then step.accepted
+    else None
 
 /** Tab completion for [[Prompt.path]]: the entries of the directory being typed whose names start with what follows its
   * last separator. Directories come back with a trailing separator, so a second Tab descends into them.

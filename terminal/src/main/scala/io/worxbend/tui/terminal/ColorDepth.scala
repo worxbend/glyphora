@@ -46,11 +46,18 @@ object ColorDepth:
   def detect(env: Map[String, String] = sys.env): ColorDepth =
     EnvironmentOverrides.colorDepth(env).getOrElse(detectUnpinned(env))
 
+  /** Whether `env` forces colour on — `CLICOLOR_FORCE` set to a non-empty value other than `0`, or `FORCE_COLOR` set to
+    * anything but `0` (step 2 of [[detect]]). The one reading of the rule, for a caller that must decide "colour even
+    * though this is not a terminal" before it asks for a depth.
+    */
+  def colorForced(env: Map[String, String]): Boolean =
+    env.get("CLICOLOR_FORCE").exists(value => value.nonEmpty && value != "0") ||
+      env.get("FORCE_COLOR").exists(_ != "0")
+
   /** [[detect]] without the `GLYPHORA_COLOR_DEPTH` pin. */
   private def detectUnpinned(env: Map[String, String]): ColorDepth =
     val forceColor = env.get("FORCE_COLOR")
-    val forced     = env.get("CLICOLOR_FORCE").exists(value => value.nonEmpty && value != "0") ||
-      forceColor.exists(_ != "0")
+    val forced     = colorForced(env)
     val disabled   = env.get("NO_COLOR").exists(_.nonEmpty) || env.get("CLICOLOR").contains("0") ||
       forceColor.contains("0")
     if disabled && !forced then NoColor
