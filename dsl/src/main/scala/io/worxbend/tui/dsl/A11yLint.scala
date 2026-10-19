@@ -97,10 +97,14 @@ private[dsl] object A11yLint:
         val area      = boundingBox(positions)
         A11yFinding(
           A11yRule.LowContrast,
-          f"${positions.size} cells of $fg on $bg at ${show(area)} have contrast ${Color.contrastRatio(fg, bg)}%.1f:1, below $MinimumContrast%.1f:1",
+          s"${positions.size} cells of $fg on $bg at ${show(area)} have contrast ${ratio(Color.contrastRatio(fg, bg))}:1, " +
+            s"below ${ratio(MinimumContrast)}:1",
           Some(area),
         )
       }
+
+  /** One decimal place, under `Locale.ROOT` so the message reads the same on every machine. */
+  private def ratio(value: Double): String = String.format(java.util.Locale.ROOT, "%.1f", value)
 
   private def boundingBox(cells: Vector[Position]): Rect =
     val left   = cells.map(_.x).min
