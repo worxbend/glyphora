@@ -26,6 +26,10 @@ import scala.concurrent.duration.{DurationInt, FiniteDuration}
   *   a bracketed paste of at least this many lines is shown as a `[Pasted N lines]` placeholder and expanded on submit
   * @param maxRows
   *   the most rows the draft grows to before it scrolls
+  *
+  * [[Versioned]] over its own fields as well as the draft: [[version]] is the editor's version plus a count of this
+  * state's own writes (history recall, the reverse search, the completion popup, pastes, submits), so any of them made
+  * between frames schedules the frame that shows it.
   */
 final class PromptComposerState(
     initialHistory: Seq[String] = Nil,
@@ -33,18 +37,35 @@ final class PromptComposerState(
     val debounce: FiniteDuration = 150.millis,
     val pasteLines: Int = 10,
     val maxRows: Int = 8,
-):
+) extends Versioned:
   /** The draft being edited — every [[w.EditBuffer]] operation is available on it. */
   val editor: w.TextAreaState = w.TextAreaState()
 
-  private val entries                       = mutable.ArrayBuffer.from(initialHistory)
-  private var recalled: Option[Int]         = None
-  private var draft: String                 = ""
-  private val pastes                        = mutable.LinkedHashMap.empty[String, String]
-  private[dsl] var reverse: Option[Reverse] = None
-  private[dsl] var popup: Option[Popup]     = None
-  private var scope: Option[TaskScope]      = None
-  private var pending: Option[Cancelable]   = None
+  private val entries                      = mutable.ArrayBuffer.from(initialHistory)
+  private var recalled: Option[Int]        = None
+  private var draft: String                = ""
+  private val pastes                       = mutable.LinkedHashMap.empty[String, String]
+  private var reverseOpen: Option[Reverse] = None
+  private var popupOpen: Option[Popup]     = None
+  private var scope: Option[TaskScope]     = None
+  private var pending: Option[Cancelable]  = None
+  private var writes: Long                 = 0L
+
+  def version: Long = writes + editor.version
+
+  private def touch(): Unit = writes += 1
+
+  private[dsl] def reverse: Option[Reverse] = reverseOpen
+
+  private[dsl] def reverse_=(next: Option[Reverse]): Unit =
+    reverseOpen = next
+    touch()
+
+  private[dsl] def popup: Option[Popup] = popupOpen
+
+  private[dsl] def popup_=(next: Option[Popup]): Unit =
+    popupOpen = next
+    touch()
 
   /** Bumped by an async completion result, so the frame that shows it is scheduled. */
   private[dsl] val revision: Signal[Int] = Signal(0)
@@ -66,6 +87,7 @@ final class PromptComposerState(
     recalled = None
     editor.clear()
     pastes.clear()
+    touch()
     Option.when(text.trim.nonEmpty) {
       if !entries.lastOption.contains(text) then entries += text
       text
@@ -79,11 +101,13 @@ final class PromptComposerState(
       val index = recalled.fold(entries.size - 1)(current => math.max(0, current - 1))
       if recalled.isEmpty then draft = editor.value
       recalled = Some(index)
+      touch()
       editor.setValue(entries(index))
 
   /** Steps one entry forward; past the newest, the draft comes back. */
   def historyNext(): Unit =
     recalled.foreach { current =>
+      touch()
       if current + 1 < entries.size then
         recalled = Some(current + 1)
         editor.setValue(entries(current + 1))
@@ -209,6 +233,7 @@ final class PromptComposerState(
         if base.endsWith("]") then s"${base.dropRight(1)} #${pastes.size + 1}]" else s"$base #${pastes.size + 1}"
       val placeholder = if pastes.contains(base) then numbered else base
       pastes(placeholder) = clean
+      touch()
       editor.insert(placeholder)
     else editor.insert(clean)
 
@@ -240,7 +265,7 @@ final case class PromptComposerElement(
   type Self = PromptComposerElement
 
   /** The caller-owned state this node paints, watched for writes made between frames. */
-  override private[dsl] def watchedStates: Seq[Versioned] = Seq(state.editor)
+  override private[dsl] def watchedStates: Seq[Versioned] = Seq(state)
   override def debugName: String                          = "promptComposer"
   override def pointerShape: Option[PointerShape]         = textPointer(props)
 

@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{CharWidth, Color}
+import io.worxbend.tui.core.{CharWidth, Color, Versioned}
 import io.worxbend.tui.macros.{FieldInput, FieldSpec, FieldValidation, FormSpec}
 import io.worxbend.tui.runtime.{ReactiveScope, Signal}
 import io.worxbend.tui.widgets.TextInputState
@@ -50,17 +50,29 @@ private[dsl] object FieldBinding:
 /** Live state for a derived form. Submission first parses all controls with the spec's original parsers. If parsing
   * succeeds, typed field checks validate the candidate without changing it; only a valid candidate is published. Parser
   * errors therefore precede validation errors. Writes and callbacks run on the render thread.
+  *
+  * [[Versioned]]: [[version]] is the sum of every text field's input version plus the number of submits, so text typed
+  * into a field from outside the event path, or a submit made between frames, schedules the frame that shows it. The
+  * checkbox and choice fields are signals, which schedule their own frames.
   */
 final class FormState[A] private (
     private[dsl] val bindings: Seq[FieldBinding],
     spec: FormSpec[A],
     validators: Seq[FieldValidation[A]],
-):
+) extends Versioned:
   val errors: Signal[Map[String, String]] = Signal(Map.empty)
   val result: Signal[Option[A]]           = Signal(None)
+  private var submits                     = 0L
+
+  def version: Long =
+    bindings.foldLeft(submits) {
+      case (sum, FieldBinding.TextLike(_, input, _)) => sum + input.version
+      case (sum, _)                                  => sum
+    }
 
   /** Parses every control, then validates the typed candidate. Failure always clears the previous result. */
   def submit(): Unit =
+    submits += 1
     val parsed = bindings.map(binding => binding.spec.name -> binding.parsed)
     val failed = parsed.collect { case (name, Left(message)) => name -> message }.toMap
     if failed.nonEmpty then

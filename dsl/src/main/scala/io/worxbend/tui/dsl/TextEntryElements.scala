@@ -193,7 +193,7 @@ final case class AutocompleteElement(
   type Self = AutocompleteElement
 
   /** The caller-owned state this node paints, watched for writes made between frames. */
-  override private[dsl] def watchedStates: Seq[Versioned]        = Seq(state.input)
+  override private[dsl] def watchedStates: Seq[Versioned]        = Seq(state)
   override def debugName: String                                 = "autocomplete"
   private[dsl] override def componentRole: Option[ComponentRole] = Some(InputRole)
 
