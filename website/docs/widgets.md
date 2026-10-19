@@ -981,6 +981,12 @@ compared with `==` and must be unique within the tree. The state's type names th
 `TreeState[Seq[Int]]` for the positional one, `TreeState[String]` for a tree keyed by
 label.
 
+When labels repeat and are not even unique among siblings, give the nodes a stable
+`id` — `TreeNode("config", id = Some("app/config"))` — and use `TreeState.byId`: it keys
+each node by its `id`, falling back to the label for a node without one, so two rows
+labelled `config` expand, collapse and highlight one at a time. The `id` never reaches
+the screen.
+
 `DirectoryTreeState(root)` starts
 **unloaded**. Construction, navigation and painting never touch the filesystem;
 `childrenOf` and `visiblePaths` read only installed snapshots. Create and retain the

@@ -92,3 +92,23 @@ final class TreeKeyedStateSpec extends AnyFunSuite:
     assert(trimmedLines(buffer) == Seq("▾ src", "    README.md", "▾ docs", "    README.md"))
     assert(buffer.get(4, 3).style.modifiers.hasAny(Modifiers.Reverse))
     assert(!buffer.get(4, 1).style.modifiers.hasAny(Modifiers.Reverse))
+
+  test("byId keys nodes by their stable id, so duplicate labels stay distinct"):
+    val nodes  = Seq(
+      TreeNode("app", Seq(TreeNode("config", id = Some("app/config"))), id = Some("app")),
+      TreeNode("lib", Seq(TreeNode("config", id = Some("lib/config"))), id = Some("lib")),
+    )
+    val state  = TreeState.byId
+    state.expanded ++= Seq("app", "lib")
+    state.selected = Some("lib/config")
+    val buffer = rendered(Tree(nodes), state, 20, 4)
+    assert(trimmedLines(buffer) == Seq("▾ app", "    config", "▾ lib", "    config"))
+    assert(buffer.get(4, 3).style.modifiers.hasAny(Modifiers.Reverse), "the selected config row is highlighted")
+    assert(!buffer.get(4, 1).style.modifiers.hasAny(Modifiers.Reverse), "its namesake under app is not")
+    state.selectPrevious(nodes)
+    assert(state.selected.contains("lib"))
+
+  test("byId falls back to the label for a node that carries no id"):
+    val state = TreeState.byId
+    state.expanded += "b"
+    assert(trimmedLines(rendered(Tree(original), state, 20, 5)) == Seq("  a", "▾ b", "    b1", "    b2", "▸ c"))
