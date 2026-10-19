@@ -20,11 +20,11 @@ private[dsl] final case class MouseHit(target: InputTarget, layoutArea: Rect)
 
 /** Where an input target rendered this frame, and *when* in the frame's paint order it rendered.
   *
-  * `sequence` is a counter that [[FocusTracker.record]] bumps on every recorded area and [[FocusTracker.clearAreas]]
-  * resets at the start of each frame. A container paints itself before its children and paints its children in order,
-  * so a larger `sequence` means "painted later", and on a terminal — where every cell holds exactly one character —
-  * painted later means painted *over*. That makes the greatest sequence covering a cell the thing the user actually
-  * sees there, which is the rule [[FocusTracker.hitTest]] resolves a click by.
+  * `sequence` is a counter that [[NodeBounds.recordTarget]] bumps on every recorded area and
+  * [[NodeBounds.clearTargets]] resets at the start of each frame. A container paints itself before its children and
+  * paints its children in order, so a larger `sequence` means "painted later", and on a terminal — where every cell
+  * holds exactly one character — painted later means painted *over*. That makes the greatest sequence covering a cell
+  * the thing the user actually sees there, which is the rule [[FocusTracker.hitTest]] resolves a click by.
   */
 private[dsl] final case class PaintedArea(layoutArea: Rect, hitArea: Rect, sequence: Int)
 
@@ -58,76 +58,14 @@ private object FocusAnchor:
 /** Focus and the autofocus request already handled by one covered layer; both must survive its absence. */
 private final case class CoveredFocus(anchor: FocusAnchor, autofocus: Option[AutofocusRequest])
 
-/** A single paint-ordered map of focusable and pointer-only input targets. Both kinds increment the same sequence,
-  * including deferred portal content, so tree order and focus capability cannot override what was painted last. Owned
-  * by one [[FocusTracker]] and touched only on its render thread.
-  */
-private[dsl] final class PaintedAreas:
-
-  private val areas = mutable.Map[InputTarget, PaintedArea]()
-
-  /** How many areas have been recorded so far this frame; the paint sequence the next [[record]] stamps. */
-  private var paintCounter = 0
-
-  /** Records both layout and visible bounds, mapped out of every offscreen scroll buffer. Only hit bounds are clipped
-    * to each enclosing viewport: handlers still need the translated layout origin and size. A focusable scrolled out of
-    * view is not recorded at all, so neither hit testing nor ancestor wheel bubbling can reach it.
-    */
-  def record(index: Int, area: Rect): Unit =
-    recordTarget(InputTarget.Focus(index), area)
-
-  private def recordTarget(target: InputTarget, area: Rect): Unit =
-    val onScreen = FrameCoordinates.visible(area)
-    if !onScreen.isEmpty then
-      areas(target) = PaintedArea(FrameCoordinates.translate(area), onScreen, paintCounter)
-      paintCounter += 1
-
-  /** Records where a non-focusable element with user or built-in mouse behavior rendered, keyed by the pointer id the
-    * decoration pass assigns. Translated onto the screen and dropped when scrolled out of view, as [[record]] does.
-    */
-  def recordPointer(id: Int, area: Rect): Unit =
-    recordTarget(InputTarget.Pointer(id), area)
-
-  /** Published by a scroll view for exactly the duration of its content render, and paired with [[popViewport]] in a
-    * `finally` so an exception mid-render cannot leak a translation into a sibling subtree.
-    */
-  def pushViewport(viewport: ViewportTransform): Unit = FrameCoordinates.push(viewport)
-
-  def popViewport(): Unit = FrameCoordinates.pop()
-
-  /** Starts a frame: everything recorded for the previous one is dropped, and the next [[record]] paints first. */
-  def clear(): Unit =
-    areas.clear()
-
-    paintCounter = 0
-
-  /** Visible screen bounds, for hit eligibility only. */
-  def areaOf(index: Int): Option[Rect] = areas.get(InputTarget.Focus(index)).map(_.hitArea)
-
-  def pointerAreaOf(id: Int): Option[Rect] = areas.get(InputTarget.Pointer(id)).map(_.hitArea)
-
-  /** Unclipped screen bounds of any recorded input target. */
-  def layoutAreaOf(target: InputTarget): Option[Rect] = areas.get(target).map(_.layoutArea)
-
-  /** Unclipped screen bounds of a visible control, for local-coordinate and size arithmetic in its handlers. */
-  def layoutAreaOf(index: Int): Option[Rect] = areas.get(InputTarget.Focus(index)).map(_.layoutArea)
-
-  /** The input target painted last at this absolute screen position, whether or not it accepts focus. */
-  def mouseHit(pos: Position): Option[MouseHit] =
-    val hits = areas.filter((_, area) => area.hitArea.contains(pos))
-    hits.maxByOption((_, area) => area.sequence).map((target, painted) => MouseHit(target, painted.layoutArea))
-
-  /** The winning target's focus index, if it has one. Never looks through a pointer-only target. */
-  def hitTest(pos: Position): Option[Int] = mouseHit(pos).flatMap(_.target.focusIndex)
-
 /** Per-app focus bookkeeping, owned by a single `TuiApp.runWith` invocation and touched only on the render thread:
   * which focusable (by depth-first order index) has focus, how many exist, and where each rendered last frame (for
   * click-to-focus hit-testing).
   *
-  * Where things rendered is [[PaintedAreas]]' job, held as a field and forwarded: this class decides where focus *is*,
-  * that one remembers where the frame *put* everything.
+  * Where things rendered is [[NodeBounds]]' job — the host's one recorder, handed in — and this class forwards to it:
+  * this class decides where focus *is*, that one remembers where the frame *put* everything.
   */
-private[dsl] final class FocusTracker:
+private[dsl] final class FocusTracker(private[dsl] val bounds: NodeBounds = NodeBounds()):
 
   private var anchor: FocusAnchor = FocusAnchor(0, scala.None)
 
@@ -160,25 +98,21 @@ private[dsl] final class FocusTracker:
   private val groupEntry    = mutable.Map.empty[Int, Int]
   private var lastAutofocus = Option.empty[AutofocusRequest]
 
-  /** Where everything rendered this frame — a separate job from "where focus is", forwarded rather than exposed so a
-    * caller cannot record into a tracker whose focus state disagrees.
+  /** Records where focusable `index` rendered — see [[NodeBounds.recordTarget]]. */
+  def record(index: Int, area: Rect): Unit = bounds.recordTarget(InputTarget.Focus(index), area)
+
+  /** Records where the non-focusable node with mouse behaviour numbered `id` rendered. */
+  def recordPointer(id: Int, area: Rect): Unit = bounds.recordTarget(InputTarget.Pointer(id), area)
+
+  /** Published by a scroll view for exactly the duration of its content render, and paired with [[popViewport]] in a
+    * `finally` so an exception mid-render cannot leak a translation into a sibling subtree.
     */
-  private val painted = PaintedAreas()
+  def pushViewport(viewport: ViewportTransform): Unit = FrameCoordinates.push(viewport)
 
-  /** @see [[PaintedAreas.record]] */
-  def record(index: Int, area: Rect): Unit = painted.record(index, area)
+  def popViewport(): Unit = FrameCoordinates.pop()
 
-  /** @see [[PaintedAreas.recordPointer]] */
-  def recordPointer(id: Int, area: Rect): Unit = painted.recordPointer(id, area)
-
-  /** @see [[PaintedAreas.pushViewport]] */
-  def pushViewport(viewport: ViewportTransform): Unit = painted.pushViewport(viewport)
-
-  /** @see [[PaintedAreas.popViewport]] */
-  def popViewport(): Unit = painted.popViewport()
-
-  /** @see [[PaintedAreas.clear]] */
-  def clearAreas(): Unit = painted.clear()
+  /** Drops the input targets the previous frame recorded — see [[NodeBounds.clearTargets]]. */
+  def clearAreas(): Unit = bounds.clearTargets()
 
   /** Re-anchors focus against the focus keys of the tree that is about to render (depth-first order, `None` for unkeyed
     * focusables): a keyed element keeps focus even when its position moved, and the index is clamped into the new
@@ -400,23 +334,17 @@ private[dsl] final class FocusTracker:
     */
   var pressedTarget: Option[InputTarget] = None
 
-  /** @see [[PaintedAreas.areaOf]] */
-  def areaOf(index: Int): Option[Rect] = painted.areaOf(index)
+  /** The visible, clipped screen rect focusable `index` rendered into — for hit eligibility and spatial navigation. */
+  def areaOf(index: Int): Option[Rect] = bounds.targetBounds(InputTarget.Focus(index)).map(_.hitArea)
 
-  /** @see [[PaintedAreas.layoutAreaOf]] */
-  def layoutAreaOf(index: Int): Option[Rect] = painted.layoutAreaOf(index)
+  /** The visible screen rect the pointer-only target `id` rendered into. */
+  def pointerAreaOf(id: Int): Option[Rect] = bounds.targetBounds(InputTarget.Pointer(id)).map(_.hitArea)
 
-  /** @see [[PaintedAreas.layoutAreaOf(target:io\.worxbend\.tui\.dsl\.InputTarget)*]] */
-  def layoutAreaOf(target: InputTarget): Option[Rect] = painted.layoutAreaOf(target)
-
-  /** @see [[PaintedAreas.pointerAreaOf]] */
-  def pointerAreaOf(id: Int): Option[Rect] = painted.pointerAreaOf(id)
-
-  /** @see [[PaintedAreas.hitTest]] */
-  def hitTest(pos: Position): Option[Int] = painted.hitTest(pos)
+  /** The focus index of the target painted last at `pos`, if it has one. Never looks through a pointer-only target. */
+  def hitTest(pos: Position): Option[Int] = mouseHit(pos).flatMap(_.target.focusIndex)
 
   /** One resolution shared by mouse routing and click-to-focus. */
-  def mouseHit(pos: Position): Option[MouseHit] = painted.mouseHit(pos)
+  def mouseHit(pos: Position): Option[MouseHit] = bounds.targetAt(pos)
 
 private[dsl] object FocusPass:
 

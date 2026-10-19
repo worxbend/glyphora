@@ -61,9 +61,16 @@ private[dsl] final class NodeBoundsFrame(val entries: Vector[NodeBoundsEntry]):
 private[dsl] object NodeBoundsFrame:
   val Empty: NodeBoundsFrame = NodeBoundsFrame(Vector.empty)
 
-/** The one per-node bounds recorder: filled during paint by the [[BoundsElement]] wrappers the focus pass adds, read by
-  * every consumer that wants to know where a node landed — `boundsOf(key)` for tests, the click-outside backdrop, the
-  * element-tree snapshot. There is deliberately no second mechanism for "where was this node painted".
+/** The one recorder of where things were painted: filled during paint by the [[BoundsElement]] wrappers the focus pass
+  * adds and by the input-target wrappers (every focusable and every node with mouse behaviour), read by every consumer
+  * that wants to know where something landed — `boundsOf(key)` for tests, the click-outside backdrop, the element-tree
+  * snapshot, and, through the input-target table, hit-testing, pointer capture, `MouseContext.area` and spatial
+  * navigation. There is deliberately no second mechanism for "where was this painted": both tables are placed by the
+  * one [[placed]], so a node and the input target wrapping it cannot disagree about translation or clipping.
+  *
+  * The input-target table is *live*: it is cleared when the focus tracker reconciles a new frame and filled as that
+  * frame paints, and an event handled between frames reads what the last paint left. It is recorded on every frame,
+  * whatever [[ElementHost.recordingBounds]] says, because routing a click needs it.
   *
   * '''Ownership and threads.''' One recorder belongs to one [[ElementHost]]. [[begin]] and [[record]] are called on
   * that host's render thread only, during a paint; [[publish]] closes the frame on the same thread. The published
@@ -76,6 +83,19 @@ private[dsl] object NodeBoundsFrame:
 private[dsl] final class NodeBounds:
 
   private val recording = mutable.ArrayBuffer.empty[NodeBoundsEntry]
+
+  /** Where each input target landed this frame, with its paint sequence — see [[PaintedArea]]. */
+  private val targets = mutable.Map.empty[InputTarget, PaintedArea]
+
+  /** How many input targets have been recorded so far this frame; the sequence the next one is stamped with. */
+  private var targetSequence = 0
+
+  /** `area` (in the coordinates of whatever is painting it) as `(layout, visible)` on the frame: translated out of
+    * every enclosing scroll viewport, and clipped to each of them; `None` when no viewport lets any of it through.
+    */
+  private def placed(area: Rect): Option[(Rect, Rect)] =
+    val visible = FrameCoordinates.visible(area)
+    Option.when(!visible.isEmpty)((FrameCoordinates.translate(area), visible))
 
   @volatile private var published: NodeBoundsFrame = NodeBoundsFrame.Empty
 
@@ -93,16 +113,42 @@ private[dsl] final class NodeBounds:
       area: Rect,
       roles: PointerRoles = PointerRoles.Empty,
   ): Unit =
-    val visible = FrameCoordinates.visible(area)
-    if !visible.isEmpty then
-      recording +=
-        NodeBoundsEntry(id, lastDescendantId, key, layoutOnly, FrameCoordinates.translate(area), visible, roles)
+    placed(area).foreach { (layout, visible) =>
+      recording += NodeBoundsEntry(id, lastDescendantId, key, layoutOnly, layout, visible, roles)
+    }
 
   /** Closes the frame and makes it the one readers see. */
   def publish(): Unit = published = NodeBoundsFrame(recording.toVector)
 
   /** The last published frame; empty before the first one. */
   def current: NodeBoundsFrame = published
+
+  /** Records where input `target` rendered: its translated layout rect and its clipped hit rect, stamped with the next
+    * paint sequence. A target scrolled entirely out of view is not recorded, so neither hit testing nor wheel bubbling
+    * can reach it. Render thread only.
+    */
+  def recordTarget(target: InputTarget, area: Rect): Unit =
+    placed(area).foreach { (layout, visible) =>
+      targets(target) = PaintedArea(layout, visible, targetSequence)
+      targetSequence += 1
+    }
+
+  /** Starts a frame's input-target table: what the previous frame recorded is dropped and the sequence restarts. */
+  def clearTargets(): Unit =
+    targets.clear()
+    targetSequence = 0
+
+  /** Where input `target` rendered on the frame being painted or last painted. Render thread only. */
+  def targetBounds(target: InputTarget): Option[PaintedArea] = targets.get(target)
+
+  /** The input target painted last at screen position `pos` — the one the user sees there — with its unclipped layout
+    * rect. Render thread only.
+    */
+  def targetAt(pos: Position): Option[MouseHit] =
+    targets
+      .filter((_, area) => area.hitArea.contains(pos))
+      .maxByOption((_, area) => area.sequence)
+      .map((target, area) => MouseHit(target, area.layoutArea))
 
 /** Wraps a node during the focus pass so its painted area is recorded into the host's [[NodeBounds]]. Transparent to
   * everything else: props, children, measurement and handlers all read through to `inner`, the way the other decorators

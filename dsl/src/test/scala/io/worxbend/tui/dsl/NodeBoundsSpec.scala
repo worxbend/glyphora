@@ -80,3 +80,15 @@ final class NodeBoundsSpec extends AnyFunSuite:
     def view: Element = column(text("a"), button("b")(()), scrollView(text("c"), 1, ScrollViewState()))
     assert(boundsWrappers(FocusPass.decorate(view, FocusTracker(), Style.Default.reverse)) == 0)
     assert(boundsWrappers(FocusPass.decorate(view, FocusTracker(), Style.Default.reverse, Some(NodeBounds()))) == 5)
+
+  test("the input targets hit-testing, MouseContext and spatial navigation read live in the one NodeBounds"):
+    val host = ElementHost()
+    host.enableBoundsRecording()
+    val view = positioned(2, 1, 10, 3)(button("ok")(()).key("ok"))
+    host.render(Rect(0, 0, 20, 7), buffer(20, 7), Theme.Dark, view)
+    assert(host.tracker.bounds eq host.bounds, "the focus tracker records into the host's recorder, not one of its own")
+    val node = host.boundsOf("ok")
+    assert(node.isDefined)
+    // one recorder, one translation: the input target and the node it wraps cannot disagree about where it landed
+    assert(host.bounds.targetBounds(InputTarget.Focus(0)).map(_.layoutArea) == node)
+    assert(host.tracker.areaOf(0) == node)
