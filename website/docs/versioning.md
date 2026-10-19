@@ -856,6 +856,60 @@ label made the common case. The box now widens to the button row. A dialog whose
 wider than its message draws a wider box than before; golden frames of such a dialog need
 re-recording, and no source change is needed.
 
+### Runtime and terminal follow-ups
+
+- **`Codec`'s text form starts with a version tag.** `encode` now writes `@1;` (or the version a
+  codec was built with) before the value, and `decode` reads it. Text with no tag — every file a
+  0.20 pre-release wrote — still decodes, as version 1, so nothing on disk is lost; a file written
+  now cannot be read by a build from before the tag. A persisted type that changes shape declares
+  how to read its old one instead of falling back to `initial`:
+
+  ```scala
+  // before: a changed Prefs decoded its old file as Left, and the signal started from initial
+  // after
+  given Codec[Prefs] =
+    Codec.derived[Prefs].versioned(2) { case 1 => Codec.readAs[PrefsV1](old => Prefs(old.theme, Nil)) }
+  ```
+
+- **`NonInteractivePolicy` gained the case `AwaitingIdle(printing, timeout)`**, built with
+  `PrintFinalFrame.awaitIdle(5.seconds)`. An exhaustive `match` over the enum needs an arm for it,
+  or matches `policy.output`, which unwraps it. Policies built without `awaitIdle` behave as before.
+- **`Theme.auto.withX(...)` stays automatic.** In earlier 0.20 builds a builder on `Theme.auto`
+  produced a plain dark theme; it now resolves to `Theme.Light.withX(...)` on a light terminal and
+  `Theme.Dark.withX(...)` otherwise (`isAuto`, `resolve(scheme)`). An app that relied on the old
+  result to pin a dark palette writes `Theme.Dark.withX(...)`. `Theme.auto` is no longer equal to
+  `Theme.Dark.withName("auto")`.
+- **`ProgressTask.rate` and the ETA follow a ten-second sliding window** instead of the average
+  since the start, so they react to a speed change and go unknown (`-`, `--:--`) after a stall
+  longer than the window. `ProgressTask(label, total, rateWindow = None)` restores the average;
+  `rateWindow = Some(d)` picks another window.
+- **One resize is one `Event.Resize`.** On a terminal with in-band resize reports (mode 2048) the
+  `SIGWINCH` and the report for the same resize used to arrive as two events; a resize to the size
+  just delivered is now dropped, whichever source it came from (the repaint after `SIGCONT` is
+  still delivered). The report's pixel fields now fill `windowSize`'s pixel cache, so no
+  `CSI 14 t` round trip follows it.
+- **`keepInlineRows` erases the rows below the kept ones** when the run closes, instead of
+  relying on the last frame having left them blank.
+- **Captured lines under `CaptureStdio.PrintAbove` are batched**: everything printed between two
+  frames reaches `printAbove` in one call (one scrollback trip), and stdout and stderr share one
+  ordered batch. Lines still queued when the loop closes go to the original stream instead of
+  being dropped. A backend double that asserted one `printAbove` call per line sees one call per
+  batch (`HeadlessBackend.printAboveCalls` counts them).
+- **Asciicast recording writes on a background thread.** `AsciicastRecorder` now owns a daemon
+  writer thread: `apply` queues, `flush()` (new) and `close()` drain. An I/O failure surfaces at
+  the next frame or at `close()` rather than inside the frame that hit it — the run still ends as
+  `RunnerError.Handler`. A recorder built by hand must be closed, as before, to stop its thread.
+- **Taskbar progress has states.** `TaskbarState` (`Cleared`, `Progress`, `Error`,
+  `Indeterminate`, `Paused`) with `Backend.setTaskbarState` and `RunnerHandle.setTaskbarState`
+  (both defaulted to the fraction API) and `AppServices.taskbarState(signal)` — abstract, so a
+  hand-written `AppServices` double adds `def taskbarState(state: Reactive[TaskbarState]): Unit = ()`.
+  `HeadlessBackend.taskbarProgressRequests` is now derived from `taskbarStateRequests`, an
+  indeterminate bar reading as `None`.
+- `LogConsoleElement` gained a trailing `scroll` field, `ErrorBoundaryElement` a trailing `ring`,
+  `InputElement` and `widgets.TextInput` a trailing `mask` — node constructors are not a
+  compatibility surface; the factories `logConsole(ring, state)`, `errorBoundary(fallback, ring)`,
+  `input(state).masked()` and `Prompt.password(label, mask = Some("•"))` are the spelling.
+
 ## Migrating to 0.19.0
 
 - `Style`, `Layout`, `RunnerConfig` and `Theme` are now `final class`es with private
