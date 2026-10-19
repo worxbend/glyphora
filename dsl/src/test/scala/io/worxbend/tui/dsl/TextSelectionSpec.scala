@@ -57,7 +57,7 @@ final class TextSelectionSpec extends AnyFunSuite with PilotFixture:
       pilot.drag(Position(0, 1), Position(3, 1)).waitForIdle() // four cells along the first row
       pilot.waitUntil("the release copied")(backend.clipboardContents.isDefined)
       assert(backend.clipboardContents.contains("alph"))
-      assert(state.selected.contains(0)) // the press that began the drag still selected its row
+      assert(state.selected.contains(0))                       // the press that began the drag still selected its row
       pilot.assertGoldenStyled("data-table-drag-select")
     }
 

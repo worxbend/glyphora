@@ -132,13 +132,11 @@ final class ColorPickerSpec extends AnyFunSuite:
     assert(ColorPicker().channelAt(area, 40, 1).isEmpty)
 
   test("golden: Rgb mode with an invalid green entry focused"):
-    val state = ColorPickerState(196)
+    val state  = ColorPickerState(196)
     state.focusNextField()
     state.focusNextField()
     state.typeDigit(9)
     state.typeDigit(9)
     state.typeDigit(9)
-    GoldenFrames.assertMatchesStyled(
-      "color-picker-rgb",
-      rendered(ColorPicker(mode = ColorPickerMode.Rgb), state, 45, 17),
-    )
+    val buffer = rendered(ColorPicker(mode = ColorPickerMode.Rgb), state, 45, 17)
+    GoldenFrames.assertMatchesStyled("color-picker-rgb", buffer)
