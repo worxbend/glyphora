@@ -519,7 +519,9 @@ a column at a time; a cell that no longer fits wraps onto more rows by default, 
 
 Lists nest by indentation, `listIndent` (2) columns per level, with the bullet cycling
 through `bullets` (`•`, `◦`, `▪`). A `- [ ]` / `- [x]` item draws `taskOpen` / `taskDone`
-(`☐` / `☑`) in place of its bullet, the checked glyph in `MarkdownTheme.taskDone`. The
+(`☐` / `☑`) in place of its bullet, the checked glyph in `MarkdownTheme.taskDone`. An
+item too long for one row wraps with a hanging indent: its further rows line up under the
+item's first word, not under its bullet. The
 table header and rules use `MarkdownTheme.tableHeader` and `tableBorder`. All of these live
 on `MarkdownOptions`, the widget's third argument: `Markdown(source, theme, options)`.
 

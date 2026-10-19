@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Alignment, Buffer, Color, Line, Measured, Rect, Span, Style, Text, Widget}
+import io.worxbend.tui.core.{Alignment, Buffer, CharWidth, Color, Line, Measured, Rect, Span, Style, Text, Widget}
 
 /** Styles for each Markdown construct; override individual entries to theme the view. */
 final case class MarkdownTheme(
@@ -85,16 +85,16 @@ final case class Markdown(
 
   private lazy val blocks: Vector[MarkdownBlock] = MarkdownParser.blocks(source, theme, options)
 
-  private lazy val hasTables: Boolean = blocks.exists:
-    case _: MarkdownBlock.Table => true
-    case _                      => false
+  private lazy val widthDependent: Boolean = blocks.exists:
+    case _: MarkdownBlock.Table | _: MarkdownBlock.Item => true
+    case _                                              => false
 
-  // A document without tables lays out the same at every width, so it keeps one paragraph; one with tables keeps the
-  // latest width's, the same one-entry memo `Paragraph` keeps for its own height.
+  // A document without tables or list items lays out the same at every width, so it keeps one paragraph; one with them
+  // keeps the latest width's, the same one-entry memo `Paragraph` keeps for its own height.
   private var laidOut = Option.empty[(Int, Paragraph)]
 
   private def paragraphAt(width: Int): Paragraph = synchronized {
-    val key = if hasTables then width else -1
+    val key = if widthDependent then width else -1
     laidOut match
       case Some((cachedWidth, paragraph)) if cachedWidth == key => paragraph
       case _                                                    =>
@@ -103,9 +103,12 @@ final case class Markdown(
         paragraph
   }
 
-/** A parsed document: prose lines are final, tables are laid out once the width is known. */
+/** A parsed document: prose lines are final; tables and list items are laid out once the width is known — an item so
+  * that its wrapped rows can hang under its text, `lead` being the indentation and markers they hang under.
+  */
 private[widgets] enum MarkdownBlock:
   case Prose(line: Line)
+  case Item(lead: Seq[Span], body: Seq[Span])
   case Table(header: Seq[Line], alignments: Seq[Alignment], rows: Seq[Seq[Line]])
 
 private[widgets] object MarkdownParser:
@@ -122,9 +125,24 @@ private[widgets] object MarkdownParser:
   def layout(blocks: Seq[MarkdownBlock], width: Int, theme: MarkdownTheme, options: MarkdownOptions): Text =
     Text(blocks.flatMap {
       case MarkdownBlock.Prose(line)                     => Seq(line)
+      case MarkdownBlock.Item(lead, body)                => hanging(lead, body, width)
       case MarkdownBlock.Table(header, alignments, rows) =>
         MarkdownTable.lines(header, alignments, rows, width, theme, options.tableOverflow)
     })
+
+  /** A list item wrapped to `width` with a hanging indent: the first row starts with the markers, every further row
+    * with as many blank columns, so wrapped text lines up under the item's first word. An item whose markers leave no
+    * room at all is left whole for the paragraph to wrap.
+    */
+  private def hanging(lead: Seq[Span], body: Seq[Span], width: Int): Seq[Line] =
+    val leadWidth = lead.iterator.map(span => CharWidth.of(span.content)).sum
+    val room      = width - leadWidth
+    if width == Int.MaxValue || room <= 0 then Seq(Line(lead ++ body))
+    else
+      val rows = Paragraph.wrapLine(Line(body), room, WrapBlanks.DropAll)
+      rows.zipWithIndex.map { (row, index) =>
+        Line((if index == 0 then lead else Seq(Span.raw(" " * leadWidth))) ++ row.spans)
+      }
 
   def blocks(source: String, theme: MarkdownTheme, options: MarkdownOptions): Vector[MarkdownBlock] =
     val raw   = Text.splitLines(source).toIndexedSeq
@@ -160,7 +178,7 @@ private[widgets] object MarkdownParser:
                 index += consumed
               case None                    =>
                 val (rendered, open) = blockLine(line, lists, theme, options)
-                out += MarkdownBlock.Prose(rendered)
+                out += rendered
                 lists = open
                 index += 1
     out.result()
@@ -170,13 +188,14 @@ private[widgets] object MarkdownParser:
       lists: List[Int],
       theme: MarkdownTheme,
       options: MarkdownOptions,
-  ): (Line, List[Int]) =
-    val trimmed = raw.trim
-    if trimmed.isEmpty then (Line(Seq.empty), lists) // a blank line between items keeps the list open
-    else if trimmed.startsWith("###") then (Line.styled(dropMarker(trimmed, '#'), theme.heading3), Nil)
-    else if trimmed.startsWith("##") then (Line.styled(dropMarker(trimmed, '#'), theme.heading2), Nil)
-    else if trimmed.startsWith("#") then (Line.styled(dropMarker(trimmed, '#'), theme.heading1), Nil)
-    else if trimmed.startsWith("> ") then (Line.styled("▎ " + trimmed.drop(2), theme.quote), Nil)
+  ): (MarkdownBlock, List[Int]) =
+    def prose(line: Line): MarkdownBlock = MarkdownBlock.Prose(line)
+    val trimmed                          = raw.trim
+    if trimmed.isEmpty then (prose(Line(Seq.empty)), lists) // a blank line between items keeps the list open
+    else if trimmed.startsWith("###") then (prose(Line.styled(dropMarker(trimmed, '#'), theme.heading3)), Nil)
+    else if trimmed.startsWith("##") then (prose(Line.styled(dropMarker(trimmed, '#'), theme.heading2)), Nil)
+    else if trimmed.startsWith("#") then (prose(Line.styled(dropMarker(trimmed, '#'), theme.heading1)), Nil)
+    else if trimmed.startsWith("> ") then (prose(Line.styled("▎ " + trimmed.drop(2), theme.quote)), Nil)
     else
       val indent = indentOf(raw)
       listItem(trimmed) match
@@ -185,7 +204,7 @@ private[widgets] object MarkdownParser:
           val outer = lists.dropWhile(_ > indent)
           val open  = if outer.headOption.contains(indent) then outer else indent :: outer
           (itemLine(item, open.size - 1, theme, options), open)
-        case None       => (Line(inlineSpans(raw, theme)), if indent == 0 then Nil else lists)
+        case None       => (prose(Line(inlineSpans(raw, theme))), if indent == 0 then Nil else lists)
 
   /** One list item, before nesting: its ordinal (`None` for a bullet), task state, and the text after the markers. */
   private final case class ListItem(ordinal: Option[String], task: Option[Boolean], rest: String)
@@ -205,7 +224,7 @@ private[widgets] object MarkdownParser:
       ListItem(ordinal, task, if task.isDefined then body.drop(4) else body)
     }
 
-  private def itemLine(item: ListItem, level: Int, theme: MarkdownTheme, options: MarkdownOptions): Line =
+  private def itemLine(item: ListItem, level: Int, theme: MarkdownTheme, options: MarkdownOptions): MarkdownBlock =
     val indent  = " " * (math.max(0, options.listIndent) * level)
     val bullet  =
       if options.bullets.isEmpty then "•" else options.bullets(level % options.bullets.size)
@@ -215,7 +234,7 @@ private[widgets] object MarkdownParser:
       case (None, Some(done))          => Seq(taskSpan(done, theme, options))
       case (None, None)                => Seq(Span(bullet + " ", theme.bullet))
     val lead    = if indent.isEmpty then markers else Span.raw(indent) +: markers
-    Line(lead ++ inlineSpans(item.rest, theme))
+    MarkdownBlock.Item(lead, inlineSpans(item.rest, theme))
 
   private def taskSpan(done: Boolean, theme: MarkdownTheme, options: MarkdownOptions): Span =
     if done then Span(options.taskDone + " ", theme.taskDone) else Span(options.taskOpen + " ", theme.bullet)
