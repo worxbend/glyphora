@@ -176,13 +176,16 @@ final case class NoticeElement(
       messageStyle.patch(props.style),
       accentStyle,
       timestampStyle,
+      icon = Some(Messages.active.icon(level)),
       overflow = overflow,
     )
 
   /** Stamps the notice with the moment the event happened. Pass the time explicitly — a widget that read the clock
     * itself would render a different frame on every repaint.
+    *
+    * Named `stamped` rather than `at`: a member `at` would shadow the `.at(row, col)` grid placement every element has.
     */
-  def at(time: LocalTime): NoticeElement = copy(timestamp = Some(time))
+  def stamped(time: LocalTime): NoticeElement = copy(timestamp = Some(time))
 
   /** Lets a long message wrap onto further rows instead of clipping. */
   def wrapped: NoticeElement = copy(overflow = w.Overflow.Wrap)
@@ -379,7 +382,11 @@ final case class StyledTableElement(
 
   private[dsl] def withProps(props: ElementProps): StyledTableElement = copy(props = props)
 
-/** Escape hatch: any core [[Widget]] as a leaf element (its rendering ignores the element style).
+/** Escape hatch: any core [[Widget]] as a leaf element.
+  *
+  * The element style — `.fg`, `.bg`, `.style(...)`, a `withStyle` cascade — is painted *under* the widget: once the
+  * widget has drawn, every cell of the area takes the style's fields the cell left unset, so the widget's own colours
+  * win and the cells it never touched take the background. An unstyled leaf draws exactly what the widget draws.
   *
   * Width-dependent content — wrapped markdown, a paragraph, an image — reports its own height to the measurement pass
   * by implementing [[io.worxbend.tui.core.Measured]] on the widget; this node needs no measurement wiring of its own.
@@ -403,7 +410,23 @@ final case class WidgetElement(
   type Self = WidgetElement
   override def debugName: String                          = "widget"
   override private[dsl] def watchedStates: Seq[Versioned] = search.toSeq
-  def widget: Widget                                      = search.fold(wrapped)(searchedWith)
+  def widget: Widget                                      = styledUnder(search.fold(wrapped)(searchedWith))
+
+  /** `drawn` with the element style layered under what it paints — `drawn` itself when there is no style. */
+  private def styledUnder(drawn: Widget): Widget =
+    if props.style == Style.Default then drawn
+    else
+      val under = props.style
+      new Widget with Measured:
+        def render(area: Rect, buffer: Buffer): Unit   =
+          drawn.render(area, buffer)
+          if !area.isEmpty then buffer.mapStyle(area)(under.patch)
+        override def heightAt(width: Int): Option[Int] = drawn match
+          case measured: Measured => measured.heightAt(width)
+          case _                  => None
+        override def widthAt(height: Int): Option[Int] = drawn match
+          case measured: Measured => measured.widthAt(height)
+          case _                  => None
 
   /** Searches what the widget draws for `state`'s query — `markdown(source).searchable(state)` is the case this is for
     * — highlighting every match by restyling the cells already drawn, so a match inside a table cell keeps the table's
@@ -416,7 +439,8 @@ final case class WidgetElement(
     copy(search = Some(state), props = props.copy(focusable = true))
 
   private def searchedWith(found: w.SearchState): Widget =
-    val view = w.Searchable(wrapped)
+    val styles = SearchStyles.of(props.focusState.theme)
+    val view   = w.Searchable(wrapped, matchStyle = styles.matched, currentMatchStyle = styles.current)
     new Widget with Measured:
       def render(area: Rect, buffer: Buffer): Unit   =
         view.render(area, buffer, found)

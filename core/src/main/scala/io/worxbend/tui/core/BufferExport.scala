@@ -6,8 +6,9 @@ package io.worxbend.tui.core
   * `cellWidth`/`cellHeight` are pixels per terminal cell in the SVG; the HTML and ANSI forms carry no geometry and
   * ignore them. `foreground`/`background` stand in for `Color.Reset` and for a cell that names no colour — the two
   * things a terminal would paint from its own theme. `title` becomes the SVG `<title>` and the HTML document title, and
-  * is omitted from both when empty. Every field keeps the value the bare `ExportOptions()` would have, so a caller sets
-  * only what differs.
+  * is omitted from both when empty. `ansiColors` is the colour policy of the two ANSI forms only (the default keeps
+  * every colour in its own spelling; `terminal.ColorDepth.ansiColors` gives the policy of a terminal depth). Every
+  * field keeps the value the bare `ExportOptions()` would have, so a caller sets only what differs.
   */
 final case class ExportOptions(
     font: String = ExportOptions.DefaultFont,
@@ -17,6 +18,7 @@ final case class ExportOptions(
     foreground: Color = Color.Rgb(0xd4, 0xd4, 0xd4),
     background: Color = Color.Rgb(0x1e, 0x1e, 0x1e),
     title: String = "",
+    ansiColors: AnsiColors = AnsiColors.TrueColor,
 )
 
 object ExportOptions:
@@ -33,11 +35,11 @@ object ExportOptions:
   * and allocates only the string it returns, so it may be called from any thread — including, for a frame snapshot, off
   * the render thread.
   *
-  * The ANSI form writes each colour in its own natural SGR spelling (named colours as `30`–`37`/`90`–`97`, indexed as
+  * The ANSI forms write each colour in its own natural SGR spelling (named colours as `30`–`37`/`90`–`97`, indexed as
   * `38;5;n`, RGB as `38;2;r;g;b`) rather than resolving it through the palette, so the colours survive a round trip
-  * through a parser; the palette decides only how the SVG and HTML paint them. The SGR grammar deliberately mirrors
-  * `terminal.Sgr`, which `tui-core` cannot call — the module tiers only point downward — and `terminal`'s
-  * `BufferExportSgrDriftSpec` keeps the two from drifting.
+  * through a parser; the palette decides only how the SVG and HTML paint them. Both go through `SgrCodec` under an
+  * [[AnsiColors]] policy — the very codec and policy the terminal's frame encoder writes with, so an export at a depth
+  * holds the bytes the terminal would have been sent.
   */
 object BufferExport:
 
@@ -134,7 +136,6 @@ object BufferExport:
     * in OSC 8. There is no cursor movement in it at all: this is text to print or to save, not a frame to flush.
     */
   def ansi(buffer: Buffer, options: ExportOptions = ExportOptions()): String =
-    val _   = options // the palette decides how a picture paints a colour; ANSI keeps the colour's own spelling
     val out = StringBuilder()
     var y   = buffer.area.y
     segments(buffer).foreach { run =>
@@ -142,7 +143,7 @@ object BufferExport:
         out ++= AnsiReset
         out += '\n'
         y = run.y
-      out ++= sgr(run.style)
+      out ++= SgrCodec.absolute(run.style, options.ansiColors)
       run.style.link.foreach(url => out ++= s"$Esc]8;;${stripControls(url)}$Esc\\")
       out ++= padded(run)
       if run.style.link.isDefined then out ++= s"$Esc]8;;$Esc\\"
@@ -150,73 +151,92 @@ object BufferExport:
     out ++= AnsiReset
     out.result()
 
+  /** `buffer` as styled text to be *printed*, rows separated by newlines — what print mode and a no-TTY run write, and
+    * what `terminal.FrameEncoder.encodeLines` answers.
+    *
+    * Unlike [[ansi]] it is shaped for a scrollback rather than for a round trip. Style is written as a delta from the
+    * terminal's default rather than as the absolute, reset-first form — so a style that renders identically to the
+    * default under `colors` writes *nothing*, and with `emitsColor` off a frame whose styles are colour-only comes out
+    * as plain text with no escape sequence in it (what `NO_COLOR` asks for). Rows end with a style reset exactly when
+    * they emitted a style. Trailing cells that would not be visible — blank, no background under `colors`, no
+    * underline, reverse or strikethrough — are dropped, so a scrollback line's background does not run to the window's
+    * edge. Continuation columns of a wide grapheme are skipped, and a symbol carrying a control code is written as a
+    * blank. Pure; callable from any thread.
+    */
+  def ansiLines(buffer: Buffer, colors: AnsiColors = AnsiColors.TrueColor): String =
+    val rows = Vector.newBuilder[String]
+    var y    = buffer.area.y
+    while y < buffer.area.bottom do
+      rows += ansiLine(buffer, y, colors)
+      y += 1
+    rows.result().mkString("\n")
+
+  /** One row of [[ansiLines]]: delta-styled from the default, reset at the end only when a style was emitted. */
+  private def ansiLine(buffer: Buffer, y: Int, colors: AnsiColors): String =
+    val end = lastVisibleColumn(buffer, y, colors)
+    if end < buffer.area.x then ""
+    else
+      val body                        = StringBuilder()
+      var currentStyle: Style         = Style.Default
+      var currentLink: Option[String] = None
+      var styled                      = false
+      var x                           = buffer.area.x
+      while x <= end do
+        if !buffer.isContinuation(x, y) then
+          val cell = buffer.get(x, y)
+          if !((cell.style eq currentStyle) || cell.style == currentStyle) then
+            val delta = SgrCodec.delta(currentStyle, cell.style, colors)
+            if delta.nonEmpty then
+              body ++= delta
+              styled = true
+            currentStyle = cell.style
+          currentLink = carryLink(body, currentLink, cell.style.link)
+          body ++= printable(cell.symbol)
+        x += 1
+      carryLink(body, currentLink, None)
+      if styled then body ++= AnsiReset
+      body.result()
+
+  /** The rightmost column of row `y` a reader could see under `colors`, or one less than the row's first column when
+    * nothing in the row is visible.
+    */
+  private def lastVisibleColumn(buffer: Buffer, y: Int, colors: AnsiColors): Int =
+    var last = buffer.area.x - 1
+    var x    = buffer.area.x
+    while x < buffer.area.right do
+      val cell = buffer.get(x, y)
+      if !buffer.isContinuation(x, y) && (!cell.isBlank || blankIsVisible(cell.style, colors)) then last = x
+      x += 1
+    last
+
+  private def blankIsVisible(style: Style, colors: AnsiColors): Boolean =
+    (colors.emitsColor && style.bg.exists(_ != Color.Reset)) ||
+      style.modifiers.hasAny(Modifiers.Reverse | Modifiers.Underline | Modifiers.CrossedOut) ||
+      style.underlineStyle != UnderlineStyle.None
+
+  /** Emits the OSC-8 transitions that carry the hyperlink state from `open` to `next`, and answers `next`. */
+  private def carryLink(body: StringBuilder, open: Option[String], next: Option[String]): Option[String] =
+    if next != open then
+      if open.nonEmpty then body ++= s"$Esc]8;;$Esc\\"
+      next.foreach(url => body ++= s"$Esc]8;;${stripLinkControls(url)}$Esc\\")
+    next
+
+  /** `symbol`, or a single blank if it is empty or carries a C0/C1 control code: a control byte written verbatim would
+    * reach the terminal as if the application had emitted it.
+    */
+  private def printable(symbol: String): String =
+    if symbol.isEmpty then " "
+    else if CharWidth.isPrintableAscii(symbol) then symbol
+    else if symbol.exists(isControl) then " "
+    else symbol
+
+  private def isControl(c: Char): Boolean = c < 0x20 || c == 0x7f || (c >= 0x80 && c <= 0x9f)
+
+  /** C0, DEL and C1 removed, tab kept — the rule `terminal.AnsiSequences.linkOpen` applies to a printed link. */
+  private def stripLinkControls(url: String): String = url.filter(c => c == '\t' || !isControl(c))
+
   private val Esc       = "\u001b"
   private val AnsiReset = s"$Esc[0m"
-
-  /** The absolute SGR for `style`: a reset, then every colour and attribute it sets. Mirrors `terminal.Sgr.sgr` at
-    * true-colour depth; see the object notes for why it is written a second time here.
-    */
-  private def sgr(style: Style): String =
-    val codes = StringBuilder(s"$Esc[0")
-    style.fg.foreach(color => codes ++= ";" ++= colorCode(color, 30))
-    style.bg.foreach(color => codes ++= ";" ++= colorCode(color, 40))
-    ModifierCodes.foreach((flag, code) => if style.modifiers.hasAny(flag) then codes ++= ";" ++= code)
-    underlineStyleCode(style.underlineStyle).foreach(code => codes ++= ";" ++= code)
-    style.underlineColor.foreach(color => codes ++= ";" ++= underlineColorCode(color))
-    codes.append('m').result()
-
-  private val ModifierCodes: List[(Modifiers, String)] =
-    List(
-      Modifiers.Bold       -> "1",
-      Modifiers.Dim        -> "2",
-      Modifiers.Italic     -> "3",
-      Modifiers.Underline  -> "4",
-      Modifiers.Blink      -> "5",
-      Modifiers.RapidBlink -> "6",
-      Modifiers.Reverse    -> "7",
-      Modifiers.Hidden     -> "8",
-      Modifiers.CrossedOut -> "9",
-    )
-
-  private def underlineStyleCode(style: UnderlineStyle): Option[String] =
-    style match
-      case UnderlineStyle.None | UnderlineStyle.Straight => None
-      case UnderlineStyle.Double                         => Some("4:2")
-      case UnderlineStyle.Curly                          => Some("4:3")
-      case UnderlineStyle.Dotted                         => Some("4:4")
-      case UnderlineStyle.Dashed                         => Some("4:5")
-
-  private def underlineColorCode(color: Color): String =
-    color match
-      case Color.Indexed(index) => s"58:5:${Color.clampIndex(index)}"
-      case other                =>
-        val (r, g, b) = Color.approximateRgb(other)
-        s"58:2::$r:$g:$b"
-
-  /** One SGR colour code offset from `base` (30 foreground, 40 background) — the ECMA-48 layout `terminal.Sgr` uses. */
-  private def colorCode(color: Color, base: Int): String =
-    color match
-      case Color.Reset          => s"${base + 9}"
-      case Color.Black          => s"${base + 0}"
-      case Color.Red            => s"${base + 1}"
-      case Color.Green          => s"${base + 2}"
-      case Color.Yellow         => s"${base + 3}"
-      case Color.Blue           => s"${base + 4}"
-      case Color.Magenta        => s"${base + 5}"
-      case Color.Cyan           => s"${base + 6}"
-      case Color.White          => s"${base + 7}"
-      case Color.BrightBlack    => s"${base + 60}"
-      case Color.BrightRed      => s"${base + 61}"
-      case Color.BrightGreen    => s"${base + 62}"
-      case Color.BrightYellow   => s"${base + 63}"
-      case Color.BrightBlue     => s"${base + 64}"
-      case Color.BrightMagenta  => s"${base + 65}"
-      case Color.BrightCyan     => s"${base + 66}"
-      case Color.BrightWhite    => s"${base + 67}"
-      case Color.Indexed(index) => s"${base + 8};5;${Color.clampIndex(index)}"
-      case rgb: Color.Rgb       =>
-        val (r, g, b) = Color.approximateRgb(rgb)
-        s"${base + 8};2;$r;$g;$b"
 
   /** An OSC string ends at BEL or ST, so a control character inside a URL would end the link early and print the rest
     * of it as text; dropping them is what `terminal.AnsiSequences.linkOpen` does too.

@@ -8,6 +8,10 @@ import java.text.BreakIterator
 /** Mouse text selection over the text-showing nodes — `text`, `markdown`, `log`, `logConsole`, the tables — composed as
   * an overlay on the frame rather than as a feature of any widget.
   *
+  * The selection belongs to a node — held by its key or its path from the root, see [[TextSelection.anchorFor]] — and
+  * to cells of that node's own area, not to screen positions: when the tree around the node changes shape it stays on
+  * the node, and when a scroll view moves the node the highlight moves with it.
+  *
   * A mouse-capturing app takes the terminal's own selection away, which users notice immediately; this gives it back
   * inside the app. A left press that no element consumed, on a node that is selectable, anchors a selection there; a
   * drag extends it (the head is clamped to that node, so a selection never wanders into the next panel); the release
@@ -29,8 +33,14 @@ private[dsl] final class TextSelection:
   /** Whether selection is on at all — `TuiApp` turns it on exactly when it runs with mouse capture. */
   var enabled: Boolean = false
 
-  private var regionId: Option[Int]        = None
-  private var region: Rect                 = Rect(0, 0, 0, 0)
+  // Where the selection lives: the node, by the identity [[TextSelection.anchorOf]] gives it, and anchor and head as
+  // cells of that node's own area (0, 0 is its top-left corner). The screen is only where the node was last seen:
+  // `origin` is the screen position of the node's (0, 0) and `shown` the part of the node on screen, both as of the last
+  // paint — so the selection follows its node through a reshaped tree and travels with it when a scroll view moves.
+  private var regionKey: Option[String]    = None
+  private var origin: Position             = Position(0, 0)
+  private var shown: Rect                  = Rect(0, 0, 0, 0)
+  private var size: Rect                   = Rect(0, 0, 0, 0)
   private var anchor: Position             = Position(0, 0)
   private var head: Position               = Position(0, 0)
   private var pressAt: Position            = Position(0, 0)
@@ -69,23 +79,25 @@ private[dsl] final class TextSelection:
   def disarm(): Unit = armed = None
 
   /** Whether a selection is anchored, visible or not. */
-  def isActive: Boolean = regionId.isDefined
+  def isActive: Boolean = regionKey.isDefined
 
   /** Whether the pointer is still down on a selection being dragged out. */
   def isDragging: Boolean = dragging
 
   /** Whether the selection covers at least one cell the reader can see as selected. */
-  def isVisible: Boolean = regionId.isDefined && (moved || granularity > 1)
+  def isVisible: Boolean = regionKey.isDefined && (moved || granularity > 1)
 
-  /** Anchors a selection at `at` inside the node recorded as `entry`. `clicks` is the press's click count: 2 selects
-    * the word under `at`, 3 or more the whole row; the boundaries are worked out on the next paint, from the cells the
-    * node actually drew.
+  /** Anchors a selection at screen position `at` inside the node recorded as `entry`. `clicks` is the press's click
+    * count: 2 selects the word under `at`, 3 or more the whole row; the boundaries are worked out on the next paint,
+    * from the cells the node actually drew.
     */
   def begin(entry: NodeBoundsEntry, at: Position, clicks: Int): Unit =
-    regionId = Some(entry.id)
-    region = entry.visible
-    anchor = at
-    head = at
+    regionKey = Some(TextSelection.anchorOf(entry.id, entry.anchor))
+    origin = entry.layout.position
+    size = Rect(0, 0, entry.layout.width, entry.layout.height)
+    shown = local(entry.visible)
+    anchor = toLocal(at)
+    head = anchor
     pressAt = at
     granularity = math.min(math.max(clicks, 1), 3)
     pendingSnap = granularity > 1
@@ -93,11 +105,11 @@ private[dsl] final class TextSelection:
     dragging = true
     copyTo = None
 
-  /** Moves the head to `to`, clamped into the anchored node. A pointer still on the cell it pressed moves nothing, so
-    * the release of a double click keeps the word it selected.
+  /** Moves the head to screen position `to`, clamped into the part of the anchored node on screen. A pointer still on
+    * the cell it pressed moves nothing, so the release of a double click keeps the word it selected.
     */
   def extend(to: Position): Unit =
-    val clamped = clamp(to)
+    val clamped = clamp(toLocal(to))
     if (moved || to != pressAt) && clamped != head then
       head = clamped
       moved = true
@@ -114,39 +126,42 @@ private[dsl] final class TextSelection:
   def clear(): Boolean =
     val showing = isVisible
     armed = None
-    regionId = None
+    regionKey = None
     dragging = false
     copyTo = None
     grid = Vector.empty
     showing
 
-  /** The selected text as of the last paint, `None` when nothing is selected. */
+  /** The selected text as of the last paint, `None` when nothing is selected. Only the rows of the node that were on
+    * screen are known — a scroll view draws nothing else — so rows of the selection scrolled out of view are left out.
+    */
   def text: Option[String] =
     if !isVisible || grid.isEmpty then None
     else
       val (lo, hi) = ordered
-      val rows     = (lo.y to hi.y).map { y =>
-        val from = if y == lo.y then lo.x else region.x
-        val to   = if y == hi.y then hi.x else region.right - 1
-        val row  = grid.lift(y - region.y).getOrElse(Vector.empty)
-        (from to to).iterator.map(x => row.lift(x - region.x).getOrElse("")).mkString.stripTrailing()
+      val rows     = (math.max(lo.y, shown.y) to math.min(hi.y, shown.bottom - 1)).map { y =>
+        val from = if y == lo.y then lo.x else 0
+        val to   = if y == hi.y then hi.x else size.right - 1
+        val row  = grid.lift(y - shown.y).getOrElse(Vector.empty)
+        (from to to).iterator.map(x => row.lift(x - shown.x).getOrElse("")).mkString.stripTrailing()
       }
       Some(rows.mkString("\n"))
 
-  /** Called by the node `id`'s bounds wrapper right after it painted into `area` of `buffer`: snapshots the node's
-    * visible cells, resolves a pending word or row selection, layers `highlight` over the selected cells and makes a
-    * copy the release asked for.
+  /** Called by the bounds wrapper of the node identified as `key` right after it painted into `area` of `buffer`: notes
+    * where the node now is on screen, snapshots its visible cells, resolves a pending word or row selection, layers
+    * `highlight` over the selected cells and makes a copy the release asked for.
     */
-  def painted(id: Int, area: Rect, buffer: Buffer, highlight: Style): Unit =
-    if regionId.contains(id) then
+  def painted(key: String, area: Rect, buffer: Buffer, highlight: Style): Unit =
+    if regionKey.contains(key) then
       paintedThisFrame = true
       val onFrame = FrameCoordinates.translate(area)
-      val dx      = onFrame.x - area.x
-      val dy      = onFrame.y - area.y
-      region = FrameCoordinates.visible(area)
-      grid = Vector.tabulate(region.height, region.width) { (row, column) =>
-        val x = region.x + column - dx
-        val y = region.y + row - dy
+      origin = onFrame.position
+      size = Rect(0, 0, area.width, area.height)
+      shown = local(FrameCoordinates.visible(area))
+      // a cell of the node at local (x, y) sits at (area.x + x, area.y + y) of the buffer it was painted into
+      grid = Vector.tabulate(shown.height, shown.width) { (row, column) =>
+        val x = area.x + shown.x + column
+        val y = area.y + shown.y + row
         if !buffer.area.contains(x, y) || buffer.isContinuation(x, y) then "" else buffer.get(x, y).symbol
       }
       if pendingSnap then
@@ -155,13 +170,13 @@ private[dsl] final class TextSelection:
       if isVisible then
         val (lo, hi) = ordered
         (lo.y to hi.y).foreach { y =>
-          val from = if y == lo.y then lo.x else region.x
-          val to   = if y == hi.y then hi.x else region.right - 1
+          val from = if y == lo.y then lo.x else 0
+          val to   = if y == hi.y then hi.x else size.right - 1
           (from to to).foreach { x =>
-            val local = Position(x - dx, y - dy)
-            if buffer.area.contains(local) then
-              val cell = buffer.get(local)
-              buffer.set(local, cell.copy(style = cell.style.patch(highlight)))
+            val cellAt = Position(area.x + x, area.y + y)
+            if buffer.area.contains(cellAt) then
+              val cell = buffer.get(cellAt)
+              buffer.set(cellAt, cell.copy(style = cell.style.patch(highlight)))
           }
         }
       copyTo.foreach { clipboard =>
@@ -171,9 +186,13 @@ private[dsl] final class TextSelection:
 
   /** Called once the frame is painted: a selection whose node was not on it is dropped. */
   def afterPaint(): Unit =
-    if regionId.isDefined && !paintedThisFrame then
+    if regionKey.isDefined && !paintedThisFrame then
       val _ = clear()
     paintedThisFrame = false
+
+  private def toLocal(at: Position): Position = Position(at.x - origin.x, at.y - origin.y)
+
+  private def local(rect: Rect): Rect = Rect(rect.x - origin.x, rect.y - origin.y, rect.width, rect.height)
 
   /** Anchor and head in reading order, widened to whole graphemes: an end on the trailing half of a wide character
     * takes the character, and so does an end on its leading half.
@@ -181,31 +200,41 @@ private[dsl] final class TextSelection:
   private def ordered: (Position, Position) =
     val (lo, hi)                             =
       if anchor.y < head.y || (anchor.y == head.y && anchor.x <= head.x) then (anchor, head) else (head, anchor)
-    def cell(x: Int, y: Int): Option[String] = grid.lift(y - region.y).flatMap(_.lift(x - region.x))
-    val start = Iterator.iterate(lo.x)(_ - 1).find(x => x <= region.x || !cell(x, lo.y).contains("")).getOrElse(lo.x)
+    def cell(x: Int, y: Int): Option[String] = grid.lift(y - shown.y).flatMap(_.lift(x - shown.x))
+    val start = Iterator.iterate(lo.x)(_ - 1).find(x => x <= 0 || !cell(x, lo.y).contains("")).getOrElse(lo.x)
     val end   = Iterator.iterate(hi.x)(_ + 1).find(x => !cell(x + 1, hi.y).contains("")).getOrElse(hi.x)
     (Position(start, lo.y), Position(end, hi.y))
 
   private def clamp(to: Position): Position =
-    if region.isEmpty then to
-    else if to.y < region.y then Position(region.x, region.y)
-    else if to.y >= region.bottom then Position(region.right - 1, region.bottom - 1)
-    else Position(math.min(math.max(to.x, region.x), region.right - 1), to.y)
+    if shown.isEmpty then to
+    else if to.y < shown.y then Position(shown.x, shown.y)
+    else if to.y >= shown.bottom then Position(shown.right - 1, shown.bottom - 1)
+    else Position(math.min(math.max(to.x, shown.x), shown.right - 1), to.y)
 
   /** Widens anchor..head to the word (granularity 2) or the row (3) under the anchor, from the snapshot. */
   private def snapToGranularity(): Unit =
-    val row = grid.lift(anchor.y - region.y).getOrElse(Vector.empty)
+    val row = grid.lift(anchor.y - shown.y).getOrElse(Vector.empty)
     if row.nonEmpty then
       if granularity >= 3 then
-        anchor = Position(region.x, anchor.y)
-        head = Position(region.right - 1, anchor.y)
+        anchor = Position(shown.x, anchor.y)
+        head = Position(shown.right - 1, anchor.y)
       else
-        TextSelection.wordColumns(row, anchor.x - region.x).foreach { (from, to) =>
-          anchor = Position(region.x + from, anchor.y)
-          head = Position(region.x + to, anchor.y)
+        TextSelection.wordColumns(row, anchor.x - shown.x).foreach { (from, to) =>
+          anchor = Position(shown.x + from, anchor.y)
+          head = Position(shown.x + to, anchor.y)
         }
 
 private[dsl] object TextSelection:
+
+  /** The identity a selection holds a node by across frames: its key when it has one, else its path of child positions
+    * from the root (`trail`, innermost first, as the focus pass keeps it). Neither moves when nodes are added elsewhere
+    * in the tree, which the node's pre-order id does.
+    */
+  def anchorFor(key: Option[String], trail: List[Int]): String =
+    key.fold(trail.reverseIterator.mkString("path:", "/", ""))("key:" + _)
+
+  /** The selection identity of node `id`, given the anchor its bounds wrapper carries. */
+  def anchorOf(id: Int, anchor: Option[String]): String = anchor.getOrElse(s"node:$id")
 
   /** The first and last cell (inclusive) of the word `java.text.BreakIterator` finds around `column` in `row`, where
     * `row` holds one grapheme per cell and `""` for the trailing half of a wide one. `None` past the row's end.

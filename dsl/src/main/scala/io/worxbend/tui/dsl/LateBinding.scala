@@ -56,6 +56,23 @@ private[dsl] object LateBinding:
     if theme ne Theme.default then node
     else node.withProps(node.props.copy(lateBinding = Some(binding(build, mirror))))
 
+  /** [[themed]] for a builder that composes several nodes — `statusBar`, `topBar`, `helpOverlay`, `whichKeyPopup` — and
+    * so has no single product node to merge field by field. The root of what `build` returns carries the binding;
+    * rebinding builds the whole subtree again under the app's theme and keeps what was applied to the root after the
+    * call (a `.key`, a `.length`, an added style) by merging its props the way [[themed]] merges a node's. A builder
+    * applied to an inner node cannot be reached from outside the call, so there is nothing else to keep.
+    */
+  def composite(theme: Theme)(build: Theme => Element): Element =
+    val node = build(theme)
+    if theme ne Theme.default then node
+    else
+      val late = LateBinding { (current, ambient) =>
+        val before = build(Theme.default)
+        val after  = build(ambient)
+        after.withProps(mergedProps(current.props, before.props, after.props))
+      }
+      node.withProps(node.props.copy(lateBinding = Some(late)))
+
   /** The node a frame should paint: `node` rebound to `ambient` when it was built against the ambient default and the
     * frame's theme is another one, `node` itself otherwise.
     */

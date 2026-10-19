@@ -21,12 +21,14 @@ final class ClippedMouseGeometrySpec extends AnyFunSuite:
         def view(using ReactiveScope, Theme): Element =
           val choices = menu(entries, selection)(index => chosen :+= index)
           if nested then
+            // the outer view pins its offset: following focus it would scroll the clicked menu's rows fully into view,
+            // and this test is about where clicks land at fixed offsets
             positioned(5, 4, 20, 4)(
               scrollView(
                 positioned(2, 1, 12, 4)(scrollView(choices, contentHeight = 8, inner)),
                 contentHeight = 12,
                 outer,
-              )
+              ).followFocus(false)
             )
           else positioned(2, 2, 20, 4)(scrollView(choices, contentHeight = 8, outer))
       Pilot.using(Size(40, 14))(backend => app.runWith(backend)) { pilot =>

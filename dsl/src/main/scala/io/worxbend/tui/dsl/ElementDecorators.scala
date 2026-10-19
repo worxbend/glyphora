@@ -18,19 +18,22 @@ private[dsl] trait DecoratingElement extends Element:
   /** The single node this one wraps. */
   def inner: Element
 
-  def props: ElementProps                                                    = inner.props
-  override def children: Seq[Element]                                        = Seq(inner)
-  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     = inner.builtinKeyHandler
-  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] = inner.builtinMouseHandler
-  private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler] = inner.builtinPasteHandler
-  private[dsl] override def captureKeyHandler: Option[BuiltinKeyHandler]     = inner.captureKeyHandler
-  private[dsl] override def editsText: Boolean                               = inner.editsText
-  private[dsl] override def claim: SizeClaim                                 = inner.claim
-  private[dsl] override def layoutOnly: Boolean                              = inner.layoutOnly
-  override def debugName: String                                             = inner.debugName
-  override def accessibleName: String                                        = inner.accessibleName
-  private[dsl] override def componentRole: Option[ComponentRole]             = inner.componentRole
-  override def pointerShape: Option[PointerShape]                            = inner.pointerShape
+  def props: ElementProps                                                      = inner.props
+  override def children: Seq[Element]                                          = Seq(inner)
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]       = inner.builtinKeyHandler
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler]   = inner.builtinMouseHandler
+  private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler]   = inner.builtinPasteHandler
+  private[dsl] override def captureKeyHandler: Option[BuiltinKeyHandler]       = inner.captureKeyHandler
+  private[dsl] override def editsText: Boolean                                 = inner.editsText
+  private[dsl] override def claim: SizeClaim                                   = inner.claim
+  private[dsl] override def layoutOnly: Boolean                                = inner.layoutOnly
+  override def debugName: String                                               = inner.debugName
+  // a decorator paints the states its node paints; forwarded so a walk over a decorated tree (a searched scroll view's
+  // content identity) sees them even through a decorator, such as `TrackedElement`, that skips `inner` in `children`
+  override private[dsl] def watchedStates: Seq[io.worxbend.tui.core.Versioned] = inner.watchedStates
+  override def accessibleName: String                                          = inner.accessibleName
+  private[dsl] override def componentRole: Option[ComponentRole]               = inner.componentRole
+  override def pointerShape: Option[PointerShape]                              = inner.pointerShape
   private[dsl] override def pointerShapeAt(position: Position, area: Rect): Option[PointerShape] =
     inner.pointerShapeAt(position, area)
 
@@ -59,8 +62,9 @@ private[dsl] final case class TrackedElement(inner: Element, index: Int, tracker
   def widget: Widget                                                             =
     (area, buffer) =>
       tracker.record(index, area)
-      // the focused element tells an enclosing scrollView where it landed, so the view can keep it on screen
-      if inner.props.focused then RevealProbe.focused(index, area)
+      // every focusable tells the enclosing scroll views where it landed: the focused one so they keep it on screen,
+      // the rest so that the frame after focus moves onto one of them can scroll to it before painting
+      RevealProbe.tracked(index, area, inner.props.focused)
       inner.widget.render(area, buffer)
   private[dsl] def withProps(props: ElementProps): TrackedElement                = copy(inner = inner.withProps(props))
   private[dsl] override def withChildren(children: Seq[Element]): TrackedElement =
@@ -361,7 +365,9 @@ extension [E <: Element](element: E)
     * panel-free way to box a single node; a `panel` adds a title, captions and slots on top of this.
     */
   def border(glyphs: w.BorderType = w.BorderType.Plain)(using theme: Theme): DecoratedElement =
-    DecoratedElement.around(element, Decoration.Border(glyphs, theme.border, theme.glyphs))
+    LateBinding.themed(theme)(theme =>
+      DecoratedElement.around(element, Decoration.Border(glyphs, theme.border, theme.glyphs))
+    )
 
   /** A frame drawn in `frameStyle` — the border's own colour, not the content's (that is the element's `style`). */
   def border(glyphs: w.BorderType, frameStyle: Style): DecoratedElement =

@@ -206,7 +206,11 @@ scrollView(
 
 Each request is acted on once, so a child that stays focused or marked does not drag
 the view back after the reader scrolls away; take the mark off and put it back to ask
-again. `.followFocus(false)` turns focus-following off for a view whose offset the app
+again. Scroll views inside scroll views each scroll their part of the way, so a focused
+button deep in a nested list ends up on screen. The view works out where to scroll from
+where the last frame painted the child, before it paints, so the content is drawn once
+and `boundsOf` answers where the child really is; a child that has only just appeared is
+scrolled to on the frame after it first paints. `.followFocus(false)` turns focus-following off for a view whose offset the app
 drives itself, and `ScrollViewState.reveal(top, height)` is the same "scroll just far
 enough" move for code that keeps its own state.
 
@@ -230,7 +234,7 @@ Scrollbar(200, 40, ScrollbarOptions(orientation = Direction.Horizontal))
 Scrollbar(200, 40, ScrollbarOptions(side = ScrollbarSide.Near))
 
 // the same bar as a DSL element
-scrollbar(200).at(40).horizontal
+scrollbar(200).thumbAt(40).horizontal
 ```
 
 Everything past `position` — orientation, side, symbols, styles, the viewport length —
@@ -243,7 +247,7 @@ edge and the top edge. The thumb sits in the same place along the strip either w
 the lane it is drawn in moves.
 
 The element claims one cell across the short axis, so give it a slice next to the content
-rather than laying it over the content. `.at(offset)` moves the thumb, `.thumbStyle(...)`
+rather than laying it over the content. `.thumbAt(offset)` moves the thumb, `.thumbStyle(...)`
 recolours the moving part on its own, and `.symbols(track, thumb)` replaces the two glyphs
 (both must be one column wide).
 
@@ -629,17 +633,21 @@ def view(using ReactiveScope, Theme): Element =
   )
 ```
 
-Every match is highlighted and the current one stands out; when the query changes, the first
+Every match is highlighted and the current one stands out — in the theme's `SearchRole.Match`
+and `SearchRole.Current` components, or its `warning` and `error` colours when it has none
+(see [the app shell](./app-shell#component-styles-and-variants)); when the query changes, the first
 match at or after the top of the window becomes current and the view scrolls to it. While the
 searched view is focused, `n` and `N` step to the next and previous match, wrapping round;
 in the `searchBar`, Enter (or Down) and Shift+Enter (or Up) do the same, and Esc clears the
 query. Each move scrolls once, so a reader who scrolls away from the match is not dragged
 back.
 
-- A log searches every line it holds, not just the ones on screen.
-- A scroll view searches its whole content, below and above the fold. While a query is set
-  it paints the content in full rather than only the window; with no query there is no
-  extra cost.
+- A log searches every line it holds, not just the ones on screen. It matches again only
+  when its lines change, not when the reader scrolls or steps.
+- A scroll view searches its whole content, below and above the fold. It paints the content
+  in full once per query and content, then reuses the matches: a frame that only scrolls,
+  steps or redraws paints just the window, as an unsearched view does. The content counts as
+  changed when its elements differ or a state they paint (an `input`, a `log`) changes.
 - `markdown(source).searchable(state)` searches what the document draws and restyles the
   cells already drawn, so a match inside a table cell keeps the table's columns aligned.
   Inside a `scrollView` the whole document is searched and the scroll view scrolls to the
@@ -2345,7 +2353,7 @@ column wide for every level so a stacked column of notices stays aligned, and it
 (`OK`, `INFO`, `WARN`, `FAIL`) is the short form for a badge.
 
 ```scala
-notice("8 services updated", NoticeLevel.Success).at(LocalTime.now())
+notice("8 services updated", NoticeLevel.Success).stamped(LocalTime.now())
 notice("could not reach the registry", NoticeLevel.Error).wrapped
 ```
 

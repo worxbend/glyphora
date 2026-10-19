@@ -8,7 +8,8 @@ import io.worxbend.tui.core.Versioned
   * once the paint is done; [[collect]] is the stand-alone walk, kept as the reference the fused one is checked against.
   *
   * A [[io.worxbend.tui.widgets.LazyListState]] whose paint reached an item that was not built is recorded as already
-  * stale ([[Stale]]), so the next poll asks for the frame that builds it — the paint itself is the mutation there.
+  * stale ([[Stale]]), so the next poll asks for the frame that builds it — the paint itself is the mutation there. A
+  * `ScrollViewState` that scrolled after its paint (a reveal it could not resolve beforehand) is stale the same way.
   */
 private[dsl] object StateWatch:
 
@@ -34,4 +35,6 @@ private[dsl] object StateWatch:
   private def versionOf(state: Versioned): Long =
     state match
       case lazyList: io.worxbend.tui.widgets.LazyListState if lazyList.missedItems => Stale
+      // a scroll view that moved its offset after painting owes the frame that shows it
+      case scroll: io.worxbend.tui.widgets.ScrollViewState if scroll.owesFrame     => Stale
       case _                                                                       => state.version

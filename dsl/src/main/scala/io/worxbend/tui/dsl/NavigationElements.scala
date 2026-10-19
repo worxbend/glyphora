@@ -107,11 +107,16 @@ object ResponsiveElement:
   * `contentHeight` is the caller's own measurement; `None` means "measure the content each frame", which is what the
   * two-argument `scrollView(content, state)` factory asks for.
   *
+  * A searched view (`.searchable(state)`) finds its matches by painting the whole content once per query and content,
+  * then reuses them: a frame that only scrolls, steps or redraws paints just the window.
+  *
   * The view keeps what matters on screen by itself. When focus moves onto a child outside the window, or a child marked
-  * `.ensureVisible` appears, the view scrolls just far enough to show it — on the same frame, by painting the content a
-  * second time at the new offset — and records the request in `state`, so a child that *stays* focused or marked does
-  * not drag the view back after the reader scrolls away. A mark wins over focus; `.followFocus(false)` turns
-  * focus-following off. Only the innermost scroll view around a child acts on its request.
+  * `.ensureVisible` appears, the view scrolls just far enough to show it, and records the request in `state`, so a
+  * child that *stays* focused or marked does not drag the view back after the reader scrolls away. A mark wins over
+  * focus; `.followFocus(false)` turns focus-following off. Every scroll view around the child scrolls its part of the
+  * way, nested ones included. The offset is resolved *before* the content paints, from where the last frame painted the
+  * target, so the content is painted once and every recorded rect is the one on screen; a target that was not on the
+  * last frame (it just appeared) is revealed on the frame after it first paints.
   */
 final case class ScrollViewElement(
     content: Element,
@@ -134,7 +139,7 @@ final case class ScrollViewElement(
       // unreachable rather than merely mis-scrolled. There is no better answer at render time — the content has
       // already been asked — so the fix belongs upstream: give the content a `.length(n)`, pass `contentHeight`, or
       // make its widget answer `Measured.heightAt`.
-      val rows     =
+      val rows      =
         contentHeight
           .filter(_ > 0)
           .getOrElse(content.intrinsicHeight(math.max(1, area.width - 1)).getOrElse(area.height))
@@ -143,36 +148,80 @@ final case class ScrollViewElement(
       content match
         case viewport: ScrollViewportElement => viewport.publishScreenArea(area)
         case _                               => ()
-      val view     = searched(w.ScrollView(content.widget, rows))
-      val portals  = PortalQueue.mark
-      val requests = RevealRequests(followsFocus, atEnd = state.isAtEnd)
-      RevealProbe.collecting(requests)(view.render(area, buffer, state))
+      val found     = SearchStyles.of(props.focusState.theme)
+      val view      = searched(
+        w.ScrollView(
+          content.widget,
+          rows,
+          contentIdentity = searchIdentity,
+          matchStyle = found.matched,
+          currentMatchStyle = found.current,
+        )
+      )
       // the container-query pre-pass paints an undecorated tree, which asks for nothing: that is not a request going
       // away, so the pre-pass leaves the bookkeeping of the frames that do ask alone
-      if !LocalProbe.measuring then revealChosen(requests, area, buffer, view, portals)
+      val measuring = LocalProbe.measuring
+      val atEnd     = state.isAtEnd
+      val revealed  = if measuring then None else revealBeforePaint()
+      // a view that was following a tail and is still at its end goes to the new end before it paints, so a row that
+      // arrived since the last frame shows on this one; the paint clamps the offset to the content's new bottom
+      if !measuring && atEnd && state.revealedRequest.exists(_.startsWith(RevealProbe.TailPrefix)) then
+        state.offset = Int.MaxValue / 2
+      val requests  = RevealRequests(followsFocus, area, state, atEnd)
+      RevealProbe.collecting(requests)(view.render(area, buffer, state))
+      if !measuring then settleAfterPaint(requests, revealed)
 
-  /** Acts on the reveal request the paint just collected, if it is a new one — see the class notes. */
-  private def revealChosen(
-      requests: RevealRequests,
-      area: Rect,
-      buffer: io.worxbend.tui.core.Buffer,
-      view: StatefulWidget[w.ScrollViewState],
-      portals: Int,
-  ): Unit =
+  /** Scrolls to the request the focus pass found for this frame, when it is new and the last paint recorded where its
+    * target lands — the common case: focus moved onto a child that was already there. Answers the request acted on.
+    */
+  private def revealBeforePaint(): Option[String] =
+    state.owesFrame = false
+    state.pendingReveal.filterNot(state.revealedRequest.contains).flatMap { id =>
+      state.placements(id).map { rect =>
+        state.revealedRequest = Some(id)
+        state.reveal(rect.y, rect.height)
+        id
+      }
+    }
+
+  /** Records where every possible request landed this frame, for the next one, and acts on a request the paint made
+    * that could not be resolved beforehand — a child that was not there on the last frame, a search match, a target an
+    * inner view moved this frame. Acting means moving the offset for the *next* frame (the state owes that frame): this
+    * one is never painted a second time, so every rect recorded during it is the one on screen.
+    */
+  private def settleAfterPaint(requests: RevealRequests, revealed: Option[String]): Unit =
+    state.placements = requests.placements.get
     requests.chosen match
       case None             => state.revealedRequest = None
       case Some((id, rect)) =>
         // act on a request once, when it appears: acting on it every frame would pin the view and undo every
         // scroll the reader makes while the same element stays focused or marked
-        if !state.revealedRequest.contains(id) then
+        val fresh = !state.revealedRequest.contains(id)
+        val stale = revealed.contains(id) && !shows(rect)
+        if fresh || stale then
           state.revealedRequest = Some(id)
           val before = state.offset
           state.reveal(rect.y, rect.height)
-          // painted again in the same frame, so the request is honoured on the frame it was made; the portals the
-          // first pass queued are dropped so they are not drawn twice
-          if state.offset != before then
-            PortalQueue.rollback(portals)
-            RevealProbe.collecting(RevealRequests(followsFocus))(view.render(area, buffer, state))
+          if state.offset != before then state.owesFrame = true
+
+  /** Whether content rows `rect` are inside the window the view just painted. */
+  private def shows(rect: Rect): Boolean =
+    rect.y >= state.offset && rect.bottom <= state.offset + state.viewportRows
+
+  /** What the searched view compares to decide whether the matches it found last frame still hold: the content subtree
+    * itself (plain data, compared structurally — a node holding a fresh closure never compares equal, which only costs
+    * a re-search) and the versions of the caller-owned states it paints, since a state's text can change under an equal
+    * node. Built only while a query is set; an unsearched view pays nothing for it. This is a walk of this view's own
+    * subtree, made only on a searched frame, and in exchange the view paints its window instead of its whole content.
+    */
+  private def searchIdentity: Option[Any] =
+    search.filter(_.isActive).map { _ =>
+      // the focus pass wraps the content in a fresh viewport translator every frame; what it translates is the identity
+      val subject = content match
+        case viewport: ScrollViewportElement => viewport.inner
+        case other                           => other
+      (subject, StateWatch.collect(subject).map(_._2))
+    }
 
   /** The view as drawn: plain, or searched for `search`'s query. */
   private def searched(view: w.ScrollView): StatefulWidget[w.ScrollViewState] =
@@ -392,8 +441,10 @@ final case class ScrollbarElement(
 
   /** Moves the thumb to `offset`, in the same units as `contentLength`: rows for a vertical bar, columns for a
     * horizontal one. Values outside the content are clamped rather than rejected.
+    *
+    * Named `thumbAt` rather than `at`: a member `at` would shadow the `.at(row, col)` grid placement every element has.
     */
-  def at(offset: Int): ScrollbarElement = copy(position = offset)
+  def thumbAt(offset: Int): ScrollbarElement = copy(position = offset)
 
   /** Styles the thumb — the moving part — independently of the track it runs in. */
   def thumbStyle(transform: Style => Style): ScrollbarElement =

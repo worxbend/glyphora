@@ -475,7 +475,7 @@ private[dsl] trait ElementFactories:
     *
     * Vertical by default: the bar is drawn down the *right* edge of the area it is given, so give it a one-column slice
     * beside the content rather than laying it over the content. `.horizontal` runs it along the bottom edge instead,
-    * and `.at(offset)` moves the thumb.
+    * and `.thumbAt(offset)` moves the thumb.
     *
     * A [[scrollView]] draws its own scrollbar and needs none of this. Reach for this factory when the application owns
     * the scroll offset itself — a hand-scrolled list, a tailing log, a table with more rows than fit. The track takes
@@ -581,10 +581,12 @@ private[dsl] trait ElementFactories:
       BadgeElement(label, w.BadgeVariant.Solid, theme.accent)
     }
 
-  /** A badge carrying a severity's own tag and color — `badge(NoticeLevel.Error)` reads `FAIL`. */
+  /** A badge carrying a severity's own tag and color — `badge(NoticeLevel.Error)` reads `FAIL`, or the tag the active
+    * [[Messages]] table gives the level.
+    */
   def badge(level: w.NoticeLevel)(using theme: Theme): BadgeElement =
     LateBinding.themed(theme) { theme =>
-      BadgeElement(level.tag, w.BadgeVariant.Solid, noticeLevelStyle(level)(using theme))
+      BadgeElement(Messages.active.tag(level), w.BadgeVariant.Solid, noticeLevelStyle(level)(using theme))
     }
 
   /** Blanks its area so a popup drawn over it starts from a clean background.
@@ -601,16 +603,13 @@ private[dsl] trait ElementFactories:
     *
     * A picture of a dialog, not a controller — it has no keys and no callbacks of its own. Drive `selected` from the
     * app's own state and overlay it with [[layers]] (or push it as a modal [[Screen]]). Colours come from the ambient
-    * [[Theme]]: the frame and text in `primary`, the selected button in `focus`.
+    * [[Theme]]: the frame and text in `primary` with the theme's `"dialog"` component ([[DialogRole]]) over it, the
+    * selected button in `"dialog.selected"` or, when the theme has none, in `focus`.
     */
   def dialog(title: String, message: String, buttons: Seq[String] = Seq(Messages.active.dialogOk), selected: Int = 0)(
       using theme: Theme
-  ): WidgetElement =
-    LateBinding.themed(theme) { theme =>
-      WidgetElement(
-        w.Dialog(title, Text.raw(message), buttons, selected, style = theme.primary, highlightStyle = theme.focus)
-      )
-    }
+  ): DialogElement =
+    LateBinding.themed(theme)(theme => DialogElement(title, message, buttons, selected, theme.primary, theme.focus))
 
   /** A dialog that answers its own keys: Left/Right (and Tab) move between the buttons, Space or Enter presses the
     * selected one, Esc cancels.
@@ -637,7 +636,8 @@ private[dsl] trait ElementFactories:
         onSelect,
         onPress,
         onCancel,
-        ElementProps(style = theme.primary, focusable = true, focusState = FocusState(focusStyle = theme.focus)),
+        ElementProps(focusable = true, focusState = FocusState(focusStyle = theme.focus)),
+        bodyStyle = theme.primary,
       )
     }
 

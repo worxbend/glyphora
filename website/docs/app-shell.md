@@ -675,9 +675,13 @@ The framework draws a few words of its own: the `OK` a bare `dialog(title, messa
 shows, the two buttons of `Screen.confirm`, the command palette's `Commands` title and
 `type to filter…` placeholder, the `Help` heading of `helpOverlay(bindings)`, the wizard's
 `Back`/`Next`/`Finish`, the inspector's panel titles, the `Search` placeholder of
-`searchBar(state)`, and the prompts' `(Y/n)` hints, list hints, `❯`/`◉`/`◯` glyphs and
-`✓`/`✗` task markers. Every one of them comes from one `Messages` table, which an app
-replaces by overriding `messages`:
+`searchBar(state)`, the `…` after a half-typed key sequence (the which-key popup's title
+and the `statusBar(bindings)` hint), the descriptions `Keymap.markdown` gives the framework
+keys, the prompts' `(Y/n)` hints, list hints, `❯`/`◉`/`◯` glyphs, `✓`/`✗` task markers and
+validation errors (`'x' is not a whole number`, `choose at least 2`, …), and the severity
+icons (`✔ • ▲ ✖`) of notices and toasts and tags (`OK INFO WARN FAIL`) of
+`badge(level)`. Every one of them comes from one `Messages` table, which an app replaces by
+overriding `messages`:
 
 ```scala
 object App extends TuiApp:
@@ -688,9 +692,18 @@ object App extends TuiApp:
       .withPaletteTitle("Órdenes")
       .withPalettePlaceholder("escribe para filtrar…")
       .withHelpTitle("Ayuda")
+      .withPromptNotANumber("'{input}' no es un número entero")
+      .withFrameworkKeyDescription(FrameworkKeys.Quit, "salir")
+      .withTag(NoticeLevel.Error, "ERROR")
 
   def view(using ReactiveScope, Theme): Element = dialog("Guardado", "Los cambios están escritos.")
 ```
+
+The prompt validation messages are templates: `{input}` is the rejected answer, `{min}`
+and `{max}` the bounds, `{yes}`/`{no}` the confirm words and `{options}` the option labels.
+Severity icons and tags are set per level with `withIcon(level, glyph)` and
+`withTag(level, label)`; a framework key without a description of its own is described by
+its id.
 
 `Messages.Default` is the English table every earlier release drew, and each field has a
 `with…` builder. The run binds the app's table on the render thread around every frame and
@@ -940,8 +953,19 @@ the theme's `focus` and `disabled` styles, or the element's own `.hoverStyle(...
 
 The built-in roles are `ButtonRole.Default` / `Primary` / `Secondary` / `Danger`,
 `InputRole` (every text field), `ListRole` and `ListRole.Selected` (the scrollable
-collections and their selected row) and `TableHeaderRole`; `ComponentRole.named("…")`
-adds one of your own. A `button` with no `.variant` resolves `ButtonRole.Default`.
+collections and their selected row), `TableHeaderRole`, `DialogRole` and
+`DialogRole.Selected`, and `SearchRole.Match` / `SearchRole.Current`;
+`ComponentRole.named("…")` adds one of your own. A `button` with no `.variant` resolves
+`ButtonRole.Default`.
+
+`DialogRole` (`"dialog"`) styles `dialog(...)` and `confirmDialog(...)`: its `base` is
+layered over the theme's `primary` for the frame, title and message. `DialogRole.Selected`
+(`"dialog.selected"`) is the selected button — its `base` at rest, its `focused` style
+while a `confirmDialog` has the keyboard — and falls back to the theme's `focus` cue when
+the theme has none. `SearchRole.Match` and `SearchRole.Current` (`"search.match"`,
+`"search.current"`) are the highlights of a searchable `log`, `scrollView` or `markdown`;
+a theme without them highlights matches in its `warning` colour and the current match in
+its `error` colour, bold, so search follows `Theme.Light` and every preset untouched.
 
 Roles are looked up by a hierarchical `StyleName`: `"button.primary"` falls back to
 `"button"`, merging every field the child leaves unset, so a theme can style all
@@ -970,9 +994,10 @@ component.button.primary:focused = bold underline #2e3440 on #8fbcbb
 Every value is a style in [`Style.parse`](./layout-and-style#styles-from-text-and-back-again)'s
 spelling. The keys are the roles (`primary` … `focus`), the palettes by dotted path
 (`loading.fill`, `markdown.table-header`, `markdown.syntax.string`, `syntax.comment`),
-`glyphs` (`full`, `box-drawing`, `ascii`), and components as `component.<name>` for the
-base style and `component.<name>:<state>` for a state. A line whose first visible
-character is `#` is a comment.
+`glyphs` (`full`, `box-drawing`, `ascii`), `loading.fill-ramp` (the colour stops of the
+loading `fillRamp`, comma-separated — `green, yellow, red` — or `none`), and components as
+`component.<name>` for the base style and `component.<name>:<state>` for a state. A line
+whose first visible character is `#` is a comment.
 
 A setting the file leaves out keeps the base theme's value: the `extends` preset, or
 `Theme.Dark` *without* components when there is no `extends`. That is why a file
@@ -1007,8 +1032,10 @@ that was handed the default records how it built the node, and the host re-resol
 against the app's theme when it paints, keeping any builder you applied afterwards
 (`.titleStyle(_.bold)` stays bold, over the app theme's caption colour). A factory
 handed an explicit theme — `panel(...)(using Theme.HighContrast)` — keeps that theme.
-The chrome builders (`statusBar`, `topBar`, `helpOverlay`) compose several nodes and are
-not late-bound; call them from `view`.
+The chrome builders (`statusBar`, `topBar`, `helpOverlay`, `whichKeyPopup`) and the
+`.border()` decorator are late-bound the same way: a composite builder rebuilds its whole
+subtree under the app's theme and keeps what you applied to the node it returned (a
+`.key`, a `.length`, an added style). Toasts are always painted in the app's theme.
 
 For live switching, keep a theme index in a `Signal`, return the selected value from
 `theme`, and read the index in `view` so the tree is invalidated. A complete snippet

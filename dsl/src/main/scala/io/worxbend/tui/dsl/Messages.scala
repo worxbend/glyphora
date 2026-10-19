@@ -1,5 +1,7 @@
 package io.worxbend.tui.dsl
 
+import io.worxbend.tui.widgets.NoticeLevel
+
 import scala.util.DynamicVariable
 
 /** Every word and marker the framework draws on its own, in one table an application can translate.
@@ -17,7 +19,8 @@ import scala.util.DynamicVariable
   *
   * Labels the application passes explicitly (`dialog(title, message, buttons = Seq("Vale"))`) are never touched: the
   * table only supplies the defaults. Strings are plain values with no placeholders except where a field's Scaladoc
-  * names one (`{lines}` in [[composerPasted]]). Immutable; safe to share between threads.
+  * names one (`{lines}` in [[composerPasted]], `{input}`, `{min}`, `{max}`, `{yes}`, `{no}` and `{options}` in the
+  * prompt validation messages). Immutable; safe to share between threads.
   *
   * @param dialogOk
   *   the single button `dialog(...)` draws when given none, and the confirming button of `Screen.confirm`.
@@ -73,6 +76,35 @@ import scala.util.DynamicVariable
   *   the label of `promptComposer`'s Ctrl+R history search bar.
   * @param searchPlaceholder
   *   the placeholder `searchBar(state)` shows when given none.
+  * @param whichKeyEllipsis
+  *   the marker after a half-typed key sequence — the which-key popup's title and the pending `statusBar(bindings)`
+  *   hint, `ctrl+k …`.
+  * @param frameworkKeyDescriptions
+  *   what `FrameworkKeys.entries` (and so `Keymap.markdown`) says each framework key does, by its [[BindingId]]; an id
+  *   left out is described by its id. Set one with [[withFrameworkKeyDescription]].
+  * @param promptNotANumber
+  *   a `Prompt.number` answer that is not a whole number; `{input}` is the answer.
+  * @param promptNumberRange
+  *   a `Prompt.number` answer outside its bounds; `{min}` and `{max}` are the bounds.
+  * @param promptChooseAtLeast
+  *   a `Prompt.multiSelect` answer with fewer than `min` choices; `{min}` is the minimum.
+  * @param promptPathRequired
+  *   an empty `Prompt.path` answer.
+  * @param promptPathMissing
+  *   a `Prompt.path(mustExist = true)` answer naming nothing; `{input}` is the answer.
+  * @param promptAnswerYesNo
+  *   a typed confirm answer that is neither yes nor no; `{yes}`/`{no}` are [[promptYes]]/[[promptNo]], `{input}` the
+  *   answer.
+  * @param promptNothingToChoose
+  *   a choice prompt answered with no options to choose from.
+  * @param promptNotAnOption
+  *   a typed choice answer naming no option; `{input}` is the word, `{options}` the option labels joined by `, `.
+  * @param iconSuccess
+  *   the marker a success `notice` and toast draw before their message. [[iconInfo]], [[iconWarning]] and [[iconError]]
+  *   are the other three severities'; set any with [[withIcon]].
+  * @param tagSuccess
+  *   the short tag `badge(NoticeLevel.Success)` reads. [[tagInfo]], [[tagWarning]] and [[tagError]] are the other three
+  *   severities'; set any with [[withTag]].
   */
 final case class Messages(
     dialogOk: String = "OK",
@@ -102,6 +134,24 @@ final case class Messages(
     composerPasted: String = "[Pasted {lines} lines]",
     composerReverseSearch: String = "(reverse-i-search)",
     searchPlaceholder: String = "Search",
+    whichKeyEllipsis: String = "…",
+    frameworkKeyDescriptions: Map[BindingId, String] = Messages.FrameworkKeyDescriptions,
+    promptNotANumber: String = "'{input}' is not a whole number",
+    promptNumberRange: String = "enter a number from {min} to {max}",
+    promptChooseAtLeast: String = "choose at least {min}",
+    promptPathRequired: String = "a path is required",
+    promptPathMissing: String = "{input} does not exist",
+    promptAnswerYesNo: String = "answer {yes} or {no}, not '{input}'",
+    promptNothingToChoose: String = "there is nothing to choose from",
+    promptNotAnOption: String = "'{input}' is not one of: {options}",
+    iconSuccess: String = "✔",
+    iconInfo: String = "•",
+    iconWarning: String = "▲",
+    iconError: String = "✖",
+    tagSuccess: String = "OK",
+    tagInfo: String = "INFO",
+    tagWarning: String = "WARN",
+    tagError: String = "FAIL",
 ):
 
   def withDialogOk(label: String): Messages              = copy(dialogOk = label)
@@ -132,10 +182,77 @@ final case class Messages(
   def withComposerReverseSearch(label: String): Messages = copy(composerReverseSearch = label)
   def withSearchPlaceholder(label: String): Messages     = copy(searchPlaceholder = label)
 
+  def withWhichKeyEllipsis(marker: String): Messages      = copy(whichKeyEllipsis = marker)
+  def withPromptNotANumber(template: String): Messages    = copy(promptNotANumber = template)
+  def withPromptNumberRange(template: String): Messages   = copy(promptNumberRange = template)
+  def withPromptChooseAtLeast(template: String): Messages = copy(promptChooseAtLeast = template)
+  def withPromptPathRequired(label: String): Messages     = copy(promptPathRequired = label)
+  def withPromptPathMissing(template: String): Messages   = copy(promptPathMissing = template)
+  def withPromptAnswerYesNo(template: String): Messages   = copy(promptAnswerYesNo = template)
+  def withPromptNothingToChoose(label: String): Messages  = copy(promptNothingToChoose = label)
+  def withPromptNotAnOption(template: String): Messages   = copy(promptNotAnOption = template)
+
+  /** This table with framework key `id` described as `description`. */
+  def withFrameworkKeyDescription(id: BindingId, description: String): Messages =
+    copy(frameworkKeyDescriptions = frameworkKeyDescriptions.updated(id, description))
+
+  /** This table with `glyph` as the marker of `level`'s notices and toasts. */
+  def withIcon(level: NoticeLevel, glyph: String): Messages =
+    level match
+      case NoticeLevel.Success => copy(iconSuccess = glyph)
+      case NoticeLevel.Info    => copy(iconInfo = glyph)
+      case NoticeLevel.Warning => copy(iconWarning = glyph)
+      case NoticeLevel.Error   => copy(iconError = glyph)
+
+  /** This table with `label` as `badge(level)`'s tag. */
+  def withTag(level: NoticeLevel, label: String): Messages =
+    level match
+      case NoticeLevel.Success => copy(tagSuccess = label)
+      case NoticeLevel.Info    => copy(tagInfo = label)
+      case NoticeLevel.Warning => copy(tagWarning = label)
+      case NoticeLevel.Error   => copy(tagError = label)
+
+  /** The marker `level`'s notices and toasts draw. */
+  def icon(level: NoticeLevel): String =
+    level match
+      case NoticeLevel.Success => iconSuccess
+      case NoticeLevel.Info    => iconInfo
+      case NoticeLevel.Warning => iconWarning
+      case NoticeLevel.Error   => iconError
+
+  /** The tag `badge(level)` reads. */
+  def tag(level: NoticeLevel): String =
+    level match
+      case NoticeLevel.Success => tagSuccess
+      case NoticeLevel.Info    => tagInfo
+      case NoticeLevel.Warning => tagWarning
+      case NoticeLevel.Error   => tagError
+
+  /** What framework key `id` does, or the id itself when the table has no description for it. */
+  def frameworkKeyDescription(id: BindingId): String = frameworkKeyDescriptions.getOrElse(id, id.value)
+
   /** [[composerPasted]] with `{lines}` filled in. */
   def pastedLines(lines: Int): String = composerPasted.replace("{lines}", lines.toString)
 
+  /** `template` with each `{name}` replaced by its value — how the prompts fill in their validation messages. */
+  private[dsl] def filled(template: String, values: (String, Any)*): String =
+    values.foldLeft(template)((text, entry) => text.replace(s"{${entry._1}}", entry._2.toString))
+
 object Messages:
+
+  /** The English descriptions of the framework keys, by id. */
+  val FrameworkKeyDescriptions: Map[BindingId, String] = Map(
+    FrameworkKeys.FocusPrevious  -> "focus the previous control",
+    FrameworkKeys.FocusNext      -> "focus the next control",
+    FrameworkKeys.CommandPalette -> "open the command palette",
+    FrameworkKeys.Quit           -> "quit",
+    FrameworkKeys.CloseModal     -> "close the modal on top",
+    FrameworkKeys.MenuBar        -> "open the menu bar",
+    FrameworkKeys.WindowMove     -> "move the focused window with the arrows",
+    FrameworkKeys.WindowResize   -> "resize the focused window with the arrows",
+    FrameworkKeys.Inspector      -> "cycle the inspector overlay",
+    FrameworkKeys.CopySelection  -> "copy the mouse text selection",
+  )
 
   /** The English labels every release before 0.20.0 drew. */
   val Default: Messages = Messages()
