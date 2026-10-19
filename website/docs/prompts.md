@@ -52,7 +52,7 @@ cancel, so `for`-comprehensions over several prompts stop at the first `None`.
 | `Prompt.multiSelect(label, options, render, preselected, min)` | `Option[Seq[A]]` | Up/Down; Space ticks; Enter |
 | `Prompt.number(label, default, min, max)` | `Option[Long]` | as `text` |
 | `Prompt.path(label, default, base, mustExist)` | `Option[Path]` | as `text`; Tab completes |
-| `Prompt.form[A]` | `Option[A]` | one field per step; `Ctrl-U` goes back |
+| `Prompt.form[A]` | `Option[A]` | one field per step; `Shift+Tab` goes back |
 | `Prompt.task(label)(log => work)` | `Option[A]` | `Ctrl-C` cancels |
 | `Prompt.loader(label, items)(f)` | `Option[Seq[B]]` | `Ctrl-C` cancels |
 
@@ -80,7 +80,8 @@ final case class Service(name: String, port: Int, tls: Boolean)
 val service: Option[Service] = Prompt.form[Service]
 ```
 
-`Ctrl-U` returns to the previous field with its answer still in it. To check the
+`Shift+Tab` (the `focus-previous` framework key) returns to the previous field with its
+answer still in it; `Ctrl-U` kills to the start of the line, as in any `input`. To check the
 assembled value as well, pass the spec and its validators to `Prompt.formOf`; a failing
 check sends the user back to its field:
 

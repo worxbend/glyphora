@@ -142,7 +142,8 @@ object Prompt:
 
   /** A form over a case class, one field per step: the fields `deriveForm[A]` derives, asked in declaration order. A
     * Boolean field is a [[confirm]], a closed set of labels a [[select]], everything else typed text checked by the
-    * field type's own parser. `Ctrl-U` goes back to the previous field with its answer kept.
+    * field type's own parser. Shift+Tab (the `focus-previous` key) goes back to the previous field with its answer
+    * kept; `Ctrl-U` is the text field's kill-to-line-start.
     */
   inline def form[A](using session: PromptSession): Option[A] =
     formOf(deriveForm[A](using summonInline[Mirror.ProductOf[A]]))(using session)

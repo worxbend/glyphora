@@ -267,6 +267,16 @@ Three changes reach almost every app, so check them first:
 - **Focused text fields consume the editing chords** — see [Editing](#editing); an app binding on
   Ctrl+U, Ctrl+W, Ctrl+Z, Ctrl+Y, Ctrl+K or Ctrl+A no longer fires while an `input` or `textArea`
   has focus.
+- **`Prompt.form` steps back with Shift+Tab, not Ctrl-U.** Ctrl-U was the form's "previous field"
+  key, which took kill-to-line-start away from every text field in a form. The back key is now the
+  `focus-previous` framework key (Shift+Tab by default), and Ctrl-U kills to the start of the line
+  as it does in any `input`. Nothing to change in code; tell users, or move the key:
+
+  ```text
+  # before: Ctrl-U  -> previous field
+  # after:  Shift+Tab -> previous field, Ctrl-U -> kill to line start
+  ```
+
 - **`statusBar(bindings)`** leads with `[mode]` when the bindings declare modes and shows a pending
   prefix with its continuations; the command palette lists only the live mode's bindings. Apps
   without sequences or modes render exactly as before.
