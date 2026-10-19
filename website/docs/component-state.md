@@ -149,7 +149,7 @@ def toolButton(label: String, enabled: Boolean)(action: => Unit): Element =
 
 A component whose own look depends on where the pointer is inside it reads `ctx.local`
 in `.onMouse(ctx => …)` — coordinates relative to the component, whatever layout did to it.
-See [Mouse & focus](mouse.md#disable-a-control).
+See [Mouse & focus](./mouse#disable-a-control).
 
 ## Lifetime
 

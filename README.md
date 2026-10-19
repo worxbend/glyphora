@@ -337,6 +337,7 @@ is canonical.
 | 🏗️ **Build** | [App shell](website/docs/app-shell.md) · [Widgets](website/docs/widgets.md) · [Forms](website/docs/forms-and-validation.md) |
 | ⚙️ **Integrate** | [Async & timers](website/docs/async-and-timers.md) · [Mouse & focus](website/docs/mouse.md) · [Motion](website/docs/motion.md) |
 | ✅ **Ship** | [Testing](website/docs/testing.md) · [Native binaries](website/docs/native-image.md) · [Troubleshooting](website/docs/troubleshooting.md) |
+| 🔄 **Upgrade** | [Changelog](CHANGELOG.md) · [Versioning & migration notes](website/docs/versioning.md) |
 
 ## 🤝 Contributing
 
