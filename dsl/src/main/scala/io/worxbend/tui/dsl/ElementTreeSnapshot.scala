@@ -16,8 +16,9 @@ package io.worxbend.tui.dsl
   *
   * Each node names itself through [[Element.debugName]] — no reflection anywhere, which is what keeps native images
   * reflect-config-free. The bounds column comes from the host's `NodeBounds` recorder and reads `-` for a node that was
-  * not recorded: recording was off for that frame, or the node was scrolled entirely out of view. A node inside a
-  * scroll view keeps frame coordinates, so a partly visible one can show a negative `y`.
+  * not recorded: recording was off for that frame, it was the narrow recording that leaves unkeyed leaves out (see
+  * `ElementHost.enableFullBoundsRecording`), or the node was scrolled entirely out of view. A node inside a scroll view
+  * keeps frame coordinates, so a partly visible one can show a negative `y`.
   *
   * The focus-pass wrappers (`TrackedElement`, `PointerElement`, `BoundsElement`, the scroll viewport) are folded into
   * the node they wrap: the wrapper's bookkeeping becomes the line's `focus=` index and bounds, and the wrapped node's

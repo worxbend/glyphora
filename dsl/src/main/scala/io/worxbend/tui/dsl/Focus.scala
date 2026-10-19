@@ -432,12 +432,14 @@ private[dsl] object FocusPass:
     * modal — still has to draw the app's highlight rather than the plain reverse-video default. `props.focused` is what
     * distinguishes the one element keystrokes go to, and it is set here on exactly one node.
     *
-    * `bounds` is the host's node-bounds recorder when recording is on. Then *every* node — inert ones included, since
-    * they still paint — is additionally wrapped in a [[BoundsElement]] carrying its pre-order id and the id of its last
-    * descendant, placed *inside* any input wrapper so [[EventRouter]] still finds the `TrackedElement`/`PointerElement`
-    * where it looks for them. With `None` no wrapper is built and the tree is exactly what it was before recording
-    * existed — and `onBoundsDemand` is called for every [[BoundsAwareElement]] met on the way, which is how a host that
-    * is not recording learns that the tree it is about to paint has a consumer and records the next frame.
+    * `bounds` is the host's node-bounds recorder when recording is on. Then every node `fullBounds` asks for — all of
+    * them when it is true, else only keyed nodes, containers, input targets, nodes with a pointer role and everything
+    * under a [[BoundsAwareElement]], inert ones included since they still paint — is additionally wrapped in a
+    * [[BoundsElement]] carrying its pre-order id and the id of its last descendant, placed *inside* any input wrapper
+    * so [[EventRouter]] still finds the `TrackedElement`/`PointerElement` where it looks for them. With `None` no
+    * wrapper is built and the tree is exactly what it was before recording existed — and `onBoundsDemand` is called for
+    * every [[BoundsAwareElement]] met on the way, which is how a host that is not recording learns that the tree it is
+    * about to paint has a consumer and records the next frame.
     *
     * `onFocusPath` is handed the child positions, root first, that lead to the focused element in the returned tree
     * (`None` when nothing is focused) — the path key routing would otherwise search the whole tree for on every event.
@@ -458,6 +460,7 @@ private[dsl] object FocusPass:
       theme: Theme = Theme.default,
       onFocusPath: Option[Vector[Int]] => Unit = _ => (),
       gestures: Option[PointerGestures] = None,
+      fullBounds: Boolean = true,
   ): Element =
     var counter        = 0
     var pointerCounter = 0
@@ -501,6 +504,7 @@ private[dsl] object FocusPass:
         ancestorDisabled: Boolean,
         inherited: Style,
         ancestorUnselectable: Boolean = false,
+        ancestorAware: Boolean = false,
     ): Element =
       // a node a themed factory built against the ambient default theme takes this frame's theme instead; a `withStyle`
       // scope is marked applied, because the cascade it asks for happens right here, on the way down
@@ -511,6 +515,10 @@ private[dsl] object FocusPass:
         case scope: StyleScopeElement => inherited.patch(scope.cascade)
         case _                        => inherited
       val inert        = ancestorInert || element.props.inert
+      // a node that reads where its subtree painted — the click-outside backdrop — needs every node under it recorded
+      val aware        = ancestorAware || (element match
+        case _: BoundsAwareElement => true
+        case _                     => false)
       // `.selectable(false)` opts the whole subtree out of text selection
       val unselectable = ancestorUnselectable || element.props.selectable.contains(false)
       val disabled     = ancestorDisabled || element.props.disabled
@@ -578,7 +586,7 @@ private[dsl] object FocusPass:
               case _: ScrollViewElement => 0 :: position :: outer
               case _                    => position :: outer
             position += 1
-            transform(child, inert, disabled, cascade, unselectable)
+            transform(child, inert, disabled, cascade, unselectable, aware)
           },
         )
       trail = outer
@@ -601,7 +609,14 @@ private[dsl] object FocusPass:
       // added elsewhere in the tree, which a pre-order id does not
       val anchor       =
         Option.when(roles.selectable)(TextSelection.anchorFor(element.props.focusKey, outer))
-      val recorded     = bounds.orElse(gestures.filter(_ => !roles.isEmpty).map(_.recorder)) match
+      // narrow recording keeps what a reader asks for by name or by role: keyed nodes, containers, input targets, nodes
+      // with a pointer role, and everything under a bounds-aware node; full recording keeps every node
+      val inputTarget  = current match
+        case _: TrackedElement | _: PointerElement => true
+        case _                                     => false
+      val wanted       = fullBounds || aware || inputTarget || element.props.focusKey.isDefined ||
+        element.children.nonEmpty || !roles.isEmpty
+      val recorded     = bounds.filter(_ => wanted).orElse(gestures.filter(_ => !roles.isEmpty).map(_.recorder)) match
         case Some(recorder) => boundsWrapped(current, nodeId, nodeCounter - 1, recorder, roles, gestures, anchor)
         case None           => current
       val revealed     =

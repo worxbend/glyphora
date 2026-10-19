@@ -5,7 +5,8 @@ import io.worxbend.tui.runtime.ReactiveScope
 import io.worxbend.tui.testsupport.Bench
 
 /** Times one `ElementHost` frame — resolve, focus pass, paint — of a dashboard-like view with per-node bounds recording
-  * off and on, so the cost of the recorder is a number rather than a guess.
+  * off, narrow (keyed nodes, containers, input targets — what `boundsOf` and click-outside read) and full (every node —
+  * the inspector, the element-tree snapshot), so the cost of the recorder is a number rather than a guess.
   *
   * Run it with:
   * {{{
@@ -23,11 +24,15 @@ object ElementHostBench:
   private val sizes: Seq[(String, Rect)] =
     Seq("80x24" -> Rect(0, 0, 80, 24), "200x50" -> Rect(0, 0, 200, 50))
 
-  /** One configuration under test: a host with recording off or on, painting one size. */
+  /** How much a configuration records. */
+  private enum Recording:
+    case Off, Narrow, Full
+
+  /** One configuration under test: a host recording nothing, the narrow set or every node, painting one size. */
   private final class Configuration(
       label: String,
       area: Rect,
-      recording: Boolean,
+      recording: Recording,
       wide: Boolean = false,
       virtual: Boolean = false,
   ):
@@ -35,11 +40,14 @@ object ElementHostBench:
     private val buffer = Buffer(area)
     private val state  = ScrollViewState()
     private val rows   = LazyListState()
-    host.recordBounds = recording
+    recording match
+      case Recording.Off    => ()
+      case Recording.Narrow => host.enableBoundsRecording()
+      case Recording.Full   => host.enableFullBoundsRecording()
 
     def name: String =
       val shape = if virtual then " lazy" else if wide then " wide" else ""
-      s"$label$shape recording ${if recording then "on" else "off"}"
+      s"$label$shape recording ${recording.toString.toLowerCase(java.util.Locale.ROOT)}"
 
     def measure(iterations: Int): Bench.Result =
       Bench.measure(name, iterations) { () =>
@@ -52,9 +60,9 @@ object ElementHostBench:
   def main(args: Array[String]): Unit =
     val _              = args
     val configurations =
-      sizes.flatMap((label, area) => Seq(false, true).map(recording => Configuration(label, area, recording))) ++
-        Seq(false, true).map(recording => Configuration("80x24", Rect(0, 0, 80, 24), recording, wide = true)) ++
-        Seq(false, true).map(recording => Configuration("80x24", Rect(0, 0, 80, 24), recording, virtual = true))
+      sizes.flatMap((label, area) => Recording.values.toSeq.map(recording => Configuration(label, area, recording))) ++
+        Recording.values.toSeq.map(recording => Configuration("80x24", Rect(0, 0, 80, 24), recording, wide = true)) ++
+        Recording.values.toSeq.map(recording => Configuration("80x24", Rect(0, 0, 80, 24), recording, virtual = true))
     // every configuration shares the same resolve, focus-pass and paint code, so the first one measured would
     // otherwise pay for compiling it: warm all of them, several rounds over, before timing any of them — and time
     // them in reverse, so whatever warmth is left favours "recording off" and the recorder's cost reads high, not low

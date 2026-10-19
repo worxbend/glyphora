@@ -104,7 +104,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 
 **Testing and tooling**
 
-- `TuiApp.boundsOf(key)` / `ElementHost.boundsOf`, `Pilot.click(rect)` / `Pilot.hover(rect)`; `NodeBounds`; `ElementHost.enableBoundsRecording()` for an embedding host.
+- `TuiApp.boundsOf(key)` / `ElementHost.boundsOf`, `Pilot.click(rect)` / `Pilot.hover(rect)`; `NodeBounds`; `ElementHost.enableBoundsRecording()` (keyed nodes, containers, input targets, pointer roles) and `enableFullBoundsRecording()` (every node) for an embedding host.
 - `ElementTreeSnapshot.render(app)` and `Element.debugName`.
 - `BufferExport.svg` / `html` / `ansi` with `ExportOptions`; styled goldens `GoldenFrames.assertMatchesStyled` / `Pilot.assertGoldenStyled`.
 - `BufferExport.ansiLines(buffer, colors)` (print-mode text) and `ExportOptions.ansiColors`; core `AnsiColors` and `ColorDepth.ansiColors` — the one SGR colour policy the terminal, print mode and the exports share.

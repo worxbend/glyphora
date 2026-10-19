@@ -55,18 +55,36 @@ final class ElementHost:
   /** The child positions leading to the focused element in [[lastTree]], recorded while it was decorated. */
   private var lastFocusPath: Option[Vector[Int]] = None
 
-  /** Whether the next frames record the painted rect of every node, which is what [[boundsOf]], the element-tree
-    * snapshot and the click-outside backdrop read. Off by default because it costs a wrapper per node per frame; a call
-    * to [[boundsOf]] switches it on, as does `TuiApp` for a headless run and for a click-outside modal. Written by the
-    * host and `TuiApp`; an embedding host opts in through [[enableBoundsRecording]].
+  /** Whether the next frames record painted rects — of the narrow set [[recordAllBounds]] describes, or of every node
+    * when that is on — which is what [[boundsOf]], the element-tree snapshot and the click-outside backdrop read. Off
+    * by default because it costs a wrapper per recorded node per frame; a call to [[boundsOf]] switches it on, as does
+    * `TuiApp` for a headless run and for a click-outside modal. Written by the host and `TuiApp`; an embedding host
+    * opts in through [[enableBoundsRecording]].
     */
   @volatile private[dsl] var recordBounds: Boolean = false
 
-  /** Whether this host records the painted rect of every node — see [[enableBoundsRecording]]. */
+  /** Whether recording, while on, covers every node rather than the narrow set — keyed nodes, containers, input
+    * targets, nodes with a pointer role and everything under a click-outside backdrop — that every reader but the
+    * inspector, the debug borders and the element-tree snapshot needs. Off by default; [[enableFullBoundsRecording]]
+    * and `TuiApp` (for a headless run and while the inspector or debug borders show) switch it on.
+    */
+  @volatile private[dsl] var recordAllBounds: Boolean = false
+
+  /** Records the painted rect of *every* node from the next frame on — what [[ElementTreeSnapshot]] and the inspector
+    * read for an unkeyed leaf. Costs a wrapper per node per frame, where [[enableBoundsRecording]] costs one only for
+    * the nodes a reader can ask about.
+    */
+  def enableFullBoundsRecording(): Unit =
+    recordBounds = true
+    recordAllBounds = true
+
+  /** Whether this host records painted rects — see [[enableBoundsRecording]]. */
   def recordingBounds: Boolean = recordBounds
 
-  /** Records the painted rect of every node from the next frame on, for [[boundsOf]] and the gestures that hit-test
-    * against it. Stays on for the life of the host; a call to [[boundsOf]] does the same.
+  /** Records painted rects from the next frame on, for [[boundsOf]] and the gestures that hit-test against them: of
+    * every keyed node, container, input target and node with a pointer role, and of every node under a click-outside
+    * backdrop — not of unkeyed leaves, which nothing but the element-tree snapshot and the inspector asks about (see
+    * [[enableFullBoundsRecording]]). Stays on for the life of the host; a call to [[boundsOf]] does the same.
     */
   def enableBoundsRecording(): Unit = recordBounds = true
 
@@ -217,6 +235,7 @@ final class ElementHost:
       theme = theme,
       onFocusPath = path => lastFocusPath = path,
       gestures = Some(gestures),
+      fullBounds = recordAllBounds,
     )
     lastTree = Some(tree)
     // always opened and closed: with full recording off, the nodes that carry a pointer role still record into it

@@ -92,3 +92,40 @@ final class NodeBoundsSpec extends AnyFunSuite:
     // one recorder, one translation: the input target and the node it wraps cannot disagree about where it landed
     assert(host.bounds.targetBounds(InputTarget.Focus(0)).map(_.layoutArea) == node)
     assert(host.tracker.areaOf(0) == node)
+
+  test("narrow recording keeps keyed nodes, containers and input targets, and leaves unkeyed leaves out"):
+    def view: Element =
+      column(text("plain"), text("named").key("named"), button("b")(()), scrollView(text("c"), 1, ScrollViewState()))
+    // column, the keyed text, the button and the scroll view; the two unkeyed texts are not wrapped
+    assert(
+      boundsWrappers(
+        FocusPass.decorate(view, FocusTracker(), Style.Default.reverse, Some(NodeBounds()), fullBounds = false)
+      ) == 4
+    )
+    val host          = ElementHost()
+    host.enableBoundsRecording()
+    host.render(Rect(0, 0, 20, 4), buffer(20, 4), Theme.Dark, view)
+    assert(host.boundsOf("named").isDefined)
+    assert(host.bounds.current.entries.size == 4)
+    host.enableFullBoundsRecording()
+    host.render(Rect(0, 0, 20, 4), buffer(20, 4), Theme.Dark, view)
+    assert(host.bounds.current.entries.size == 6)
+
+  test("narrow recording still records every node under a click-outside overlay, so a press on its text stays inside"):
+    var outside       = 0
+    def view: Element =
+      dismissibleOverlay(centered(10, 2)(column(text("Really?"), text("press esc"))))(() => outside += 1)
+    val host          = ElementHost()
+    host.enableBoundsRecording()
+    host.render(Rect(0, 0, 20, 6), buffer(20, 6), Theme.Dark, view)
+    host.render(Rect(0, 0, 20, 6), buffer(20, 6), Theme.Dark, view)
+    val _             = host.dispatchMouse(
+      io.worxbend.tui.core
+        .MouseEvent(io.worxbend.tui.core.Position(6, 2), io.worxbend.tui.core.MouseEventKind.Down, KeyModifiers.None)
+    )
+    assert(outside == 0, "a press on the dialog's text is inside it")
+    val _             = host.dispatchMouse(
+      io.worxbend.tui.core
+        .MouseEvent(io.worxbend.tui.core.Position(0, 0), io.worxbend.tui.core.MouseEventKind.Down, KeyModifiers.None)
+    )
+    assert(outside == 1)

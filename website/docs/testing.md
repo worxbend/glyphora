@@ -510,7 +510,9 @@ it the way you would a golden frame. The bounds column reads `-` for a frame ren
 recording off, and for a node scrolled entirely out of a `scrollView`'s viewport, which was
 never painted; a node under a scroll view keeps frame coordinates, so a column that starts
 above the viewport shows a negative `y`. `ElementTreeSnapshot.render(host)` does the same
-for an `ElementHost`.
+for an `ElementHost`; call `host.enableFullBoundsRecording()` first, since the narrower
+`enableBoundsRecording()` leaves unkeyed leaves out (their bounds read `-`). A headless
+`TuiApp` run records every node already.
 
 ## Send the bytes a terminal sends
 

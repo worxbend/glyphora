@@ -81,10 +81,34 @@ therefore to keep recording *opt-in* rather than to spend more of the design on 
 it is off by default on a real terminal and switched on only by something that reads
 it — a headless run, the first `boundsOf` call, a click-outside modal, `useArea`, an
 element-scoped effect, text selection or drag and drop, the inspector — and an app that
-uses one of those pays the figures above. Nodes with a pointer role (selectable text,
-drag sources, drop targets) are recorded on every frame regardless, because routing
-them needs it. `RenderLoopBench` has no recording dimension: it times the widget layer,
-which has no element tree to record.
+uses one of those pays for it. Nodes with a pointer role (selectable text, drag sources,
+drop targets) are recorded on every frame regardless, because routing them needs it.
+`RenderLoopBench` has no recording dimension: it times the widget layer, which has no
+element tree to record.
+
+**Narrow and full recording.** Every reader but three asks for a node by key, by role
+or by container: `boundsOf(key)`, `useArea`, an element-scoped effect, selection and drag
+and drop, and the click-outside backdrop (which reads everything under itself). So the
+recording a real terminal switches on is *narrow*: keyed nodes, containers, input targets,
+nodes with a pointer role and every node under a click-outside backdrop — not the unkeyed
+leaves. The inspector, the debug borders and `ElementTreeSnapshot` want every node; they
+switch on *full* recording (`ElementHost.enableFullBoundsRecording()`), and so does a
+headless run, since tests read the snapshot and the a11y lint. `ElementHostBench` now times
+all three, three runs on the same 16-core x86-64 machine (2 GB heap, SerialGC, shared and
+not idle, so read the ranges):
+
+| Tree | Off | Narrow | Full |
+|---|---|---|---|
+| dashboard, 80x24 | 116–124 µs | 119–129 µs | 122–134 µs |
+| dashboard, 200x50 | 168–189 µs | 171–176 µs | 172–183 µs |
+| 2 000 keyed rows (wide) | 5.41–5.82 ms | 5.83–6.90 ms | 6.11–6.77 ms |
+| 2 000 rows as a `lazyList` | 62–66 µs | 67–71 µs | 67–70 µs |
+
+The saving is real but small, and inside the noise on a loaded machine: the benchmark
+trees are mostly keyed rows, inputs and containers — exactly what narrow recording keeps —
+and leave out only their unkeyed labels. A view built from many unkeyed `text` leaves gains
+more. The figure that matters is unchanged: recording costs a few microseconds a frame,
+and only an app that reads it pays.
 
 Two further configurations time a tree whose per-frame *walks*, not its paint, dominate:
 **wide** is two thousand keyed rows of a label and a button in a `scrollView`, and **lazy**

@@ -739,6 +739,8 @@ trait TuiApp:
         // headless run (a test, which is what `boundsOf` exists for), an app that has asked once, and — switched on
         // frame by frame in `effectiveView` — a modal that closes on a click outside it
         run.host.recordBounds = boundsRequested || recordsBoundsByDefault(backend)
+        // a headless run is a test: the element-tree snapshot and the a11y lint read every node, so it records them all
+        run.host.recordAllBounds = recordsBoundsByDefault(backend)
         // a mouse-capturing app has taken the terminal's own selection away, so it selects text itself
         run.host.textSelection = runConfig.mouseCapture
         // on the render thread, and while this run is still registered on it: the clock this app's animations read
@@ -817,7 +819,7 @@ trait TuiApp:
       // an effect scoped to an element resolves that element's rect from this very frame's bounds
       if !run.host.recordBounds && effects.hasScoped then run.host.recordBounds = true
       // the inspector reads the bounds of the frame it is painted over, so that frame has to record them
-      if inspectorMode != InspectorMode.Off || debugLayoutOn then run.host.recordBounds = true
+      if inspectorMode != InspectorMode.Off || debugLayoutOn then run.host.enableFullBoundsRecording()
       // inside the generation, so a `Theme.auto` frame subscribes to the colour scheme and a mode 2031 report repaints
       val resolved = resolvedTheme(using scope)
       run.host.renderComposed(frame, resolved, effectiveView(resolved)(using scope), () => syncFocusLayers(run))(using

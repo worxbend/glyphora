@@ -578,7 +578,11 @@ Three changes reach almost every app, so check them first:
   ```
 
 - Bounds recording is on for every headless run, and on a real terminal from the first
-  `boundsOf(key)` call or click-outside modal; it does not change what a frame shows. Nodes with a
+  `boundsOf(key)` call or click-outside modal; it does not change what a frame shows. On a real
+  terminal (and through `ElementHost.enableBoundsRecording()`) it is *narrow*: keyed nodes,
+  containers, input targets, pointer roles and everything under a click-outside backdrop, not
+  unkeyed leaves. An embedding host that reads `ElementTreeSnapshot.render(host)` calls
+  `enableFullBoundsRecording()` to get every node's bounds back; the inspector does so itself. Nodes with a
   pointer role (selectable text, draggable, drop target) are recorded on every frame.
 - **A mouse selection stays on its node.** It used to be held by the node's position in a
   pre-order count and by screen cells, so a node added anywhere above it moved the selection onto
