@@ -1355,7 +1355,7 @@ the editor's `style`, and the cursor still shows on top of them.
 motion with `Ctrl+Left`/`Ctrl+Right`, `Ctrl+A`/`Ctrl+C`/`Ctrl+X`/`Ctrl+V` through the app
 clipboard, a kill ring (`Ctrl+K`, `Ctrl+U`, `Ctrl+W`, `Ctrl+Y`, `Alt+Y`) and coalesced undo
 (`Ctrl+Z`, redo `Ctrl+Shift+Z`). The full chord table, soft wrap, search and the prompt
-composer are on [Text editing](editing.md).
+composer are on [Text editing](./editing).
 
 ### Local file picker
 
@@ -1473,7 +1473,7 @@ focusGroup(
 
 Pass a single `column(...)` for a vertical group. A member that wants an arrow for itself
 — a `slider`, a `list` — still gets it first. Focus groups and `.trapFocus` are covered on
-the [Mouse & focus](mouse.md#focus-groups) page.
+the [Mouse & focus](./mouse#focus-groups) page.
 
 ## Data visualization
 

@@ -333,7 +333,7 @@ Typing in the bar highlights every match as you type and scrolls to the first on
 below the top of the window. Enter steps to the next match and Shift+Enter to the previous
 one; with the document focused, `n` and `N` do the same. Esc clears the search. To search
 a `log` or any other scroll view, put `.searchable(search)` on that node instead; see
-[Searching a log, a scroll view or a document](widgets.md#searching-a-log-a-scroll-view-or-a-document).
+[Searching a log, a scroll view or a document](./widgets#searching-a-log-a-scroll-view-or-a-document).
 
 ## Stream an LLM reply as Markdown
 
