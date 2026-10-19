@@ -1,0 +1,5 @@
+service                    state                      latency
+api                        running                    12 ms
+worker                     running                    40 ms
+cron                       stopped                    -
+mailer                     degraded                   310 ms

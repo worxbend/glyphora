@@ -1,0 +1,10 @@
+
+
+
+
+
+                         ╔Quit════════════════════════╗
+                         ║  Discard unsaved changes?  ║
+                         ║                            ║
+                         ║[ Discard ] [ Keep editing ]║
+                         ╚════════════════════════════╝

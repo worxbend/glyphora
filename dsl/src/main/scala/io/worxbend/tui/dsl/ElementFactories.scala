@@ -324,7 +324,7 @@ private[dsl] trait ElementFactories:
     * the same one to the view it searches with `.searchable(state)`. Typing updates the search live, Enter /
     * Shift+Enter step to the next / previous match, Esc clears. See [[SearchBarElement]].
     */
-  def searchBar(state: w.SearchState, placeholder: String = "Search"): SearchBarElement =
+  def searchBar(state: w.SearchState, placeholder: String = Messages.active.searchPlaceholder): SearchBarElement =
     SearchBarElement(state, placeholder)
 
   /** A labelled checkbox over a caller-owned `Signal`. The signal is read tracked, so any writer repaints it. */

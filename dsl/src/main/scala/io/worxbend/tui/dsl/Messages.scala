@@ -71,6 +71,8 @@ import scala.util.DynamicVariable
   *   the placeholder `promptComposer` inserts for a multi-line paste; `{lines}` is replaced by the line count.
   * @param composerReverseSearch
   *   the label of `promptComposer`'s Ctrl+R history search bar.
+  * @param searchPlaceholder
+  *   the placeholder `searchBar(state)` shows when given none.
   */
 final case class Messages(
     dialogOk: String = "OK",
@@ -99,6 +101,7 @@ final case class Messages(
     taskFailed: String = "✗",
     composerPasted: String = "[Pasted {lines} lines]",
     composerReverseSearch: String = "(reverse-i-search)",
+    searchPlaceholder: String = "Search",
 ):
 
   def withDialogOk(label: String): Messages              = copy(dialogOk = label)
@@ -127,6 +130,7 @@ final case class Messages(
   def withTaskFailed(marker: String): Messages           = copy(taskFailed = marker)
   def withComposerPasted(template: String): Messages     = copy(composerPasted = template)
   def withComposerReverseSearch(label: String): Messages = copy(composerReverseSearch = label)
+  def withSearchPlaceholder(label: String): Messages     = copy(searchPlaceholder = label)
 
   /** [[composerPasted]] with `{lines}` filled in. */
   def pastedLines(lines: Int): String = composerPasted.replace("{lines}", lines.toString)

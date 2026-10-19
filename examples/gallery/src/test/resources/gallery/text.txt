@@ -1,0 +1,2 @@
+glyphora draws every widget into a buffer,
+and the terminal only ever sees the cells that changed.

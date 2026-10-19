@@ -1,0 +1,4 @@
+  inbox
+> drafts
+  sent
+  archive

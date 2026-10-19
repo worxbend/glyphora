@@ -1,0 +1,3 @@
+09:30:00 INFO  app started in 412 ms
+09:30:01 WARN  db slow query: 1.2 s
+09:30:02 ERROR http upstream timed out
