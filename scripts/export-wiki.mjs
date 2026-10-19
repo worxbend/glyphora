@@ -42,9 +42,11 @@ function wikiFileName(id, title) {
 }
 
 function rewriteForWiki(markdown, pages) {
+  // `docs/assets` is a Pages static directory, so a page shows `/glyphora/banner.svg` or a gallery screenshot such as
+  // `/glyphora/gallery/table.svg`; the Wiki has no such directory and reads the same file from the repository.
   let result = markdown.replace(
-    /src="\/glyphora\/banner\.svg"/g,
-    `src="https://raw.githubusercontent.com/worxbend/glyphora/main/docs/assets/banner.svg"`,
+    /src="\/glyphora\/((?:gallery\/)?[\w-]+\.svg)"/g,
+    (_, asset) => `src="https://raw.githubusercontent.com/worxbend/glyphora/main/docs/assets/${asset}"`,
   );
 
   result = result.replace(

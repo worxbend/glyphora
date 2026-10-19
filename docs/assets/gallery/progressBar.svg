@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="288" viewBox="0 0 720 288" font-family="&#39;JetBrains Mono&#39;, &#39;Fira Code&#39;, Menlo, Consolas, &#39;DejaVu Sans Mono&#39;, monospace" font-size="13">
+  <title>progressBar</title>
+  <rect width="100%" height="100%" fill="#1e1e1e"/>
+  <g>
+    <text x="0" y="14" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#444444" xml:space="preserve">42%</text>
+    <text x="36" y="14" textLength="288" lengthAdjust="spacingAndGlyphs" fill="#11a8cd" xml:space="preserve">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
+    <text x="324" y="14" textLength="396" lengthAdjust="spacingAndGlyphs" fill="#444444" xml:space="preserve">────────────────────────────────────────────</text>
+    <text x="0" y="32" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#444444" xml:space="preserve">70%</text>
+    <text x="36" y="32" textLength="477" lengthAdjust="spacingAndGlyphs" fill="#11a8cd" xml:space="preserve">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
+    <text x="513" y="32" textLength="207" lengthAdjust="spacingAndGlyphs" fill="#444444" xml:space="preserve">───────────────────────</text>
+  </g>
+</svg>
