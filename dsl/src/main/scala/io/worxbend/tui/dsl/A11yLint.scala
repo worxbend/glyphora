@@ -9,9 +9,9 @@ import io.worxbend.tui.widgets.{Image, PixelImage}
   *   - [[A11yRule.NoFocusCue]] — when the tab order holds two or more controls, each focusable on screen is painted
   *     twice into a scratch buffer, focused and not, and flagged when the two are identical: the theme's focus cue
   *     never reached it. Scrollables are exempt — the collections of the list role (`list`, `tree`, `menu` and kin),
-  *     `dataTable`, `treeTable`, `log`, `hexViewer`, `splitPane` and `scrollView` — because by design they take no
-  *     whole-body focus styling: their selection highlight or scroll position is the cue, and it paints the same either
-  *     way, so the rule cannot judge it.
+  *     `dataTable`, `treeTable`, `log`, `hexViewer`, `diffView`, `splitPane` and `scrollView` — because by design they
+  *     take no whole-body focus styling: their selection highlight or scroll position is the cue, and it paints the
+  *     same either way, so the rule cannot judge it.
   *   - [[A11yRule.LowContrast]] — every printed cell whose foreground and background are both set is measured with
   *     `Color.contrastRatio`, and each colour pair below [[MinimumContrast]] is reported once with the cells it covers.
   *     That is what makes colour-only status ("red means failed") unreadable to anyone who cannot tell the hue apart. A
@@ -68,7 +68,7 @@ private[dsl] object A11yLint:
   private def cueIsSelection(node: Element): Boolean =
     node match
       case _: ScrollViewElement | _: LogElement | _: DataTableElement[?] | _: SplitPaneElement | _: HexViewerElement |
-          _: TreeTableElement[?] =>
+          _: TreeTableElement[?] | _: DiffViewElement =>
         true
       case other => other.componentRole.contains(ListRole)
 

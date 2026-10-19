@@ -423,7 +423,7 @@ final case class ConfirmDialogElement(
   override def debugName: String = "confirmDialog"
 
   def widget: Widget =
-    w.Dialog(title, Text.raw(message), buttons, selected, props.style, props.focusStyle)
+    w.Dialog(title, Text.raw(message), buttons, selected, props.style, cursorCue(props))
 
   private[dsl] def withProps(props: ElementProps): ConfirmDialogElement = copy(props = props)
 
@@ -468,7 +468,7 @@ final case class DatePickerElement(
   override private[dsl] def watchedStates: Seq[Versioned]            = Seq(state)
   override def debugName: String                                     = "datePicker"
   def widget: Widget                                                 =
-    val picker = w.DatePicker(w.CalendarOptions(style = props.style, highlightStyle = props.focusStyle))
+    val picker = w.DatePicker(w.CalendarOptions(style = props.style, highlightStyle = cursorCue(props)))
     (area, buffer) => picker.render(area, buffer, state)
   private[dsl] def withProps(props: ElementProps): DatePickerElement = copy(props = props)
   private[dsl] override def claim: SizeClaim                         = SizeClaim.box(DatePickerWidth, DatePickerHeight)
@@ -508,7 +508,7 @@ final case class TimePickerElement(
   /** The caller-owned state this node paints, watched for writes made between frames. */
   override private[dsl] def watchedStates: Seq[Versioned]                = Seq(state)
   override def debugName: String                                         = "timePicker"
-  private def picker: w.TimePicker                                       = w.TimePicker(props.style, props.focusStyle)
+  private def picker: w.TimePicker                                       = w.TimePicker(props.style, cursorCue(props))
   def widget: Widget                                                     =
     val current = picker
     (area, buffer) => current.render(area, buffer, state)
@@ -592,7 +592,8 @@ final case class ColorPickerElement(
   /** The caller-owned state this node paints, watched for writes made between frames. */
   override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
   override def debugName: String                                             = "colorPicker"
-  private def picker: w.ColorPicker                                          = w.ColorPicker(style = props.style)
+  private def picker: w.ColorPicker                                          =
+    w.ColorPicker(style = props.style, markerStyle = Style.Default.bold.patch(cursorCue(props)))
   def widget: Widget                                                         =
     val current = picker
     (area, buffer) => current.render(area, buffer, state)

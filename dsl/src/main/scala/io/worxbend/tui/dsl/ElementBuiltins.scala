@@ -63,6 +63,14 @@ private def focusStyled(props: ElementProps): Style =
     val hovered  = hoverCue.filter(_ => props.hovered).fold(focused)(focused.patch)
     pressCue.filter(_ => props.pressed).fold(hovered)(hovered.patch)
 
+/** The cursor of a picker-like node — the day a `datePicker` is on, a `timePicker`'s field, a `colorPicker`'s swatch, a
+  * `confirmDialog`'s button: the theme's focus cue while the node is focused, and only an underline at rest. The cursor
+  * stays findable on an unfocused picker, and moving focus onto it visibly changes it — the cue `pilot.a11yReport`
+  * checks every focusable for.
+  */
+private def cursorCue(props: ElementProps): Style =
+  if props.focused then props.focusStyle else Style.Default.underline
+
 /** The node's own style with only its theme component's states layered on — no fallback to the theme's focus cue. For
   * the nodes whose focus cue is something other than a restyled body (a text field's caret, a list's selected row), so
   * a theme can still give them a resting, focused, hovered or disabled look of their own.

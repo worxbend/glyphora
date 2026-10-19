@@ -111,6 +111,25 @@ final class GallerySpec extends AnyFunSuite:
         assert(goldens == exportedFactories.toSet, s"orphaned goldens: ${goldens -- exportedFactories.toSet}")
     finally AnimationClock.resume()
 
+  /** Pages whose findings are deliberate, each with the reason. A finding is exempt only for the page named here. */
+  private val A11yExemptions: Map[String, String] = Map.empty
+
+  test("every page passes the accessibility lint — the widest a11y surface in the repository"):
+    val backend = HeadlessBackend(Size(110, 24))
+    val app     = GalleryApp(fixtures)
+    Pilot.using(backend)(app.runWith(backend)) { pilot =>
+      pilot.waitForIdle()
+      val findings = app.pages.indices.flatMap { index =>
+        if index > 0 then pilot.pressKey(KeyCode.Char('n'), KeyModifiers.Alt).waitForIdle()
+        val page = app.pages(index)
+        if A11yExemptions.contains(page.factory) then Seq.empty
+        else pilot.a11yReport(app).map(finding => s"${page.factory}: $finding")
+      }
+      pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)
+      assert(pilot.awaitTermination())
+      assert(findings.isEmpty, findings.mkString("\n"))
+    }
+
   test("the app lists every page, steps through them, and quits"):
     val backend = HeadlessBackend(Size(110, 24))
     val app     = GalleryApp(fixtures)

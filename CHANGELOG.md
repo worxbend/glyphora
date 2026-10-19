@@ -152,4 +152,5 @@ Each item has a before/after migration note in
 
 - `TuiApp` gained an overridable `messages` member; an app that declares its own `messages` needs `override` or a rename.
 - `Dialog` widens its box to fit its buttons, so a button row wider than the message is no longer dropped.
+- An unfocused `confirmDialog` (and the new pickers) underlines its selection instead of painting the focus cue, so focus is visible.
 - `RunnerConfig.mouseCapture: Boolean` is now `mouse: MouseCaptureMode` (`MouseCaptureMode` gained `Off`); `RunnerConfig(mouseCapture = true)` becomes `RunnerConfig(mouse = MouseCaptureMode.Buttons)`. `withMouseCapture`, `withoutMouseCapture`, a derived `mouseCapture` and the positional Boolean arities still work.

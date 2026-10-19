@@ -611,6 +611,14 @@ Three changes reach almost every app, so check them first:
 
 ### Widgets
 
+- **An unfocused `confirmDialog` underlines its selected button instead of painting it in the
+  focus cue.** In 0.19 the selected button wore the theme's `focus` style whether or not the
+  dialog held focus, so moving focus onto it changed nothing on screen — `pilot.a11yReport`'s
+  `NoFocusCue`. The focus cue now shows only while the dialog is focused, and a resting dialog
+  marks its selection with an underline. The 0.20 pickers (`datePicker`, `timePicker`,
+  `colorPicker`) follow the same rule. Nothing to change in code; a golden frame that records
+  styles of an unfocused dialog needs re-recording.
+
 - **`Language` is an alias for the open `Lexer` trait.** `widgets.Language` was a closed enum; it is
   now `type Language = Lexer` with an `object Language` whose `Scala`, `Json`, `Bash` and
   `Generic` are lexer values, so anyone can add a language. `SyntaxHighlighter.highlight(code,

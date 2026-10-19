@@ -98,8 +98,10 @@ object LayoutPages:
         interactiveWidget(
           counter,
           InteractiveHandlers[Signal[Int]](onKey = (state, _) => { state.update(_ + 1); true }),
-        )((state, _) =>
-          (area, buffer) => buffer.setString(area.x, area.y, s"keys pressed: ${state.peek}", Style.Default)
+        )((state, context) =>
+          // the context carries focus: a raw widget that ignores it looks the same focused and not
+          val style = if context.focused then context.focusStyle else context.style
+          (area, buffer) => buffer.setString(area.x, area.y, s"keys pressed: ${state.peek}", style)
         )
       ),
       page("clear", "blanks its area before an overlay paints")(
