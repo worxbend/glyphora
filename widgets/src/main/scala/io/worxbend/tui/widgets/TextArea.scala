@@ -55,7 +55,8 @@ final class TextAreaState(initial: String = "", killRing: KillRing = KillRing())
     touch()
 
   /** Sets the open prompt's query and jumps to the first match at or after where the search started, wrapping round;
-    * the caret stays at the origin when nothing matches. Case-insensitive unless the query holds a capital letter.
+    * the caret stays at the origin when nothing matches. Case-insensitive unless the query holds a capital letter;
+    * matched grapheme by grapheme after NFC normalisation, like every searched view (see [[SearchState]]).
     */
   def updateSearch(query: String): Unit =
     if openQuery.isDefined then
@@ -107,24 +108,13 @@ object TextAreaState:
   /** One occurrence of a search query: `[start, end)` on a single line. */
   final case class Match(start: TextPosition, end: TextPosition)
 
+  /** Every match of `query` over `lines`, through the matcher every searched view shares — see [[SearchHighlight]]. */
   private[widgets] def find(lines: Vector[Vector[String]], query: String): Vector[Match] =
-    val needle = GraphemeEdit.clustersOf(query)
-    if needle.isEmpty then Vector.empty
-    else
-      val sensitive                     = query.exists(_.isUpper)
-      def fold(cluster: String): String = if sensitive then cluster else cluster.toLowerCase(java.util.Locale.ROOT)
-      val target                        = needle.map(fold)
-      val found                         = Vector.newBuilder[Match]
-      lines.indices.foreach { line =>
-        val clusters = lines(line)
-        var column   = 0
-        while column + target.size <= clusters.size do
-          if target.indices.forall(offset => fold(clusters(column + offset)) == target(offset)) then
-            found += Match(TextPosition(line, column), TextPosition(line, column + target.size))
-            column += target.size
-          else column += 1
+    lines.indices.iterator.flatMap { line =>
+      SearchHighlight.clusterMatches(lines(line), query).iterator.map { (start, end) =>
+        Match(TextPosition(line, start), TextPosition(line, end))
       }
-      found.result()
+    }.toVector
 
 /** Optional knobs for [[TextArea]]; `TextAreaOptions()` is the plain editor.
   *

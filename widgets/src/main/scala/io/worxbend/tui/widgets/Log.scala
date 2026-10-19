@@ -75,6 +75,25 @@ final class LogState(maxLines: Int = 1000) extends VersionedState:
     offset = math.min(maxOffset, offset + count)
     if offset >= maxOffset then follow = true
 
+  /** Scrolls as little as possible to show line `row`, detaching follow when that moves the window off the tail — how a
+    * search brings its current match on screen. Uses the viewport of the last render, like [[scrollDown]].
+    */
+  def reveal(row: Int): Unit =
+    val height = math.max(1, lastViewportHeight)
+    val top    = if follow then math.max(0, ring.size - height) else offset
+    if row < top then
+      follow = false
+      offset = math.max(0, row)
+    else if row >= top + height then
+      follow = false
+      offset = row - height + 1
+
+  /** The content row the window starts at, as the next render will draw it. */
+  private[widgets] def windowTop(height: Int): Int =
+    if follow then math.max(0, ring.size - height) else math.max(0, math.min(offset, math.max(0, ring.size - height)))
+
+  private[widgets] def lines: collection.IndexedSeq[Line] = ring
+
   private[widgets] def visibleSlice(height: Int): Seq[Line] =
     lastViewportHeight = height
     // `offset` is a public var and the viewport can grow between frames, so clamp on the way out as well as on the
@@ -83,11 +102,34 @@ final class LogState(maxLines: Int = 1000) extends VersionedState:
     if follow then offset = math.max(0, ring.size - height)
     ring.slice(offset, offset + height).toSeq
 
-/** An append-only scrolling text panel (build/log output, chat transcripts). */
-final case class Log(style: Style = Style.Default) extends StatefulWidget[LogState]:
+/** An append-only scrolling text panel (build/log output, chat transcripts).
+  *
+  * Rendered with a [[SearchState]] (the four-argument `render`), the log searches every line it holds — not only the
+  * ones on screen — highlights the matches in `matchStyle`, the current one in `currentMatchStyle`, and scrolls so the
+  * current match's line is visible whenever the query changes or the search steps with `next`/`previous`.
+  */
+final case class Log(
+    style: Style = Style.Default,
+    matchStyle: Style = SearchHighlight.DefaultMatchStyle,
+    currentMatchStyle: Style = SearchHighlight.DefaultCurrentStyle,
+) extends StatefulWidget[LogState]:
 
   def render(area: Rect, buffer: Buffer, state: LogState): Unit =
     if !area.isEmpty then
       state.visibleSlice(area.height).zipWithIndex.foreach { (line, row) =>
         val _ = LineRenderer.render(buffer, area.x, area.y + row, line, area.width, style)
       }
+
+  /** Draws the log searched for `search`'s query; see the class notes. Render thread only. */
+  def render(area: Rect, buffer: Buffer, state: LogState, search: SearchState): Unit =
+    if !area.isEmpty then
+      state.lastViewportHeight = area.height
+      val found =
+        if search.isActive then
+          SearchHighlight.find(state.lines.toIndexedSeq.map(l => SearchHighlight.glyphsOf(l.plainText)), search.query)
+        else Vector.empty
+      search.record(found, state.windowTop(area.height))
+      search.takeReveal().foreach(hit => state.reveal(hit.row))
+      render(area, buffer, state)
+      val top   = state.offset
+      SearchHighlight.paint(buffer, area, area.x, area.y - top, search, matchStyle, currentMatchStyle)

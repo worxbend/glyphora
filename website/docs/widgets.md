@@ -609,6 +609,53 @@ the last patch it drew, so hand the node the same `Patch` value each frame. With
 `DiffView(patch, options)` is a `StatefulWidget[DiffViewState]` that also implements
 `Measured`.
 
+### Searching a log, a scroll view or a document
+
+`.searchable(state)` adds incremental search to `log(…)`, `scrollView(…)` and
+`markdown(…)`, over one caller-owned `SearchState`; `searchBar(state)` is the one-row field
+that edits its query. Create the state once outside `view` and hand the same one to both:
+
+```scala
+private val output = LogState()
+private val search = SearchState()
+
+def view(using ReactiveScope, Theme): Element =
+  column(
+    log(output).searchable(search).fill,
+    searchBar(search),
+  )
+```
+
+Every match is highlighted and the current one stands out; when the query changes, the first
+match at or after the top of the window becomes current and the view scrolls to it. While the
+searched view is focused, `n` and `N` step to the next and previous match, wrapping round;
+in the `searchBar`, Enter (or Down) and Shift+Enter (or Up) do the same, and Esc clears the
+query. Each move scrolls once, so a reader who scrolls away from the match is not dragged
+back.
+
+- A log searches every line it holds, not just the ones on screen.
+- A scroll view searches its whole content, below and above the fold. While a query is set
+  it paints the content in full rather than only the window; with no query there is no
+  extra cost.
+- `markdown(source).searchable(state)` searches what the document draws and restyles the
+  cells already drawn, so a match inside a table cell keeps the table's columns aligned.
+  Inside a `scrollView` the whole document is searched and the scroll view scrolls to the
+  current match. The node becomes focusable, so `n`/`N` work once it has focus, and the
+  arrows bubble to the scroll view around it.
+
+Matching is by grapheme cluster, never by `char`: a combining sequence, an emoji or a wide
+CJK character is matched whole, a precomposed `é` matches `e` followed by a combining
+acute accent, and the highlight covers the columns the terminal actually draws. Matching
+ignores case unless the query contains a capital letter. `textArea`'s own `/` search uses
+the same matcher.
+
+`SearchState` is render-thread-only. `query`, `matches` (each a `SearchMatch(row, column,
+width)` in the view's content coordinates), `current`, `next()`, `previous()` and
+`clear()` are its API, and every edit moves its `version`, so the view redraws when you
+change it. Give one state to one view only: two views sharing it would overwrite each
+other's matches. Without the DSL, `Log` and `ScrollView` have a `render` overload that takes
+a `SearchState`, and `Searchable(widget)` makes any widget searchable.
+
 ### Confining a failing subtree
 
 A throwable out of `view` ends the run, as it should: an app that cannot draw a frame has
