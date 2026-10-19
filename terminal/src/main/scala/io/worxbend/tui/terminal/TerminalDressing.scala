@@ -80,11 +80,14 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
   private def parkBelowInlineFrame(): Either[BackendError, Unit] =
     backend.size.flatMap { size =>
       backend.inlineKept.filter(_ < backend.inlineRows) match
-        // a run that asked to keep fewer rows than it reserved (`keepInlineRows`): the rows below the kept ones are
-        // blank in its last frame, so the shell's next output starts on the first of them rather than below the strip
+        // a run that asked to keep fewer rows than it reserved (`keepInlineRows`): the shell's next output starts on the
+        // first row below the kept ones rather than below the strip, and those rows are erased first — whatever the
+        // last frame left there, the shell must not print over a leftover half of it
         case Some(kept) =>
           val top = math.max(0, size.height - backend.inlineRows)
-          backend.writeRaw(AnsiSequences.moveTo(0, math.min(size.height - 1, top + kept)))
+          backend.writeRaw(
+            AnsiSequences.moveTo(0, math.min(size.height - 1, top + kept)) + AnsiSequences.clear(ClearType.AfterCursor)
+          )
         case None       => backend.writeRaw(AnsiSequences.moveTo(0, math.max(0, size.height - 1)) + "\r\n")
     }
 

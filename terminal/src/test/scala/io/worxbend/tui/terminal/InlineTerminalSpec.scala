@@ -195,6 +195,21 @@ final class InlineTerminalSpec extends AnyFunSuite:
       assert(harness.screen.line(5) == "SHELL>")
     }
 
+  test("keepInlineRows clears the rows below the kept ones, even when the last frame left text there"):
+    wired { harness =>
+      harness.start()
+      val last = frame(20, "? Name alpha")
+      last.setString(0, 5, "LEFTOVER ROW", Style.Default)
+      assert(harness.backend.draw(last).isRight)
+      assert(harness.backend.keepInlineRows(1).isRight)
+      assert(harness.backend.close().isRight)
+      harness.replay()
+      assert(harness.screen.line(4) == "? Name alpha")
+      assert(harness.screen.line(5) == "", "the row below the kept one is blank before the shell writes")
+      harness.screen.feed("SHELL>")
+      assert(harness.screen.line(5) == "SHELL>")
+    }
+
   test("keepInlineRows at or above the strip height parks below the whole strip, as a plain close does"):
     wired { harness =>
       harness.start()
