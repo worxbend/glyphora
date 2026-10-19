@@ -131,9 +131,9 @@ private[dsl] final class NodeBounds:
     * paint sequence. A target scrolled entirely out of view is not recorded, so neither hit testing nor wheel bubbling
     * can reach it. Render thread only.
     */
-  def recordTarget(target: InputTarget, area: Rect): Unit =
+  def recordTarget(target: InputTarget, area: Rect, passThrough: Boolean = false): Unit =
     placed(area).foreach { (layout, visible) =>
-      targets(target) = PaintedArea(layout, visible, targetSequence)
+      targets(target) = PaintedArea(layout, visible, targetSequence, passThrough)
       targetSequence += 1
     }
 
@@ -150,8 +150,19 @@ private[dsl] final class NodeBounds:
     */
   def targetAt(pos: Position): Option[MouseHit] =
     targets
-      .filter((_, area) => area.hitArea.contains(pos))
+      .filter((_, area) => !area.passThrough && area.hitArea.contains(pos))
       .maxByOption((_, area) => area.sequence)
+      .map((target, area) => MouseHit(target, area.layoutArea))
+
+  /** The pass-through targets at `pos` painted above the target [[targetAt]] resolves there — the layers that hear a
+    * press on its way to what is under it rather than taking it, such as a `.passThroughOutside` dropdown's scrim.
+    * Topmost first. Render thread only.
+    */
+  def passThroughAt(pos: Position): Seq[MouseHit] =
+    val floor = targetAt(pos).flatMap(hit => targets.get(hit.target)).fold(-1)(_.sequence)
+    targets.toSeq
+      .filter((_, area) => area.passThrough && area.sequence > floor && area.hitArea.contains(pos))
+      .sortBy((_, area) => -area.sequence)
       .map((target, area) => MouseHit(target, area.layoutArea))
 
 /** Wraps a node during the focus pass so its painted area is recorded into the host's [[NodeBounds]]. Transparent to

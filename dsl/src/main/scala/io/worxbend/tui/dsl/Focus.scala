@@ -26,7 +26,7 @@ private[dsl] final case class MouseHit(target: InputTarget, layoutArea: Rect)
   * holds exactly one character — painted later means painted *over*. That makes the greatest sequence covering a cell
   * the thing the user actually sees there, which is the rule [[FocusTracker.hitTest]] resolves a click by.
   */
-private[dsl] final case class PaintedArea(layoutArea: Rect, hitArea: Rect, sequence: Int)
+private[dsl] final case class PaintedArea(layoutArea: Rect, hitArea: Rect, sequence: Int, passThrough: Boolean = false)
 
 /** An element in the tree about to render asking to be given focus: where it sits in the tab order, and what identifies
   * it across renders.
@@ -102,7 +102,8 @@ private[dsl] final class FocusTracker(private[dsl] val bounds: NodeBounds = Node
   def record(index: Int, area: Rect): Unit = bounds.recordTarget(InputTarget.Focus(index), area)
 
   /** Records where the non-focusable node with mouse behaviour numbered `id` rendered. */
-  def recordPointer(id: Int, area: Rect): Unit = bounds.recordTarget(InputTarget.Pointer(id), area)
+  def recordPointer(id: Int, area: Rect, passThrough: Boolean = false): Unit =
+    bounds.recordTarget(InputTarget.Pointer(id), area, passThrough)
 
   /** Published by a scroll view for exactly the duration of its content render, and paired with [[popViewport]] in a
     * `finally` so an exception mid-render cannot leak a translation into a sibling subtree.

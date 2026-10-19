@@ -126,7 +126,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 - `TuiApp.theme` defaults to `Theme.auto` instead of `Theme.Dark`.
 - `TuiApp` captures `System.out` / `System.err` into the scrollback by default.
 - `scrollView` scrolls the focused child into view.
-- `dropdown` floats its list over the frame instead of reflowing its siblings.
+- `dropdown` floats its list over the frame instead of reflowing its siblings; `.passThroughOutside` lets the click that closes it also reach the control beneath.
 - `button` measures its own width, so `flow` and `.auto` lay buttons out by label.
 - `withStyle` is a paint-time cascade (`StyleScopeElement`); elements built outside a view paint in the app's theme.
 - Widget states redraw on mutation; a `requestRedraw()` after a state write is no longer needed.

@@ -317,6 +317,13 @@ final class ElementHost:
         val restyled = trackPointerStates(event, under) && cuesDemanded
         redraw || restyled
       case None         =>
+        // a pass-through layer above the target hears a press first and lets it go on
+        val heard      =
+          if event.kind == MouseEventKind.Down then
+            tracker.bounds
+              .passThroughAt(event.position)
+              .foldLeft(false)((any, hit) => lastTree.exists(EventRouter.dispatchMouse(_, event, Some(hit))) || any)
+          else false
         val target     = pointer.route(event, under)
         val focusMoved =
           if event.kind == MouseEventKind.Down then
@@ -331,7 +338,7 @@ final class ElementHost:
         pointer.delivered(event, target, consumed)
         val restyled = trackPointerStates(event, under) && cuesDemanded
         val gestured = lastTree.isDefined && gestures.afterDelivery(event, consumed)
-        consumed || focusMoved || restyled || gestured
+        consumed || focusMoved || restyled || gestured || heard
 
   /** Updates the hovered and pressed targets the next focus pass stamps, `true` when either changed. Hover follows the
     * pointer over every event that has a position on screen; pressed is set by a press and cleared by a release.

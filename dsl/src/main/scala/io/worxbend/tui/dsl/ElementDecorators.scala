@@ -30,6 +30,7 @@ private[dsl] trait DecoratingElement extends Element:
   override def accessibleName: String                                        = inner.accessibleName
   private[dsl] override def componentRole: Option[ComponentRole]             = inner.componentRole
   private[dsl] override def selectionIsFocusCue: Boolean                     = inner.selectionIsFocusCue
+  private[dsl] override def passesPointerThrough: Boolean                    = inner.passesPointerThrough
   override def pointerShape: Option[PointerShape]                            = inner.pointerShape
   private[dsl] override def pointerShapeAt(position: Position, area: Rect): Option[PointerShape] =
     inner.pointerShapeAt(position, area)
@@ -121,7 +122,7 @@ private[dsl] final case class PointerElement(inner: Element, pointerId: Int, tra
 
   def widget: Widget                                                             =
     (area, buffer) =>
-      tracker.recordPointer(pointerId, area)
+      tracker.recordPointer(pointerId, area, inner.passesPointerThrough)
       inner.widget.render(area, buffer)
   private[dsl] def withProps(props: ElementProps): PointerElement                = copy(inner = inner.withProps(props))
   private[dsl] override def withChildren(children: Seq[Element]): PointerElement =

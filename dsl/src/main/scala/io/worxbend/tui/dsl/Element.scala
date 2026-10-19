@@ -126,6 +126,12 @@ trait Element:
     */
   private[dsl] def selectionIsFocusCue: Boolean = componentRole.contains(ListRole)
 
+  /** True for a layer that hears a press on its way through rather than taking it: its built-in mouse handler runs, and
+    * the press then goes on to the input target painted beneath it as if the layer were not there. A
+    * `.passThroughOutside` dropdown's scrim is one. Default `false`.
+    */
+  private[dsl] def passesPointerThrough: Boolean = false
+
   /** The space this element claims inside a container when the user set nothing explicit — one-row widgets claim one
     * row vertically but their natural width (or a fill) horizontally.
     */

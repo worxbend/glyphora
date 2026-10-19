@@ -92,6 +92,14 @@ spent on that: the control under the pointer does not also receive it, the way a
 outside a menu dismisses the menu and nothing more. Tab closes the list on its way to the
 next control.
 
+`.passThroughOutside` makes that click do both: the list closes and the click goes on to
+whatever is under the pointer, as if no list had been showing — what a toolbar of pickers
+wants, where a click on the next picker should open it at once:
+
+```scala
+dropdown(regions, region.get, regionState)(region.set).passThroughOutside
+```
+
 The state carries the navigation those keys drive, for an app that wants its own
 bindings: `regionState.openAt(selected)` opens the list with the highlight parked on the
 current value, `highlighted` reads where the highlight sits, `selectNext(options)` and
