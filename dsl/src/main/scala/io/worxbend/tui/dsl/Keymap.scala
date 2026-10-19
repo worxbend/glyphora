@@ -89,14 +89,9 @@ object FrameworkKeys:
   /** Tab, Shift+Tab, Ctrl+P, Ctrl+C, Esc, a page step of 10 and F12 for the inspector. */
   val default: FrameworkKeys = FrameworkKeys()
 
-  /** The page step the key dispatch on this thread runs under. `TuiApp` binds it around each dispatch to its own
-    * [[FrameworkKeys.pageStep]]; per thread, so two runners in one JVM keep their own.
-    */
-  private[dsl] val currentPageStep: DynamicVariable[Int] = DynamicVariable(default.pageStep)
-
-  /** The framework keys the key dispatch on this thread runs under — what a `menuBar` reads its `menu-bar` key and a
-    * `window` its arrange keys from. `TuiApp` binds it around each dispatch to its own [[TuiApp.frameworkKeys]]; an
-    * embedding host that binds nothing gets [[default]].
+  /** The framework keys the key dispatch on this thread runs under — what a `menuBar` reads its `menu-bar` key, a
+    * `window` its arrange keys and every scrollable its page step from. `TuiApp` binds it around each dispatch to its
+    * own [[TuiApp.frameworkKeys]]; an embedding host that binds nothing gets [[default]].
     */
   private[dsl] val current: DynamicVariable[FrameworkKeys] = DynamicVariable(default)
 

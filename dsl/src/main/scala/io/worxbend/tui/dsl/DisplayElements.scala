@@ -763,8 +763,8 @@ final case class HexViewerElement(
         case KeyEvent(KeyCode.Right, _)    => move(1)
         case KeyEvent(KeyCode.Up, _)       => move(-row)
         case KeyEvent(KeyCode.Down, _)     => move(row)
-        case KeyEvent(KeyCode.PageUp, _)   => move(-row * PageStep)
-        case KeyEvent(KeyCode.PageDown, _) => move(row * PageStep)
+        case KeyEvent(KeyCode.PageUp, _)   => move(-row * currentPageStep)
+        case KeyEvent(KeyCode.PageDown, _) => move(row * currentPageStep)
         case KeyEvent(KeyCode.Home, _)     => state.select(0, bytes.size)
         case KeyEvent(KeyCode.End, _)      => state.select(bytes.size - 1, bytes.size)
       }

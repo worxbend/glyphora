@@ -958,9 +958,7 @@ trait TuiApp:
 
   private def routeFresh(key: KeyEvent, run: RunState, handle: RunnerHandle): Boolean =
     val keys     = frameworkKeys
-    val consumed = FrameworkKeys.current.withValue(keys) {
-      FrameworkKeys.currentPageStep.withValue(keys.pageStep)(run.host.dispatchKey(key))
-    }
+    val consumed = FrameworkKeys.current.withValue(keys)(run.host.dispatchKey(key))
     val bound    = !consumed && !palette.isOpenNow && dispatchBinding(key)
     if consumed || bound then true else copySelectionKey(key, run) || handleFrameworkKey(key, run.tracker, handle)
 
