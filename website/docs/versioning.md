@@ -739,6 +739,23 @@ Three changes reach almost every app, so check them first:
   `inserted` and `deleted`, `Markdown` gained an `options` parameter and `TextArea` an `options`
   parameter — all appended with defaults.
 
+- **Two widget constructors gained a parameter, and one export option.** `widgets.ScrollView`
+  takes `contentIdentity: Option[Any] = None` after `showScrollbar`, and `widgets.Searchable`
+  takes it after `content`: an equality-comparable stand-in for what the content draws, which a
+  searched view compares to reuse the matches it found on the last frame. Named arguments and
+  the DSL compile unchanged; a positional call that passed a style in those positions stops
+  compiling and should name it. `ExportOptions` gained a last field, `ansiColors`, so an
+  extractor pattern on it needs one more `_`. `BufferExport.ansi` writes the same bytes as
+  before with the default; pass `ExportOptions(ansiColors = depth.ansiColors)` to export at a
+  terminal's colour depth.
+
+  ```scala
+  // before
+  ScrollView(content, rows, true, matchStyle)
+  // after
+  ScrollView(content, rows, showScrollbar = true, matchStyle = matchStyle)
+  ```
+
 ### New names under the one import
 
 `import io.worxbend.tui.dsl.*` reaches many new names. An application that defines a top-level

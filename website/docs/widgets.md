@@ -637,10 +637,12 @@ in the `searchBar`, Enter (or Down) and Shift+Enter (or Up) do the same, and Esc
 query. Each move scrolls once, so a reader who scrolls away from the match is not dragged
 back.
 
-- A log searches every line it holds, not just the ones on screen.
-- A scroll view searches its whole content, below and above the fold. While a query is set
-  it paints the content in full rather than only the window; with no query there is no
-  extra cost.
+- A log searches every line it holds, not just the ones on screen. It matches again only
+  when its lines change, not when the reader scrolls or steps.
+- A scroll view searches its whole content, below and above the fold. It paints the content
+  in full once per query and content, then reuses the matches: a frame that only scrolls,
+  steps or redraws paints just the window, as an unsearched view does. The content counts as
+  changed when its elements differ or a state they paint (an `input`, a `log`) changes.
 - `markdown(source).searchable(state)` searches what the document draws and restyles the
   cells already drawn, so a match inside a table cell keeps the table's columns aligned.
   Inside a `scrollView` the whole document is searched and the scroll view scrolls to the

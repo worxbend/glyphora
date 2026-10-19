@@ -102,6 +102,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 - `TuiApp.boundsOf(key)` / `ElementHost.boundsOf`, `Pilot.click(rect)` / `Pilot.hover(rect)`; `NodeBounds`; `ElementHost.enableBoundsRecording()` for an embedding host.
 - `ElementTreeSnapshot.render(app)` and `Element.debugName`.
 - `BufferExport.svg` / `html` / `ansi` with `ExportOptions`; styled goldens `GoldenFrames.assertMatchesStyled` / `Pilot.assertGoldenStyled`.
+- `BufferExport.ansiLines(buffer, colors)` (print-mode text) and `ExportOptions.ansiColors`; core `AnsiColors` and `ColorDepth.ansiColors` — the one SGR colour policy the terminal, print mode and the exports share.
 - Asciicast recording via `RunnerConfig.withRecording(path)`, `-Dglyphora.record=…` or `AsciicastRecorder`; `Tape.parse` / `Tape.run`.
 - Inspector overlay (F12, framework key `inspector`); `GLYPHORA_DEBUG_LAYOUT=1` debug borders; `examples/doctor`.
 - `pilot.a11yReport(app)` accessibility lint (`A11yFinding`, `A11yRule`).
@@ -128,6 +129,10 @@ note in [Versioning & releases](website/docs/versioning.md).
 - Frames make two tree walks instead of six; key routing follows the recorded focus path.
 - `ListView` costs the viewport, not the list; `DataTable` no longer scans for its selected key every frame.
 - A mouse-capturing `TuiApp` turns on all-motion tracking when a frame draws a hover cue or `.pointer`.
+- Searched views cache their matches by content and query: a searched `scrollView` paints its whole content once per query instead of every frame, and a searched `log` re-matches only when its lines change.
+- A soft-wrapped `textArea` moves Up/Down by wrapped row and re-wraps only the lines an edit changed.
+- Every `scrollView` around a focused or `.ensureVisible` child scrolls to it, nested ones included.
+- `terminal.Sgr`, `BufferExport.ansi` and `FrameEncoder.encodeLines` write through one SGR codec (`core.SgrCodec`); their bytes are unchanged.
 
 ### Fixed
 
@@ -137,6 +142,9 @@ note in [Versioning & releases](website/docs/versioning.md).
 - **B4** — `ListView` no longer does O(n) work per frame, restoring its row virtualisation.
 - **B5** — `TextArea` undo no longer snapshots the whole document per keystroke; typing a word is one undo step.
 - **B6** — `each` scopes hooks under the item key, so focus and hook state share one identity.
+- A `scrollView` that scrolls to reveal a child no longer paints its content twice on that frame, so `boundsOf` and the other recorded rects are never one frame stale.
+- A mouse selection stays on its node when nodes are added elsewhere in the tree, and moves with the content when a `scrollView` scrolls.
+- `scrollbar(…)` and `notice(…)` can be placed in a `grid` with `.at(row, col)`.
 
 ### Breaking
 
@@ -155,6 +163,7 @@ Each item has a before/after migration note in
 - `Language` is an alias for the open `Lexer` trait; `responsive` is an object; `PanelElement` field `children` → `content`.
 - `TextAreaOptions` field order changed (`syntax` is fourth); `Theme.apply` gained `components`.
 - `scrollbar(…).at(offset)` → `.thumbAt(offset)`, `notice(…).at(time)` → `.stamped(time)`, so `.at(row, col)` places both in a `grid`.
+- Soft-wrapped `textArea` Up/Down move by wrapped row; a selection follows its node, not the screen; `widgets.ScrollView` and `widgets.Searchable` gained a `contentIdentity` parameter after `showScrollbar` / `content`; `ExportOptions` gained `ansiColors`.
 
 - `TuiApp` gained an overridable `messages` member; an app that declares its own `messages` needs `override` or a rename.
 - `Dialog` widens its box to fit its buttons, so a button row wider than the message is no longer dropped.
