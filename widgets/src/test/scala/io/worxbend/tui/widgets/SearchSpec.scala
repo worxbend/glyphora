@@ -127,6 +127,70 @@ final class SearchSpec extends AnyFunSuite:
     view.render(buffer.area, buffer, state, search)
     assert(state.offset == 0)
 
+  /** Content that writes `row n` on every row and remembers the height of every buffer it was handed. */
+  private final class CountingRows:
+    val heights: collection.mutable.ArrayBuffer[Int] = collection.mutable.ArrayBuffer()
+    val widget: Widget                               = (area, buffer) =>
+      heights += buffer.area.height
+      (0 until area.height).foreach(row => buffer.setString(area.x, area.y + row, s"row $row", Style.Default))
+
+  test("a searched scroll view paints its whole content once per content and query, then only its window"):
+    val rows   = CountingRows()
+    val view   = ScrollView(rows.widget, contentHeight = 500)
+    val state  = ScrollViewState()
+    val search = SearchState()
+    search.query = "row 4"
+    val buffer = Buffer(Rect(0, 0, 10, 4))
+    view.render(buffer.area, buffer, state, search)
+    assert(rows.heights.toSeq == Seq(500), "the first frame of a query has to look at everything")
+    state.scrollDown(2)
+    view.render(buffer.area, buffer, state, search)
+    assert(rows.heights.last == 4, "a scroll under the same query reuses the matches and paints only the window")
+    assert(search.matches.size == 111)
+    assert(search.next())
+    view.render(buffer.area, buffer, state, search)
+    assert(rows.heights.last == 4)
+    assert(trimmedLines(buffer).exists(_.startsWith("row 40")))
+    assert(buffer.get(0, 40 - state.offset).style.bg == currentBg, "the cached match is still highlighted")
+    assert(search.next())
+    view.render(buffer.area, buffer, state, search)
+    assert(rows.heights.last == 4)
+    assert(buffer.get(0, 41 - state.offset).style.bg == currentBg)
+    assert(buffer.get(0, 40 - state.offset).style.bg == matchBg)
+    search.query = "row 49"
+    view.render(buffer.area, buffer, state, search)
+    assert(rows.heights.last == 500, "a new query searches again")
+    ScrollView(CountingRows().widget, contentHeight = 500).render(buffer.area, buffer, state, search)
+    assert(rows.heights.last == 500, "the old content's cache is not reused for new content")
+
+  test("a scroll view's content identity stands in for a content widget rebuilt every frame"):
+    val first  = CountingRows()
+    val second = CountingRows()
+    val third  = CountingRows()
+    val state  = ScrollViewState()
+    val search = SearchState()
+    search.query = "row 7"
+    val buffer = Buffer(Rect(0, 0, 10, 4))
+    ScrollView(first.widget, 100, contentIdentity = Some("doc-1")).render(buffer.area, buffer, state, search)
+    ScrollView(second.widget, 100, contentIdentity = Some("doc-1")).render(buffer.area, buffer, state, search)
+    assert(second.heights.toSeq == Seq(4), "same identity: the matches are reused")
+    ScrollView(third.widget, 100, contentIdentity = Some("doc-2")).render(buffer.area, buffer, state, search)
+    assert(third.heights.toSeq == Seq(100), "a different identity searches again")
+
+  test("a searched log re-matches after it grows, and a scroll keeps its matches"):
+    val log    = hundredLines
+    val search = SearchState()
+    search.query = "warn"
+    val _      = render(log, search)
+    assert(search.matches.size == 10)
+    log.scrollUp(30)
+    val _      = render(log, search)
+    assert(search.matches.size == 10)
+    log.append("101 WARN late")
+    val _      = render(log, search)
+    assert(search.matches.size == 11)
+    assert(search.matches.last.row == 100)
+
   test("Searchable highlights what the wrapped widget drew, across the whole area"):
     val content: Widget = (area, buffer) => buffer.setString(area.x, area.y + 2, "| a | warn |", Style.Default)
     val search          = SearchState()

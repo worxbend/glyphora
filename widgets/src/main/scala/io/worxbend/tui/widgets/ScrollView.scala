@@ -59,6 +59,24 @@ final class ScrollViewState extends VersionedState:
     */
   private[tui] var revealedRequest: Option[String] = None
 
+  /** The visibility request the DSL's focus pass found under this view for the coming frame (the focused child's, or
+    * the first `.ensureVisible` mark's), so the view can scroll to it *before* it paints. Written only by the DSL.
+    */
+  private[tui] var pendingReveal: Option[String] = None
+
+  /** Where each request the last paint could have made landed, in content coordinates — every focusable and every mark
+    * under this view, by request identity. What [[pendingReveal]] is looked up in. Written only by the DSL.
+    */
+  private[tui] var placements: String => Option[Rect] = _ => None
+
+  /** Set when the DSL moved the offset *after* this frame painted (a request it could not place beforehand), so the
+    * frame that shows the new offset is owed even though the version was read after the paint. Written only by the DSL.
+    */
+  private[tui] var owesFrame: Boolean = false
+
+  /** The viewport height the last render recorded, at least one row. */
+  private[tui] def viewportRows: Int = math.max(1, lastViewportHeight)
+
   def scrollUp(count: Int = 1): Unit =
     scrollBy(-count)
 
@@ -94,21 +112,27 @@ final class ScrollViewState extends VersionedState:
   * them on every keystroke. The window is then blitted into place and a scrollbar drawn on the right edge when the
   * content overflows. Content height is explicit (the caller knows its data) — an intrinsic-measure pass is future
   * work.
+  *
+  * `contentIdentity` matters only to a searched view: it is an equality-comparable stand-in for what `content` draws,
+  * for a caller that rebuilds the content widget every frame (the DSL does). `None` means the content widget itself is
+  * the identity. Two renders whose identity, size and query are equal reuse the matches the first one found.
   */
 final case class ScrollView(
     content: Widget,
     contentHeight: Int,
     showScrollbar: Boolean = true,
+    contentIdentity: Option[Any] = None,
     matchStyle: Style = SearchHighlight.DefaultMatchStyle,
     currentMatchStyle: Style = SearchHighlight.DefaultCurrentStyle,
 ) extends StatefulWidget[ScrollViewState]:
 
   def render(area: Rect, buffer: Buffer, state: ScrollViewState): Unit = paint(area, buffer, state, None)
 
-  /** Draws the view searched for `search`'s query: while a query is set the content is painted whole — not just the
-    * window — so matches below and above the fold are found too, every match is highlighted in `matchStyle` (the
-    * current one in `currentMatchStyle`), and the view scrolls to the current match once per query change or step. That
-    * whole-content paint is the price of searching, paid only while a query is set. Render thread only.
+  /** Draws the view searched for `search`'s query: matches below and above the fold are found too, every match is
+    * highlighted in `matchStyle` (the current one in `currentMatchStyle`), and the view scrolls to the current match
+    * once per query change or step. Finding them costs one paint of the whole content, paid once per query and content
+    * (see `contentIdentity`): later frames reuse the matches and paint only the window, like an unsearched view. Render
+    * thread only.
     */
   def render(area: Rect, buffer: Buffer, state: ScrollViewState, search: SearchState): Unit =
     paint(area, buffer, state, Some(search))
@@ -125,12 +149,25 @@ final case class ScrollView(
         val document  = Rect(0, 0, contentWidth, contentHeight)
         val offscreen = search.filter(_.isActive) match
           case Some(active) =>
-            val whole = Buffer(document)
-            content.render(document, whole)
-            active.record(SearchHighlight.find(SearchHighlight.glyphsIn(whole, document), active.query), state.offset)
-            active.takeReveal().foreach(hit => state.reveal(hit.row, 1))
-            SearchHighlight.paint(whole, document, 0, 0, active, matchStyle, currentMatchStyle)
-            whole
+            val key = (contentIdentity.getOrElse(content), contentWidth, contentHeight)
+            active.cachedMatches(key) match
+              case Some(found) =>
+                active.record(found, state.offset)
+                active.takeReveal().foreach(hit => state.reveal(hit.row, 1))
+                val window   = windowOf(state, area, contentWidth)
+                val windowed = Buffer(window)
+                content.render(document, windowed)
+                SearchHighlight.paint(windowed, window, 0, 0, active, matchStyle, currentMatchStyle)
+                windowed
+              case None        =>
+                val whole = Buffer(document)
+                content.render(document, whole)
+                val found = SearchHighlight.find(SearchHighlight.glyphsIn(whole, document), active.query)
+                active.remember(key, found)
+                active.record(found, state.offset)
+                active.takeReveal().foreach(hit => state.reveal(hit.row, 1))
+                SearchHighlight.paint(whole, document, 0, 0, active, matchStyle, currentMatchStyle)
+                whole
           case None         =>
             search.foreach(_.record(Vector.empty, 0))
             // only the window in the content's own coordinate space: rows `state.offset` up to the viewport's bottom

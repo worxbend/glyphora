@@ -34,6 +34,11 @@ final class LogState(maxLines: Int = 1000) extends VersionedState:
   private var offsetValue: Int                 = 0
   private[widgets] var lastViewportHeight: Int = 1
 
+  /** Moves on every change to the lines the log holds — an append (and the eviction it may cause) or a clear — and on
+    * nothing else, so a search keyed on it re-matches when the text changes and not when the reader scrolls.
+    */
+  private[widgets] var revision: Long = 0L
+
   /** Appends `text` as one or more lines, split on `\n` (a lone `\r` before it is trimmed, so CRLF input splits clean).
     * A caller piping raw chunks from a process or a socket — the ordinary way a [[Log]] gets its content — routinely
     * hands this a chunk spanning several lines; treating the whole chunk as one [[Line]] would not wrap it, it would
@@ -46,6 +51,7 @@ final class LogState(maxLines: Int = 1000) extends VersionedState:
 
   def append(line: Line): Unit =
     ring.append(line)
+    revision += 1
     touch()
     while ring.size > maxLines do
       val _ = ring.removeHead()
@@ -55,6 +61,7 @@ final class LogState(maxLines: Int = 1000) extends VersionedState:
 
   def clear(): Unit =
     ring.clear()
+    revision += 1
     touch()
     offset = 0
     follow = true
@@ -126,7 +133,11 @@ final case class Log(
       state.lastViewportHeight = area.height
       val found =
         if search.isActive then
-          SearchHighlight.find(state.lines.toIndexedSeq.map(l => SearchHighlight.glyphsOf(l.plainText)), search.query)
+          // keyed on the log's revision, so a frame that only scrolls or steps reuses the matches rather than walking
+          // every line the ring holds again
+          search.matchesFor((state, state.revision)) {
+            SearchHighlight.find(state.lines.toIndexedSeq.map(l => SearchHighlight.glyphsOf(l.plainText)), search.query)
+          }
         else Vector.empty
       search.record(found, state.windowTop(area.height))
       search.takeReveal().foreach(hit => state.reveal(hit.row))

@@ -42,6 +42,12 @@ final class SearchState extends Versioned:
   private var navigationCount: Int            = 0
   private var revealedNavigation: Option[Int] = None
 
+  // The match cache: what the view found for `cachedQuery` over the content `cachedKey` stood for. A view searches its
+  // whole content only when either side of that pair moves, and otherwise reuses these — see [[cachedMatches]].
+  private var cachedKey: Option[Any]      = None
+  private var cachedQuery: String         = ""
+  private var cached: Vector[SearchMatch] = Vector.empty
+
   def version: Long = mutations + input.version
 
   /** The text being searched for; empty means no search. */
@@ -73,6 +79,7 @@ final class SearchState extends Versioned:
     found = Vector.empty
     currentIndex = None
     recordedQuery = ""
+    cachedKey = None
     mutations += 1
 
   /** A count of the moves that should scroll the current match into view — a query change or a step. The DSL keys its
@@ -105,6 +112,29 @@ final class SearchState extends Versioned:
       found = matches
       currentIndex =
         if matches.isEmpty then None else Some(currentIndex.fold(0)(index => math.min(index, matches.size - 1)))
+
+  /** The matches a view found for the current query over the content `key` stands for, if it has searched exactly that
+    * pair before. `key` is the view's equality-comparable stand-in for what its content draws — the content widget
+    * itself, an explicit content identity, a log's revision — so a frame that only scrolls, steps or redraws reuses the
+    * matches instead of searching (and, for a scroll view, painting) the whole document again. One entry: the state
+    * belongs to one view.
+    */
+  private[widgets] def cachedMatches(key: Any): Option[Vector[SearchMatch]] =
+    if cachedKey.contains(key) && cachedQuery == query then Some(cached) else None
+
+  /** Remembers `matches` as what the current query finds over the content `key` stands for. */
+  private[widgets] def remember(key: Any, matches: Vector[SearchMatch]): Unit =
+    cachedKey = Some(key)
+    cachedQuery = query
+    cached = matches
+
+  /** [[cachedMatches]] for `key`, or `search()` remembered under it. */
+  private[widgets] def matchesFor(key: Any)(search: => Vector[SearchMatch]): Vector[SearchMatch] =
+    cachedMatches(key).getOrElse {
+      val found = search
+      remember(key, found)
+      found
+    }
 
   /** The current match, once per move: `Some` the first time it is asked after a query change or a step, then `None`
     * until the next one. What a view that scrolls itself calls before drawing its window.

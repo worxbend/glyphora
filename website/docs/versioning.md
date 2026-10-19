@@ -102,6 +102,20 @@ Three changes reach almost every app, so check them first:
   scrollView(content, state).followFocus(false)
   ```
 
+- **Every enclosing `scrollView` follows a reveal, and none paints twice.** A focused child or an
+  `.ensureVisible` mark inside nested scroll views now scrolls each of them — before, only the
+  innermost moved, and the outer one could leave the target off screen. The view resolves the
+  scroll before painting, from where the previous frame painted the target, instead of painting
+  its content a second time at the new offset; `boundsOf` and the other recorded rects are
+  therefore never one frame stale. A child that was not on the previous frame (one that just
+  appeared marked `.ensureVisible`) is scrolled to on the next frame rather than the same one,
+  and a `Pilot` test that waits for idle sees no difference. An outer view whose offset the app
+  pins opts out as before:
+
+  ```scala
+  scrollView(column(header, scrollView(list, inner).length(5)), outer).followFocus(false)
+  ```
+
 - **`button(…)` measures its own width** (`Button` is `Measured`). A `flow` now lays buttons side
   by side instead of one per line, and `.auto` sizes a button to its label. To keep a button on a
   line of its own, put it in its own `column(…)` or give it `.fill`.
@@ -146,6 +160,21 @@ Three changes reach almost every app, so check them first:
   Not breaking, but the spelling changes: a `panel(…).borderless` that existed only for its
   padding is now the padding itself — `form.padding(1)`, `.padding(Padding.symmetric(2, 1))`, or
   `.padding(1, 2)` (rows, then columns) on any element.
+- **`scrollbar(…).at(offset)` is `.thumbAt(offset)` and `notice(…).at(time)` is
+  `.stamped(time)`.** Every element takes `.at(row, col)` as its place in a `grid`, but these two
+  nodes declared a member `at` of their own, and a member shadows an extension — so a scrollbar
+  or a notice could not be placed in a grid by row and column at all. The two old methods are
+  renamed; nothing else changes.
+
+  ```scala
+  // before
+  scrollbar(200).at(40)
+  notice("saved", NoticeLevel.Success).at(LocalTime.now())
+  // after
+  scrollbar(200).thumbAt(40)
+  notice("saved", NoticeLevel.Success).stamped(LocalTime.now())
+  ```
+
 - Smaller: `Layout.apply` gained a `crossAlign` parameter, with the 0.19.0 five-argument arity
   kept as a default-free overload; `Layout.toString` adds `, crossAlign=…` only when it is not
   `Stretch`. `widgets.LayoutItem` gained `align` and `Row`/`Column` gained `crossAlign`, appended
@@ -363,6 +392,17 @@ Three changes reach almost every app, so check them first:
   `assertCursorAt(x, y)` instead, or set `CaretStyle.Painted` on the field under test.
 - **`TextAreaState` search normalises to NFC**, so a precomposed `é` in the query matches `e` plus a
   combining acute in the text, which used to find nothing. Smartcase is unchanged.
+- **Up and Down under `.wrap` move by wrapped row.** In a soft-wrapped `textArea`, Down from
+  the first row of a long line now goes to that line's second row at the same display column;
+  before, it jumped to the next logical line, skipping every wrapped row in between. Without
+  wrap nothing changes. A test that pinned the old jump moves its expectation, or renders
+  without wrap:
+
+  ```scala
+  // "aaaa bbbb cccc\nxy" in a 10-column textArea, caret at (0, 2)
+  state.moveDown()
+  // before: (1, 2) on the next line; after: (0, 12) on the wrapped row below
+  ```
 
 ### State and hooks
 
@@ -502,6 +542,13 @@ Three changes reach almost every app, so check them first:
 - Bounds recording is on for every headless run, and on a real terminal from the first
   `boundsOf(key)` call or click-outside modal; it does not change what a frame shows. Nodes with a
   pointer role (selectable text, draggable, drop target) are recorded on every frame.
+- **A mouse selection stays on its node.** It used to be held by the node's position in a
+  pre-order count and by screen cells, so a node added anywhere above it moved the selection onto
+  another node, and scrolling a `scrollView` slid the content out from under a highlight that
+  stayed put. It is now held by the node's `.key(…)` (or, without one, its path of child positions)
+  and by cells of the node's own area, so it survives the tree changing around it and scrolls with
+  the content. Nothing to change in code; a test that expected the highlight to stay on a screen
+  row after a scroll moves its expectation with the content.
 
 ### Terminal protocols and `Theme.auto`
 
@@ -731,6 +778,23 @@ Three changes reach almost every app, so check them first:
 - `MarkdownTheme` gained `tableHeader`, `tableBorder` and `taskDone`, `SyntaxTheme` gained
   `inserted` and `deleted`, `Markdown` gained an `options` parameter and `TextArea` an `options`
   parameter — all appended with defaults.
+
+- **Two widget constructors gained a parameter, and one export option.** `widgets.ScrollView`
+  takes `contentIdentity: Option[Any] = None` after `showScrollbar`, and `widgets.Searchable`
+  takes it after `content`: an equality-comparable stand-in for what the content draws, which a
+  searched view compares to reuse the matches it found on the last frame. Named arguments and
+  the DSL compile unchanged; a positional call that passed a style in those positions stops
+  compiling and should name it. `ExportOptions` gained a last field, `ansiColors`, so an
+  extractor pattern on it needs one more `_`. `BufferExport.ansi` writes the same bytes as
+  before with the default; pass `ExportOptions(ansiColors = depth.ansiColors)` to export at a
+  terminal's colour depth.
+
+  ```scala
+  // before
+  ScrollView(content, rows, true, matchStyle)
+  // after
+  ScrollView(content, rows, showScrollbar = true, matchStyle = matchStyle)
+  ```
 
 ### New names under the one import
 

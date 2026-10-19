@@ -1,6 +1,6 @@
 package io.worxbend.tui.terminal
 
-import io.worxbend.tui.core.{Color, Style}
+import io.worxbend.tui.core.{AnsiColors, Color, Style}
 
 import java.util.Locale
 
@@ -21,7 +21,18 @@ import java.util.Locale
 enum ColorDepth:
   case TrueColor, Ansi256, Ansi16, Monochrome, NoColor
 
+  /** The colour policy this depth writes SGR under — the one `core.BufferExport.ansi`/`ansiLines` take, so an export or
+    * a printed frame at this depth carries exactly the colour codes the terminal would be sent.
+    */
+  def ansiColors: AnsiColors = ColorDepth.policies(ordinal)
+
 object ColorDepth:
+
+  /** One policy per rung, built once: [[ColorDepth.ansiColors]] is asked for on every style change of every frame. */
+  private lazy val policies: IndexedSeq[AnsiColors] =
+    ColorDepth.values.toIndexedSeq.map(depth =>
+      AnsiColors(emitsColor = depth != NoColor, legible(_, depth), downsample(_, depth))
+    )
 
   /** Resolves the effective color depth from the environment.
     *
