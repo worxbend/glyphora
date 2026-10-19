@@ -543,7 +543,10 @@ def view(using ReactiveScope, Theme): Element =
 `markdownStream(stream, scroll)` follows the tail. While its offset is at the bottom, each
 frame moves it to the new bottom; Up, PageUp, Home or the wheel leave the tail and the view
 holds still, and End rejoins it. The one-argument `markdownStream(stream)` is a measured leaf
-for a column or your own `scrollView`. The stream is render-thread-only, and appending does
+for a column or your own `scrollView`, and it follows the tail there too:
+`scrollView(column(header, markdownStream(stream)), scroll)` keeps the stream's newest row
+on screen while the view is scrolled to its end, through the same reveal request
+`.ensureVisible` uses, and holds still once the reader scrolls up. The stream is render-thread-only, and appending does
 not schedule a frame. The [cookbook recipe](./cookbook#stream-an-llm-reply-as-markdown)
 shows a background producer.
 
@@ -715,7 +718,17 @@ What happens between frames is the backend's job, not the app's:
   nothing for it;
 - a dialog, menu or toast drawn over it takes it down (kitty gets a delete; iTerm2 has
   none, so the cells under it are repainted), and it is sent again when the cover goes;
-- moving it — a scroll view, a resize — takes it down and sends it at the new place.
+- moving it — a scroll view, a resize — takes it down and sends it at the new place;
+- a picture the edge of a `scrollView` cuts is drawn cropped to its visible rows: kitty is
+  sent the whole picture with a source rectangle (`x`, `y`, `w`, `h`), iTerm2 the visible
+  slice re-encoded as a PNG of its own.
+
+Encoding a picture — base64 RGBA for kitty, a deflated PNG for iTerm2 — happens off the
+render thread. The first frame a picture appears in shows the half-block fallback while
+an `Async` worker encodes it; when the payload is ready the next frame places the picture
+with it, so no frame waits for an encode. The payloads of the 16 pictures used last are
+kept. An app that drives its own loop around an `ElementHost` sets
+`host.imageProtocol = ImageProtocol.select(backend.capabilities)` to get the same.
 
 Load pictures with `ImageLoader`. `ImageLoader.readPng(path)` and `decodePng(bytes)` use a
 built-in PNG decoder and work in a native image; `fromFile`/`fromBytes` read any format
@@ -2891,7 +2904,11 @@ disabled items, `Enter` runs the item — `onSelect` gets the menu's index and t
 and `Esc` closes the bar. A click on a title opens or closes its menu, a click on an
 item runs it, and a click anywhere else closes the bar. The bar is not a tab stop; it
 takes the keyboard only while a menu is open, and its keys come before the focused
-control's, so a field's own `Alt+F` word motion yields to a bar with a `File` menu.
+control's — except a text field's own `Alt+B`, `Alt+D`, `Alt+F` and `Alt+Y` chords, which
+stay with a focused `input`, `textArea`, `searchBar`, `tagInput` or `promptComposer`
+while the bar is closed. `F10` still opens the bar from inside the field, and with the
+bar open a mnemonic letter, plain or with `Alt`, moves to its menu: `F10` then `F` opens
+`File`. See [Alt keys: menu bar or text field](./mouse#alt-keys-menu-bar-or-text-field).
 
 `contextMenu(items, state)(onSelect)(target)` gives any subtree a right-click menu:
 

@@ -330,12 +330,24 @@ Three changes reach almost every app, so check them first:
   `FrameworkKeys.entries`, and so `Keymap.markdown(bindings, frameworkKeys)`, lists more rows.
 - **Keys taken ahead of the focused control.** A `menuBar` takes `Alt+<mnemonic>` (and the arrows,
   Enter and Esc while a menu is open) before the focused control sees it, and a `window` takes
-  Alt+M/Alt+R while focus is inside it. A menu bar with a `File` menu therefore takes Alt+F word
-  motion from the text fields; give the menu another `mnemonic` to keep it. Apps without these
+  Alt+M/Alt+R while focus is inside it. The one exception is a focused text field's own
+  Alt+B/Alt+D/Alt+F/Alt+Y chords, which stay with the field while no menu is open; F10 then the
+  mnemonic letter reaches that menu from inside the field (see
+  [Alt keys: menu bar or text field](./mouse#alt-keys-menu-bar-or-text-field)). Apps without these
   nodes are unaffected.
 - **Focused text fields consume the editing chords** — see [Editing](#editing); an app binding on
   Ctrl+U, Ctrl+W, Ctrl+Z, Ctrl+Y, Ctrl+K or Ctrl+A no longer fires while an `input` or `textArea`
   has focus.
+- **`Prompt.form` steps back with Shift+Tab, not Ctrl-U.** Ctrl-U was the form's "previous field"
+  key, which took kill-to-line-start away from every text field in a form. The back key is now the
+  `focus-previous` framework key (Shift+Tab by default), and Ctrl-U kills to the start of the line
+  as it does in any `input`. Nothing to change in code; tell users, or move the key:
+
+  ```text
+  # before: Ctrl-U  -> previous field
+  # after:  Shift+Tab -> previous field, Ctrl-U -> kill to line start
+  ```
+
 - **`statusBar(bindings)`** leads with `[mode]` when the bindings declare modes and shows a pending
   prefix with its continuations; the command palette lists only the live mode's bindings. Apps
   without sequences or modes render exactly as before.

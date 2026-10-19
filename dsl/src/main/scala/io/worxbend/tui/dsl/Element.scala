@@ -75,6 +75,12 @@ trait Element:
     */
   private[dsl] def captureKeyHandler: Option[BuiltinKeyHandler] = None
 
+  /** Whether this node, focused, edits text with the `Alt+<letter>` chords of [[TextEntryAltChords]] (word motion,
+    * delete-word, yank-pop). A `menuBar`'s capture phase reads it through [[FrameContext]] and lets those chords reach
+    * the field instead of opening a menu — see [[MenuBarElement]].
+    */
+  private[dsl] def editsText: Boolean = false
+
   /** The mouse pointer this node wants shown over it, when it wants one: the hand over a `button` or a `link`, the
     * I-beam over a text field. `None` leaves the pointer as it is. An explicit `.pointer(shape)` on the node lands in
     * `props.pointerShape` and takes precedence; the interactive nodes override this with their own default.

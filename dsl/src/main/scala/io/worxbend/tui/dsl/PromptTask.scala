@@ -14,6 +14,7 @@ import io.worxbend.tui.runtime.{
 import io.worxbend.tui.runtime.Viewport
 import io.worxbend.tui.terminal.Backend
 
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.util.{Failure, Success, Try}
 
 /** Where the work under [[Prompt.task]] reports what it is doing: one call, one line in the scrolling log under the
@@ -27,6 +28,15 @@ private[dsl] object PromptTask:
 
   /** How many log lines the terminal shape keeps under the spinner. */
   val LogRows: Int = 5
+
+  /** How long a cancelled [[Prompt.task]] waits for its interrupted work to finish before it answers `None`.
+    *
+    * Cancelling interrupts the worker and then joins it, so work that honours the interrupt — a blocking read, a
+    * `sleep`, a `Future` it awaits — has wound down (closed its files, removed its temp directory) by the time the
+    * caller sees `None`. Work that ignores the interrupt is waited for this long and no longer: it keeps running on its
+    * daemon thread, and the process exiting ends it.
+    */
+  val CancelJoinBound: FiniteDuration = 2.seconds
 
   def successText(label: String, detail: String): String =
     val done = Messages.active.taskSucceeded
@@ -53,9 +63,9 @@ private[dsl] object PromptTask:
       detail: A => String,
   ): Option[A] =
     session.resolve() match
-      case PromptSession.Shape.Scripted(_)                     => inLine(session, label, work, detail, None)
-      case PromptSession.Shape.Plain(plain)                    => inLine(session, label, work, detail, Some(plain))
-      case PromptSession.Shape.Terminal(backend, theme, plain) =>
+      case PromptSession.Shape.Scripted(_)                          => inLine(session, label, work, detail, None)
+      case PromptSession.Shape.Plain(plain)                         => inLine(session, label, work, detail, Some(plain))
+      case PromptSession.Shape.Terminal(backend, theme, plain, ran) =>
         val app = TaskApp(backend, theme, label, rows, body, work, detail)
         app.runWith(backend) match
           case Left(RunnerError.Backend(_, _))        =>
@@ -67,7 +77,9 @@ private[dsl] object PromptTask:
           case Left(RunnerError.Handler(error))       => throw error
           case Left(RunnerError.QueuedTask(failures)) => throw failures.first
           case Right(())                              =>
+            ran()
             session.record(app.summary)
+            if app.outcome.isEmpty then app.awaitCancelled(CancelJoinBound)
             app.outcome match
               case Some(Success(value)) => Some(value)
               case Some(Failure(error)) => throw error
@@ -109,8 +121,8 @@ private[dsl] object PromptTask:
       case Failure(error) => throw error
 
 /** The inline app behind a terminal [[Prompt.task]]: a spinner line over `body`, the work on a thread of its own, and a
-  * last frame of one summary line. Ctrl-C cancels: the worker is interrupted, and the prompt answers `None` without
-  * waiting for it.
+  * last frame of one summary line. Ctrl-C cancels: the worker is interrupted, the run ends on its summary frame, and
+  * the calling thread then joins the worker for at most [[PromptTask.CancelJoinBound]] before answering `None`.
   */
 private final class TaskApp[A](
     backend: Backend,
@@ -149,6 +161,11 @@ private final class TaskApp[A](
       thread.join()
       produced.getOrElse(Failure(IllegalStateException(s"the task '$label' ended without a result")))
     }
+
+  /** Joins a cancelled run's interrupted worker for at most `bound`, on the calling thread — never the render thread,
+    * which has already drawn the summary frame and stopped. Read after the run.
+    */
+  def awaitCancelled(bound: FiniteDuration): Unit = worker.foreach(_.join(math.max(1L, bound.toMillis)))
 
   /** The work's result, `None` when cancelled. Read after the run. */
   def outcome: Option[Try[A]] = finished.peek.flatten

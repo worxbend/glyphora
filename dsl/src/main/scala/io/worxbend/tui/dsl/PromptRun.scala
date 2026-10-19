@@ -17,7 +17,7 @@ private[dsl] object PromptRun:
   val NoCheck: Check = () => None
 
   /** Asks `steps` in order and says whether every one was answered and `check` passed, or the user cancelled (Ctrl-C,
-    * or the end of input in the plain shape). `navigation` says whether Ctrl-U may return to the previous step.
+    * or the end of input in the plain shape). `navigation` says whether Shift+Tab may return to the previous step.
     *
     * A terminal backend that fails while the steps are asked degrades to the plain shape, asking them again from the
     * first — the same fallback as a backend that never opened. An app callback that throws (a validator, a view) is a
@@ -30,15 +30,16 @@ private[dsl] object PromptRun:
       check: Check = NoCheck,
   ): PromptOutcome =
     session.resolve() match
-      case PromptSession.Shape.Scripted(answers)               => scripted(session, answers, steps, check)
-      case PromptSession.Shape.Plain(plain)                    => plainly(session, plain, steps, check)
-      case PromptSession.Shape.Terminal(backend, theme, plain) =>
+      case PromptSession.Shape.Scripted(answers)                    => scripted(session, answers, steps, check)
+      case PromptSession.Shape.Plain(plain)                         => plainly(session, plain, steps, check)
+      case PromptSession.Shape.Terminal(backend, theme, plain, ran) =>
         val app = PromptApp(backend, theme, steps, navigation, check)
         app.runWith(backend) match
           case Left(RunnerError.Backend(_, _))        => plainly(session, plain(), steps, check)
           case Left(RunnerError.Handler(error))       => throw error
           case Left(RunnerError.QueuedTask(failures)) => throw failures.first
           case Right(())                              =>
+            ran()
             app.summaries.foreach(session.record)
             app.outcome
 
@@ -98,15 +99,15 @@ private[dsl] object PromptRun:
 private[dsl] enum PromptOutcome:
   case Answered, Cancelled
 
-/** Whether a multi-step prompt lets Ctrl-U return to the previous step. */
+/** Whether a multi-step prompt lets Shift+Tab (the `focus-previous` key) return to the previous step. */
 private[dsl] enum StepNavigation:
   case ForwardOnly, CanStepBack
 
 /** The one-shot inline app a terminal prompt is: the answered steps as summary rows, then the step being asked.
   *
-  * Ctrl-C (the signal or the key) cancels, Ctrl-U steps back under [[StepNavigation.CanStepBack]], and the last answer
-  * ends the run on a frame holding only the summary rows — which [[Backend.keepInlineRows]] then keeps, so the strip
-  * collapses to them.
+  * Ctrl-C (the signal or the key) cancels, Shift+Tab steps back under [[StepNavigation.CanStepBack]], and the last
+  * answer ends the run on a frame holding only the summary rows — which [[Backend.keepInlineRows]] then keeps, so the
+  * strip collapses to them.
   */
 private final class PromptApp(
     backend: Backend,
@@ -168,7 +169,7 @@ private final class PromptApp(
     else if PromptStep.isCtrl(event, 'c') then
       finish(PromptOutcome.Cancelled)
       true
-    else if navigation == StepNavigation.CanStepBack && PromptStep.isCtrl(event, 'u') then
+    else if navigation == StepNavigation.CanStepBack && isStepBack(event) then
       if index.peek > 0 then
         index.set(index.peek - 1)
         error.set(None)
@@ -182,6 +183,13 @@ private final class PromptApp(
           error.set(None)
           true
         case StepKey.Ignored => false
+
+  /** The `focus-previous` framework key — Shift+Tab unless a keymap moved it — read as "previous field". A prompt step
+    * has one control, so the key has nothing else to do here, and it is the one "back" key no text field claims.
+    */
+  private def isStepBack(event: KeyEvent): Boolean =
+    val keys = FrameworkKeys.current.value
+    keys.fires(keys.focusPrevious, event)
 
   private def submit(): Unit =
     val at = index.peek

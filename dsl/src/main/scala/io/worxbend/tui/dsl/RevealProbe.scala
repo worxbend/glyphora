@@ -12,9 +12,18 @@ import io.worxbend.tui.widgets.ScrollViewState
   * the offscreen buffer — which is the space `ScrollViewState.reveal` takes. `area` is where the view itself is drawn,
   * in its parent's coordinates, which is how [[toParent]] carries a request out to an enclosing scroll view. Owned by
   * the render that created it and touched only on that render thread.
+  *
+  * `atEnd` is whether the view was scrolled to the end of its content when this render began; only then does a
+  * follow-the-tail leaf (a `markdownStream` in a `scrollView`) ask to keep its newest row in view.
   */
-private[dsl] final class RevealRequests(val followFocus: Boolean, area: Rect, state: ScrollViewState):
+private[dsl] final class RevealRequests(
+    val followFocus: Boolean,
+    area: Rect,
+    state: ScrollViewState,
+    val atEnd: Boolean = false,
+):
   private var visible: Option[(String, Rect)] = None
+  private var tail: Option[(String, Rect)]    = None
   private var focused: Option[(String, Rect)] = None
   // keyed by tab index rather than by request identity: every focusable under the view reports here on every frame,
   // and building an identity string for each would cost more than the rest of the report
@@ -32,8 +41,11 @@ private[dsl] final class RevealRequests(val followFocus: Boolean, area: Rect, st
   def placeFocusable(index: Int, rect: Rect): Unit =
     if !focusables.contains(index.toLong) then focusables.update(index.toLong, rect)
 
-  /** The request to act on: an explicit `.ensureVisible` wins over following focus. */
-  def chosen: Option[(String, Rect)] = visible.orElse(focused)
+  def offerTail(id: String, rect: Rect): Unit =
+    if atEnd && tail.isEmpty then tail = Some(RevealProbe.tailId(id) -> rect)
+
+  /** The request to act on: an explicit `.ensureVisible` wins over a followed tail, which wins over following focus. */
+  def chosen: Option[(String, Rect)] = visible.orElse(tail).orElse(focused)
 
   /** Where every request this render could have made landed, for the next frame to look its request up in. */
   def placements: RevealPlacements = RevealPlacements(focusables, marks)
@@ -81,6 +93,16 @@ private[dsl] object RevealProbe:
 
   val FocusPrefix: String   = "focus:"
   val VisiblePrefix: String = "visible:"
+  val TailPrefix: String    = "tail:"
+
+  /** The request identity of a follow-the-tail leaf whose newest row is identified by `id`. */
+  def tailId(id: String): String = TailPrefix + id
+
+  /** A follow-the-tail leaf, identified by `id`, has its newest row at `area`; offered to the innermost scroll view
+    * only, which acts on it when it was at its end as the render began. `id` should change whenever the tail moves, so
+    * each new row is a new request.
+    */
+  def tail(id: String, area: Rect): Unit = FrameContext.current.reveals.headOption.foreach(_.offerTail(id, area))
 
   /** The request identity of the focusable in tab position `index`. */
   def focusId(index: Int): String = FocusPrefix + index

@@ -39,7 +39,7 @@ private[dsl] trait PromptStep[A]:
 
   def label: String
 
-  /** The answer this step was last given, kept across a `Ctrl-U` step back so the field shows it again. */
+  /** The answer this step was last given, kept across a Shift+Tab step back so the field shows it again. */
   var accepted: Option[A] = None
 
   /** Rows the step needs while it is the one being asked, including its error row. */
@@ -48,7 +48,7 @@ private[dsl] trait PromptStep[A]:
   /** The step's control. `onKey` must be attached to the focused element, so it runs before that element's own keys. */
   def view(error: Option[String], onKey: KeyEvent => Boolean)(using ReactiveScope, Theme): Element
 
-  /** The step-specific reading of a key; [[PromptRun]] has already taken Ctrl-C and Ctrl-U. */
+  /** The step-specific reading of a key; [[PromptRun]] has already taken Ctrl-C and Shift+Tab. */
   def key(event: KeyEvent): StepKey
 
   /** What the control holds now, validated. */

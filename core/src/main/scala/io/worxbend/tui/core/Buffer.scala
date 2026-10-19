@@ -395,8 +395,9 @@ final class Buffer(val area: Rect):
     *
     * The copied cells replace whatever was in the landing region, so this buffer's own placements wholly inside it are
     * replaced too — which is what keeps a render-into-a-local-buffer-and-blit-back round trip from doubling them. A
-    * source placement the window or the destination cuts is dropped and its landed cells are handed back to ordinary
-    * diffing: a partial picture would be drawn squeezed, and the widget's fallback text is in those cells already.
+    * source placement the window or the destination cuts keeps its visible part as a cropped placement (see
+    * [[GraphicPlacement.crop]]), whose cells stay reserved as they were copied: a backend draws just that slice of the
+    * picture, rather than squeezing the whole of it into the part of the box that is still on screen.
     */
   private def blitPlacements(source: Buffer, clipped: Rect, dx: Int, dy: Int): Unit =
     if source.placements.nonEmpty || placements.nonEmpty then
@@ -405,8 +406,7 @@ final class Buffer(val area: Rect):
       val (whole, cut) = source.placements.filter(_.area.intersects(clipped)).partition { placement =>
         placement.area.intersection(clipped) == placement.area
       }
-      cut.foreach(placement => setDiffDirective(placement.area.offset(dx, dy), DiffDirective.Default))
-      placements = survivors ++ whole.map(_.moved(dx, dy))
+      placements = survivors ++ whole.map(_.moved(dx, dy)) ++ cut.map(_.croppedTo(clipped).moved(dx, dy))
 
   /** Whether the source column is reserved for the wide grapheme in the column before it, which the previous iteration
     * of [[blit]] already copied — writing it reserved the destination column in the same breath. Such a column needs no
@@ -555,17 +555,23 @@ final class Buffer(val area: Rect):
     *
     * The cells of `region` are marked [[DiffDirective.Skip]] and the placement is recorded in [[graphics]] together
     * with what those cells hold *now* — so draw the text fallback first and place the picture last: a later write over
-    * the region reads as the picture being covered (see [[covers]]). A `region` this buffer cannot hold whole is not
-    * placed at all, because a picture squeezed into the visible part of its box would be drawn distorted; its cells
-    * flush as ordinary text instead.
+    * the region reads as the picture being covered (see [[covers]]). A `region` this buffer holds only part of — a
+    * picture in a scroll view's content, rendered into a buffer that holds just the window — is placed as a crop of the
+    * whole box ([[GraphicPlacement.crop]]), because the picture squeezed into the visible part would be drawn
+    * distorted; a `region` wholly outside the buffer is not placed.
     *
     * Like directives, placements belong to the frame: [[reset]] forgets them, so a widget re-places its picture on
-    * every render. Whether anything is drawn is up to the backend — see [[GraphicPlacement]].
+    * every render. Whether anything is drawn is up to the backend — see [[GraphicPlacement]]. `payload` is the picture
+    * already encoded for an image protocol, when the caller encoded it ahead of time; see [[GraphicPayload]].
     */
-  def placeGraphic(region: Rect, image: RgbaImage): Unit =
-    if !region.isEmpty && region.intersection(area) == region then
-      setDiffDirective(region, DiffDirective.Skip)
-      placements = placements :+ GraphicPlacement(region, image, cellsIn(region))
+  def placeGraphic(region: Rect, image: RgbaImage, payload: Option[GraphicPayload] = None): Unit =
+    val visible = region.intersection(area)
+    if !region.isEmpty && !visible.isEmpty then
+      setDiffDirective(visible, DiffDirective.Skip)
+      val crop = Option.when(visible != region)(
+        GraphicCrop(region.width, region.height, visible.x - region.x, visible.y - region.y)
+      )
+      placements = placements :+ GraphicPlacement(visible, image, cellsIn(visible), crop, payload)
 
   /** The pictures placed into this frame by [[placeGraphic]], in placement order. */
   def graphics: Seq[GraphicPlacement] = placements

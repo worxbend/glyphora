@@ -631,12 +631,15 @@ final case class RichTextElement(
 /** Markdown that is still arriving — an LLM's reply, token by token — drawn from a caller-owned [[w.MarkdownStream]].
   *
   * Without a `follow` state this is a measured leaf like `markdown(…)`: it reports its wrapped height, so it sizes
-  * correctly in a column or inside a `scrollView`. With one (`markdownStream(stream, scroll)`) the node is its own
-  * scroll view over the document, pinned to the newest row while content arrives: each frame it measures the document,
-  * and if the view's offset was still at the bottom the frame before, moves it to the new bottom. Scrolling up (Up,
-  * PageUp, Home, the wheel) leaves the bottom and the view holds still while text keeps arriving; End, or scrolling
-  * back down, rejoins the tail. That decision lives here rather than in `scrollView`, so a plain scroll view keeps its
-  * offset exactly where the user left it.
+  * correctly in a column or inside a `scrollView` — and inside one it keeps the view pinned to its newest row through
+  * the scroll view's reveal requests: when the view was at its end as a frame began, it asks to show the stream's last
+  * row, so `scrollView(markdownStream(stream), scroll)` follows the tail, holds still once the reader scrolls up, and
+  * follows again after End. With one (`markdownStream(stream, scroll)`) the node is its own scroll view over the
+  * document, pinned to the newest row while content arrives: each frame it measures the document, and if the view's
+  * offset was still at the bottom the frame before, moves it to the new bottom. Scrolling up (Up, PageUp, Home, the
+  * wheel) leaves the bottom and the view holds still while text keeps arriving; End, or scrolling back down, rejoins
+  * the tail. That decision lives here rather than in `scrollView`, so a plain scroll view keeps its offset exactly
+  * where the user left it.
   *
   * The stream is render-thread-only and appending does not schedule a frame: append from a render-thread callback (an
   * `Async` continuation, a binding) and pair it with a `Signal` write or `TuiApp.requestRedraw()`. One pinned view per
@@ -661,7 +664,7 @@ final case class MarkdownStreamElement(
   def widget: Widget =
     val document = stream.markdown(theme, markdownOptions)
     follow match
-      case None         => document
+      case None         => TailReporting(document, System.identityHashCode(stream))
       case Some(scroll) =>
         (area, buffer) =>
           if !area.isEmpty then
@@ -682,6 +685,16 @@ final case class MarkdownStreamElement(
 
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     follow.map(scroll => wheelScrolls(() => scroll.scrollUp(), () => scroll.scrollDown()))
+
+/** A measured document that, painted inside a `scrollView`, reports its last row as a follow-the-tail reveal request
+  * (see [[RevealProbe.tail]]). The request's identity carries the row, so every new row is a new request.
+  */
+private final class TailReporting(document: Widget & Measured, owner: Int) extends Widget with Measured:
+  def render(area: Rect, buffer: Buffer): Unit   =
+    document.render(area, buffer)
+    if !area.isEmpty then RevealProbe.tail(s"$owner:${area.bottom}", Rect(area.x, area.bottom - 1, area.width, 1))
+  override def heightAt(width: Int): Option[Int] = document.heightAt(width)
+  override def widthAt(height: Int): Option[Int] = document.widthAt(height)
 
 /** A unified diff drawn by [[w.DiffView]] — `git diff` output read with `Patch.parse`, or two texts compared with
   * `Patch.of` — scrolled and stepped through by a caller-owned [[w.DiffViewState]].

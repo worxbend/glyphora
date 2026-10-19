@@ -48,7 +48,14 @@ private[dsl] object EventRouter:
     * sees it — `true` when one consumed it. Inert subtrees and disabled nodes are skipped. A decorator delegates its
     * handler to the node it wraps, so each real node is offered the key once, however many wrappers it carries.
     */
-  def dispatchCapture(root: Element, event: KeyEvent): Boolean =
+  def dispatchCapture(root: Element, event: KeyEvent, focusPath: Option[Vector[Int]] = None): Boolean =
+    val context = FrameContext.current
+    val saved   = context.textEntryFocused
+    context.textEntryFocused = focusedPath(root, focusPath).flatMap(_.headOption).exists(_.editsText)
+    try captureWalk(root, event)
+    finally context.textEntryFocused = saved
+
+  private def captureWalk(root: Element, event: KeyEvent): Boolean =
     val offered = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap[Element, java.lang.Boolean])
     def unwrapped(element: Element): Element =
       element match

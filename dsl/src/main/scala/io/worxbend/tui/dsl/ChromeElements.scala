@@ -348,8 +348,11 @@ private def popupFrame(area: Rect, fallbackHeight: Int): Rect =
   *
   * The bar is not a tab stop: like the menu bars it imitates, it is reached by its keys and the pointer, and takes the
   * keyboard only while a menu is open (it swallows plain typing then, so letters do not leak into the control
-  * underneath). Those keys are taken ahead of the focused control — so a field's own `Alt+F` word motion yields to a
-  * bar with a `File` menu.
+  * underneath). Those keys are taken ahead of the focused control, with one exception that keeps both usable: while a
+  * text field holds focus and the bar is closed, the field's own `Alt+B`/`Alt+D`/`Alt+F`/`Alt+Y` chords
+  * ([[TextEntryAltChords]]) reach the field rather than a menu with that mnemonic. `F10` (the rebindable `menu-bar`
+  * key) opens the bar whatever holds focus, and with the bar open a mnemonic letter — plain or with Alt — moves to its
+  * menu; so `F10` then `F` opens `File` from inside a field.
   *
   * `floating` is the framework's slot for the decorated scrim and drop-down; application code never sets it.
   */
@@ -419,35 +422,47 @@ final case class MenuBarElement(
   private def mnemonic(codePoint: Int): Option[Int] =
     Option.when(Character.isBmpCodePoint(codePoint))(codePoint.toChar).flatMap(bar.menuFor)
 
+  /** Whether an `Alt+<letter>` mnemonic yields to the focused text field: the bar is closed, a field that edits text
+    * holds focus, and the letter is one of that field's own chords ([[TextEntryAltChords]]).
+    */
+  private def yieldsToTextField(letter: Int): Boolean =
+    openMenu.isEmpty && FrameContext.current.textEntryFocused && Character.isBmpCodePoint(letter) &&
+      TextEntryAltChords.contains(Character.toLowerCase(letter.toChar))
+
   private def handleKey(event: KeyEvent): Boolean =
     val frameworkKeys = FrameworkKeys.current.value
     event match
-      case KeyEvent(KeyCode.Char(letter), mods) if mods == KeyModifiers.Alt && mnemonic(letter).isDefined =>
+      case KeyEvent(KeyCode.Char(letter), mods)
+          if mods == KeyModifiers.Alt && mnemonic(letter).isDefined && !yieldsToTextField(letter) =>
         mnemonic(letter).foreach(state.openMenu)
         true
-      case _ if frameworkKeys.fires(frameworkKeys.menuBar, event) && menus.nonEmpty                       =>
+      case _ if frameworkKeys.fires(frameworkKeys.menuBar, event) && menus.nonEmpty =>
         if state.open.isDefined then state.close() else state.openMenu(0)
         true
-      case _                                                                                              =>
+      case _                                                                        =>
         openMenu.exists(index => whileOpen(index, event))
 
   private def whileOpen(index: Int, event: KeyEvent): Boolean =
     val items = menus(index).items
     event match
-      case KeyEvent(KeyCode.Left, _)                            => state.move(-1, menus.size); true
-      case KeyEvent(KeyCode.Right, _)                           => state.move(1, menus.size); true
-      case KeyEvent(KeyCode.Up, _)                              => state.menu.selectPrevious(items); true
-      case KeyEvent(KeyCode.Down, _)                            => state.menu.selectNext(items); true
-      case KeyEvent(KeyCode.Enter | KeyCode.Char(' '), _)       =>
+      case KeyEvent(KeyCode.Left, _)                                 => state.move(-1, menus.size); true
+      case KeyEvent(KeyCode.Right, _)                                => state.move(1, menus.size); true
+      case KeyEvent(KeyCode.Up, _)                                   => state.menu.selectPrevious(items); true
+      case KeyEvent(KeyCode.Down, _)                                 => state.menu.selectNext(items); true
+      case KeyEvent(KeyCode.Enter | KeyCode.Char(' '), _)            =>
         state.menu.selected
           .orElse(Some(items.indexWhere(_.selectable)).filter(_ >= 0))
           .filter(i => items.lift(i).exists(_.selectable))
           .fold(state.close())(item => run(index, item))
         true
-      case KeyEvent(KeyCode.Escape, _)                          => state.close(); true
-      case KeyEvent(KeyCode.Tab, _)                             => state.close(); false
-      case KeyEvent(KeyCode.Char(_), _) if isPlainTyping(event) => true
-      case _                                                    => false
+      case KeyEvent(KeyCode.Escape, _)                               => state.close(); true
+      case KeyEvent(KeyCode.Tab, _)                                  => state.close(); false
+      case KeyEvent(KeyCode.Char(letter), _) if isPlainTyping(event) =>
+        // while the bar holds the keyboard a plain mnemonic letter moves to its menu, which is how a field's own
+        // Alt+letter chords stay reachable: F10, then the letter
+        mnemonic(letter).foreach(next => if next != index then state.openMenu(next))
+        true
+      case _                                                         => false
 
 /** The target of a [[ContextMenuElement]]: transparent to layout and painting. Its `onMouse` — which, unlike a
   * built-in, every node on the path hears as an event bubbles — takes the right-button press that comes out of whatever

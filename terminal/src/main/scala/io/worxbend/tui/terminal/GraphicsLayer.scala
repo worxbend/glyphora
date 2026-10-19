@@ -1,6 +1,6 @@
 package io.worxbend.tui.terminal
 
-import io.worxbend.tui.core.{Buffer, GraphicPlacement, RgbaImage}
+import io.worxbend.tui.core.{Buffer, GraphicPlacement, Rect, RgbaImage}
 
 import scala.collection.mutable
 
@@ -25,9 +25,12 @@ private[terminal] object GraphicsWrites:
   *      they stopped being skipped.
   *   3. A placement not yet on screen is drawn: cursor saved, the box's cells erased (so a transparent pixel shows
   *      blank rather than whatever the terminal last had there), the picture sent at the box's corner, cursor restored.
+  *      A cropped placement (a picture a scroll view's edge cuts) shows only its slice: kitty is sent the whole image
+  *      with a source rectangle, iTerm2 — which has no such key — is sent the slice re-encoded as a PNG of its own.
   *
-  * A frame identical to the last writes nothing at all. Encoded payloads are cached per image, so a picture that is
-  * covered and uncovered, or scrolled, is re-sent without being re-encoded.
+  * A frame identical to the last writes nothing at all. A placement that carries a payload already encoded for this
+  * protocol is sent as given; otherwise encoded payloads are cached per image and slice, so a picture that is covered
+  * and uncovered, or scrolled, is re-sent without being re-encoded.
   *
   * Owned by one backend and confined to its render thread, like the frame baseline beside it.
   */
@@ -38,7 +41,7 @@ private[terminal] final class GraphicsLayer:
 
   private var nextId = 1
 
-  private val payloads = mutable.LinkedHashMap.empty[(ImageProtocol, RgbaImage), String]
+  private val payloads = mutable.LinkedHashMap.empty[(ImageProtocol, RgbaImage, Option[Rect]), String]
 
   /** Brings the screen's pictures in line with `buffer`'s placements, as described on the class.
     *
@@ -80,18 +83,32 @@ private[terminal] final class GraphicsLayer:
     id
 
   private def draw(kind: ImageProtocol, placement: GraphicPlacement, id: Int): String =
-    val area    = placement.area
-    val encoded = payload(kind, placement.image)
-    val picture = kind match
+    val area     = placement.area
+    val source   = placement.crop.map(_ => placement.sourcePixels)
+    val supplied = placement.payload.filter(_.protocol == kind.tag).map(_.data)
+    val picture  = kind match
       case ImageProtocol.Kitty  =>
-        KittyGraphics.display(encoded, placement.image.width, placement.image.height, id, area.width, area.height)
-      case ImageProtocol.ITerm2 => ITerm2Images.display(encoded, area.width, area.height)
-    val erase   = (area.y until area.bottom).map(row => AnsiSequences.moveTo(area.x, row) + s"\u001b[${area.width}X")
+        val encoded = supplied.getOrElse(payload(kind, placement.image, None))
+        KittyGraphics.display(
+          encoded,
+          placement.image.width,
+          placement.image.height,
+          id,
+          area.width,
+          area.height,
+          source,
+        )
+      case ImageProtocol.ITerm2 =>
+        // the protocol has no source rectangle: a slice is a picture of its own
+        val encoded = if source.isEmpty then supplied.getOrElse(payload(kind, placement.image, None))
+        else payload(kind, placement.image, source)
+        ITerm2Images.display(encoded, area.width, area.height)
+    val erase    = (area.y until area.bottom).map(row => AnsiSequences.moveTo(area.x, row) + s"\u001b[${area.width}X")
     AnsiSequences.SaveCursor + AnsiSequences.ResetStyle + erase.mkString + AnsiSequences.moveTo(area.x, area.y) +
       picture + AnsiSequences.RestoreCursor
 
-  private def payload(kind: ImageProtocol, image: RgbaImage): String =
-    val key = (kind, image)
+  private def payload(kind: ImageProtocol, image: RgbaImage, slice: Option[Rect]): String =
+    val key = (kind, image, slice)
     payloads.remove(key) match
       case Some(encoded) =>
         payloads.update(key, encoded) // most recently used goes last
@@ -99,12 +116,20 @@ private[terminal] final class GraphicsLayer:
       case None          =>
         val encoded = kind match
           case ImageProtocol.Kitty  => KittyGraphics.payload(image)
-          case ImageProtocol.ITerm2 => ITerm2Images.payload(image)
+          case ImageProtocol.ITerm2 => ITerm2Images.payload(slice.fold(image)(GraphicsLayer.cropped(image, _)))
         payloads.update(key, encoded)
         if payloads.size > GraphicsLayer.CachedPayloads then payloads.remove(payloads.head._1)
         encoded
 
 private[terminal] object GraphicsLayer:
+
+  /** The pixels of `image` inside `region`, as a picture of their own. */
+  def cropped(image: RgbaImage, region: Rect): RgbaImage =
+    val bytes = image.rgbaBytes
+    RgbaImage.tabulate(region.width, region.height) { (x, y) =>
+      val at = ((region.y + y) * image.width + region.x + x) * 4
+      (bytes(at + 3) & 0xff) << 24 | (bytes(at) & 0xff) << 16 | (bytes(at + 1) & 0xff) << 8 | (bytes(at + 2) & 0xff)
+    }
 
   /** How many encoded pictures are kept. A screen rarely shows more than a handful; the cap bounds what a gallery that
     * scrolls through hundreds of images keeps alive.

@@ -72,21 +72,21 @@ note in [Versioning & releases](website/docs/versioning.md).
 - `Text.fromAnsi`, the streaming `AnsiParser`, and the compile-checked `markup"[bold red]…[/]"` interpolator.
 - `text(content: Text)` for pre-styled text.
 - GFM tables, nested lists and task lists in `markdown`; `MarkdownOptions`, `TableOverflow`.
-- `MarkdownStream` and `markdownStream(stream)` / `markdownStream(stream, scroll)` for streamed output.
+- `MarkdownStream` and `markdownStream(stream)` / `markdownStream(stream, scroll)` for streamed output. Inside a `scrollView`, `markdownStream(stream)` pins the view to its newest row while the view is at its end; `ScrollViewState.isAtEnd`.
 - The open `Lexer` trait with `Lexer.Yaml`, `Sql`, `Markdown`, `Diff`, `TypeScript`, `Python`, `Lexer.forName`.
 - `.searchable(state)` on `log`, `scrollView` and `markdown`, `searchBar(state)`, `SearchState`, `Searchable`.
 
 **Widgets**
 
 - `datePicker`, `timePicker`, `rangeSlider`, `colorPicker`, `hexViewer`, `treeTable`, `placeholder`, `inspect` (with `Pretty` / `derivePretty`) and `qrCode`.
-- `menuBar`, `contextMenu`, `window` / `windowStack` (windows built by a caller-owned `WindowStack`), `tagInput`, `wizard`, `breadcrumb`, `toolbar`, `buttonGroup` and `accordion` (`AccordionSection`).
+- `menuBar`, `contextMenu`, `window` / `windowStack` (windows built by a caller-owned `WindowStack`), `tagInput`, `wizard`, `breadcrumb`, `toolbar`, `buttonGroup` and `accordion` (`AccordionSection`). A focused text field keeps its `Alt+B`/`D`/`F`/`Y` chords over a `menuBar` mnemonic; `F10` then the letter reaches the menu.
 - `timePicker` takes typed digits into the focused field (`TimePickerState.typeDigit`); `datePicker` bounds the cursor with `DatePickerState(…, min, max)`, dims the days outside and chooses a day on click (`DatePicker.dateAt`, `Calendar.dateAt`, `DatePicker.disabledStyle`).
 - `colorPicker(state, onSelect, ColorPickerMode.Rgb)`: three validated R/G/B fields beside the palette, choosing a `Color.Rgb` (`ColorPickerField`, `ColorChannel`, `ColorPickerState.chooseRgb`).
 - Collapsible `inspect(value, state)` over `InspectState`: Enter/Space/click fold a node, Left/Right collapse/expand; `Inspect` also renders as a `StatefulWidget[InspectState]`.
 - `toolbar(state)(buttons*)` over `ToolbarState`: the overflow marker opens the controls that did not fit in a popup; `Toolbar.hidden(width)`.
 - `dataTable` selects the row under a click (`DataTable.rowAt`).
 - `diffView(patch, state)` with `Patch.parse`, `Patch.of` (Myers), `DiffView`, `DiffViewState` (scrolls like `ScrollViewState`, `pageUp`/`pageDown` included).
-- `pixelImage(image, options)` with `RgbaImage`, `ImageLoader` and `Buffer.placeGraphic` (kitty graphics, iTerm2 inline images, half-block fallback).
+- `pixelImage(image, options)` with `RgbaImage`, `ImageLoader` and `Buffer.placeGraphic` (kitty graphics, iTerm2 inline images, half-block fallback). Pictures are encoded off the render thread (the first frame shows the fallback), and a picture a `scrollView` edge cuts is drawn cropped (`GraphicCrop`, `GraphicPayload`).
 - `multiProgress(tasks, columns)` with `ProgressTask`, `ProgressColumn`, `MultiProgress`.
 - `logConsole(ring)` over `LogRing`, `LogRecord`, `LogLevel` and `JulBridge`; `errorBoundary(fallback)(subtree)`.
 - Effects: `CellFilter` / `Effect.filtered`, `Pattern` / `Effect.patterned`, `Progress.staggered`, `Effect.hslShift`, `paint`, `glitch`, `evolve`, `reversed`, `pingPong`, `slideIn(MotionDirection)`.
@@ -170,6 +170,7 @@ Each item has a before/after migration note in
 - `scrollbar(…).at(offset)` → `.thumbAt(offset)`, `notice(…).at(time)` → `.stamped(time)`, so `.at(row, col)` places both in a `grid`.
 - Soft-wrapped `textArea` Up/Down move by wrapped row; a selection follows its node, not the screen; `widgets.ScrollView` and `widgets.Searchable` gained a `contentIdentity` parameter after `showScrollbar` / `content`; `ExportOptions` gained `ansiColors`.
 
+- `Prompt.form` goes back a field with Shift+Tab (`focus-previous`); Ctrl-U kills to the line start in its text fields.
 - `TuiApp` gained an overridable `messages` member; an app that declares its own `messages` needs `override` or a rename.
 - `Dialog` widens its box to fit its buttons, so a button row wider than the message is no longer dropped.
 - An unfocused `confirmDialog` (and the new pickers) underlines its selection instead of painting the focus cue, so focus is visible.

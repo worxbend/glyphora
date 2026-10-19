@@ -31,6 +31,7 @@ final class JLine3Backend private (
     private[terminal] val terminal: Terminal,
     colorDepth: ColorDepth,
     env: Map[String, String],
+    knownCapabilities: Option[TerminalCapabilities],
 ) extends Backend:
 
   // written on the render thread, read by JLine's signal-dispatch thread and by the shutdown hook
@@ -272,8 +273,12 @@ final class JLine3Backend private (
       cookedAttributes = Some(terminal.enterRawMode())
       // Ask before telling. The probe has to come after raw mode — there is no reader for a reply before it — and
       // before the modes below, so a terminal that denies one is never sent it at all.
+      // capabilities handed in at creation were probed by an earlier backend on this same terminal (see `create`): the
+      // round trip is skipped, and they were gated by the environment when they were probed
       if probe then
-        probed = JLine3Backend.gatedByEnvironment(queries.probeCapabilities(JLine3Backend.CapabilityProbeTimeout), env)
+        probed = knownCapabilities.getOrElse(
+          JLine3Backend.gatedByEnvironment(queries.probeCapabilities(JLine3Backend.CapabilityProbeTimeout), env)
+        )
       // modern input modes; a terminal that answered nothing still gets them, because an unsupported private mode is
       // ignored by an overwhelming majority of terminals and switching the feature off on silence would disable it
       // almost everywhere. Only an explicit denial skips one.
@@ -714,8 +719,9 @@ object JLine3Backend:
       terminal: Terminal,
       colorDepth: ColorDepth,
       env: Map[String, String] = sys.env,
+      knownCapabilities: Option[TerminalCapabilities] = None,
   ): JLine3Backend =
-    JLine3Backend(terminal, colorDepth, env)
+    JLine3Backend(terminal, colorDepth, env, knownCapabilities)
 
   /** `probed` with the three OSC features no terminal can be asked about ruled out where the environment rules them
     * out: inside tmux or screen the multiplexer swallows an OSC string it does not know, so a pointer shape, a desktop
@@ -747,8 +753,16 @@ object JLine3Backend:
     *
     * `colorDepth` defaults to environment-based detection (honoring `NO_COLOR`/`CLICOLOR_FORCE`); pass an explicit
     * value to force a palette regardless of the environment.
+    *
+    * `knownCapabilities` is what an earlier backend on the same controlling terminal reported as its [[capabilities]]:
+    * given, entering raw mode skips the capability probe — one round trip of up to 100 ms — and reports these instead.
+    * A process that opens one backend after another (a run of one-shot prompts) probes once and hands the answer on; a
+    * terminal does not change what it supports while the process runs.
     */
-  def create(colorDepth: ColorDepth = ColorDepth.detect()): Either[BackendError, JLine3Backend] =
+  def create(
+      colorDepth: ColorDepth = ColorDepth.detect(),
+      knownCapabilities: Option[TerminalCapabilities] = None,
+  ): Either[BackendError, JLine3Backend] =
     try
       // JLine 4.1.4 added a "software signals" layer, on by default, that raises the JLine-level Terminal.Signal
       // *and* still passes the control byte through to whatever reads the stream — its own Javadoc says so, and
@@ -777,7 +791,7 @@ object JLine3Backend:
       if terminal.getType == Terminal.TYPE_DUMB || terminal.getType == Terminal.TYPE_DUMB_COLOR then
         terminal.close()
         Left(BackendError.UnsupportedTerminal("dumb terminal (no TTY attached)"))
-      else Right(wrapping(terminal, colorDepth))
+      else Right(wrapping(terminal, colorDepth, knownCapabilities = knownCapabilities))
     catch case NonFatal(error) => Left(BackendError.Io(error))
 
   /** Stops this process the way the shell expects, after the TSTP handler has handed the terminal back.

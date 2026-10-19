@@ -84,8 +84,8 @@ private[dsl] object A11yLint:
   private def pictures(nodes: Vector[InspectedNode]): Vector[Rect] =
     nodes.flatMap { inspected =>
       inspected.node.widget match
-        case _: PixelImage | _: Image => inspected.layout
-        case _                        => None
+        case _: PixelImage | _: Image | _: PicturePainter => inspected.layout
+        case _                                            => None
     }
 
   private def contrast(frame: Buffer, exempt: Vector[Rect]): Vector[A11yFinding] =
