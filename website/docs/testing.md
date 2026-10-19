@@ -611,6 +611,34 @@ dot masks so the ring never erodes, which means its **glyphs are identical at ev
 moment** and the entire animation lives in the per-cell style — a glyph-only assertion
 would call it static.
 
+## Lint a frame for accessibility
+
+`pilot.a11yReport(app)` runs four checks over the frame the app last painted and returns
+what it found as `A11yFinding`s — empty when it found nothing:
+
+```scala
+pilot.waitForIdle()
+assert(pilot.a11yReport(app).isEmpty, pilot.a11yReport(app).mkString("\n"))
+```
+
+| `A11yRule` | Flags |
+|---|---|
+| `NoFocusCue` | a focusable that paints exactly the same focused and unfocused, when there are at least two to tell apart |
+| `LowContrast` | text whose foreground and background are both set and have a WCAG contrast ratio below 3:1, one finding per colour pair with the cells it covers |
+| `MissingCaret` | a focused text input that did not place the terminal's own cursor |
+| `ModalWithoutEscape` | a modal on top of the stack with no `Dismissal.Escape`, no `esc` binding, and no built-in dialog that closes itself on `Esc` |
+
+Each finding carries a sentence naming the node or colours and, where it has one, the
+`area` on screen. Scrollables — `list`, `tree`, `menu`, `dataTable`, `log`,
+`scrollView` and their kin — are exempt from `NoFocusCue`, because their selection
+highlight or scroll position is their focus cue by design; cells left on the terminal's
+default colours are exempt from `LowContrast`, because their colour is the user's. Every
+example in the repository asserts an empty report. It is a lint, not a certification:
+see [Accessibility](./unicode-and-accessibility#lint-it) for what it cannot see.
+
+`a11yReport` works on anything with an `A11yAudit` instance; `TuiApp` provides one on its
+companion, so no import is needed.
+
 ## Drive ticks from a clock you control
 
 An app with a tick rate ticks on wall-clock time, so a test about ticks either sleeps
@@ -933,7 +961,8 @@ reuses its output, so the library is built once per run.
 - modal focus isolation and closing paths;
 - Unicode strings relevant to your users;
 - resize while scrolled or focused;
-- clean quit after success and failure.
+- clean quit after success and failure;
+- an empty `pilot.a11yReport(app)` on every screen.
 
 Browse real end-to-end suites under
 [`examples/*/src/test`](https://github.com/worxbend/glyphora/tree/main/examples).

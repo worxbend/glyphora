@@ -70,8 +70,11 @@ object RenderThread:
 
     private def acquire(): Unit =
       val capacity = limit.getOrElse(OwnedQueueLimit)
-      if admitted >= capacity then throw RejectedExecutionException(s"render callback capacity ($capacity) exhausted")
+      if admitted >= capacity then
+        JfrEvents.rejected("owner", capacity)
+        throw RejectedExecutionException(s"render callback capacity ($capacity) exhausted")
       admitted += 1
+      JfrEvents.admitted("owner", admitted)
 
     private[runtime] final class Delivery private[RenderLoop] (initiallyActive: Boolean) extends Cancelable:
       private var active   = initiallyActive

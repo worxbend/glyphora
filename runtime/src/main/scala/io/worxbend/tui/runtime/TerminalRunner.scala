@@ -353,6 +353,9 @@ private final class LoopBody(
 
   /** Dispatches one event; answers whether the frame should be repainted afterward. */
   private def dispatch(event: Event): DispatchOutcome =
+    JfrEvents.routed(event)(dispatchUnrecorded(event))(_ == DispatchOutcome.Repaint)
+
+  private def dispatchUnrecorded(event: Event): DispatchOutcome =
     event match
       case Event.Interrupt  =>
         // an app that does not consume Ctrl+C quits cleanly, so teardown runs on the normal path
@@ -503,6 +506,9 @@ private final class FrameComposer(
     */
   def compose(): Either[BackendError, Unit] =
     val compositionStarted = stamp()
+    val drawn              = FrameDrawnEvent()
+    val recorded           = drawn.isEnabled
+    if recorded then drawn.begin()
     backend.size.flatMap { size =>
       val area        = viewport.areaIn(size)
       val buffer      = frameBuffer.filter(_.area == area).getOrElse(Buffer(area))
@@ -516,6 +522,7 @@ private final class FrameComposer(
       composed = if composed == Long.MaxValue then 0L else composed + 1L
       val drawStarted = stamp()
       backend.draw(buffer).flatMap { _ =>
+        if recorded then recordDrawn(drawn, frame.count, buffer) else lastDrawn = None
         val observerStarted = stamp()
         // Only a flushed frame is a completed one, so the observer runs after a successful draw and never before it.
         onFrame.foreach(observe => observe(CompletedFrame(buffer.snapshot, area, frame.count)))
@@ -534,6 +541,16 @@ private final class FrameComposer(
         }
       }
     }
+
+  /** The last flushed frame, kept only while a recording has `FrameDrawn` enabled, for its dirty-cell count. */
+  private var lastDrawn: Option[Buffer] = None
+
+  private def recordDrawn(drawn: FrameDrawnEvent, count: Long, buffer: Buffer): Unit =
+    drawn.end()
+    drawn.frame = count
+    drawn.dirtyCells = JfrEvents.dirtyCells(lastDrawn, buffer)
+    drawn.commit()
+    lastDrawn = Some(buffer.snapshot)
 
   /** No profiling clock reads on the default path; tick scheduling owns its separate reads. */
   private def stamp(): Long = if onFrameTiming.isDefined then nanoTime() else 0L

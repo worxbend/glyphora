@@ -24,6 +24,7 @@ final case class FrameworkKeys(
     menuBar: KeyEvent = KeyEvent.of(KeyCode.F(10)),
     windowMove: KeyEvent = KeyEvent(KeyCode.Char('m'), KeyModifiers.Alt),
     windowResize: KeyEvent = KeyEvent(KeyCode.Char('r'), KeyModifiers.Alt),
+    inspector: KeyEvent = KeyEvent.of(KeyCode.F(12)),
     copySelection: KeyEvent = KeyEvent(KeyCode.Char('c'), KeyModifiers.Ctrl | KeyModifiers.Shift),
 ):
   require(pageStep > 0, s"pageStep must be positive, was $pageStep")
@@ -38,6 +39,7 @@ final case class FrameworkKeys(
     (FrameworkKeys.MenuBar, menuBar, "open the menu bar"),
     (FrameworkKeys.WindowMove, windowMove, "move the focused window with the arrows"),
     (FrameworkKeys.WindowResize, windowResize, "resize the focused window with the arrows"),
+    (FrameworkKeys.Inspector, inspector, "cycle the inspector overlay"),
     (FrameworkKeys.CopySelection, copySelection, "copy the mouse text selection"),
   )
 
@@ -61,6 +63,7 @@ final case class FrameworkKeys(
       menuBar = key(FrameworkKeys.MenuBar, menuBar),
       windowMove = key(FrameworkKeys.WindowMove, windowMove),
       windowResize = key(FrameworkKeys.WindowResize, windowResize),
+      inspector = key(FrameworkKeys.Inspector, inspector),
       copySelection = key(FrameworkKeys.CopySelection, copySelection),
     )
 
@@ -80,7 +83,10 @@ object FrameworkKeys:
   val WindowResize: BindingId   = BindingId("window-resize")
   val CopySelection: BindingId  = BindingId("copy-selection")
 
-  /** Tab, Shift+Tab, Ctrl+P, Ctrl+C, Esc and a page step of 10 — what every `TuiApp` used before these became ids. */
+  /** F12 by default: cycles the inspector overlay — node card, card plus element tree, off. */
+  val Inspector: BindingId = BindingId("inspector")
+
+  /** Tab, Shift+Tab, Ctrl+P, Ctrl+C, Esc, a page step of 10 and F12 for the inspector. */
   val default: FrameworkKeys = FrameworkKeys()
 
   /** The page step the key dispatch on this thread runs under. `TuiApp` binds it around each dispatch to its own

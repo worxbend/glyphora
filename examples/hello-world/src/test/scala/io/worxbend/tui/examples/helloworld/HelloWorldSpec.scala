@@ -14,8 +14,10 @@ final class HelloWorldSpec extends AnyFunSuite:
 
   private def withApp[A](body: Pilot => A): A =
     val backend = HeadlessBackend(Size(40, 8))
-    Pilot.using(backend) { HelloWorldApp().runWith(backend) } { pilot =>
+    val app     = HelloWorldApp()
+    Pilot.using(backend) { app.runWith(backend) } { pilot =>
       pilot.waitForIdle()
+      assert(pilot.a11yReport(app).isEmpty, pilot.a11yReport(app).mkString("\n"))
       body(pilot)
     }
 

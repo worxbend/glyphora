@@ -56,6 +56,7 @@ final case class TerminalCapabilities(
     pointerShapes: Support = Support.Unknown,
     desktopNotifications: Support = Support.Unknown,
     taskbarProgress: Support = Support.Unknown,
+    terminalVersion: Option[String] = None,
 ):
 
   /** Whether the terminal is light or dark, as far as it said.
@@ -128,7 +129,16 @@ private[terminal] object CapabilityReplies:
     * else. `payload` is everything between `ESC ]` and the terminator.
     */
   def foldOsc(capabilities: TerminalCapabilities, payload: String): TerminalCapabilities =
-    backgroundColor(payload).fold(capabilities)(color => capabilities.copy(backgroundColor = Some(color)))
+    terminalVersion(payload) match
+      case Some(version) => capabilities.copy(terminalVersion = Some(version))
+      case None          =>
+        backgroundColor(payload).fold(capabilities)(color => capabilities.copy(backgroundColor = Some(color)))
+
+  /** The name and version an XTVERSION reply carries — the DCS payload `>|kitty(0.35.2)` — or `None` for any other
+    * control string. The text is the terminal's own, free-form, and only ever shown, never parsed for features.
+    */
+  def terminalVersion(payload: String): Option[String] =
+    Option.when(payload.startsWith(">|"))(payload.drop(2).trim).filter(_.nonEmpty)
 
   /** The scheme a `CSI ? 997 ; state n` report names, or `None` for any other DSR.
     *
