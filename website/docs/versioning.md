@@ -146,7 +146,8 @@ Three changes reach almost every app, so check them first:
 
 - **Panel slots.** `panel(…).header(e)` / `.footer(e)` put an element in a border row, and the
   slots are ordinary children for focus, hit-testing and theming — so `PanelElement.children` is
-  now `content ++ header ++ footer`, and the node's constructor field for the stacked children is
+  now `content ++ header ++ footer` (a slot on a side with no border drawn is left out: it is
+  neither painted nor a focus stop), and the node's constructor field for the stacked children is
   renamed `children` → `content`. The factories are unchanged; code that built a node by hand
   moves to the new name, or better, to the factory:
 
@@ -184,6 +185,10 @@ Three changes reach almost every app, so check them first:
 
 ### Theming, style and `frameStyle`
 
+- **`Theme.disabled` is a stored role.** It still reads `muted.dim` until a theme sets it with
+  `withDisabled(style)` or a theme file's `disabled = …`, so nothing changes for a theme that
+  does not. `Theme` equality now also compares the set role, and `Theme.render` writes a
+  `disabled` line only for a theme that set one.
 - **`style` means the content style on every node; a panel's border is `.frameStyle(…)`.** On a
   `panel` the style builders (`.fg`, `.bg`, `.bold`, `.dim`, `.styled(…)`) used to recolour the
   border; `style` meant the border on `panel`, the text on `text`, the body on a list and nothing
@@ -328,6 +333,29 @@ Three changes reach almost every app, so check them first:
   `FrameworkKeys` gained these six fields at the end, all defaulted, so positional construction
   and `copy` keep compiling; a positional pattern over `FrameworkKeys(…)` needs more binders.
   `FrameworkKeys.entries`, and so `Keymap.markdown(bindings, frameworkKeys)`, lists more rows.
+- **`FrameworkKeys` fields are `KeySequence`s, not `KeyEvent`s**, so the keys `TuiApp` handles
+  itself (`focus-next`, `focus-previous`, `command-palette`, `quit`, `close-modal`, `inspector`,
+  `copy-selection`) can be sequences, and `KeymapEntry.key` is a `KeySequence` too.
+  `FrameworkKeys.rebind` no longer throws for a multi-key `quit` or `inspector`; it still throws
+  for `menu-bar`, `window-move` and `window-resize`, which elements read one key at a time.
+  `fires(key, event)` keeps its name and takes the sequence. Code going through `rebind` and
+  `keyseq"…"` is unaffected; code that builds the value or compares a field to a `KeyEvent`
+  wraps it:
+
+  ```scala
+  // before
+  FrameworkKeys.default.copy(quit = KeyEvent(KeyCode.Char('q'), KeyModifiers.Ctrl))
+  keys.inspector == KeyEvent.of(KeyCode.F(11))
+  // after
+  FrameworkKeys.default.copy(quit = keyseq"ctrl+q")
+  keys.inspector == keyseq"f11"
+  ```
+
+  `FrameworkKeys.unbind(ids*)` and `TuiApp.inspector = false` turn a key — the F12 inspector,
+  typically — off.
+- **Keymap files read `#` after a space as a comment.** `save = ctrl+s # note` used to fail to
+  parse; it now binds `ctrl+s`. A keymap that bound the `#` key as `mark = #` must spell it
+  `mark = \#` (inside a step, `ctrl+#` is unchanged).
 - **Keys taken ahead of the focused control.** A `menuBar` takes `Alt+<mnemonic>` (and the arrows,
   Enter and Esc while a menu is open) before the focused control sees it, and a `window` takes
   Alt+M/Alt+R while focus is inside it. The one exception is a focused text field's own
@@ -518,10 +546,20 @@ Three changes reach almost every app, so check them first:
   ```
 
 - **A mouse-capturing `TuiApp` may switch to all-motion tracking by itself**: the first frame that
-  draws a `.hoverStyle(…)` or an explicit `.pointer(shape)` asks the terminal for every pointer
-  movement (more input traffic over ssh). Apps with mouse capture off never switch; to stay on
-  button-only tracking, use neither. `ElementHost.dispatchMouse` may now answer `true` for an
+  draws a `.hoverStyle(…)`, a `.pressedStyle(…)` (or a theme component with a hovered or pressed
+  style) or an explicit `.pointer(shape)` asks the terminal for every pointer movement (more input
+  traffic over ssh). Apps with mouse capture off never switch; to stay on button-only tracking,
+  use none of them. Hovered and pressed marks follow a keyed control when the tree reshapes
+  before the next frame, rather than staying on its old position. `ElementHost.dispatchMouse` may now answer `true` for an
   unconsumed event when a hover or pressed cue needs a repaint.
+- **A dropdown's floating list can let the closing click through**: `.passThroughOutside` closes
+  the list and delivers the click to the control under the pointer; without it the click is still
+  spent on closing.
+- **Keys a selection or a drag now takes.** In a mouse-capturing app, Shift+arrows that the
+  focused node does not use select text when that node is selectable (`text(…).focusable`,
+  `log`, `dataTable`), so they no longer reach an app binding on Shift+arrows while such a node
+  has focus; `Esc` while a drag and drop is in flight cancels the drag and is spent on that. Bind
+  the app's own Shift+arrow command on another key, or mark the node `.selectable(false)`.
 - **Mouse-capturing apps select text.** With `RunnerConfig(mouse = MouseCaptureMode.Buttons)`, a left drag over
   `text`, `markdown`, `log`, `logConsole` or a table selects text and copies it through OSC 52 on
   release, because capturing the mouse took the terminal's own selection away. A press an element
@@ -552,7 +590,11 @@ Three changes reach almost every app, so check them first:
   ```
 
 - Bounds recording is on for every headless run, and on a real terminal from the first
-  `boundsOf(key)` call or click-outside modal; it does not change what a frame shows. Nodes with a
+  `boundsOf(key)` call or click-outside modal; it does not change what a frame shows. On a real
+  terminal (and through `ElementHost.enableBoundsRecording()`) it is *narrow*: keyed nodes,
+  containers, input targets, pointer roles and everything under a click-outside backdrop, not
+  unkeyed leaves. An embedding host that reads `ElementTreeSnapshot.render(host)` calls
+  `enableFullBoundsRecording()` to get every node's bounds back; the inspector does so itself. Nodes with a
   pointer role (selectable text, draggable, drop target) are recorded on every frame.
 - **A mouse selection stays on its node.** It used to be held by the node's position in a
   pre-order count and by screen cells, so a node added anywhere above it moved the selection onto

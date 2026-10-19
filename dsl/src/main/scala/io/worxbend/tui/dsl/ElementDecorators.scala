@@ -34,6 +34,8 @@ private[dsl] trait DecoratingElement extends Element:
   override private[dsl] def watchedStates: Seq[io.worxbend.tui.core.Versioned] = inner.watchedStates
   override def accessibleName: String                                          = inner.accessibleName
   private[dsl] override def componentRole: Option[ComponentRole]               = inner.componentRole
+  private[dsl] override def selectionIsFocusCue: Boolean                       = inner.selectionIsFocusCue
+  private[dsl] override def passesPointerThrough: Boolean                      = inner.passesPointerThrough
   override def pointerShape: Option[PointerShape]                              = inner.pointerShape
   private[dsl] override def pointerShapeAt(position: Position, area: Rect): Option[PointerShape] =
     inner.pointerShapeAt(position, area)
@@ -62,7 +64,7 @@ private[dsl] final case class TrackedElement(inner: Element, index: Int, tracker
 
   def widget: Widget                                                             =
     (area, buffer) =>
-      tracker.record(index, area)
+      tracker.record(index, area, inner.props.focusKey)
       // every focusable tells the enclosing scroll views where it landed: the focused one so they keep it on screen,
       // the rest so that the frame after focus moves onto one of them can scroll to it before painting
       RevealProbe.tracked(index, area, inner.props.focused)
@@ -126,7 +128,7 @@ private[dsl] final case class PointerElement(inner: Element, pointerId: Int, tra
 
   def widget: Widget                                                             =
     (area, buffer) =>
-      tracker.recordPointer(pointerId, area)
+      tracker.recordPointer(pointerId, area, inner.passesPointerThrough, inner.props.focusKey)
       inner.widget.render(area, buffer)
   private[dsl] def withProps(props: ElementProps): PointerElement                = copy(inner = inner.withProps(props))
   private[dsl] override def withChildren(children: Seq[Element]): PointerElement =
@@ -141,9 +143,10 @@ private[dsl] final case class PointerElement(inner: Element, pointerId: Int, tra
   * `render`). Either way `fallback(error)` is painted in the area the subtree was given — on top of a cleared area, so
   * a half-drawn widget leaves no debris — and the failure is logged at `SEVERE` on the `io.worxbend.tui.dsl` logger,
   * where a `JulBridge` ring and a `logConsole` can show it; built with a `ring` (`errorBoundary(fallback, ring)`) it is
-  * appended to that [[LogRing]] at `Error` under the same logger name instead, with no bridge needed. Nothing is
-  * remembered between frames: the view is rebuilt on the next redraw and the subtree gets to try again, so a failure
-  * that was transient heals on its own.
+  * appended to that [[LogRing]] at `Error` under the same logger name instead, with no bridge needed. Logged, the same
+  * failure again (same type, message and throw site), as a subtree that stays broken produces on every frame, goes out
+  * at `FINE`. Nothing is remembered between frames: the view is rebuilt on the next redraw and the subtree gets to try
+  * again, so a failure that was transient heals on its own.
   *
   * Transparent otherwise, like every decorator: a healthy subtree measures, focuses and routes events as itself. Fatal
   * throwables (`OutOfMemoryError`, `InterruptedException`) are not caught.
@@ -181,11 +184,28 @@ final case class ErrorBoundaryElement(
 private object ErrorBoundaryElement:
   private val log = Logger.getLogger("io.worxbend.tui.dsl")
 
+  /** The failures already logged at `SEVERE`, by type, message and throw site — bounded, forgotten wholesale when full.
+    * A view is rebuilt on every frame, so a subtree that stays broken would otherwise log the same stack trace on each.
+    */
+  private val reported = java.util.HashSet[String]()
+
+  private val RememberedFailures = 256
+
+  /** Appends `error` to `ring` when there is one; else logs it at `SEVERE` the first time this failure is seen and at
+    * `FINE` on every repeat.
+    */
   private def report(phase: String, error: Throwable, ring: Option[LogRing]): Unit =
     val message = s"errorBoundary: the subtree threw while $phase; painting the fallback instead"
     ring match
       case Some(target) => target.log(LogLevel.Error, log.getName, message, Some(error))
-      case None         => log.log(Level.SEVERE, message, error)
+      case None         =>
+        val site  = error.getStackTrace.headOption.fold("")(_.toString)
+        val seen  = s"$phase|${error.getClass.getName}|${error.getMessage}|$site"
+        val first = reported.synchronized {
+          if reported.size >= RememberedFailures then reported.clear()
+          reported.add(seen)
+        }
+        log.log(if first then Level.SEVERE else Level.FINE, message, error)
 
 /** Wraps an element marked `.ensureVisible` during the focus pass, so the area it is handed is reported to the
   * enclosing `scrollView` through [[RevealProbe]]. `id` identifies the request across frames — the element's focus key

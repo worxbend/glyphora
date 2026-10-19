@@ -147,3 +147,34 @@ final class GallerySpec extends AnyFunSuite:
       pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)
       assert(pilot.awaitTermination())
     }
+
+/** The prop editor: pages whose factory takes simple values carry editable props, shown beside the page. */
+final class GalleryPropsSpec extends AnyFunSuite:
+
+  private val fixtures =
+    GalleryFixtures(Path.of("").toAbsolutePath, LocalDate.of(2026, 10, 19), Instant.parse("2026-10-19T09:30:00Z"))
+
+  test("gauge, sparkline, barChart, progressBar, spinner and badge carry props, and a prop's value drives the page"):
+    val pages     = Gallery.pages(fixtures)
+    val withProps = pages.filter(_.props.nonEmpty).map(_.factory).toSet
+    assert(Set("gauge", "sparkline", "barChart", "progressBar", "spinner", "badge").subsetOf(withProps), withProps)
+    val bars      = pages.find(_.factory == "barChart").get
+    def frame     = BufferAssertions.text(Snapshot.render(Size(40, 10), Theme.Dark)(bars.framed))
+    val before    = frame
+    bars.props.collectFirst { case Prop.Toggle("show values", value) => value }.get.set(true)
+    assert(frame != before, "turning the prop on changed what the page draws")
+
+  test("the editor lists each prop by name beside the page"):
+    val backend = HeadlessBackend(Size(110, 24))
+    val app     = GalleryApp(fixtures)
+    Pilot.using(backend)(app.runWith(backend)) { pilot =>
+      pilot.waitForIdle()
+      val target = app.pages.indexWhere(_.factory == "barChart")
+      (0 until target).foreach(_ => pilot.pressKey(KeyCode.Char('n'), KeyModifiers.Alt))
+      pilot.waitForIdle()
+      assert(pilot.screenText.contains("Props"), pilot.screenText)
+      assert(pilot.screenText.contains("bar width"), pilot.screenText)
+      assert(pilot.screenText.contains("show values"), pilot.screenText)
+      pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)
+      assert(pilot.awaitTermination())
+    }

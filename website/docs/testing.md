@@ -211,8 +211,12 @@ pointing at the resources directory to write, and every `assertMatches` and
 `assertMatchesStyled` call writes its *actual* frame instead of comparing:
 
 ```bash
-GLYPHORA_GOLDEN_UPDATE=widgets/src/test/resources ./mill widgets.test
+GLYPHORA_GOLDEN_UPDATE=$PWD/widgets/src/test/resources ./mill widgets.test
 ```
+
+Give it an **absolute** path (`$PWD/…` from the repository root). A test JVM forked by
+Mill runs in a sandbox directory that the next run wipes, so a relative path writes the
+files there and they silently disappear.
 
 Nothing is compared during such a run — every `assertMatches` records and returns —
 so each one also prints a line on stderr saying so, which is how a job that
@@ -346,7 +350,10 @@ shutdown failure is suppressed on it. An assertion followed by a quit key is not
 cleanup: when the assertion fails, that key is never posted.
 
 `close()` requests runner-owned, non-consumable cancellation and waits at most
-**2 seconds** by default. It posts neither a key nor an interrupt, so an app that
+**10 seconds** by default — the same patience `waitForIdle`, `waitUntil` and
+`awaitTermination` default to. Every wait returns as soon as its condition holds, so the
+figure only bounds how long a hung app takes to fail; it was 2 seconds, which a test
+class's cold JVM crossed on its first frame on a loaded machine. It posts neither a key nor an interrupt, so an app that
 consumes `Ctrl+C` cannot veto it. `close(timeout: FiniteDuration)` sets a different
 finite deadline; a blocked user callback cannot be forcibly killed and timeout is an
 assertion failure. For a custom timeout, wrap `Pilot.start(...)` in `try`/`finally`
@@ -377,7 +384,7 @@ an idle read. It is stronger and less flaky than sleeping for an arbitrary numbe
 milliseconds. `HeadlessBackend` honours `Backend.wake()` the way the JLine backend does —
 queued render-thread work, `Pilot.close()` and `Pilot.waitForIdle()` interrupt a blocked
 `readEvent` instead of waiting out the poll — so a pilot works with any `tickRate`,
-including one longer than the pilot's 2 s default deadline. An "idle read" is any read
+including one longer than the pilot's 10 s default deadline. An "idle read" is any read
 that found nothing posted: a timed-out poll slice or a wake that found the queue empty.
 Because wakes land promptly, a `Signal` written by a continuation is visible to the test
 thread a moment before the frame that shows it is drawn; a test that asserts on
@@ -506,7 +513,9 @@ it the way you would a golden frame. The bounds column reads `-` for a frame ren
 recording off, and for a node scrolled entirely out of a `scrollView`'s viewport, which was
 never painted; a node under a scroll view keeps frame coordinates, so a column that starts
 above the viewport shows a negative `y`. `ElementTreeSnapshot.render(host)` does the same
-for an `ElementHost`.
+for an `ElementHost`; call `host.enableFullBoundsRecording()` first, since the narrower
+`enableBoundsRecording()` leaves unkeyed leaves out (their bounds read `-`). A headless
+`TuiApp` run records every node already.
 
 ## Send the bytes a terminal sends
 

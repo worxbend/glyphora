@@ -124,3 +124,17 @@ final class ResponsiveLocalSpec extends AnyFunSuite:
     val buffer  = Buffer(Rect(0, 0, 12, 1))
     element.widget.render(buffer.area, buffer)
     assert(trimmedLines(buffer) == Seq("w=12"))
+
+  test("the pre-pass paints only the way to the local query: a sibling's render runs once per frame"):
+    var renders                               = 0
+    val counting: io.worxbend.tui.core.Widget = (area, buffer) =>
+      renders += 1
+      buffer.setString(area.x, area.y, "counted", io.worxbend.tui.core.Style.Default)
+    val seen                                  = mutable.ArrayBuffer.empty[Size]
+    val view: View                            = row(widget(counting).length(10), panel("Side")(sidebar(seen)).fill)
+    val host                                  = ElementHost()
+    val buffer                                = Buffer(Rect(0, 0, 60, 5))
+    draw(host, buffer, view)
+    assert(seen.nonEmpty, "the local query was measured")
+    assert(renders == 1, s"a widget that mutates caller state on render would have done so $renders times")
+    assert(trimmedLines(buffer).head.startsWith("counted"))

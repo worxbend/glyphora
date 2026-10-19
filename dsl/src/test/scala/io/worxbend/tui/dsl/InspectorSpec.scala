@@ -9,8 +9,9 @@ import org.scalatest.funsuite.AnyFunSuite
 /** The F12 inspector overlay: what node is under the pointer (or focused), where it was laid out and why. */
 final class InspectorSpec extends AnyFunSuite with PilotFixture:
 
-  private final class TwoPanels(keys: FrameworkKeys = FrameworkKeys.default) extends TuiApp:
+  private final class TwoPanels(keys: FrameworkKeys = FrameworkKeys.default, enabled: Boolean = true) extends TuiApp:
     override def frameworkKeys: FrameworkKeys     = keys
+    override def inspector: Boolean               = enabled
     def view(using ReactiveScope, Theme): Element =
       row(
         panel("Left")(text("notes"), button("Open")(()).key("open").length(1)),
@@ -53,10 +54,17 @@ final class InspectorSpec extends AnyFunSuite with PilotFixture:
 
   test("the inspector key is a rebindable framework key"):
     val keys       = FrameworkKeys.default.rebind(Map(FrameworkKeys.Inspector -> KeySequence.parse("f11").toOption.get))
-    assert(keys.inspector == KeyEvent.of(KeyCode.F(11)))
+    assert(keys.inspector == KeySequence.of(KeyEvent.of(KeyCode.F(11))))
     val (_, pilot) = started(TwoPanels(keys))
     val before     = pilot.screenText
     pilot.press("f12").waitForIdle()
     assert(pilot.screenText == before)
     pilot.press("f11").waitForIdle()
     assert(pilot.screenText.contains("inspector"), pilot.screenText)
+
+  test("inspector = false turns the overlay off, and so does unbinding its key"):
+    for app <- Seq(TwoPanels(enabled = false), TwoPanels(FrameworkKeys.default.unbind(FrameworkKeys.Inspector))) do
+      val (_, pilot) = started(app)
+      val before     = pilot.screenText
+      pilot.press("f12").waitForIdle()
+      assert(pilot.screenText == before)

@@ -15,7 +15,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 - `dock(top, bottom, left, right)(center)`: panes docked to the edges of a centre pane.
 - `Constraint.Auto` / `.auto` sizes to measured content; `Constraint.Bounded` / `.minSize(n).maxSize(m).fill` bounds any size.
 - `CrossAlign` with `.alignItems(…)`, `.alignSelf(…)` and `Layout.withCrossAlign`; `Element.intrinsicWidth`.
-- `container(children*)(place, chrome)` with `ChildInfo`: custom placement that keeps focus, hit-testing and `boundsOf`.
+- `container(children*)(place, chrome, measure)` with `ChildInfo`: custom placement that keeps focus, hit-testing and `boundsOf`; `measure` lets it size itself for `.auto`.
 - Panel slots `panel(…).header(e)` / `.footer(e)`; `.border`, `.padding`, `.background`, `.shadow` (`Shadow`), `.clip` on any element.
 - `scrollView(…).followFocus` (on by default) and `.ensureVisible`; `ScrollViewState.reveal(top, height)`.
 - `responsive.local { size => … }`: container queries against the node's own area.
@@ -38,6 +38,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 
 - Key sequences: `binding("g g", …)`, `KeySequence`, the compile-checked `keyseq"…"` literal, `KeyLeader`, `TuiApp.sequenceTimeout`.
 - `whichKeyPopup` for pending prefixes; modes via `KeyBindings.modes(Mode(…), …)`, `ModeId`, `keyMode`.
+- Framework keys handled by `TuiApp` may be sequences (`FrameworkKeys.rebind(Map(FrameworkKeys.Quit -> keyseq"ctrl+x ctrl+c"))`); keymap files take trailing `# comments`, with `\#` for the `#` key.
 - User keymaps: `BindingId`, `Keymap.parse`, `KeyBindings.rebind`, `Keymap.markdown`; `FrameworkKeys` ids via `TuiApp.frameworkKeys`. Key help is typed: `KeyHint`, `HelpSection` (`KeyBindings.continuations`, `helpSections`) and `KeymapEntry` (`FrameworkKeys.entries`).
 - `.disabled(cond)`, `.hoverStyle(…)`, `.pressedStyle(…)`, `TuiApp.accessibleLabel(key)`.
 - `focusGroup(children*)` (one tab stop, arrows inside), `.trapFocus`, `TuiApp.spatialNavigation` (Alt+arrows).
@@ -119,13 +120,18 @@ note in [Versioning & releases](website/docs/versioning.md).
 
 **Testing and tooling**
 
-- `TuiApp.boundsOf(key)` / `ElementHost.boundsOf`, `Pilot.click(rect)` / `Pilot.hover(rect)`; `NodeBounds`; `ElementHost.enableBoundsRecording()` for an embedding host.
+- `TuiApp.boundsOf(key)` / `ElementHost.boundsOf`, `Pilot.click(rect)` / `Pilot.hover(rect)`; `NodeBounds`; `ElementHost.enableBoundsRecording()` (keyed nodes, containers, input targets, pointer roles) and `enableFullBoundsRecording()` (every node) for an embedding host.
 - `ElementTreeSnapshot.render(app)` and `Element.debugName`.
 - `BufferExport.svg` / `html` / `ansi` with `ExportOptions`; styled goldens `GoldenFrames.assertMatchesStyled` / `Pilot.assertGoldenStyled`.
 - `BufferExport.ansiLines(buffer, colors)` (print-mode text) and `ExportOptions.ansiColors`; core `AnsiColors` and `ColorDepth.ansiColors` — the one SGR colour policy the terminal, print mode and the exports share.
 - Asciicast recording via `RunnerConfig.withRecording(path)`, `-Dglyphora.record=…` or `AsciicastRecorder`; `Tape.parse` / `Tape.run`.
 - Inspector overlay (F12, framework key `inspector`); `GLYPHORA_DEBUG_LAYOUT=1` debug borders; `examples/doctor`.
-- `pilot.a11yReport(app)` accessibility lint (`A11yFinding`, `A11yRule`).
+- `pilot.a11yReport(app)` accessibility lint (`A11yFinding`, `A11yRule`); its focus-cue exemption follows the node's own `selectionIsFocusCue`.
+- `AppServices.screenLabels`: the screen trail for a `breadcrumb` drawn by a helper outside the app.
+- `FormState.disable(name)` / `enable` / `setDisabled` / `disabled`: disabled form fields, announced by `Form.accessible`.
+- `Theme.withDisabled(style)` and a theme file's `disabled = …`: the disabled role is stored, falling back to `muted.dim`.
+- `Esc` cancels a drag and drop in flight; Shift+arrows select text on a focused selectable node; a drag-selection past a `scrollView`'s edge scrolls it.
+- `TuiApp.inspector = false` and `FrameworkKeys.unbind(ids*)` (`KeySequence.unbound`) turn the inspector — or any framework key — off.
 - JDK Flight Recorder events `FrameDrawn`, `EventRouted`, `FocusChanged`, `AsyncAdmitted`, `AsyncRejected` (`JfrEvents`).
 - Environment overrides `GLYPHORA_COLOR_DEPTH`, `GLYPHORA_KEYBOARD`, `GLYPHORA_MOUSE`, `GLYPHORA_ESCAPE_DELAY`.
 
@@ -133,7 +139,8 @@ note in [Versioning & releases](website/docs/versioning.md).
 
 - `Messages` — one table for every built-in label (dialog and confirm buttons, palette title and placeholder, help title, wizard buttons, inspector titles, `searchBar` placeholder, prompt hints, glyphs and yes/no); `TuiApp.messages`, `Messages.Default`, `with…` builders, `Messages.scoped`.
 - `Messages` also covers the which-key ellipsis, framework-key descriptions (`withFrameworkKeyDescription`), prompt validation errors (templates with `{input}`, `{min}`, `{max}`, …) and severity icons and tags (`withIcon(level, …)`, `withTag(level, …)`); `Badge.of(…, label)`.
-- `examples/gallery`: every exported factory on its own page, grouped by family, with one golden frame per factory; `GLYPHORA_GALLERY_EXPORT` and `scripts/render-gallery.sh` write each page as an SVG screenshot.
+- `examples/gallery`: every exported factory on its own page, grouped by family, with one golden frame per factory; `GLYPHORA_GALLERY_EXPORT` and `scripts/render-gallery.sh` write each page as an SVG screenshot. A generic Props panel (`Prop.Number`/`Toggle`/`Choice`) edits the simple arguments of the `gauge`, `sparkline`, `barChart`, `progressBar`, `spinner` and `badge` pages live.
+- `errorBoundary` logs a repeated failure at `SEVERE` once, then at `FINE`.
 - `examples/scala-cli/hello.scala`: a single-file app run with `scala run`, no build tool.
 
 ### Changed
@@ -141,15 +148,16 @@ note in [Versioning & releases](website/docs/versioning.md).
 - `TuiApp.theme` defaults to `Theme.auto` instead of `Theme.Dark`.
 - `TuiApp` captures `System.out` / `System.err` into the scrollback by default.
 - `scrollView` scrolls the focused child into view.
-- `dropdown` floats its list over the frame instead of reflowing its siblings.
+- `dropdown` floats its list over the frame instead of reflowing its siblings; `.passThroughOutside` lets the click that closes it also reach the control beneath.
 - `button` measures its own width, so `flow` and `.auto` lay buttons out by label.
 - `withStyle` is a paint-time cascade (`StyleScopeElement`); elements built outside a view paint in the app's theme.
 - Widget states redraw on mutation; a `requestRedraw()` after a state write is no longer needed.
 - `markdown` renders GFM tables, nested lists, task lists and more highlighted fence languages.
 - `ColorDepth.detect` honours `FORCE_COLOR`.
-- Frames make two tree walks instead of six; key routing follows the recorded focus path.
+- Frames make two tree walks instead of six; key routing follows the recorded focus path, and mouse routing each input target's recorded path.
+- A `lazyList` inside a `scrollView` shows the rows a jump scrolled to on the same frame (no blank frame); the container-query pre-pass paints only the way to the `responsive.local` nodes, so other widgets render once per frame.
 - `ListView` costs the viewport, not the list; `DataTable` no longer scans for its selected key every frame.
-- A mouse-capturing `TuiApp` turns on all-motion tracking when a frame draws a hover cue or `.pointer`.
+- A mouse-capturing `TuiApp` turns on all-motion tracking when a frame draws a hover or pressed cue or `.pointer`; hovered and pressed marks follow a keyed control across a reshaped tree.
 - Searched views cache their matches by content and query: a searched `scrollView` paints its whole content once per query instead of every frame, and a searched `log` re-matches only when its lines change.
 - A soft-wrapped `textArea` moves Up/Down by wrapped row and re-wraps only the lines an edit changed.
 - Every `scrollView` around a focused or `.ensureVisible` child scrolls to it, nested ones included.
@@ -164,6 +172,8 @@ note in [Versioning & releases](website/docs/versioning.md).
 - `log` draws each line at its own `Line.alignment`, and its search highlight follows.
 
 ### Fixed
+
+- `Pilot`'s default wait is 10 s (was 2 s): a cold test JVM's first frame on a loaded machine crossed 2 s and failed healthy tests with "did not go idle". `PromptComposerSpec` waits on the last query's completions rather than any popup naming "albert".
 
 - **B1** — Focused DSL text fields now move the terminal's hardware cursor, so screen readers and input-method popups follow the caret.
 - **B2** — `dropdown` no longer reflows its siblings or clips its list near the bottom edge.
@@ -192,6 +202,7 @@ Each item has a before/after migration note in
 - `each` hook state starts fresh once; `ListState`, `MenuState`, `DropdownState` lose `new`; `TreeState` takes a type parameter.
 - `MouseEvent` gained `clickCount`; consumed presses capture the pointer.
 - `TerminalCapabilities` and `FrameworkKeys` gained fields (positional patterns break); `Event` gained `ColorSchemeChanged`.
+- `FrameworkKeys` fields and `KeymapEntry.key` are `KeySequence` (were `KeyEvent`); a keymap's `#` after a space starts a comment (`\#` is the key).
 - `AppServices`, `Notifications` and `RunnerHandle` gained abstract members.
 - `Console` under the one import is glyphora's print-mode object.
 - `Language` is an alias for the open `Lexer` trait; `responsive` is an object; `PanelElement` field `children` → `content`.

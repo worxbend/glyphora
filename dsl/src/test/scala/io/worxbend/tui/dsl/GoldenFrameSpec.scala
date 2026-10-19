@@ -10,7 +10,7 @@ import org.scalatest.funsuite.AnyFunSuite
   * The fixture records **layout and glyphs only** — which symbol landed in which cell — because that is all
   * `BufferAssertions.text` serialises. Styling is invisible to it: strip every colour and modifier from this scene and
   * the fixture still matches byte for byte. So the styling of the same scene is pinned separately, by the direct cell
-  * assertions below. Regenerate the fixture with `GLYPHORA_GOLDEN_UPDATE=dsl/src/test/resources ./mill dsl.test`.
+  * assertions below. Regenerate the fixture with `GLYPHORA_GOLDEN_UPDATE=$PWD/dsl/src/test/resources ./mill dsl.test`.
   */
 final class GoldenFrameSpec extends AnyFunSuite:
 

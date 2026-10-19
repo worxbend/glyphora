@@ -20,7 +20,7 @@ import org.scalatest.funsuite.AnyFunSuite
   * with the same environment variable the golden-frame fixtures use, naming the resources directory to write into:
   *
   * {{{
-  * GLYPHORA_GOLDEN_UPDATE=core/src/test/resources ./mill core.test.testOnly io.worxbend.tui.core.LayoutCharacterisationSpec
+  * GLYPHORA_GOLDEN_UPDATE=$PWD/core/src/test/resources ./mill core.test.testOnly io.worxbend.tui.core.LayoutCharacterisationSpec
   * }}}
   *
   * The recording run compares nothing and says so on stderr; the next plain run is what checks the new file. Writer and

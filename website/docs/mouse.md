@@ -426,8 +426,9 @@ three for its whole run with `RunnerConfig.Default.withMouse(MouseCaptureMode.Al
 one setting, so "motion without capture" cannot be written.
 
 A `TuiApp` running with mouse capture does not need to: the first frame that contains a
-`.hoverStyle(...)` or an explicit `.pointer(shape)` switches the terminal to all-motion
-tracking by itself. An app with mouse capture off is never switched on — that would take
+`.hoverStyle(...)`, a `.pressedStyle(...)` or an explicit `.pointer(shape)` switches the
+terminal to all-motion tracking by itself — a pressed cue too, because once the button
+comes back up the control returns to hovered or plain, and only motion reports say which. An app with mouse capture off is never switched on — that would take
 the terminal's own text selection away.
 
 ### Hover and pressed styles
@@ -443,7 +444,10 @@ button("Deploy")(deploy())
 
 Only the innermost target under the pointer is hovered, so a container's hover style
 shows where none of its children is. Pressed lasts from the press to the release, wherever
-the release lands. A hover cue must never be the only way to find something: a terminal
+the release lands. A control with a `.key` is remembered by its key, so when the tree
+changes shape before the next frame — a row inserted above it — the hovered or pressed
+mark stays on that control instead of landing on whichever one took its place; an
+unkeyed control is remembered by its position in the frame. A hover cue must never be the only way to find something: a terminal
 without motion reporting never sends a hover.
 
 ## Disable a control
@@ -457,7 +461,8 @@ button("Save")(save()).disabled(!form.isValid)
 
 A disabled control leaves the tab order (`Tab` skips it and `focusTo` refuses it), none of
 its handlers or built-ins run — a click lands on it and stops there, neither activating it
-nor moving focus — and it draws in the theme's `disabled` style (`muted`, dimmed). The
+nor moving focus — and it draws in the theme's `disabled` style (`muted`, dimmed, unless
+the theme sets its own with `theme.withDisabled(style)` or a theme file's `disabled = …`). The
 pointer over it is `PointerShape.NotAllowed`. It stays in the tree and keeps its space, so
 nothing moves when it is re-enabled.
 
@@ -526,8 +531,15 @@ the row under it: there the press still selects the row, and a drag that then co
 two or more cells (`TextSelection.DragThreshold`) turns into a text selection instead,
 so a click whose pointer drifts one cell is still only a click. A selection stays
 inside the node it started in — dragging
-past the edge clamps to that node's first or last cell. Selection works in whole
+past the edge clamps to that node's first or last cell. Inside a `scrollView`, a drag
+past the top or bottom of the viewport scrolls it one row per pointer movement, so the
+selection can reach rows that were not on screen when it began. Selection works in whole
 graphemes: a wide character is copied once, never half of it.
+
+The keyboard selects too. On a focused selectable node — `text(…).focusable`, a `log`, a
+`dataTable` — Shift+Left/Right/Up/Down, when the node itself does not use them, starts a
+selection on the node's first visible cell and moves its far end a cell or a row per
+press; `Ctrl+Shift+C` copies it.
 
 A selection belongs to its node and to a place in that node's text, not to the screen.
 Content added elsewhere in the view leaves it where it is, and inside a `scrollView` the
@@ -571,7 +583,9 @@ A press on a draggable element arms the drag and the first motion starts it; a p
 release without motion is still an ordinary click. While the drag runs, a dimmed ghost of
 the element follows the pointer — drawn through a portal, over everything — and the
 innermost drop target under the pointer that takes the payload draws the theme's focus
-cue. The release over it calls `onDrop` with the value.
+cue. The release over it calls `onDrop` with the value. `Esc` (the `close-modal`
+framework key) while a drag runs cancels it: the ghost goes, and the release drops
+nothing.
 
 The type is carried by a `DragKey[A]`: a draggable and a target meet only when they were
 built against the same key, which is how a drop hands the target an `A` without a

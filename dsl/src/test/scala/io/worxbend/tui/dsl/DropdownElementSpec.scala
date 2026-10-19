@@ -142,6 +142,36 @@ final class DropdownElementSpec extends AnyFunSuite with PilotFixture:
     assert(app.commits == 0)
     quitApp(pilot)
 
+  test("passThroughOutside: a click outside closes the list and still reaches the control under it"):
+    final class WithButton extends TuiApp:
+      val state: DropdownState                      = DropdownState()
+      val pressed: Signal[Int]                      = Signal(0)
+      var commits: Int                              = 0
+      def view(using ReactiveScope, Theme): Element =
+        column(
+          dropdown(regions, 0, state)(_ => commits += 1).passThroughOutside,
+          spacer,
+          button("GO")(pressed.set(pressed.peek + 1)),
+        )
+
+    val backend = HeadlessBackend(Size(24, 10))
+    val app     = WithButton()
+    val pilot   = startPilot(backend) { app.runWith(backend) }
+    pilot.waitForIdle()
+    pilot.pressKey(KeyCode.Enter).waitForIdle()
+    pilot.click(3, 9).waitForIdle()             // the button: the click closes the list and presses the button too
+    assert(!app.state.open)
+    assert(app.pressed.peek == 1)
+    pilot.pressKey(KeyCode.Enter).waitForIdle() // the button has focus now, so this presses it again
+    assert(app.pressed.peek == 2)
+    pilot.press("shift+tab").waitForIdle()
+    pilot.pressKey(KeyCode.Enter).waitForIdle()
+    assert(app.state.open)
+    pilot.click(2, 2).waitForIdle()             // an option: committed, and the scrim under it is not also told
+    assert(app.commits == 1)
+    assert(!app.state.open)
+    quitApp(pilot)
+
   test("Tab while the list is open closes it and moves focus on"):
     final class TwoControls extends TuiApp:
       val state: DropdownState                      = DropdownState()

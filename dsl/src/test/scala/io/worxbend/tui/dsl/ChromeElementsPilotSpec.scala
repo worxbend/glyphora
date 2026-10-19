@@ -173,6 +173,20 @@ final class ChromeElementsPilotSpec extends AnyFunSuite with PilotFixture:
     assert(bar.open.isEmpty && !pilot.screenText.contains("Redo"))
     quitApp(pilot)
 
+  test("menuBar: the control focused before a menu opened has the keyboard again once it closes"):
+    val bar   = MenuBarState()
+    val field = TextInputState()
+    val pilot = startApp(Size(30, 8)) {
+      column(menuBar(fileEdit, bar)((_, _) => ()), button("ok")(()), input(field).key("field").autofocus)
+    }
+    pilot.press("a", "f10", "down", "escape", "b").waitForIdle()
+    pilot.press("alt+e", "enter", "c").waitForIdle()
+    pilot.click(1, 0).waitForIdle() // opened by the pointer
+    pilot.click(2, 2).waitForIdle() // and an item run by the pointer
+    pilot.press("d").waitForIdle()
+    assert(field.value == "abcd")
+    quitApp(pilot)
+
   test("menuBar: with nothing that edits text focused, Alt+F opens File"):
     val bar   = MenuBarState()
     val pilot = startApp(Size(30, 8))(column(menuBar(fileEdit, bar)((_, _) => ()), button("ok")(())))

@@ -82,3 +82,19 @@ final class ThemeFileSpec extends AnyFunSuite:
         assert(error.line == 2)
         assert(error.message.contains("loading.fill-ramp") && error.message.contains("nope"), error.message)
       case Right(theme) => fail(s"parsed $theme")
+
+  test("disabled is a stored role: set, it is written and read back; unset, it follows muted and is not written"):
+    val greyed  = Theme.Dark.withDisabled(Style.fg(Color.BrightBlack).italic)
+    assert(greyed.disabled == Style.fg(Color.BrightBlack).italic)
+    assert(greyed != Theme.Dark)
+    val text    = Theme.render(greyed)
+    assert(text.linesIterator.exists(_.startsWith("disabled = ")), text)
+    assert(Theme.parse(text) == Right(greyed))
+    assert(!Theme.render(Theme.Dark).linesIterator.exists(_.startsWith("disabled = ")))
+    val derived = Theme.Dark.withMuted(Style.fg(Color.Blue))
+    assert(derived.disabled == Style.fg(Color.Blue).dim)
+    assert(
+      Theme.parse("extends = dark\ndisabled = italic #808080\n").map(_.disabled) == Right(
+        Style.parse("italic #808080").toOption.get
+      )
+    )

@@ -7,8 +7,8 @@ import scala.concurrent.duration.{DurationInt, FiniteDuration}
 /** Tables, trees, lists, charts, meters and the loading indicators. */
 object DataPages:
 
-  private def page(factory: String, family: String, summary: String)(view: View): GalleryPage =
-    GalleryPage(factory, family, summary, view)
+  private def page(factory: String, family: String, summary: String, props: Prop*)(view: View): GalleryPage =
+    GalleryPage(factory, family, summary, view, props)
 
   private val Services = Seq(
     Seq("api", "running", "12 ms"),
@@ -93,8 +93,18 @@ object DataPages:
     fetch.update(64L)
     build.update(10L)
     val ratio  = Signal(42)
+    val width  = Signal(3)
+    val values = Signal(false)
+    val points = Signal(Wave.size)
+    val done   = Signal(42)
     Vector(
-      page("barChart", family, "vertical bars with labels")(barChart(Usage)),
+      page(
+        "barChart",
+        family,
+        "vertical bars with labels",
+        Prop.Number("bar width", width, SliderRange.of(1, 6, 1)),
+        Prop.Toggle("show values", values),
+      )(barChart(Usage, width.get, values.get)),
       page("horizontalBarChart", family, "horizontal bars with values")(horizontalBarChart(Usage, showValues = true)),
       page("stackedBarChart", family, "bars split into segments")(
         stackedBarChart(Seq("q1" -> Seq(3L, 2L, 1L), "q2" -> Seq(4L, 3L, 2L), "q3" -> Seq(2L, 5L, 3L)))
@@ -112,7 +122,9 @@ object DataPages:
           Shape.CircleShape(14.0, 5.0, 3.0),
         )
       ),
-      page("sparkline", family, "a one-row trend")(sparkline(Wave).length(1)),
+      page("sparkline", family, "a one-row trend", Prop.Number("points", points, SliderRange.of(5, Wave.size, 5)))(
+        sparkline(Wave.take(points.get)).length(1)
+      ),
       page("dualSparkline", family, "two trends sharing a baseline")(
         dualSparkline(Wave, Wave.reverse).length(2)
       ),
@@ -120,11 +132,16 @@ object DataPages:
         heatmap(Seq.tabulate(6, 24)((y, x) => math.sin(x / 3.0) * math.cos(y / 2.0)))
       ),
       page("pieChart", family, "shares of a whole")(pieChart(Seq("scala" -> 62.0, "java" -> 25.0, "other" -> 13.0))),
-      page("gauge", family, "a ratio as a filled bar; the slider below edits it")(
+      page(
+        "gauge",
+        family,
+        "a ratio as a filled bar; the slider below edits it",
+        Prop.Number("ratio %", ratio, SliderRange.Percent),
+      )(
         column(gauge(ratio.get / 100.0).length(1), slider(ratio).length(1))
       ),
-      page("progressBar", family, "progress through a known total")(
-        column(progressBar(0.42).length(1), progressBar(7, 10).length(1))
+      page("progressBar", family, "progress through a known total", Prop.Number("done %", done, SliderRange.Percent))(
+        column(progressBar(done.get / 100.0).length(1), progressBar(7, 10).length(1))
       ),
       page("scrollbar", family, "where a viewport sits in its content")(
         row(text("content").fill, scrollbar(100, 30).length(1))
@@ -134,8 +151,12 @@ object DataPages:
 
   def loading(): Vector[GalleryPage] =
     val family = "Loading"
+    val labels = Seq("loading", "fetching", "")
+    val label  = Signal(0)
     Vector(
-      page("spinner", family, "a spinner driven by the app's clock")(spinner("loading")),
+      page("spinner", family, "a spinner driven by the app's clock", Prop.Choice("label", labels, label))(
+        spinner(labels(label.get))
+      ),
       page("spinnerAt", family, "a spinner at a caller-owned time")(spinnerAt(At, "loading")),
       page("spinnerGrid", family, "a grid of dots animating together")(spinnerGrid()),
       page("spinnerGridAt", family, "the grid at a caller-owned time")(spinnerGridAt(At)),

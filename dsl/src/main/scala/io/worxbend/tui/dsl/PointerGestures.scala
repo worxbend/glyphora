@@ -37,6 +37,14 @@ private[dsl] final class PointerGestures(val recorder: NodeBounds):
 
   val drag: DragGesture = DragGesture()
 
+  /** Whether the frame being decorated — or, between frames, the last one — records unfocusable selectable leaves;
+    * fixed by [[beginFrame]] so one frame is decided once.
+    */
+  private[dsl] var leavesThisFrame: Boolean = false
+
+  /** Called before a frame is decorated: decides whether it records the selectable leaves. */
+  def beginFrame(): Unit = leavesThisFrame = selection.recordsLeaves
+
   /** The overlay for node `id`, just painted as `node` into `area`. */
   def painted(
       id: Int,
@@ -49,13 +57,24 @@ private[dsl] final class PointerGestures(val recorder: NodeBounds):
     if roles.selectable then selection.painted(TextSelection.anchorOf(id, anchor), area, buffer, node.props.focusStyle)
     if roles.drag.isDefined || roles.drop.isDefined then drag.painted(id, node, area, buffer)
 
-  /** Called once the frame is painted. */
-  def afterPaint(): Unit = selection.afterPaint()
+  /** Called once the frame is painted and its bounds published: a parked press resolves against it. */
+  def afterPaint(): Unit =
+    selection.afterPaint()
+    selection.resolvePending(recorder.current)
 
   /** `Some(redraw)` when a gesture in progress takes `event`, before any element sees it; `None` routes it as usual. */
   def intercept(event: MouseEvent): Option[Boolean] =
     val dragged = drag.intercept(event, recorder.current)
     if dragged.isDefined then dragged
+    else if selection.isPending then
+      event.kind match
+        case MouseEventKind.Drag =>
+          selection.queue(event.position, None)
+          Some(false)
+        case MouseEventKind.Up   =>
+          selection.queue(event.position, Some(AppClipboard.current))
+          Some(false)
+        case _                   => None
     else if selection.isDragging then
       event.kind match
         case MouseEventKind.Drag =>
@@ -93,7 +112,11 @@ private[dsl] final class PointerGestures(val recorder: NodeBounds):
           case None        => cleared
       else
         recorder.current.innermostAt(event.position)(_.selectable) match
-          case Some(entry) =>
+          case Some(entry)              =>
             selection.begin(entry, event.position, event.clickCount)
             true
-          case None        => cleared
+          // the last frame left the text leaves unrecorded: the next one records them and resolves the press
+          case None if !leavesThisFrame =>
+            selection.pend(event.position, event.clickCount)
+            true
+          case None                     => cleared

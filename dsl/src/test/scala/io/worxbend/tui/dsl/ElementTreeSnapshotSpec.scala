@@ -38,13 +38,13 @@ final class ElementTreeSnapshotSpec extends AnyFunSuite with PilotFixture:
 
   test("a small app's tree shows type, key, focus index, focus mark, constraint and painted bounds"):
     val host = ElementHost()
-    host.recordBounds = true
+    host.enableFullBoundsRecording()
     host.render(Rect(0, 0, 20, 4), Buffer(Rect(0, 0, 20, 4)), Theme.Dark, settings)
     assert(ElementTreeSnapshot.render(host) == expectedSettings)
 
   test("the snapshot is stable across two frames of the same view"):
     val host  = ElementHost()
-    host.recordBounds = true
+    host.enableFullBoundsRecording()
     host.render(Rect(0, 0, 20, 4), Buffer(Rect(0, 0, 20, 4)), Theme.Dark, settings)
     val first = ElementTreeSnapshot.render(host)
     host.render(Rect(0, 0, 20, 4), Buffer(Rect(0, 0, 20, 4)), Theme.Dark, settings)
@@ -64,7 +64,7 @@ final class ElementTreeSnapshotSpec extends AnyFunSuite with PilotFixture:
         positioned(2, 1, 10, 4)(scrollView(column((0 until 6).map(i => text(s"row $i"))*), 6, state)),
       )
     val host       = ElementHost()
-    host.recordBounds = true
+    host.enableFullBoundsRecording()
     host.render(Rect(0, 0, 20, 7), Buffer(Rect(0, 0, 20, 7)), Theme.Dark, view)
     state.scrollDown(2)
     host.render(Rect(0, 0, 20, 7), Buffer(Rect(0, 0, 20, 7)), Theme.Dark, view)

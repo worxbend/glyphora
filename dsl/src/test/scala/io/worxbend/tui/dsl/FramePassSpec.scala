@@ -93,6 +93,23 @@ final class FramePassSpec extends AnyFunSuite:
     }
     assert(pressed.toSeq == Seq("b2", "outer", "l3", "outer"))
 
+  test("every input target's retained path leads through the decorated tree to that target's wrapper"):
+    val frame   = framed(tangled, Size(80, 24))
+    val tracker = FocusTracker()
+    tracker.reconcile(frame.analysis.focusKeys, frame.analysis.autofocus, frame.analysis.scopes)
+    val paths   = scala.collection.mutable.HashMap.empty[InputTarget, List[Int]]
+    val tree    =
+      FocusPass.decorate(frame.tree, tracker, Style.Default, onTargetPath = (target, trail) => paths(target) = trail)
+    assert(paths.size > 5)
+    paths.foreach { (target, trail) =>
+      val node = trail.reverse.foldLeft(tree)((node, position) => node.children(position))
+      val at   = node match
+        case tracked: TrackedElement => Some(InputTarget.Focus(tracked.index))
+        case pointer: PointerElement => Some(InputTarget.Pointer(pointer.pointerId))
+        case _                       => None
+      assert(at.contains(target), s"$target's path ended on ${node.debugName}")
+    }
+
   test("the path decoration retains leads through the decorated tree to the one focused element"):
     val frame   = framed(tangled, Size(80, 24))
     val tracker = FocusTracker()

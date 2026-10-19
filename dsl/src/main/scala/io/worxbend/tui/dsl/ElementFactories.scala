@@ -147,14 +147,16 @@ private[dsl] trait ElementFactories:
     ColumnElement(Seq(docked(top), sized(middle, Constraint.Fill(1)), docked(bottom)))
 
   /** A container with a layout of your own: `place` answers one `Rect` per child from the container's area and a
-    * [[ChildInfo]] per child (key, constraint, measured size), and `chrome` is painted under the children first. Focus
-    * order, click hit-testing and `boundsOf` keep working for the children. See [[ContainerElement]].
+    * [[ChildInfo]] per child (key, constraint, measured size), and `chrome` is painted under the children first.
+    * `measure` answers the rows the layout needs at a width (`None`, the default, fills). Focus order, click
+    * hit-testing and `boundsOf` keep working for the children. See [[ContainerElement]].
     */
   def container(children: Element*)(
       place: (Rect, Seq[ChildInfo]) => Seq[Rect],
       chrome: Option[Widget] = None,
+      measure: (Int, Seq[ChildInfo]) => Option[Int] = (_, _) => None,
   ): ContainerElement =
-    ContainerElement(children, place, chrome)
+    ContainerElement(children, place, chrome, measure = measure)
 
   /** One element per item, each stamped with a `.key` derived from the item itself, so focus follows the *item* across
     * insertions and reorders rather than the screen position it happened to occupy.

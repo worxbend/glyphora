@@ -103,3 +103,37 @@ final class ScreenLabelSpec extends AnyFunSuite with PilotFixture:
     assert(entered == 1)
     assert(screen.bindings.hints == Seq(("esc", "close")))
     assert(screen.label.contains("Editor"))
+
+/** A helper written outside the app reads the trail through `AppServices.screenLabels` and draws `breadcrumb` from it.
+  */
+final class ServicesScreenTrailSpec extends AnyFunSuite with PilotFixture:
+
+  /** Not a member of the app: it can see `AppServices`, not the app's protected `screenLabels`. */
+  private def trail(using ReactiveScope, Theme, AppServices): Element =
+    val services = summon[AppServices]
+    breadcrumb(
+      "Home" +: services.screenLabels,
+      step => (step until services.screenLabels.size).foreach(_ => services.popScreen()),
+    )
+
+  private final class TrailApp extends TuiApp:
+    override def bindings: KeyBindings            = KeyBindings(
+      binding("1", "settings")(pushScreen(Screen.full(trail, label = "Settings"))),
+      binding("2", "theme")(pushScreen(Screen.full(trail, label = "Theme"))),
+      binding("ctrl+q", "quit")(quit()),
+    )
+    def view(using ReactiveScope, Theme): Element = trail
+
+  test("the services' screenLabels feed a breadcrumb, and a click on a step pops back to it"):
+    val backend = HeadlessBackend(Size(40, 3))
+    val pilot   = startPilot(backend)(TrailApp().runWith(backend)).waitForIdle()
+    pilot.press("1", "2").waitForIdle()
+    assert(pilot.screenLines.head.contains("Home") && pilot.screenLines.head.contains("Theme"), pilot.screenLines)
+    pilot.click(1, 0).waitForIdle()
+    assert(pilot.screenLines.head.trim == "Home", pilot.screenLines)
+    pilot.press("ctrl+q")
+    assert(pilot.awaitTermination())
+
+  test("outside a run the no-op services report no screens"):
+    given ReactiveScope = ReactiveScope.untracked
+    assert(AppServices.NoOp.screenLabels.isEmpty)

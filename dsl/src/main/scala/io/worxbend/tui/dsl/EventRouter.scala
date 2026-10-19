@@ -20,7 +20,8 @@ import io.worxbend.tui.terminal.PointerShape
   *
   * [[FocusTracker]] resolves the target once using the shared paint sequence for both kinds of input node. Deferred
   * portal painting participates in the same sequence; routing looks up that typed identity, not a second geometric
-  * search in tree order. Click-to-focus derives from the very same resolution.
+  * search in tree order, and reaches it by the child positions the focus pass recorded for it rather than by searching
+  * the tree. Click-to-focus derives from the very same resolution.
   *
   * A subtree marked `props.inert` — every layer a modal or the command palette covers — is skipped by every walk: it
   * receives no event and supplies neither a focus path nor a hit-test path.
@@ -78,8 +79,13 @@ private[dsl] object EventRouter:
   /** Routes the resolved [[MouseHit]] along its own ancestor path. There is no second hit test or covered-sibling
     * fallback: a declining overlay bubbles outward, not through to the control it hides. No hit means no delivery.
     */
-  def dispatchMouse(root: Element, event: MouseEvent, hit: Option[MouseHit]): Boolean =
-    hit.flatMap(found => pathToTarget(root, found.target)).getOrElse(Nil) match
+  def dispatchMouse(
+      root: Element,
+      event: MouseEvent,
+      hit: Option[MouseHit],
+      paths: InputTarget => Option[List[Int]] = _ => None,
+  ): Boolean =
+    hit.flatMap(found => targetPath(root, found.target, paths)).getOrElse(Nil) match
       // a press on a disabled control lands on it and stops there: nothing under it, and nothing around it, hears it
       case target :: _ if target.props.isDisabled => false
       case path                                   => path.exists(handlesMouse(_, event, hit))
@@ -91,8 +97,13 @@ private[dsl] object EventRouter:
     * `pointerShapeAt`, with its own painted area so a node such as a split pane can answer differently for its divider
     * than for its panes. Nothing under the pointer, or a node with no opinion, is [[PointerShape.Default]].
     */
-  def pointerShapeAt(root: Element, position: Position, hit: Option[MouseHit]): PointerShape =
-    val path     = hit.flatMap(found => pathToTarget(root, found.target)).getOrElse(Nil)
+  def pointerShapeAt(
+      root: Element,
+      position: Position,
+      hit: Option[MouseHit],
+      paths: InputTarget => Option[List[Int]] = _ => None,
+  ): PointerShape =
+    val path     = hit.flatMap(found => targetPath(root, found.target, paths)).getOrElse(Nil)
     val disabled = path.headOption.filter(_.props.isDisabled).map(_ => PointerShape.NotAllowed)
     val explicit = path.iterator.flatMap(_.props.pointerShape).nextOption()
     disabled
@@ -183,6 +194,24 @@ private[dsl] object EventRouter:
 
   private def pathToTarget(element: Element, target: InputTarget): Option[List[Element]] =
     pathWhere(element, node => targetOf(node).contains(target))
+
+  /** The path to `target`, innermost first, by the child positions the focus pass recorded for it (`paths`, innermost
+    * first as well) when they still lead to that target through no inert node — always, for the tree that pass
+    * decorated — else by searching the tree, which is the answer for any other tree.
+    */
+  private def targetPath(
+      root: Element,
+      target: InputTarget,
+      paths: InputTarget => Option[List[Int]],
+  ): Option[List[Element]] =
+    paths(target)
+      .flatMap(
+        _.foldRight(Option(List(root)))((position, path) =>
+          path.flatMap(nodes => nodes.head.children.lift(position).map(_ :: nodes))
+        )
+      )
+      .filter(path => targetOf(path.head).contains(target) && path.forall(!_.props.inert))
+      .orElse(pathToTarget(root, target))
 
   /** Routes a key *release* to the focused element and its ancestors, innermost first.
     *

@@ -56,3 +56,28 @@ final class PanelSlotsSpec extends AnyFunSuite with PilotFixture:
     assert(app.refreshed == 2, "the footer button is the panel's one focusable, so it holds focus")
     pilot.pressKey(KeyCode.Char('c'), KeyModifiers.Ctrl)
     assert(pilot.awaitTermination())
+
+  test("a slot on a side with no border drawn is neither painted nor a focus stop"):
+    final class Bandless extends TuiApp:
+      var refreshed: Int                            = 0
+      var saved: Int                                = 0
+      def view(using ReactiveScope, Theme): Element =
+        column(
+          panel("logs")(text("line"))
+            .borders(Borders.Left | Borders.Right | Borders.Top)
+            .footer(button("refresh")(refreshed += 1).key("refresh")),
+          button("save")(saved += 1).key("save"),
+        )
+
+    val backend = HeadlessBackend(Size(24, 6))
+    val app     = Bandless()
+    val pilot   = startPilot(backend)(app.runWith(backend))
+    pilot.waitForIdle()
+    assert(!pilot.screenText.contains("refresh"), pilot.screenText)
+    assert(app.boundsOf("refresh").isEmpty)
+    pilot.pressKey(KeyCode.Tab).pressKey(KeyCode.Enter).waitForIdle()
+    pilot.pressKey(KeyCode.Tab).pressKey(KeyCode.Enter).waitForIdle()
+    assert(app.refreshed == 0)
+    assert(app.saved == 2, "save is the only stop, so Tab stays on it")
+    pilot.pressKey(KeyCode.Char('c'), KeyModifiers.Ctrl)
+    assert(pilot.awaitTermination())

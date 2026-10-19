@@ -8,10 +8,10 @@ import io.worxbend.tui.widgets.{Image, PixelImage}
   *
   *   - [[A11yRule.NoFocusCue]] — when the tab order holds two or more controls, each focusable on screen is painted
   *     twice into a scratch buffer, focused and not, and flagged when the two are identical: the theme's focus cue
-  *     never reached it. Scrollables are exempt — the collections of the list role (`list`, `tree`, `menu` and kin),
-  *     `dataTable`, `treeTable`, `log`, `hexViewer`, `diffView`, `splitPane` and `scrollView` — because by design they
-  *     take no whole-body focus styling: their selection highlight or scroll position is the cue, and it paints the
-  *     same either way, so the rule cannot judge it.
+  *     never reached it. A node whose `selectionIsFocusCue` is true is exempt — the collections of the list role
+  *     (`list`, `tree`, `menu` and kin), `dataTable`, `treeTable`, `log`, `logConsole`, `hexViewer`, `diffView`,
+  *     `splitPane` and `scrollView` — because by design they take no whole-body focus styling: their selection
+  *     highlight or scroll position is the cue, and it paints the same either way, so the rule cannot judge it.
   *   - [[A11yRule.LowContrast]] — every printed cell whose foreground and background are both set is measured with
   *     `Color.contrastRatio`, and each colour pair below [[MinimumContrast]] is reported once with the cells it covers.
   *     That is what makes colour-only status ("red means failed") unreadable to anyone who cannot tell the hue apart. A
@@ -52,7 +52,7 @@ private[dsl] object A11yLint:
       focusables.flatMap { inspected =>
         for
           _    <- inspected.focusIndex
-          if !cueIsSelection(inspected.node)
+          if !inspected.node.selectionIsFocusCue
           rect <- inspected.layout.filterNot(_.isEmpty)
           if paint(inspected.node, rect, focused = true).diff(paint(inspected.node, rect, focused = false)).isEmpty
         yield A11yFinding(
@@ -61,16 +61,6 @@ private[dsl] object A11yLint:
           Some(rect),
         )
       }
-
-  /** The scrollables whose documented focus cue is their selection or scroll position rather than a restyle — the nodes
-    * that apply no whole-body focus style on purpose. A new scrollable node with the same convention joins here.
-    */
-  private def cueIsSelection(node: Element): Boolean =
-    node match
-      case _: ScrollViewElement | _: LogElement | _: DataTableElement[?] | _: SplitPaneElement | _: HexViewerElement |
-          _: TreeTableElement[?] | _: DiffViewElement | _: LogConsoleElement =>
-        true
-      case other => other.componentRole.contains(ListRole)
 
   private def paint(node: Element, rect: Rect, focused: Boolean): Buffer =
     val buffer = Buffer(rect)
@@ -146,7 +136,7 @@ private[dsl] object A11yLint:
   private def modal(app: TuiApp, host: ElementHost): Vector[A11yFinding] =
     app.topScreenNow.filter(_.presentation == Presentation.Modal).toVector.flatMap { screen =>
       val closeKey  = app.frameworkKeys.closeModal
-      val bound     = screen.bindings.bindings.exists(_.triggers.exists(_.keys == Vector(closeKey)))
+      val bound     = screen.bindings.bindings.exists(_.triggers.exists(_.keys == closeKey.keys))
       val dialog    =
         Inspector.nodes(host).exists(inspected => !inspected.node.props.inert && handlesEscape(inspected.node))
       val escapable = screen.dismissal.byEscape || bound || dialog

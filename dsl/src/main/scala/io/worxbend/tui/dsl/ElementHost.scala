@@ -1,6 +1,17 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Buffer, KeyCode, KeyEvent, MouseEvent, MouseEventKind, Position, Rect, Size, Style}
+import io.worxbend.tui.core.{
+  Buffer,
+  KeyCode,
+  KeyEvent,
+  KeyModifiers,
+  MouseEvent,
+  MouseEventKind,
+  Position,
+  Rect,
+  Size,
+  Style,
+}
 import io.worxbend.tui.runtime.{Frame, JfrEvents, ReactiveScope}
 import io.worxbend.tui.terminal.{ImageProtocol, PointerShape}
 
@@ -41,21 +52,44 @@ final class ElementHost:
   private var session                   = ViewSession(key => boundsOf(key))
   private var lastTree: Option[Element] = None
 
+  /** Each input target's child positions in [[lastTree]], innermost first, recorded while it was decorated — what mouse
+    * routing follows to the target a hit resolved.
+    */
+  private val targetPaths = scala.collection.mutable.HashMap.empty[InputTarget, List[Int]]
+
   /** The child positions leading to the focused element in [[lastTree]], recorded while it was decorated. */
   private var lastFocusPath: Option[Vector[Int]] = None
 
-  /** Whether the next frames record the painted rect of every node, which is what [[boundsOf]], the element-tree
-    * snapshot and the click-outside backdrop read. Off by default because it costs a wrapper per node per frame; a call
-    * to [[boundsOf]] switches it on, as does `TuiApp` for a headless run and for a click-outside modal. Written by the
-    * host and `TuiApp`; an embedding host opts in through [[enableBoundsRecording]].
+  /** Whether the next frames record painted rects — of the narrow set [[recordAllBounds]] describes, or of every node
+    * when that is on — which is what [[boundsOf]], the element-tree snapshot and the click-outside backdrop read. Off
+    * by default because it costs a wrapper per recorded node per frame; a call to [[boundsOf]] switches it on, as does
+    * `TuiApp` for a headless run and for a click-outside modal. Written by the host and `TuiApp`; an embedding host
+    * opts in through [[enableBoundsRecording]].
     */
   @volatile private[dsl] var recordBounds: Boolean = false
 
-  /** Whether this host records the painted rect of every node — see [[enableBoundsRecording]]. */
+  /** Whether recording, while on, covers every node rather than the narrow set — keyed nodes, containers, input
+    * targets, nodes with a pointer role and everything under a click-outside backdrop — that every reader but the
+    * inspector, the debug borders and the element-tree snapshot needs. Off by default; [[enableFullBoundsRecording]]
+    * and `TuiApp` (for a headless run and while the inspector or debug borders show) switch it on.
+    */
+  @volatile private[dsl] var recordAllBounds: Boolean = false
+
+  /** Records the painted rect of *every* node from the next frame on — what [[ElementTreeSnapshot]] and the inspector
+    * read for an unkeyed leaf. Costs a wrapper per node per frame, where [[enableBoundsRecording]] costs one only for
+    * the nodes a reader can ask about.
+    */
+  def enableFullBoundsRecording(): Unit =
+    recordBounds = true
+    recordAllBounds = true
+
+  /** Whether this host records painted rects — see [[enableBoundsRecording]]. */
   def recordingBounds: Boolean = recordBounds
 
-  /** Records the painted rect of every node from the next frame on, for [[boundsOf]] and the gestures that hit-test
-    * against it. Stays on for the life of the host; a call to [[boundsOf]] does the same.
+  /** Records painted rects from the next frame on, for [[boundsOf]] and the gestures that hit-test against them: of
+    * every keyed node, container, input target and node with a pointer role, and of every node under a click-outside
+    * backdrop — not of unkeyed leaves, which nothing but the element-tree snapshot and the inspector asks about (see
+    * [[enableFullBoundsRecording]]). Stays on for the life of the host; a call to [[boundsOf]] does the same.
     */
   def enableBoundsRecording(): Unit = recordBounds = true
 
@@ -202,9 +236,11 @@ final class ElementHost:
     val analysis = frame.analysis
     tracker.reconcile(analysis.focusKeys, analysis.autofocus, analysis.scopes)
     recordFocusChange()
+    targetPaths.clear()
     val recorder = Option.when(recordBounds)(bounds)
     motionDemanded = false
     cuesDemanded = false
+    gestures.beginFrame()
     // a tree with a consumer of bounds in it (a click-outside backdrop) turns recording on for the frames after this one
     val tree     = FocusPass.decorate(
       raw,
@@ -218,6 +254,8 @@ final class ElementHost:
       theme = theme,
       onFocusPath = path => lastFocusPath = path,
       gestures = Some(gestures),
+      fullBounds = recordAllBounds,
+      onTargetPath = (target, trail) => targetPaths(target) = trail,
     )
     lastTree = Some(tree)
     // always opened and closed: with full recording off, the nodes that carry a pointer role still record into it
@@ -250,7 +288,7 @@ final class ElementHost:
     * shows without a `requestRedraw()`. A host that owns its loop asks the same way, after running queued work and
     * before deciding whether to draw. Render-thread-only.
     */
-  def pollStates(): Boolean = session.pollStates()
+  def pollStates(): Boolean = session.pollStates() | gestures.selection.takeOwedFrame()
 
   /** The rect the element declared with `.key(key)` was painted into on the last [[render]], in the coordinates of the
     * buffer that frame was drawn into and mapped out of any scroll view it sits in — so a test can click its centre
@@ -296,8 +334,45 @@ final class ElementHost:
     * [[focusNext]] or [[focusPrevious]] from your own key handling if you want the usual meaning.
     */
   def dispatchKey(key: KeyEvent): Boolean =
-    lastTree.exists(EventRouter.dispatchCapture(_, key, lastFocusPath)) ||
-      lastTree.exists(EventRouter.dispatchKey(_, key, lastFocusPath)) || (lastTree.isDefined && groupArrow(key))
+    cancelDrag(key) || lastTree.exists(EventRouter.dispatchCapture(_, key, lastFocusPath)) ||
+      lastTree.exists(EventRouter.dispatchKey(_, key, lastFocusPath)) || keyboardSelect(key) ||
+      (lastTree.isDefined && groupArrow(key))
+
+  /** Shift+arrow that nothing on the focus path consumed, while the focused node is selectable text and selection is on
+    * (a mouse-capturing app): extends a selection over that node one cell or row at a time — see
+    * [[TextSelection.extendBy]].
+    */
+  private def keyboardSelect(key: KeyEvent): Boolean =
+    val step = key match
+      case KeyEvent(KeyCode.Left, KeyModifiers.Shift)  => Some((-1, 0))
+      case KeyEvent(KeyCode.Right, KeyModifiers.Shift) => Some((1, 0))
+      case KeyEvent(KeyCode.Up, KeyModifiers.Shift)    => Some((0, -1))
+      case KeyEvent(KeyCode.Down, KeyModifiers.Shift)  => Some((0, 1))
+      case _                                           => None
+    step.exists { (dx, dy) =>
+      gestures.selection.enabled && focusedSelectable.exists { entry =>
+        gestures.selection.extendBy(entry, dx, dy)
+        true
+      }
+    }
+
+  /** The innermost selectable node painted inside the focused element's area on the last frame. */
+  private def focusedSelectable: Option[NodeBoundsEntry] =
+    tracker.areaOf(tracker.focusedIndex).flatMap { focused =>
+      bounds.current.entries
+        .filter(entry => entry.roles.selectable && focused.contains(entry.visible.position))
+        .maxByOption(_.id)
+    }
+
+  /** The `close-modal` framework key (Esc) while a drag and drop is in flight abandons it — the ghost goes and the
+    * release that follows drops nothing — and is spent on that, ahead of every element.
+    */
+  private def cancelDrag(key: KeyEvent): Boolean =
+    val keys = FrameworkKeys.current.value
+    gestures.drag.isActive && keys.fires(keys.closeModal, key) && {
+      gestures.drag.end()
+      true
+    }
 
   /** An unmodified arrow nobody on the focus path consumed moves focus inside the focused element's focus group. That
     * is the group's own behaviour rather than app policy, so it belongs here and an embedding host gets it too.
@@ -327,6 +402,7 @@ final class ElementHost:
   def dispatchMouse(mouse: MouseEvent): Boolean =
     val event = pointer.counted(mouse, clock())
     val under = tracker.mouseHit(event.position)
+    val _     = autoScroll(event)
     gestures.intercept(event) match
       case Some(redraw) =>
         // a gesture in progress took the event: no element sees it, but a release still lets the pointer go
@@ -334,6 +410,15 @@ final class ElementHost:
         val restyled = trackPointerStates(event, under) && cuesDemanded
         redraw || restyled
       case None         =>
+        // a pass-through layer above the target hears a press first and lets it go on
+        val heard      =
+          if event.kind == MouseEventKind.Down then
+            tracker.bounds
+              .passThroughAt(event.position)
+              .foldLeft(false)((any, hit) =>
+                lastTree.exists(EventRouter.dispatchMouse(_, event, Some(hit), targetPaths.get)) || any
+              )
+          else false
         val target     = pointer.route(event, under)
         val focusMoved =
           if event.kind == MouseEventKind.Down then
@@ -344,31 +429,49 @@ final class ElementHost:
               case _                                            => false
           else false
 
-        val consumed = lastTree.exists(EventRouter.dispatchMouse(_, event, target))
+        val consumed = lastTree.exists(EventRouter.dispatchMouse(_, event, target, targetPaths.get))
         pointer.delivered(event, target, consumed)
         val restyled = trackPointerStates(event, under) && cuesDemanded
         val gestured = lastTree.isDefined && gestures.afterDelivery(event, consumed)
-        consumed || focusMoved || restyled || gestured
+        consumed || focusMoved || restyled || gestured || heard
+
+  /** A drag that is selecting text and has run past the top or bottom of the selected node's rows on screen scrolls the
+    * nearest scrollable around that edge one step — a wheel event at the edge cell, routed the way a real wheel there
+    * would be — so the selection can reach content the viewport does not show yet. One step per drag event: a terminal
+    * reports motion, not a held pointer, so the scrolling follows the pointer's movement.
+    */
+  private def autoScroll(event: MouseEvent): Boolean =
+    event.kind == MouseEventKind.Drag && gestures.selection.edgeScroll(event.position).exists { (edge, down) =>
+      val kind  = if down then MouseEventKind.ScrollDown else MouseEventKind.ScrollUp
+      val wheel = MouseEvent(edge, kind, KeyModifiers.None)
+      lastTree.exists(EventRouter.dispatchMouse(_, wheel, tracker.mouseHit(edge), targetPaths.get))
+    }
 
   /** Updates the hovered and pressed targets the next focus pass stamps, `true` when either changed. Hover follows the
     * pointer over every event that has a position on screen; pressed is set by a press and cleared by a release.
     */
   private def trackPointerStates(event: MouseEvent, under: Option[MouseHit]): Boolean =
-    val hovered = under.map(_.target)
-    val pressed = event.kind match
-      case MouseEventKind.Down => hovered
-      case MouseEventKind.Up   => None
-      case _                   => tracker.pressedTarget
-    val changed = hovered != tracker.hoveredTarget || pressed != tracker.pressedTarget
+    val hovered               = under.map(_.target)
+    val hoveredKey            = hovered.flatMap(tracker.bounds.targetBounds).flatMap(_.key)
+    val (pressed, pressedKey) = event.kind match
+      case MouseEventKind.Down => (hovered, hoveredKey)
+      case MouseEventKind.Up   => (None, None)
+      case _                   => (tracker.pressedTarget, tracker.pressedKey)
+    val changed               = hovered != tracker.hoveredTarget || pressed != tracker.pressedTarget ||
+      hoveredKey != tracker.hoveredKey || pressedKey != tracker.pressedKey
     tracker.hoveredTarget = hovered
+    tracker.hoveredKey = hoveredKey
     tracker.pressedTarget = pressed
+    tracker.pressedKey = pressedKey
     changed
 
   /** The mouse pointer the last frame wants shown at `position` — see [[EventRouter.pointerShapeAt]]. A host that owns
     * its own loop hands the answer to `Backend.setPointerShape` when it changes; `TuiApp` does so on every mouse event.
     */
   def pointerShapeAt(position: Position): PointerShape =
-    lastTree.fold(PointerShape.Default)(EventRouter.pointerShapeAt(_, position, tracker.mouseHit(position)))
+    lastTree.fold(PointerShape.Default)(
+      EventRouter.pointerShapeAt(_, position, tracker.mouseHit(position), targetPaths.get)
+    )
 
   /** Offers a key release to the focused element and its ancestors — see [[EventRouter.dispatchKeyRelease]]. */
   def dispatchKeyRelease(key: KeyEvent): Boolean =

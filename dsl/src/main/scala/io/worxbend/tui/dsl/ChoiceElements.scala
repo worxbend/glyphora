@@ -90,7 +90,7 @@ final case class SelectElement(
   *
   * A click on the closed row opens the list; a click on an option commits it; a click anywhere else — the row itself
   * included — closes the list without committing, and is spent on that: the control under the pointer does not also
-  * receive it. The wheel over the list moves the highlight.
+  * receive it, unless the dropdown is built with [[passThroughOutside]]. The wheel over the list moves the highlight.
   *
   * The list is drawn through the frame root, the way [[PortalElement]] draws, so the node claims one row whether the
   * list is open or not and nothing around it moves when it opens. The popup sits under the row when the frame has room
@@ -109,8 +109,15 @@ final case class DropdownElement(
     maxVisibleRows: Int = 8,
     props: ElementProps = ElementProps(focusable = true),
     floating: Seq[Element] = Seq.empty,
+    outsidePassesThrough: Boolean = false,
 ) extends Element:
   type Self = DropdownElement
+
+  /** This dropdown with a click outside its open list *not* spent on closing it: the list closes and the click goes on
+    * to the control under the pointer, as if no list had been showing — for a toolbar of pickers where a click on the
+    * next picker should open it at once. Esc, Tab and a click on the row itself still close the list as before.
+    */
+  def passThroughOutside: DropdownElement = copy(outsidePassesThrough = true)
 
   /** The caller-owned state this node paints, watched for writes made between frames. */
   override private[dsl] def watchedStates: Seq[Versioned] = Seq(state)
@@ -126,7 +133,10 @@ final case class DropdownElement(
   override def children: Seq[Element] =
     if floating.nonEmpty then floating
     else if state.open && options.nonEmpty then
-      Seq(DropdownScrimElement(state), DropdownPopupElement(dropdownWidget, options, state, onSelect))
+      Seq(
+        DropdownScrimElement(state, outsidePassesThrough),
+        DropdownPopupElement(dropdownWidget, options, state, onSelect),
+      )
     else Seq.empty
 
   def widget: Widget =
@@ -273,12 +283,17 @@ private[dsl] final case class DropdownPopupElement(
 /** The invisible, frame-sized layer an open [[DropdownElement]] floats under its list: it paints nothing and exists so
   * that a press anywhere outside the list closes the list — and goes no further, the way a click outside a menu is
   * spent on dismissing it. Painted before the list, so the list wins the pointer on its own cells. Everything but a
-  * press is declined, so the wheel still reaches whatever scrolls beneath.
+  * press is declined, so the wheel still reaches whatever scrolls beneath. With `passThrough` the scrim is a
+  * pass-through layer ([[Element.passesPointerThrough]]): it closes the list and the press goes on to what is beneath.
   */
-private[dsl] final case class DropdownScrimElement(state: w.DropdownState, props: ElementProps = ElementProps())
-    extends Element:
+private[dsl] final case class DropdownScrimElement(
+    state: w.DropdownState,
+    passThrough: Boolean = false,
+    props: ElementProps = ElementProps(),
+) extends Element:
   type Self = DropdownScrimElement
   override def debugName: String                                             = "dropdownScrim"
+  private[dsl] override def passesPointerThrough: Boolean                    = passThrough
   def widget: Widget                                                         = (_, _) => ()
   private[dsl] def withProps(props: ElementProps): DropdownScrimElement      = copy(props = props)
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] = Some { (event, _) =>

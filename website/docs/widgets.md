@@ -92,6 +92,14 @@ spent on that: the control under the pointer does not also receive it, the way a
 outside a menu dismisses the menu and nothing more. Tab closes the list on its way to the
 next control.
 
+`.passThroughOutside` makes that click do both: the list closes and the click goes on to
+whatever is under the pointer, as if no list had been showing — what a toolbar of pickers
+wants, where a click on the next picker should open it at once:
+
+```scala
+dropdown(regions, region.get, regionState)(region.set).passThroughOutside
+```
+
 The state carries the navigation those keys drive, for an app that wants its own
 bindings: `regionState.openAt(selected)` opens the list with the highlight parked on the
 current value, `highlighted` reads where the highlight sits, `selectNext(options)` and
@@ -716,8 +724,10 @@ cleared area, so a half-drawn widget leaves nothing behind — and logs the fail
 `SEVERE` on the `io.worxbend.tui.dsl` logger, where a `JulBridge` ring and a `logConsole`
 can show it. `errorBoundary(fallback, ring)(subtree)` appends the failure to that
 `LogRing` instead (at `Error`, under the same logger name), so the `logConsole(ring)` that
-shows it needs no `JulBridge`. Nothing is remembered between frames: the next redraw
-rebuilds the view and the subtree gets to try again.
+shows it needs no `JulBridge`. A subtree that stays broken fails again on every frame;
+logged, the same failure (same type, message and throw site) goes out at `SEVERE` once and
+at `FINE` after that, so it does not fill the log. Nothing is remembered between frames:
+the next redraw rebuilds the view and the subtree gets to try again.
 
 ```scala
 errorBoundary(error => text(s"chart unavailable: ${error.getMessage}").dim) {
@@ -2758,6 +2768,9 @@ click on a visible item hands its index to `onSelect`:
 // clicking a step pops every screen above it; "Home" (index 0) resets the stack
 breadcrumb("Home" +: screenLabels, step => (step until screenLabels.size).foreach(_ => popScreen()))
 ```
+
+Outside the app object, `summon[AppServices].screenLabels` is the same list (see
+[Name the screens](./app-shell#name-the-screens-and-draw-a-breadcrumb)).
 
 When the row is too narrow the middle items fold into one `…`, earliest first, so the
 start of the trail and the items nearest the end stay readable longest:

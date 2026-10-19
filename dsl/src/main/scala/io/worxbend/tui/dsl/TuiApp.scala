@@ -264,6 +264,12 @@ trait TuiApp:
     */
   def whichKey: Boolean = true
 
+  /** Whether the `inspector` framework key (F12 by default) opens the inspector overlay. On by default; `false` turns
+    * it off for the whole app — for a shipped binary that does not want the overlay one stray key away — and leaves the
+    * key free to reach nothing. `frameworkKeys.unbind(FrameworkKeys.Inspector)` does the same from a keymap.
+    */
+  def inspector: Boolean = true
+
   /** The keys the framework handles once nothing else claimed them — focus traversal, the command palette, quit, the
     * modal close — and the PageUp/PageDown step, each rebindable through a user keymap:
     * `override def frameworkKeys = FrameworkKeys.default.rebind(userKeymap)`. Read for every key that reaches that
@@ -435,6 +441,7 @@ trait TuiApp:
     def dismissToasts(): Unit                                                       = TuiApp.this.dismissToasts()
     def pushScreen(screen: Screen): Unit                                            = TuiApp.this.pushScreen(screen)
     def popScreen(): Unit                                                           = TuiApp.this.popScreen()
+    override def screenLabels(using scope: ReactiveScope): Seq[String]              = screenStack.labels
     def openPalette(): Unit                                                         = TuiApp.this.openPalette()
     def closePalette(): Unit                                                        = TuiApp.this.closePalette()
     def runEffect(effect: Effect): Unit                                             = TuiApp.this.runEffect(effect)
@@ -747,6 +754,8 @@ trait TuiApp:
         // headless run (a test, which is what `boundsOf` exists for), an app that has asked once, and — switched on
         // frame by frame in `effectiveView` — a modal that closes on a click outside it
         run.host.recordBounds = boundsRequested || recordsBoundsByDefault(backend)
+        // a headless run is a test: the element-tree snapshot and the a11y lint read every node, so it records them all
+        run.host.recordAllBounds = recordsBoundsByDefault(backend)
         // a mouse-capturing app has taken the terminal's own selection away, so it selects text itself
         run.host.textSelection = runConfig.mouseCapture
         // on the render thread, and while this run is still registered on it: the clock this app's animations read
@@ -827,7 +836,7 @@ trait TuiApp:
       // an effect scoped to an element resolves that element's rect from this very frame's bounds
       if !run.host.recordBounds && effects.hasScoped then run.host.recordBounds = true
       // the inspector reads the bounds of the frame it is painted over, so that frame has to record them
-      if inspectorMode != InspectorMode.Off || debugLayoutOn then run.host.recordBounds = true
+      if inspectorMode != InspectorMode.Off || debugLayoutOn then run.host.enableFullBoundsRecording()
       // inside the generation, so a `Theme.auto` frame subscribes to the colour scheme and a mode 2031 report repaints
       val resolved = resolvedTheme(using scope)
       run.host.renderComposed(frame, resolved, effectiveView(resolved)(using scope), () => syncFocusLayers(run))(using
@@ -958,8 +967,10 @@ trait TuiApp:
       case None         => routeFresh(key, run, handle)
 
   /** A key arriving while a sequence is pending goes to the sequence first — the user has started typing a binding, so
-    * the focused element does not get to swallow the rest of it. A key that continues nothing drops the prefix; `Esc`
-    * is consumed as the cancel, anything else is routed afresh as if no prefix had been typed.
+    * the focused element does not get to swallow the rest of it. The app's bindings are tried first, then the framework
+    * keys bound to sequences. A key that continues nothing drops the prefix; `Esc` is consumed as the cancel, anything
+    * else is routed afresh as if no prefix had been typed — so a key typed into a focused text input while a prefix
+    * waits still reaches the input.
     */
   private def continueSequence(prefix: PendingPrefix, key: KeyEvent, run: RunState, handle: RunnerHandle): Boolean =
     activeBindingsNow.dispatch(prefix.keys, key) match
@@ -970,20 +981,21 @@ trait TuiApp:
         pendingKeys.start(keys)
         true
       case KeyMatch.NoMatch       =>
-        pendingKeys.clear()
-        key.code == KeyCode.Escape || routeFresh(key, run, handle)
+        val typed = prefix.keys :+ key
+        val keys  = frameworkKeys
+        if keys.continues(typed) then
+          pendingKeys.start(typed)
+          true
+        else
+          pendingKeys.clear()
+          frameworkAction(keys.completes(_, typed), run, handle)
+            .getOrElse(key.code == KeyCode.Escape || routeFresh(key, run, handle))
 
   private def routeFresh(key: KeyEvent, run: RunState, handle: RunnerHandle): Boolean =
     val keys     = frameworkKeys
     val consumed = FrameworkKeys.current.withValue(keys)(run.host.dispatchKey(key))
     val bound    = !consumed && !palette.isOpenNow && dispatchBinding(key)
-    if consumed || bound then true else copySelectionKey(key, run) || handleFrameworkKey(key, run.tracker, handle)
-
-  /** `Ctrl+Shift+C` (the rebindable `copy-selection` framework key) while a mouse selection shows: copies it again.
-    * Tried before the other framework keys, because `Ctrl+C` — quit — also matches a chord that adds Shift.
-    */
-  private def copySelectionKey(key: KeyEvent, run: RunState): Boolean =
-    run.host.selectedText.isDefined && frameworkKeys.fires(frameworkKeys.copySelection, key) && run.host.copySelection()
+    if consumed || bound then true else handleFrameworkKey(key, run, handle)
 
   /** A key no element consumed, offered to the bindings: it fires one, or starts a sequence and waits. */
   private def dispatchBinding(key: KeyEvent): Boolean =
@@ -996,7 +1008,8 @@ trait TuiApp:
 
   /** The last stage: the keys the framework reserves for itself once nothing else claimed the event — `Tab` /
     * `Shift+Tab` focus traversal, `Ctrl+P` for the command palette, `Ctrl+C` to quit, and `Esc` when the modal on top
-    * of the stack asked to be closed by it (see `Screen.dismissal`).
+    * of the stack asked to be closed by it (see `Screen.dismissal`). A key that starts a framework key bound to a
+    * sequence waits for the rest under the same pending prefix the app's bindings use.
     *
     * `Esc` is handled here, last, and not earlier, so that an element or a key binding that wants `Esc` for itself
     * still gets it: a text field leaving its editing mode consumes the key long before the event reaches this method.
@@ -1004,25 +1017,40 @@ trait TuiApp:
     * Answers `true` only when focus actually moved, because that is the one outcome here that changes the next frame
     * without going through a signal; opening the palette and quitting each schedule their own redraw.
     */
-  private def handleFrameworkKey(key: KeyEvent, tracker: FocusTracker, handle: RunnerHandle): Boolean =
+  private def handleFrameworkKey(key: KeyEvent, run: RunState, handle: RunnerHandle): Boolean =
     val keys = frameworkKeys
-    if keys.fires(keys.focusPrevious, key) then tracker.focusPrevious()
-    else if keys.fires(keys.focusNext, key) then tracker.focusNext()
-    else if keys.fires(keys.commandPalette, key) && activeBindingsNow.bindings.nonEmpty && !palette.isOpenNow then
+    frameworkAction(keys.fires(_, key), run, handle).getOrElse {
+      if keys.continues(Vector(key)) then
+        pendingKeys.start(Vector(key))
+        true
+      else if spatialNavigation && key.modifiers == KeyModifiers.Alt then
+        SpatialDirection.of(key.code).exists(run.tracker.focusInDirection)
+      else false
+    }
+
+  /** The framework action whose key `fired` says was typed — one key through `fires`, a whole sequence through
+    * `completes` — with whether the frame changed, or `None` when no framework key matched. `copy-selection` is tried
+    * first and only while a mouse selection shows, because `Ctrl+C` — quit — also matches a chord that adds Shift.
+    */
+  private def frameworkAction(fired: KeySequence => Boolean, run: RunState, handle: RunnerHandle): Option[Boolean] =
+    val keys    = frameworkKeys
+    val tracker = run.tracker
+    if run.host.selectedText.isDefined && fired(keys.copySelection) && run.host.copySelection() then Some(true)
+    else if fired(keys.focusPrevious) then Some(tracker.focusPrevious())
+    else if fired(keys.focusNext) then Some(tracker.focusNext())
+    else if fired(keys.commandPalette) && activeBindingsNow.bindings.nonEmpty && !palette.isOpenNow then
       openPalette()
-      false
-    else if keys.fires(keys.quit, key) then
+      Some(false)
+    else if fired(keys.quit) then
       handle.quit()
-      false
-    else if keys.fires(keys.closeModal, key) && topScreenClosesOnEscape then
+      Some(false)
+    else if fired(keys.closeModal) && topScreenClosesOnEscape then
       popScreen()
-      false
-    else if keys.fires(keys.inspector, key) then
+      Some(false)
+    else if inspector && fired(keys.inspector) then
       inspectorMode = inspectorMode.next
-      true
-    else if spatialNavigation && key.modifiers == KeyModifiers.Alt then
-      SpatialDirection.of(key.code).exists(tracker.focusInDirection)
-    else false
+      Some(true)
+    else None
 
   /** Whether the screen on top of the stack is a modal that asked to be closed by `Esc`.
     *
@@ -1075,9 +1103,9 @@ trait TuiApp:
       activeHandle.get().foreach(_.setTaskbarState(state))
       shownTaskbar = state
 
-  /** Upgrades a run with mouse capture to all-motion tracking the first frame that contains a hover cue or an explicit
-    * pointer shape, so `.hoverStyle` works without the app configuring anything. Once per run, and never for an app
-    * that left mouse capture off: turning the mouse on would take the terminal's own text selection away.
+  /** Upgrades a run with mouse capture to all-motion tracking the first frame that contains a hover or pressed cue or
+    * an explicit pointer shape, so `.hoverStyle` works without the app configuring anything. Once per run, and never
+    * for an app that left mouse capture off: turning the mouse on would take the terminal's own text selection away.
     */
   private def syncMouseMotion(run: RunState): Unit =
     if !motionRequested && run.host.wantsMouseMotion && run.config.mouse == MouseCaptureMode.Buttons then

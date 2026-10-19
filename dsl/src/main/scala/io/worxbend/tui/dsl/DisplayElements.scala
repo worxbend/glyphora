@@ -539,7 +539,8 @@ final case class LogConsoleElement(
     scroll: Option[LogConsoleState] = None,
 ) extends Element:
   type Self = LogConsoleElement
-  override def debugName: String = "logConsole"
+  override def debugName: String                         = "logConsole"
+  private[dsl] override def selectionIsFocusCue: Boolean = true
 
   /** The caller-owned scroll state this node paints, watched for writes made between frames. */
   override private[dsl] def watchedStates: Seq[Versioned] = scroll.toSeq
@@ -742,6 +743,7 @@ final case class DiffViewElement(
   /** The caller-owned state this node paints, watched for writes made between frames. */
   override private[dsl] def watchedStates: Seq[Versioned] = Seq(state)
   override def debugName: String                          = "diffView"
+  private[dsl] override def selectionIsFocusCue: Boolean  = true
 
   /** Side by side: the old file left of the divider, the new one right of it. */
   def split: DiffViewElement = copy(options = options.copy(layout = w.DiffLayout.Split))
@@ -823,6 +825,7 @@ final case class HexViewerElement(
   /** The caller-owned state this node paints, watched for writes made between frames. */
   override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
   override def debugName: String                                             = "hexViewer"
+  private[dsl] override def selectionIsFocusCue: Boolean                     = true
   private val viewer: w.HexViewer                                            = w.HexViewer(bytes)
   def widget: Widget                                                         =
     val current = viewer.copy(style = props.style, highlightStyle = props.focusStyle)

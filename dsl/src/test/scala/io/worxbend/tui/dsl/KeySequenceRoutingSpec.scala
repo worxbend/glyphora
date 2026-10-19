@@ -124,3 +124,31 @@ final class WhichKeyPopupSpec extends AnyFunSuite with PilotFixture:
     assert(pilot.screenText.contains("ctrl+k …   │  ctrl+s save all"))
     pilot.press("esc", "ctrl+q")
     assert(pilot.awaitTermination())
+
+/** A pending prefix and a focused text input: a key that continues no sequence is typed, not swallowed. */
+final class PendingPrefixTextInputSpec extends AnyFunSuite with PilotFixture:
+
+  private final class FormApp extends TuiApp:
+    val field: TextInputState = TextInputState()
+    var zens: Int             = 0
+
+    override def bindings: KeyBindings = KeyBindings(
+      binding("f2 z", "zen mode")(zens += 1),
+      binding("ctrl+q", "quit")(quit()),
+    )
+
+    def view(using ReactiveScope, Theme): Element = column(input(field).key("name").autofocus)
+
+  test("with a prefix pending, a key no sequence continues reaches the focused input"):
+    val backend = HeadlessBackend(Size(40, 6))
+    val app     = FormApp()
+    val pilot   = startPilot(backend)(app.runWith(backend))
+    pilot.waitForIdle()
+    pilot.press("f2").waitForIdle()
+    pilot.press("a").waitForIdle()
+    assert(app.field.value == "a")
+    pilot.press("f2", "z").waitForIdle()
+    assert(app.zens == 1)
+    assert(app.field.value == "a")
+    pilot.press("ctrl+q")
+    assert(pilot.awaitTermination())

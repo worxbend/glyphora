@@ -119,9 +119,11 @@ final class LazyListElementSpec extends AnyFunSuite:
     val view: View = scrollView(lazyList(10000, 1, state)(counting.item), scrolling)
     draw(host, buffer, view)
     scrolling.offset = 300
-    // the first frame after a jump the window has not caught up; the miss asks for the frame that fixes it
+    // the first frame after a jump the window has not caught up: the items it lacks are built while painting, so the
+    // frame shows them rather than blanks, and the miss still asks for the frame that builds them properly
     draw(host, buffer, view)
     assert(scrolling.offset == 300, "the scroll view measured the list as every item, or it would have clamped")
+    assert(trimmedLines(buffer).head.startsWith("item 300"), "no blank frame after the jump")
     assert(host.pollStates())
     val (_, built) = counting.frame(draw(host, buffer, view))
     assert(built <= 5 + 2)

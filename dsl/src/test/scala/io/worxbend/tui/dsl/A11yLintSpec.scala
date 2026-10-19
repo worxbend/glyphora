@@ -8,6 +8,16 @@ import io.worxbend.tui.widgets.TextInputState
 
 import org.scalatest.funsuite.AnyFunSuite
 
+/** A focusable leaf that paints the same focused or not and says its selection is its focus cue — the trait member the
+  * lint asks, rather than a list of node classes it knows.
+  */
+private final case class SelectionCuedLeaf(props: ElementProps = ElementProps(focusable = true)) extends Element:
+  type Self = SelectionCuedLeaf
+  override def debugName: String                = "selectionCuedLeaf"
+  private[dsl] override def selectionIsFocusCue = true
+  def widget: io.worxbend.tui.core.Widget       = (area, buffer) => buffer.setString(area.x, area.y, "row", Style())
+  private[dsl] def withProps(props: ElementProps): SelectionCuedLeaf = copy(props = props)
+
 /** `pilot.a11yReport(app)`: the accessibility lint over a running `TuiApp`'s last frame. Each rule is planted once. */
 final class A11yLintSpec extends AnyFunSuite with PilotFixture:
 
@@ -50,6 +60,11 @@ final class A11yLintSpec extends AnyFunSuite with PilotFixture:
     val app   = App(column(text("plain").focusable.key("plain"), button("Save")(())))
     val pilot = started(app)
     assert(rules(pilot, app) == Seq(A11yRule.NoFocusCue), pilot.a11yReport(app))
+
+  test("a node whose selection is its focus cue is exempt, by the trait member and not by its class"):
+    val app   = App(column(SelectionCuedLeaf().key("rows"), button("Save")(())))
+    val pilot = started(app)
+    assert(pilot.a11yReport(app).isEmpty, pilot.a11yReport(app))
 
   test("a focused input whose frame parked no caret is flagged"):
     val state    = TextInputState()

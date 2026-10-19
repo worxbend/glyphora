@@ -296,6 +296,7 @@ final case class DataTableElement[K](
   /** The caller-owned state this node paints, watched for writes made between frames. */
   override private[dsl] def watchedStates: Seq[Versioned]              = Seq(state)
   override def debugName: String                                       = "dataTable"
+  private[dsl] override def selectionIsFocusCue: Boolean               = true
   def widget: Widget                                                   =
     (area, buffer) => table.render(area, buffer, state)
   private[dsl] def withProps(props: ElementProps): DataTableElement[K] = copy(props = props)
@@ -351,6 +352,7 @@ final case class LogElement(
   /** The caller-owned states this node paints, watched for writes made between frames. */
   override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state) ++ search
   override def debugName: String                                             = "log"
+  private[dsl] override def selectionIsFocusCue: Boolean                     = true
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some(wheelScrolls(() => state.scrollUp(), () => state.scrollDown()))
   def widget: Widget                                                         =
@@ -380,8 +382,8 @@ private[dsl] final case class LazyWindow(from: Int, items: Vector[Element]):
   * frame's viewport, re-anchored on the current offset and selection; the frame's height before the first render) and
   * calls `build` for exactly those indices. What it builds is then an ordinary part of the tree: focusables in it take
   * Tab stops, keys bubble out of it, the bounds recorder sees it, a focused text field in it drives the caret. An item
-  * that falls outside the window between frames — the enclosing scroll view jumped a page — is left blank for one frame
-  * and the miss asks the host for the frame that fills it.
+  * that falls outside the window between frames — the enclosing scroll view jumped a page — is built while painting, so
+  * the frame shows it (inert, for that one frame), and the miss asks the host for the frame that builds it properly.
   *
   * While focused, Up/Down move the selection, Home/End jump to the ends and PageUp/PageDown move a page; the wheel
   * moves the selection on hover, and a press selects the item under the pointer. The selected item is drawn in the same
@@ -428,11 +430,21 @@ final case class LazyListElement(
     w.LazyListView(count, itemHeight, item, highlightStyle = selectedRowStyle(props))
 
   def widget: Widget =
-    val items: Int => Option[Widget] = window match
-      case Some(built) => index => built.item(index).map(_.widget)
+    // an item outside the built window — the enclosing scroll view jumped since the window was chosen — is built while
+    // painting, as with no host behind the node, so the frame shows it instead of a blank; it is undecorated (inert)
+    // for that one frame, and the miss is still noted so the host draws the frame that builds it properly
+    var builtLate                        = false
+    def late(index: Int): Option[Widget] =
+      builtLate = true
+      build(index until index + 1).headOption.map(_.widget)
+    val items: Int => Option[Widget]     = window match
+      case Some(built) => index => built.item(index).map(_.widget).orElse(late(index))
       case None        => index => build(index until index + 1).headOption.map(_.widget)
-    val list                         = view(items)
-    (area, buffer) => list.render(area, buffer, state)
+    val list                             = view(items)
+    (area, buffer) =>
+      builtLate = false
+      list.render(area, buffer, state)
+      if builtLate && window.isDefined then state.noteMissed()
 
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler] =
     Some(
@@ -475,6 +487,7 @@ final case class TreeTableElement[K](
   /** The caller-owned state this node paints, watched for writes made between frames. */
   override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
   override def debugName: String                                             = "treeTable"
+  private[dsl] override def selectionIsFocusCue: Boolean                     = true
   private def nodes                                                          = table.nodes
   def widget: Widget                                                         =
     val current = table.copy(style = props.style, highlightStyle = props.focusStyle)

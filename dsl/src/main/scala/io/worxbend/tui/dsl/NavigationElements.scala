@@ -131,6 +131,7 @@ final case class ScrollViewElement(
   /** The caller-owned states this node paints, watched for writes made between frames. */
   override private[dsl] def watchedStates: Seq[Versioned] = Seq(state) ++ search
   override def debugName: String                          = "scrollView"
+  private[dsl] override def selectionIsFocusCue: Boolean  = true
   override def children: Seq[Element]                     = Seq(content)
   def widget: Widget                                      =
     (area, buffer) =>
@@ -338,6 +339,7 @@ final case class SplitPaneElement(
 ) extends Element:
   type Self = SplitPaneElement
   override def debugName: String                                             = "splitPane"
+  private[dsl] override def selectionIsFocusCue: Boolean                     = true
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some { (event, area) =>
       if event.kind == MouseEventKind.Drag then
