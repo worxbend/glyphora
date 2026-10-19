@@ -69,11 +69,13 @@ final class SignalMotionSpec extends AnyFunSuite with PilotFixture:
     val app     = new TuiApp:
       override def bindings: KeyBindings            =
         KeyBindings(binding("a", "animate") { val _ = value.animateTo(1.0, 200.millis, Easing.Linear) })
-      def view(using ReactiveScope, Theme): Element = text(f"${value.get}%.2f")
+      // the unrounded value, not `%.2f`: a late tick under load can sample 0.995 <= v < 1.0, which `%.2f` already shows
+      // as "1.00" while the motion still owes its final tick — and that tick's frame then lands in the window below
+      def view(using ReactiveScope, Theme): Element = text(value.get.toString)
     val pilot   = startPilot(backend)(app.runWith(backend))
     pilot.waitForIdle()
     pilot.press("a")
-    pilot.waitUntil("the motion to reach its target", 3.seconds)(pilot.screenLines.head.trim == "1.00")
+    pilot.waitUntil("the motion to reach its target")(pilot.screenLines.head.trim == "1.0")
     pilot.waitForIdle()
     // the ticker that carried it must not keep asking for frames once nothing is moving
     val settled = backend.drawCount
