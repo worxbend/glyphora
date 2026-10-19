@@ -88,6 +88,11 @@ final case class FocusState private[dsl] (
   * `variant` is the [[ComponentRole]] `.variant(role)` picked — `ButtonRole.Primary` — which the focus pass looks up in
   * the app's theme instead of the node type's own default role. `lateBinding` is how a themed factory that saw only the
   * ambient default theme lets the focus pass re-resolve the node against the app's theme — see [[LateBinding]].
+  *
+  * `selectable` is what `.selectable(enabled)` set: `Some(false)` opts this node and its subtree out of mouse text
+  * selection, `Some(true)` opts a node in that is not selectable by default, `None` keeps the node type's default — see
+  * [[TextSelection]]. `dragPayload` and `dropTarget` are what `.draggable(payload)` and
+  * `.dropTarget[A](accept)(onDrop)` install — see [[DragKey]].
   */
 final case class ElementProps(
     style: Style = Style.Default,
@@ -113,6 +118,9 @@ final case class ElementProps(
     gridSpot: GridSpot = GridSpot.Flowed,
     variant: Option[ComponentRole] = None,
     lateBinding: Option[LateBinding] = None,
+    selectable: Option[Boolean] = None,
+    dragPayload: Option[DragPayload] = None,
+    dropTarget: Option[DropTarget] = None,
 ):
 
   /** Whether this element is the one the focus pass marked — where keystrokes go this frame. */

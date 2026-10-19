@@ -115,6 +115,40 @@ binding("ctrl+s", "save") {
 `runEffect(key, fx)` is on `TuiApp` and on `AppServices`. Unkeyed effects and effects
 under other keys keep running.
 
+### Scope an effect to one element
+
+A frame effect covers the whole frame. To flash one panel, dissolve one toast or sweep in
+one dialog, confine it to an element instead. Give the element a `.key(...)` and name it
+as the effect's `scope`:
+
+```scala
+binding("ctrl+s", "save") {
+  save()
+  runEffect("flash", Effect.paint(Color.Yellow, 200.millis), scope = "editor")
+}
+
+def view(using ReactiveScope, Theme): Element =
+  column(toolbar, textArea(state).key("editor").fill)
+```
+
+The effect covers only the rect the `editor` node was painted into, looked up on every
+frame from the recorded node bounds — it follows the node when the layout moves, and a
+frame on which the node is not on screen paints nothing of it. `runEffect(key, fx, scope)`
+is on `TuiApp` and `AppServices`; starting one switches bounds recording on.
+
+`element.withEffect(fx)` does the same from inside the view, without a key. It is
+timed from the first frame that reaches the call — a hook, so it follows the
+[hook ordering rule](./component-state) — and paints the effect over exactly the
+element's own cells, straight after the element paints:
+
+```scala
+toastCard(message).withEffect(Effect.fadeIn(250.millis))
+```
+
+`withEffect(fx, elapsed)` takes the elapsed time explicitly, which is what makes a frame
+of it reproducible in a test: `text("saved").withEffect(flash, 500.millis)` is that
+text halfway through a one-second flash, with every sibling exactly as painted.
+
 ## Pick an effect
 
 | Effect | Visual behavior | Good for |
