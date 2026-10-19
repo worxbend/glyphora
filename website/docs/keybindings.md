@@ -156,6 +156,7 @@ The keys the framework handles once nothing else claimed them are ids as well:
 | `menu-bar` | `f10` | open the first menu of a `menuBar` |
 | `window-move` | `alt+m` | arrange mode: the arrows move the focused `window` |
 | `window-resize` | `alt+r` | arrange mode: the arrows resize the focused `window` |
+| `copy-selection` | `ctrl+shift+c` | copy the mouse text selection again (only while one shows) |
 
 Override `frameworkKeys` to move them, and set `pageStep` — how many rows
 PageUp/PageDown move every list, table and scroll view, 10 by default — on the same
