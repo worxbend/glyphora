@@ -91,7 +91,8 @@ final case class FocusState private[dsl] (
   *
   * `selectable` is what `.selectable(enabled)` set: `Some(false)` opts this node and its subtree out of mouse text
   * selection, `Some(true)` opts a node in that is not selectable by default, `None` keeps the node type's default — see
-  * [[TextSelection]].
+  * [[TextSelection]]. `dragPayload` and `dropTarget` are what `.draggable(payload)` and
+  * `.dropTarget[A](accept)(onDrop)` install — see [[DragKey]].
   */
 final case class ElementProps(
     style: Style = Style.Default,
@@ -118,6 +119,8 @@ final case class ElementProps(
     variant: Option[ComponentRole] = None,
     lateBinding: Option[LateBinding] = None,
     selectable: Option[Boolean] = None,
+    dragPayload: Option[DragPayload] = None,
+    dropTarget: Option[DropTarget] = None,
 ):
 
   /** Whether this element is the one the focus pass marked — where keystrokes go this frame. */

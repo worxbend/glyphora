@@ -554,13 +554,8 @@ private[dsl] object FocusPass:
       val inert        = ancestorInert || element.props.inert
       // `.selectable(false)` opts the whole subtree out of text selection
       val unselectable = ancestorUnselectable || element.props.selectable.contains(false)
-      def rolesOf(node: Element, g: PointerGestures): PointerRoles =
-        PointerRoles(selectable =
-          g.selection.enabled && !unselectable &&
-            (node.props.selectable.contains(true) || TextSelection.selectableByDefault(node))
-        )
-      val disabled                                                 = ancestorDisabled || element.props.disabled
-      val nodeId                                                   = nodeCounter
+      val disabled     = ancestorDisabled || element.props.disabled
+      val nodeId       = nodeCounter
       nodeCounter += 1
       if bounds.isEmpty then
         element match
@@ -568,13 +563,13 @@ private[dsl] object FocusPass:
           case _                     => ()
       // a hover cue, or a pointer shape asked for by name, only shows under all-motion tracking; a theme component
       // with a hovered or pressed style asks for the same as an explicit `.hoverStyle`/`.pressedStyle` does
-      val states                                                   = componentOf(element, theme)
-      val hoverCue = element.props.hoverStyle.isDefined || states.hovered != Style.Default
-      val pressCue = element.props.pressedStyle.isDefined || states.pressed != Style.Default
+      val states       = componentOf(element, theme)
+      val hoverCue     = element.props.hoverStyle.isDefined || states.hovered != Style.Default
+      val pressCue     = element.props.pressedStyle.isDefined || states.pressed != Style.Default
       if hoverCue || element.props.pointerShape.isDefined then onMotionDemand()
       // a hover or pressed cue is what makes a change of hovered/pressed target change the next frame
       if hoverCue || pressCue then onCueDemand()
-      val current  =
+      val current      =
         if inert then themed(element, focused = false, disabled, None, states, inherited)
         else if element.props.focusable && !disabled then
           val index  = counter
@@ -601,9 +596,9 @@ private[dsl] object FocusPass:
           )
         else themed(element, focused = false, disabled, None, states, inherited)
       // Inert trees still paint, including deferred portals: keep theme and coordinate wrappers, but no input records.
-      val outer    = trail
-      var position = 0
-      val children =
+      val outer        = trail
+      var position     = 0
+      val children     =
         viewportWrapped(
           element,
           current.children.map { child =>
@@ -616,11 +611,19 @@ private[dsl] object FocusPass:
           },
         )
       trail = outer
-      val roles    = gestures.fold(PointerRoles.Empty)(g => if inert then PointerRoles.Empty else rolesOf(element, g))
-      val recorded = bounds.orElse(gestures.filter(_ => !roles.isEmpty).map(_.recorder)) match
+      def rolesOf(node: Element, g: PointerGestures, disabled: Boolean): PointerRoles =
+        PointerRoles(
+          selectable = g.selection.enabled && !unselectable &&
+            (node.props.selectable.contains(true) || TextSelection.selectableByDefault(node)),
+          drag = if disabled then None else node.props.dragPayload,
+          drop = if disabled then None else node.props.dropTarget,
+        )
+      val roles        =
+        gestures.fold(PointerRoles.Empty)(g => if inert then PointerRoles.Empty else rolesOf(element, g, disabled))
+      val recorded     = bounds.orElse(gestures.filter(_ => !roles.isEmpty).map(_.recorder)) match
         case Some(recorder) => boundsWrapped(current, nodeId, nodeCounter - 1, recorder, roles, gestures)
         case None           => current
-      val revealed =
+      val revealed     =
         if element.props.ensureVisible && !inert then
           revealWrapped(recorded, element.props.focusKey.getOrElse(nodeId.toString))
         else recorded
