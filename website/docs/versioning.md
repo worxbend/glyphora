@@ -808,6 +808,66 @@ Three changes reach almost every app, so check them first:
   ScrollView(content, rows, showScrollbar = true, matchStyle = matchStyle)
   ```
 
+### Text, search, diffs and tables
+
+- **`AnsiParser` and `Text.fromAnsi` move within the line as a terminal does.** A tab used to be
+  dropped; it now advances to the next eight-column stop. A bare `\r` used to be dropped, so a
+  progress bar redrawn with `\r` read as every state glued together; it now returns to the first
+  column and the text after it overwrites the line (`"100%\r5%"` reads `5%0%`, and erase-in-line,
+  `ESC [ K`, is applied). CRLF output still splits into clean rows. To keep the old reading, strip
+  the controls before parsing:
+
+  ```scala
+  // before (0.20 pre-release): tabs and \r vanished
+  Text.fromAnsi(output)
+  // after, for the same result
+  Text.fromAnsi(output.replace("\t", "").replace("\r", ""))
+  ```
+
+- **`log` honours `Line.alignment`.** A centred or right-aligned `Line` appended to a `LogState`
+  used to be drawn at the left edge; it is now drawn where it asks to be, and a search highlight
+  lands on it there. Append `line.leftAligned` (or a line with no alignment) to keep it left.
+- **`diffView` highlights by file extension and takes more keys.** With no `.lexer(…)`, a file
+  whose path ends `.scala`, `.ts`, `.py`, `.yaml`, `.sql`, `.json`, `.md`, `.sh`, … is now
+  highlighted by that built-in lexer; `DiffViewOptions(lexerFromPath = false)` restores plain
+  lines. A focused `diffView` now consumes Enter (expand the folded run on screen), a click
+  (expand the run under it) and Left/Right (scroll the text sideways), which used to bubble.
+  `DiffViewOptions` gained `lexerFromPath` right after `lexer` and `approximateNotice` at the
+  end, so a positional construction past `lexer` must name its arguments. `Patch` gained a
+  trailing `approximate` field (a pattern `case Patch(files) =>` needs `case Patch(files, _)`),
+  and `Patch.of` stops searching for a shortest diff past `maxEditDistance` (2 000 by default):
+  past it the middle of the texts is one replacement and the patch is `approximate`. Pass a
+  larger `maxEditDistance` for an exact diff of a larger change, at the memory cost the
+  Scaladoc gives.
+
+  ```scala
+  // before
+  DiffViewOptions(DiffLayout.Split, true, Some(3), true, Some(Lexer.Scala), myStyle)
+  // after
+  DiffViewOptions(DiffLayout.Split, true, Some(3), true, Some(Lexer.Scala), style = myStyle)
+  ```
+
+- **Lexers carry state between lines.** `Lexer` gained a three-argument `highlightLine(line,
+  theme, state)` with a default, so a lexer of your own compiles unchanged. The built-in ones now
+  follow a block comment, a triple-quoted string or a template literal across lines in
+  `highlight`, a Markdown fence and a `textArea`, and the YAML lexer reads every line of a block
+  scalar (`key: |`) as one string — a `#` in it is no longer a comment. Goldens of such code
+  need re-recording.
+- **Constructors that grew.** `DataTableOptions` gained `multiLine` after `alignments` (name the
+  later fields in a positional call); `TreeNode` gained `id: Option[String] = None` (a pattern
+  `case TreeNode(label, children) =>` needs a third `_`); `TextAreaElement` gained a trailing
+  `search` and `PromptComposerElement` a trailing `promptGlyph`. Factory calls are unchanged.
+- **`promptComposer` grows with wrapped rows.** It used to be as tall as its logical lines, so a
+  long line scrolled inside one row; it now measures its draft soft-wrapped at its width, up to
+  `maxRows`. A layout that relied on the one-row composer gets a taller one while a long line
+  is typed; pass `PromptComposerState(maxRows = 1)` to keep it one row.
+- **Wrapped Markdown list items hang under their text**, and `hexViewer` pads the ASCII column of
+  a short last row. Both change frames only; goldens of them need re-recording.
+- **`Effect.patterned` caches step evaluations**, which assumes what the `Effect` contract already
+  says — an effect is a pure function of the `elapsed` it is handed. An inner effect that reads
+  mutable state of its own may show a cached frame while the content underneath is unchanged;
+  and a running `patterned` value is render-thread-only, so build one per place it plays.
+
 ### New names under the one import
 
 `import io.worxbend.tui.dsl.*` reaches many new names. An application that defines a top-level
@@ -816,7 +876,7 @@ rename its own, qualify one, or exclude the DSL's (`import io.worxbend.tui.dsl.{
 The likeliest clashes are `Console` (see [Print mode](#print-mode)), `Pattern` (with a wildcard
 `java.util.regex.*` import — import the regex class by name instead, which takes precedence),
 `Patch`, `Hunk`, `DiffLine`, `Prompt`, `ProgressTask`, `Store`, `Codec`, `Persisted`, `memo`,
-`markup`, `AnsiParser`, `inspect` and `placeholder`.
+`markup`, `AnsiParser`, `inspect`, `placeholder`, `ColorTarget` and `LexState`.
 
 ### Built-in labels come from `Messages`
 
