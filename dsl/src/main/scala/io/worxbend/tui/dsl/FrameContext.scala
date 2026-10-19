@@ -14,7 +14,10 @@ import scala.collection.mutable
   *   - `reveals` — [[RevealProbe]], the visibility collectors of the scroll views painting, innermost first;
   *   - `localSizes` — [[LocalProbe]], the sizes a container-query dry paint records;
   *   - `viewState` — the [[ViewState]] store hooks attach to while a view is evaluated;
-  *   - `clipboard` — [[AppClipboard]], the running app's clipboard while it dispatches an event.
+  *   - `clipboard` — [[AppClipboard]], the running app's clipboard while it dispatches an event;
+  *   - `pictures` — [[PictureEncodings]], the host's off-thread picture encodings while it paints;
+  *   - `textEntryFocused` — whether the focused node [[Element.editsText]], set by [[EventRouter.dispatchCapture]] for
+  *     the capture phase of one key, so a capture handler can yield a text field's own chords.
   *
   * They used to be seven `ThreadLocal`s, one per channel; they are fields of one record so that "what does a node see
   * while it paints" has one answer and one place to look. Empty — `Nil`, `None` — means "no host armed this here",
@@ -34,6 +37,8 @@ private[dsl] final class FrameContext:
   var localSizes: Option[mutable.HashMap[Int, Size]] = None
   var viewState: Option[ViewState]                   = None
   var clipboard: Option[Clipboard]                   = None
+  var textEntryFocused: Boolean                      = false
+  var pictures: Option[PictureEncodings]             = None
   lazy val threadClipboard: Clipboard                = Clipboard.inMemory()
 
 private[dsl] object FrameContext:

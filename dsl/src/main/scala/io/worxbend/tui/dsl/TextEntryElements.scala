@@ -45,6 +45,11 @@ extension [E <: Element](element: E)
   *
   * Answers whether the event was one of them.
   */
+/** The letters whose `Alt+<letter>` chord [[editingChords]] gives a text field: word left and right, delete the word
+  * after the caret, cycle the kill ring. A focused field keeps these ahead of a `menuBar` mnemonic.
+  */
+private[dsl] val TextEntryAltChords: Set[Char] = Set('b', 'd', 'f', 'y')
+
 private def editingChords(state: w.EditBuffer)(event: KeyEvent): Boolean =
   val mods                        = event.modifiers
   val select                      = mods.hasAny(KeyModifiers.Shift)
@@ -100,6 +105,7 @@ final case class InputElement(
   /** The caller-owned state this node paints, watched for writes made between frames. */
   override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
   override def debugName: String                                             = "input"
+  private[dsl] override def editsText: Boolean                               = true
   private[dsl] override def componentRole: Option[ComponentRole]             = Some(InputRole)
   override def pointerShape: Option[PointerShape]                            = textPointer(props)
   def widget: Widget                                                         =
@@ -142,6 +148,7 @@ final case class SearchBarElement(
   /** The caller-owned state this node paints, watched for writes made between frames. */
   override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
   override def debugName: String                                             = "searchBar"
+  private[dsl] override def editsText: Boolean                               = true
   private[dsl] override def componentRole: Option[ComponentRole]             = Some(InputRole)
   override def pointerShape: Option[PointerShape]                            = textPointer(props)
   def widget: Widget                                                         =
@@ -193,7 +200,7 @@ final case class AutocompleteElement(
   type Self = AutocompleteElement
 
   /** The caller-owned state this node paints, watched for writes made between frames. */
-  override private[dsl] def watchedStates: Seq[Versioned]        = Seq(state.input)
+  override private[dsl] def watchedStates: Seq[Versioned]        = Seq(state)
   override def debugName: String                                 = "autocomplete"
   private[dsl] override def componentRole: Option[ComponentRole] = Some(InputRole)
 
@@ -419,6 +426,7 @@ final case class TextAreaElement(
   /** The caller-owned state this node paints, watched for writes made between frames. */
   override private[dsl] def watchedStates: Seq[Versioned]        = Seq(state) ++ search.toSeq
   override def debugName: String                                 = "textArea"
+  private[dsl] override def editsText: Boolean                   = true
   private[dsl] override def componentRole: Option[ComponentRole] = Some(InputRole)
   override def pointerShape: Option[PointerShape]                = textPointer(props)
 
@@ -566,6 +574,7 @@ final case class TagInputElement(
   type Self = TagInputElement
   override private[dsl] def watchedStates: Seq[Versioned]            = Seq(state)
   override def debugName: String                                     = "tagInput"
+  private[dsl] override def editsText: Boolean                       = true
   private[dsl] override def componentRole: Option[ComponentRole]     = Some(InputRole)
   override def pointerShape: Option[PointerShape]                    = textPointer(props)
   private def field: w.TagInput                                      =

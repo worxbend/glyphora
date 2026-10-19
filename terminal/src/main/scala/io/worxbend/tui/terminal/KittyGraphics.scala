@@ -1,6 +1,6 @@
 package io.worxbend.tui.terminal
 
-import io.worxbend.tui.core.RgbaImage
+import io.worxbend.tui.core.{Rect, RgbaImage}
 
 import java.util.Base64
 
@@ -45,9 +45,23 @@ object KittyGraphics:
   def display(image: RgbaImage, id: Int, columns: Int, rows: Int): String =
     display(payload(image), image.width, image.height, id, columns, rows)
 
-  /** [[display]] with the base64 payload already computed by [[payload]]. */
-  def display(encoded: String, width: Int, height: Int, id: Int, columns: Int, rows: Int): String =
-    val keys = s"a=T,f=32,s=$width,v=$height,i=$id,c=$columns,r=$rows,C=1,q=2"
+  /** [[display]] with the base64 payload already computed by [[payload]].
+    *
+    * `source`, when given, is the rectangle of the image in pixels to show — the documented `x`, `y`, `w`, `h` keys —
+    * which is how a picture cut by a scroll view's edge is drawn: the whole image is sent, and only the visible slice
+    * of it is scaled into the `columns` x `rows` cells that are still on screen.
+    */
+  def display(
+      encoded: String,
+      width: Int,
+      height: Int,
+      id: Int,
+      columns: Int,
+      rows: Int,
+      source: Option[Rect] = None,
+  ): String =
+    val crop = source.fold("")(r => s"x=${r.x},y=${r.y},w=${r.width},h=${r.height},")
+    val keys = s"a=T,f=32,s=$width,v=$height,${crop}i=$id,c=$columns,r=$rows,C=1,q=2"
     if encoded.length <= ChunkSize then s"${Esc}_G$keys;$encoded$Esc\\"
     else
       val chunks = encoded.grouped(ChunkSize).toVector

@@ -198,6 +198,8 @@ export io.worxbend.tui.core.{
   Widget,
   RgbaImage,
   GraphicPlacement,
+  GraphicCrop,
+  GraphicPayload,
 }
 
 /** The modifier bitset carried by [[KeyEvent]] and [[MouseEvent]].

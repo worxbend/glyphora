@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, Cell, Color, Measured, Rect, RgbaImage, Style, Widget}
+import io.worxbend.tui.core.{Buffer, Cell, Color, GraphicPayload, Measured, Rect, RgbaImage, Style, Widget}
 
 /** How a [[PixelImage]] fits its picture into the area it is given. */
 enum ImageFit:
@@ -48,11 +48,23 @@ final case class PixelImage(image: RgbaImage, options: PixelImageOptions = Pixel
     extends Widget
     with Measured:
 
-  def render(area: Rect, buffer: Buffer): Unit =
+  def render(area: Rect, buffer: Buffer): Unit = render(area, buffer, None)
+
+  /** [[render]] with the picture already encoded for the terminal's image protocol, handed on to the backend with the
+    * placement so the frame does no encoding — see [[io.worxbend.tui.core.GraphicPayload]].
+    */
+  def render(area: Rect, buffer: Buffer, payload: Option[GraphicPayload]): Unit =
     val box = boxIn(area)
     if !box.isEmpty then
       drawFallback(box, buffer)
-      buffer.placeGraphic(box, image)
+      buffer.placeGraphic(box, image, payload)
+
+  /** The half-block rendering alone, with no picture placed — what a caller shows while the picture is still being
+    * encoded elsewhere.
+    */
+  def renderFallback(area: Rect, buffer: Buffer): Unit =
+    val box = boxIn(area)
+    if !box.isEmpty then drawFallback(box, buffer)
 
   override def heightAt(width: Int): Option[Int] =
     if options.fit == ImageFit.Stretch || width <= 0 then None else Some(rowsFor(width))
