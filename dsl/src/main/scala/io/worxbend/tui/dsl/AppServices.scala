@@ -151,14 +151,14 @@ object AppServices:
   */
 private[dsl] object AppClipboard:
 
-  private val local: ThreadLocal[Clipboard]             = ThreadLocal.withInitial(() => Clipboard.inMemory())
-  private val installed: ThreadLocal[Option[Clipboard]] = ThreadLocal.withInitial(() => Option.empty[Clipboard])
-
-  def current: Clipboard = installed.get().getOrElse(local.get())
+  def current: Clipboard =
+    val context = FrameContext.current
+    context.clipboard.getOrElse(context.threadClipboard)
 
   /** Runs `body` with `clipboard` as [[current]], restoring the previous one afterwards. */
   def during[A](clipboard: Clipboard)(body: => A): A =
-    val previous = installed.get()
-    installed.set(Some(clipboard))
+    val context  = FrameContext.current
+    val previous = context.clipboard
+    context.clipboard = Some(clipboard)
     try body
-    finally installed.set(previous)
+    finally context.clipboard = previous

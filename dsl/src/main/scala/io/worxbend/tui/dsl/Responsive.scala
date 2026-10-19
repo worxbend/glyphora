@@ -241,21 +241,21 @@ private[dsl] object ResponsivePass:
   */
 private[dsl] object LocalProbe:
 
-  private val current: ThreadLocal[Option[scala.collection.mutable.HashMap[Int, Size]]] =
-    ThreadLocal.withInitial(() => Option.empty[scala.collection.mutable.HashMap[Int, Size]])
-
   /** Whether a dry paint is in progress on this thread — a paint whose output is thrown away. */
-  def measuring: Boolean = current.get().isDefined
+  def measuring: Boolean = FrameContext.current.localSizes.isDefined
 
   /** Records that the local node holding `token` was handed an area of `size`; the first report wins. */
   def record(token: Int, size: Size): Unit =
-    current.get().foreach(areas => if token >= 0 && !areas.contains(token) then areas.update(token, size))
+    FrameContext.current.localSizes.foreach(areas =>
+      if token >= 0 && !areas.contains(token) then areas.update(token, size)
+    )
 
   /** Runs `paint` as a dry paint and returns the sizes the local nodes in it reported. */
   def measure(paint: => Unit): Map[Int, Size] =
-    val previous = current.get()
+    val context  = FrameContext.current
+    val previous = context.localSizes
     val areas    = scala.collection.mutable.HashMap.empty[Int, Size]
-    current.set(Some(areas))
+    context.localSizes = Some(areas)
     try paint
-    finally current.set(previous)
+    finally context.localSizes = previous
     areas.toMap

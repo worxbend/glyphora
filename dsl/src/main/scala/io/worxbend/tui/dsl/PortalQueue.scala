@@ -18,11 +18,12 @@ import scala.collection.mutable
 private[dsl] object PortalQueue:
 
   /** The portals collected so far in the current pass, in the order they were rendered. */
-  private final class Pending:
+  private[dsl] final class Pending:
     val entries: mutable.ArrayBuffer[(Rect, Element)] = mutable.ArrayBuffer.empty
 
   /** Unarmed until a frame root arms this thread, and again once it disarms. */
-  private val current: FrameSlot[Pending] = FrameSlot(() => new Pending)
+  private val current: FrameSlot[Pending] =
+    FrameSlot(() => new Pending, _.portals, (context, pending) => context.portals = pending)
 
   /** Arms collection for one render pass on this thread, discarding anything an earlier pass left behind. */
   def begin(): Unit = current.arm()

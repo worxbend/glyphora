@@ -14,38 +14,38 @@ private[dsl] final case class ViewportTransform(dx: Int, dy: Int, viewport: Rect
   * retains a transform, and independently running render threads never share one.
   */
 private[dsl] object FrameCoordinates:
-  private val current: ThreadLocal[List[ViewportTransform]] = ThreadLocal.withInitial(() => Nil)
+  /** This thread's stack, kept in its [[FrameContext]]. */
+  private def stack: List[ViewportTransform] = FrameContext.current.transforms
+
+  private def stack_=(transforms: List[ViewportTransform]): Unit = FrameContext.current.transforms = transforms
 
   def root[A](boundary: Rect)(body: => A): A =
-    val previous = current.get()
-    current.set(List(ViewportTransform(0, 0, boundary)))
+    val previous = stack
+    stack = List(ViewportTransform(0, 0, boundary))
     try body
-    finally current.set(previous)
+    finally stack = previous
 
-  def push(transform: ViewportTransform): Unit = current.set(transform :: current.get())
+  def push(transform: ViewportTransform): Unit = stack = transform :: stack
 
-  def pop(): Unit =
-    val rest = current.get().drop(1)
-    if rest.isEmpty then clear() else current.set(rest)
+  def pop(): Unit = stack = stack.drop(1)
 
-  def clear(): Unit = current.remove()
+  def clear(): Unit = stack = Nil
 
   def during[A](transform: ViewportTransform)(body: => A): A =
-    val previous = current.get()
+    val previous = stack
     push(transform)
     try body
-    finally
-      if previous.isEmpty then clear() else current.set(previous)
+    finally stack = previous
 
   /** The host's own boundary — the screen rectangle the frame root established — while a render is executing on this
     * thread, and `None` outside one. What a node that floats content through a portal asks to learn how much room the
     * frame has left below or above it; the viewports between it and the root are deliberately not consulted, because a
     * portal escapes exactly those.
     */
-  def frameBoundary: Option[Rect] = current.get().lastOption.map(_.viewport)
+  def frameBoundary: Option[Rect] = stack.lastOption.map(_.viewport)
 
   /** Screen placement, deliberately not clipped to the windows the content escapes. */
-  def translate(area: Rect): Rect = current.get().foldLeft(area)((rect, transform) => transform.translate(rect))
+  def translate(area: Rect): Rect = stack.foldLeft(area)((rect, transform) => transform.translate(rect))
 
   /** Ordinary painting/input geometry, clipped in each intermediate parent space before translating onward. */
-  def visible(area: Rect): Rect = current.get().foldLeft(area)((rect, transform) => transform.visible(rect))
+  def visible(area: Rect): Rect = stack.foldLeft(area)((rect, transform) => transform.visible(rect))
