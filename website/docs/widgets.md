@@ -230,7 +230,7 @@ Scrollbar(200, 40, ScrollbarOptions(orientation = Direction.Horizontal))
 Scrollbar(200, 40, ScrollbarOptions(side = ScrollbarSide.Near))
 
 // the same bar as a DSL element
-scrollbar(200).at(40).horizontal
+scrollbar(200).thumbAt(40).horizontal
 ```
 
 Everything past `position` — orientation, side, symbols, styles, the viewport length —
@@ -243,7 +243,7 @@ edge and the top edge. The thumb sits in the same place along the strip either w
 the lane it is drawn in moves.
 
 The element claims one cell across the short axis, so give it a slice next to the content
-rather than laying it over the content. `.at(offset)` moves the thumb, `.thumbStyle(...)`
+rather than laying it over the content. `.thumbAt(offset)` moves the thumb, `.thumbStyle(...)`
 recolours the moving part on its own, and `.symbols(track, thumb)` replaces the two glyphs
 (both must be one column wide).
 
@@ -2311,7 +2311,7 @@ column wide for every level so a stacked column of notices stays aligned, and it
 (`OK`, `INFO`, `WARN`, `FAIL`) is the short form for a badge.
 
 ```scala
-notice("8 services updated", NoticeLevel.Success).at(LocalTime.now())
+notice("8 services updated", NoticeLevel.Success).stamped(LocalTime.now())
 notice("could not reach the registry", NoticeLevel.Error).wrapped
 ```
 

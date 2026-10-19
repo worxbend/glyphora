@@ -180,8 +180,10 @@ final case class NoticeElement(
 
   /** Stamps the notice with the moment the event happened. Pass the time explicitly — a widget that read the clock
     * itself would render a different frame on every repaint.
+    *
+    * Named `stamped` rather than `at`: a member `at` would shadow the `.at(row, col)` grid placement every element has.
     */
-  def at(time: LocalTime): NoticeElement = copy(timestamp = Some(time))
+  def stamped(time: LocalTime): NoticeElement = copy(timestamp = Some(time))
 
   /** Lets a long message wrap onto further rows instead of clipping. */
   def wrapped: NoticeElement = copy(overflow = w.Overflow.Wrap)

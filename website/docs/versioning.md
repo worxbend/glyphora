@@ -146,6 +146,21 @@ Three changes reach almost every app, so check them first:
   Not breaking, but the spelling changes: a `panel(…).borderless` that existed only for its
   padding is now the padding itself — `form.padding(1)`, `.padding(Padding.symmetric(2, 1))`, or
   `.padding(1, 2)` (rows, then columns) on any element.
+- **`scrollbar(…).at(offset)` is `.thumbAt(offset)` and `notice(…).at(time)` is
+  `.stamped(time)`.** Every element takes `.at(row, col)` as its place in a `grid`, but these two
+  nodes declared a member `at` of their own, and a member shadows an extension — so a scrollbar
+  or a notice could not be placed in a grid by row and column at all. The two old methods are
+  renamed; nothing else changes.
+
+  ```scala
+  // before
+  scrollbar(200).at(40)
+  notice("saved", NoticeLevel.Success).at(LocalTime.now())
+  // after
+  scrollbar(200).thumbAt(40)
+  notice("saved", NoticeLevel.Success).stamped(LocalTime.now())
+  ```
+
 - Smaller: `Layout.apply` gained a `crossAlign` parameter, with the 0.19.0 five-argument arity
   kept as a default-free overload; `Layout.toString` adds `, crossAlign=…` only when it is not
   `Stretch`. `widgets.LayoutItem` gained `align` and `Row`/`Column` gained `crossAlign`, appended

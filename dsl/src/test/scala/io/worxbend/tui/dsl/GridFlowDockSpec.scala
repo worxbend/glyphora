@@ -4,6 +4,10 @@ import io.worxbend.tui.testsupport.{BufferAssertions, GoldenFrames}
 
 import org.scalatest.funsuite.AnyFunSuite
 
+import java.nio.file.Files
+import scala.jdk.CollectionConverters.*
+import scala.util.Using
+
 /** `grid`, `flow` and `dock`: the three containers 0.20.0 adds over the existing row/column solver. */
 final class GridFlowDockSpec extends AnyFunSuite:
 
@@ -49,6 +53,34 @@ final class GridFlowDockSpec extends AnyFunSuite:
       text("c"),
     )
     assert(lines(flowed, 4, 2) == Seq("a b ", "c   "))
+
+  test("a scrollbar and a notice take .at(row, col) as a grid placement like every other node"):
+    // both used to declare a member `at` of their own, which shadowed the grid placement on exactly these two nodes
+    val placed = grid(Seq(Constraint.Length(1), Constraint.Length(1)), Seq(Constraint.Length(1)))(
+      scrollbar(4).thumbAt(0).at(0, 1),
+      text("a").at(0, 0),
+    )
+    assert(lines(placed, 2, 1) == Seq("a█"))
+    val noted  = grid(Seq(Constraint.Fill(1)), Seq(Constraint.Length(1), Constraint.Length(1)))(
+      text("top").at(0, 0),
+      notice("hi", NoticeLevel.Info).stamped(java.time.LocalTime.of(9, 5)).at(1, 0),
+    )
+    assert(lines(noted, 20, 2).head.startsWith("top"))
+    assert(lines(noted, 20, 2)(1).contains("hi"))
+
+  test("no element node declares a member named `at`, so the grid placement is never shadowed"):
+    // the placement extension itself is the one `at` there may be
+    val Placement = "  def at(row: Int, col: Int): element.Self ="
+    val root      = DocumentationSources.repoRoot.getOrElse(cancel("not running from a checkout"))
+    val directory = root.resolve("dsl/src/main/scala/io/worxbend/tui/dsl")
+    val offenders = Using.resource(Files.list(directory))(
+      _.iterator.asScala
+        .filter(path =>
+          Files.readString(path).linesIterator.exists(line => line.startsWith("  def at(") && line != Placement)
+        )
+        .toVector
+    )
+    assert(offenders.isEmpty, offenders.mkString(", "))
 
   test("an Auto row is as tall as its content and the grid measures its rows"):
     val node = grid(Seq(Constraint.Fill(1)), Seq(Constraint.Auto, Constraint.Length(1)), gap = 1)(

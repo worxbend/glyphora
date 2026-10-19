@@ -19,10 +19,10 @@ final class ScrollbarElementSpec extends AnyFunSuite:
     assert(column(scrollbar(8), 3, 4) == "██││")
 
   test("at moves the thumb down the track"):
-    assert(column(scrollbar(8).at(4), 3, 4) == "││██")
+    assert(column(scrollbar(8).thumbAt(4), 3, 4) == "││██")
 
   test("a position past the end pins the thumb rather than drawing it off the track"):
-    assert(column(scrollbar(8).at(1000), 3, 4) == "││██")
+    assert(column(scrollbar(8).thumbAt(1000), 3, 4) == "││██")
 
   test("content that already fits draws only the track"):
     assert(column(scrollbar(3), 3, 4) == "││││")

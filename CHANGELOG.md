@@ -149,6 +149,7 @@ Each item has a before/after migration note in
 - `Console` under the one import is glyphora's print-mode object.
 - `Language` is an alias for the open `Lexer` trait; `responsive` is an object; `PanelElement` field `children` → `content`.
 - `TextAreaOptions` field order changed (`syntax` is fourth); `Theme.apply` gained `components`.
+- `scrollbar(…).at(offset)` → `.thumbAt(offset)`, `notice(…).at(time)` → `.stamped(time)`, so `.at(row, col)` places both in a `grid`.
 
 - `TuiApp` gained an overridable `messages` member; an app that declares its own `messages` needs `override` or a rename.
 - `Dialog` widens its box to fit its buttons, so a button row wider than the message is no longer dropped.

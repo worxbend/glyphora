@@ -392,8 +392,10 @@ final case class ScrollbarElement(
 
   /** Moves the thumb to `offset`, in the same units as `contentLength`: rows for a vertical bar, columns for a
     * horizontal one. Values outside the content are clamped rather than rejected.
+    *
+    * Named `thumbAt` rather than `at`: a member `at` would shadow the `.at(row, col)` grid placement every element has.
     */
-  def at(offset: Int): ScrollbarElement = copy(position = offset)
+  def thumbAt(offset: Int): ScrollbarElement = copy(position = offset)
 
   /** Styles the thumb — the moving part — independently of the track it runs in. */
   def thumbStyle(transform: Style => Style): ScrollbarElement =
