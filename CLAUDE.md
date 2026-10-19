@@ -40,7 +40,7 @@ Docs (canonical Markdown lives in `website/docs/`, published to both GitHub Page
 node scripts/export-wiki.mjs --output build/wiki
 ```
 
-Golden-frame fixtures: run tests with `GLYPHORA_GOLDEN_UPDATE=<module>/src/test/resources` and each `GoldenFrames.assertMatches` writes its actual frame instead of comparing.
+Golden-frame fixtures: run tests with `GLYPHORA_GOLDEN_UPDATE=$PWD/<module>/src/test/resources` (an **absolute** path, from the repository root) and each `GoldenFrames.assertMatches` writes its actual frame instead of comparing. A relative path silently loses the files: the forked test JVM's working directory is a Mill sandbox that the next run wipes.
 
 `core/src/main/scala/io/worxbend/tui/core/WidthTable.scala` is generated — regenerate with `python3 tools/generate-width-table.py`, never hand-edit. So is `widgets/src/main/scala/io/worxbend/tui/widgets/WorldTable.scala`, the coastline data behind `Shape.WorldMap` — regenerate with `python3 tools/generate-world-table.py --low <lon-lat file> --high <lon-lat file> --output widgets/src/main/scala/io/worxbend/tui/widgets/WorldTable.scala`; the script's docstring names the public-domain source and explains why the coordinates are packed into strings rather than written as an array of doubles.
 

@@ -9,7 +9,7 @@ import java.time.{Instant, ZoneOffset}
 
 /** `logConsole(ring)`: the tail of a [[LogRing]], filtered by level and logger prefix, drawn through the `Log` widget.
   *
-  * Regenerate the fixture with `GLYPHORA_GOLDEN_UPDATE=dsl/src/test/resources ./mill dsl.test`.
+  * Regenerate the fixture with `GLYPHORA_GOLDEN_UPDATE=$PWD/dsl/src/test/resources ./mill dsl.test`.
   */
 final class LogConsoleSpec extends AnyFunSuite:
 

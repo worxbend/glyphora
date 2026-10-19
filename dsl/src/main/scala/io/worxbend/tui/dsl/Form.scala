@@ -147,8 +147,10 @@ object Form:
         case FieldBinding.BoolLike(spec, value, _)               =>
           Element.checkbox(spec.name, value)
         case FieldBinding.SelectLike(spec, options, selected, _) =>
-          // the one-row cycler rather than the popup `dropdown`, because every other row of a form is one row tall and
-          // a control that changes height when it opens would move the rows under it while the user is filling them in
+          // the one-row cycler rather than the popup `dropdown`: the dropdown's list floats over the rows below it
+          // (it no longer pushes them down), but it would cover the next fields while open and needs an extra
+          // keystroke to open and commit, where the cycler changes value in place with the arrows on a row that
+          // never hides another one
           Element
             .row(
               Element.text(s"${spec.name}:").length(labelWidth),

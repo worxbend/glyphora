@@ -211,8 +211,12 @@ pointing at the resources directory to write, and every `assertMatches` and
 `assertMatchesStyled` call writes its *actual* frame instead of comparing:
 
 ```bash
-GLYPHORA_GOLDEN_UPDATE=widgets/src/test/resources ./mill widgets.test
+GLYPHORA_GOLDEN_UPDATE=$PWD/widgets/src/test/resources ./mill widgets.test
 ```
+
+Give it an **absolute** path (`$PWD/…` from the repository root). A test JVM forked by
+Mill runs in a sandbox directory that the next run wipes, so a relative path writes the
+files there and they silently disappear.
 
 Nothing is compared during such a run — every `assertMatches` records and returns —
 so each one also prints a line on stderr saying so, which is how a job that
