@@ -182,6 +182,7 @@ export io.worxbend.tui.core.{
   MouseEventKind,
   MotionDirection,
   Pattern,
+  ColorTarget,
   Position,
   Rect,
   Size,
