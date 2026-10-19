@@ -18,21 +18,21 @@ All publishable modules in this checkout share one synchronized version under `c
 
 ```scala
 // Mill
-def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.19.0")
+def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.20.0")
 ```
 
 ```scala
 // sbt
-libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.19.0"
+libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.20.0"
 ```
 
 Applications normally need only `tui-dsl`. Lower-tier artifacts are `tui-core`,
 `tui-terminal`, `tui-widgets`, `tui-runtime`, and `tui-macros`; `tui-test` carries the
 headless test harness and belongs in the test configuration only.
 
-Version `0.19.0` is published to Maven Central under `com.worxbend` by the `v0.19.0`
+Version `0.20.0` is published to Maven Central under `com.worxbend` by the `v0.20.0`
 tag (see [Release process](#release-process)); Central keeps every earlier release, so a
-build pinned to `0.18.3` keeps resolving.
+build pinned to `0.19.0` keeps resolving.
 Downloads require no credentials, and Mill and sbt use Central by default. GitHub
 Packages also hosts the libraries; its resolver requires a classic PAT with
 `read:packages`.
@@ -868,7 +868,7 @@ dependencies fail the release workflow.
 To publish the current main commit manually:
 
 ```sh
-gh workflow run publish-packages.yml --ref main -f version=0.19.0
+gh workflow run publish-packages.yml --ref main -f version=0.20.0
 ```
 
 Treat released versions as immutable. Increment the shared `publishVersion`
