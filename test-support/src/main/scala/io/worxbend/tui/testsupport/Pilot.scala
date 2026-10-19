@@ -666,8 +666,13 @@ object Pilot:
 
   /** The pilot's patience, shared by [[Pilot.waitForIdle]], [[Pilot.waitUntil]], [[Pilot.waitForDraws]] and
     * [[Pilot.awaitTermination]] so that one value sets how long a test waits before reporting a hung app.
+    *
+    * Ten seconds, not two: every wait returns the moment its condition holds, so the figure only bounds how long a
+    * genuinely hung app takes to fail. Two seconds was crossed by healthy apps — a test class's JVM is forked cold, and
+    * its first frame on a machine running the whole suite (load above 12 on 16 cores) took longer than that, failing
+    * with "did not go idle" at the first `waitForIdle`.
     */
-  private[testsupport] val DefaultTimeout: FiniteDuration = 2.seconds
+  private[testsupport] val DefaultTimeout: FiniteDuration = 10.seconds
 
   /** Starts `app` — any blocking expression that drives a runner over `backend` — on a daemon thread and hands back the
     * driver. The caller owns its lifetime: prefer [[using]], or always call [[Pilot.close]] in a `finally` around

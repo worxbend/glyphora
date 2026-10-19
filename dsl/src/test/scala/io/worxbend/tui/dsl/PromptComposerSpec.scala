@@ -81,13 +81,24 @@ final class PromptComposerSpec extends AnyFunSuite with PilotFixture:
   test("@ opens an async completion popup that filters as you type and Enter accepts"):
     val people  = Seq("alice", "albert", "bob")
     val state   = PromptComposerState(
-      completions = (trigger, query) => if trigger == '@' then people.filter(_.startsWith(query)) else Nil,
+      // the final query's answer is held back, so the answers to the earlier queries ("", "a") always show first — the
+      // order a loaded machine produced by chance, pinned here so the wait below has to tell them apart
+      completions = (trigger, query) =>
+        if query == "al" then Thread.sleep(200)
+        if trigger == '@' then people.filter(_.startsWith(query)) else Nil
+      ,
       debounce = 0.millis,
     )
     val harness = Harness(state)
     import harness.pilot
     pilot.typeText("hi @al")
-    pilot.waitUntil("the popup lists the matches")(pilot.screenLines.exists(_.contains("albert"))).waitForIdle()
+    // waitForIdle covers the event queue, not the completion worker: wait on the answer to the *last* query — "albert"
+    // alone is on screen for the answers to "" and "a" as well, and a frame taken then still lists "bob"
+    pilot
+      .waitUntil("the popup lists the matches for \"al\"")(
+        pilot.screenLines.exists(_.contains("albert")) && !pilot.screenLines.exists(_.contains("bob"))
+      )
+      .waitForIdle()
     GoldenFrames.assertMatches("composer-mention-popup", pilot.lastFrame)
     pilot.pressKey(KeyCode.Down).pressKey(KeyCode.Enter).waitForIdle()
     assert(state.value == "hi @albert ")

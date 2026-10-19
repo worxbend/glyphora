@@ -350,7 +350,10 @@ shutdown failure is suppressed on it. An assertion followed by a quit key is not
 cleanup: when the assertion fails, that key is never posted.
 
 `close()` requests runner-owned, non-consumable cancellation and waits at most
-**2 seconds** by default. It posts neither a key nor an interrupt, so an app that
+**10 seconds** by default — the same patience `waitForIdle`, `waitUntil` and
+`awaitTermination` default to. Every wait returns as soon as its condition holds, so the
+figure only bounds how long a hung app takes to fail; it was 2 seconds, which a test
+class's cold JVM crossed on its first frame on a loaded machine. It posts neither a key nor an interrupt, so an app that
 consumes `Ctrl+C` cannot veto it. `close(timeout: FiniteDuration)` sets a different
 finite deadline; a blocked user callback cannot be forcibly killed and timeout is an
 assertion failure. For a custom timeout, wrap `Pilot.start(...)` in `try`/`finally`
@@ -381,7 +384,7 @@ an idle read. It is stronger and less flaky than sleeping for an arbitrary numbe
 milliseconds. `HeadlessBackend` honours `Backend.wake()` the way the JLine backend does —
 queued render-thread work, `Pilot.close()` and `Pilot.waitForIdle()` interrupt a blocked
 `readEvent` instead of waiting out the poll — so a pilot works with any `tickRate`,
-including one longer than the pilot's 2 s default deadline. An "idle read" is any read
+including one longer than the pilot's 10 s default deadline. An "idle read" is any read
 that found nothing posted: a timed-out poll slice or a wake that found the queue empty.
 Because wakes land promptly, a `Signal` written by a continuation is visible to the test
 thread a moment before the frame that shows it is drawn; a test that asserts on

@@ -149,6 +149,8 @@ note in [Versioning & releases](website/docs/versioning.md).
 
 ### Fixed
 
+- `Pilot`'s default wait is 10 s (was 2 s): a cold test JVM's first frame on a loaded machine crossed 2 s and failed healthy tests with "did not go idle". `PromptComposerSpec` waits on the last query's completions rather than any popup naming "albert".
+
 - **B1** — Focused DSL text fields now move the terminal's hardware cursor, so screen readers and input-method popups follow the caret.
 - **B2** — `dropdown` no longer reflows its siblings or clips its list near the bottom edge.
 - **B3** — A click on a click-outside dialog's own border, title or caption no longer dismisses it.

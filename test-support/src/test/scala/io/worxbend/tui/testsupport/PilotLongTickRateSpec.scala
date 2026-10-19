@@ -14,17 +14,17 @@ import scala.concurrent.duration.DurationInt
 /** A `Pilot` must work with any `tickRate`. With a long one the runner blocks in `readEvent` for the whole rate, and
   * every promise the pilot makes — queued work runs promptly, `close()` returns, `waitForIdle()` returns on an idle app
   * — depends on `HeadlessBackend.wake()` cutting that read short the way the JLine backend's does. These used to fail
-  * at any `tickRate` past the pilot's 2 s default deadline.
+  * at any `tickRate` past the pilot's default deadline (2 s then, 10 s now).
   */
 final class PilotLongTickRateSpec extends AnyFunSuite:
 
-  private val LongTick = 3.seconds
+  private val LongTick = 15.seconds
 
   private def idleApp(backend: HeadlessBackend): Either[RunnerError, Unit] =
     TerminalRunner(backend, RunnerConfig(tickRate = Some(LongTick)))
       .run(_ => (), (_, _) => EventOutcome.Ignored, _ => ())
 
-  test("work queued from a worker thread runs within 200 ms under a 3-second tick rate"):
+  test("work queued from a worker thread runs within 200 ms under a 15-second tick rate"):
     val ran     = CountDownLatch(1)
     val backend = HeadlessBackend(Size(20, 3))
     val pilot   = Pilot.start(backend)(
@@ -50,27 +50,27 @@ final class PilotLongTickRateSpec extends AnyFunSuite:
       val begun  = System.nanoTime()
       assert(ran.await(2, TimeUnit.SECONDS), "queued work never ran")
       val waited = (System.nanoTime() - begun) / 1_000_000L
-      // 100 ms of that is the worker's own sleep; the bound excludes the 3 s tick a counter-only wake left in place, with
+      // 100 ms of that is the worker's own sleep; the bound excludes the 15 s tick a counter-only wake left in place, with
       // headroom for a loaded CI runner
       assert(waited < 1000L, s"queued work ran only after $waited ms")
     finally pilot.close()
 
-  test("Pilot.close() returns within its default deadline under a 3-second tick rate"):
+  test("Pilot.close() returns within its default deadline under a 15-second tick rate"):
     val backend = HeadlessBackend(Size(20, 3))
     val pilot   = Pilot.start(backend)(idleApp(backend))
     pilot.waitForDraws(1)
     val begun   = System.nanoTime()
-    pilot.close() // throws past its 2 s default deadline
+    pilot.close() // throws past its 10 s default deadline
     val took = (System.nanoTime() - begun) / 1_000_000L
     assert(took < 2000L, s"close took $took ms")
 
-  test("Pilot.waitForIdle() returns on an idle app under a 3-second tick rate"):
+  test("Pilot.waitForIdle() returns on an idle app under a 15-second tick rate"):
     val backend = HeadlessBackend(Size(20, 3))
     val pilot   = Pilot.start(backend)(idleApp(backend))
     try
       pilot.waitForDraws(1)
       val begun = System.nanoTime()
-      pilot.waitForIdle() // throws past its 2 s default deadline
+      pilot.waitForIdle() // throws past its 10 s default deadline
       val took = (System.nanoTime() - begun) / 1_000_000L
       assert(took < 2000L, s"waitForIdle took $took ms")
     finally pilot.close()
