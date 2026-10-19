@@ -1159,7 +1159,9 @@ handlers or from `onStart()` — never from a constructor.
 While a `TuiApp` runs, `System.out` and `System.err` — and Scala's `println` with them —
 are captured: each completed line is written into the scrollback above the live UI
 through `printAbove`, so a stray debug print or a library that logs to `System.err` no
-longer paints over the frame. Whatever is still buffered without a newline is flushed to
+longer paints over the frame. Lines are batched per frame — everything printed between
+two frames, from any thread, goes into the scrollback in one trip — so a chatty library
+costs one scrollback write per frame, not one per line. Whatever is still buffered without a newline is flushed to
 the real streams when the run ends, under the restored prompt, and `suspend` passes the
 streams straight through to the terminal for the duration of its body.
 

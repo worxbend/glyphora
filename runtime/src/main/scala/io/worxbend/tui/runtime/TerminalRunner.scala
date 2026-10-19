@@ -149,6 +149,9 @@ final class TerminalRunner(
       if setupIncomplete then release(backend.emergencyRestore())
       // last, once the terminal is the shell's again: the partial line this flushes belongs under the restored prompt,
       // not on an alternate screen that is about to be discarded
+      // a batch whose flush the closed loop discarded: its lines belong under the prompt too, before the partial line
+      release(printAboveBatch.foreach(_.drainToFallback()))
+      printAboveBatch = None
       release(capture.foreach(_.restore()))
     thrown.foreach(error => throw error)
     result
@@ -264,10 +267,13 @@ final class TerminalRunner(
     config.captureStdio.getOrElse(CaptureStdio.Off) match
       case CaptureStdio.Off           => None
       case CaptureStdio.PrintAbove    =>
-        // the fallback is the *original* stream: writing to the capturing one from inside its own sink would loop
-        lazy val capture: StdioCapture =
-          StdioCapture(printAboveSink(loop, capture.priorOut), printAboveSink(loop, capture.priorErr))
+        // one batch for both streams, so stdout and stderr lines keep their relative order in the scrollback; the
+        // fallback is the *original* stream: writing to the capturing one from inside its own sink would loop
+        lazy val capture: StdioCapture  = StdioCapture(batch.offer, batch.offer)
+        lazy val batch: PrintAboveBatch =
+          PrintAboveBatch(loop, lines => { val _ = backend.printAbove(lines) }, line => capture.priorOut.println(line))
         capture.install()
+        printAboveBatch = Some(batch)
         Some(capture)
       case CaptureStdio.Console(ring) =>
         val capture = StdioCapture(
@@ -277,12 +283,10 @@ final class TerminalRunner(
         capture.install()
         Some(capture)
 
-  private def printAboveSink(loop: RenderThread.RenderLoop, fallback: => java.io.PrintStream): String => Unit =
-    line =>
-      val accepted =
-        try loop.execute { val _ = backend.printAbove(Seq(line)) }
-        catch case _: java.util.concurrent.RejectedExecutionException => false
-      if !accepted then fallback.println(line)
+  /** The `PrintAbove` batch of the current run, if any: drained to the original stream at teardown, where a flush the
+    * closing loop discarded would otherwise lose its lines. Set and read on the render thread.
+    */
+  private var printAboveBatch: Option[PrintAboveBatch] = None
 
 object TerminalRunner:
   /** Releases an already-owned backend when application preparation failed before a runner existed. No terminal modes

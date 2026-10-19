@@ -151,6 +151,11 @@ object RenderThread:
     private[runtime] def enqueue(body: () => Unit): Unit =
       val _ = offer(body)
 
+    /** Queues `body` for the owning thread's next drain even when called on that thread — unlike [[execute]], which
+      * runs it inline there. `false` once the loop is retired; throws `RejectedExecutionException` at capacity.
+      */
+    private[runtime] def later(body: () => Unit): Boolean = offer(body)
+
     private def offer(body: () => Unit): Boolean =
       val accepted = monitor.synchronized {
         if closed then false

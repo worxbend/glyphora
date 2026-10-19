@@ -78,6 +78,7 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
   private val fullRedrawCounter                        = AtomicLong(0)
   private val emergencyRestoreCounter                  = AtomicLong(0)
   private val printedLines                             = scala.collection.mutable.ArrayBuffer.empty[String]
+  private var printAboveTrips                          = 0 // guarded by printedLines
   private val rawWrites                                = scala.collection.mutable.ArrayBuffer.empty[String]
   private val graphics                                 = GraphicsLayer()
   private val clears                                   = scala.collection.mutable.ArrayBuffer.empty[ClearType]
@@ -326,7 +327,10 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
     Right(())
 
   override def printAbove(lines: Seq[String]): Either[BackendError, Unit] =
-    printedLines.synchronized { printedLines ++= lines }
+    printedLines.synchronized {
+      printedLines ++= lines
+      printAboveTrips += 1
+    }
     Right(())
 
   /** Records the rendered block itself, not only its text.
@@ -546,6 +550,9 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
 
   /** The lines emitted above the app via [[printAbove]] or [[insertBefore]], in order. */
   def printedAbove: Seq[String] = printedLines.synchronized(printedLines.toSeq)
+
+  /** How many times [[printAbove]] was called — the scrollback trips a real terminal would have made. */
+  def printAboveCalls: Int = printedLines.synchronized(printAboveTrips)
 
   /** Every sequence handed to [[writeRaw]], in order — the out-of-band payloads (an image protocol's escape sequence,
     * say) an application sent past the frame diff.
