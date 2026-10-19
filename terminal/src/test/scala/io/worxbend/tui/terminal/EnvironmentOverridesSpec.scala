@@ -24,14 +24,16 @@ final class EnvironmentOverridesSpec extends AnyFunSuite:
   test("GLYPHORA_MOUSE turns capture off, or holds it to buttons when an app asks for all motion"):
     assert(EnvironmentOverrides.mouseMode(MouseCaptureMode.AllMotion, Map("GLYPHORA_MOUSE" -> "off")).isEmpty)
     assert(
-      EnvironmentOverrides.mouseMode(MouseCaptureMode.AllMotion, Map("GLYPHORA_MOUSE" -> "buttons"))
+      EnvironmentOverrides
+        .mouseMode(MouseCaptureMode.AllMotion, Map("GLYPHORA_MOUSE" -> "buttons"))
         .contains(MouseCaptureMode.Buttons)
     )
     assert(
       EnvironmentOverrides.mouseMode(MouseCaptureMode.AllMotion, Map.empty).contains(MouseCaptureMode.AllMotion)
     )
     assert(
-      EnvironmentOverrides.mouseMode(MouseCaptureMode.Buttons, Map("GLYPHORA_MOUSE" -> "buttons"))
+      EnvironmentOverrides
+        .mouseMode(MouseCaptureMode.Buttons, Map("GLYPHORA_MOUSE" -> "buttons"))
         .contains(MouseCaptureMode.Buttons)
     )
 
