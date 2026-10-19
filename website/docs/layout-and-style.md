@@ -980,6 +980,12 @@ background (`[red on blue]`) or the explicit `fg=`/`bg=`; and `link=<url>`. `[[`
 literal `[`; a `]` outside a tag is already literal. A `\n` in the literal starts a new
 row, as it does in `Text.raw`.
 
+A named close — `[/bold]`, `[/bold red]`, or `[/link]` for a `[link=…]` — closes the
+innermost tag just as `[/]` does, and is checked: it must name that innermost tag (its
+words as written, ignoring case and spacing, or the key of a single `key=value` word).
+`markup"[bold][red]x[/bold][/]"` is a compile error naming both tags, not a silent
+mis-nesting.
+
 An interpolated `$value` is **text, never markup**. Whatever it contains — `[red]`
 included — is rendered as the characters it is, in the style in force where it appears,
 so `markup"[bold]$input[/]"` is safe to write over input the program did not author. The
@@ -988,7 +994,7 @@ one place a value stands inside a tag is as the whole value of `link=`, `fg=` or
 types too.
 
 A word that is not a style (`[bogus]`), a tag never closed, a `[/]` with nothing to
-close, or a `[` with no `]` stops the build with an error naming the problem, instead of
+close, a named close that names another tag, or a `[` with no `]` stops the build with an error naming the problem, instead of
 being found the first time that view is drawn. What survives into the compiled code is
 the span constructors with every literal style already a constant, so nothing is parsed
 when the program runs — the same bargain `key"…"` and `hex"…"` make. `markup"…"` is
