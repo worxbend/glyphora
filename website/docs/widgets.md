@@ -853,10 +853,16 @@ against `MarkdownOptions.lexers`, so `MarkdownOptions(lexers = Lexer.builtIn :+ 
 teaches every fence your language. A fence that no lexer claims renders verbatim in the
 `code` style.
 
-Highlighting is line-oriented and dependency-free. Block comments and triple-quoted strings
-that span lines fall back to plain text. That is the right trade-off for snippets in help
-screens, READMEs, Markdown fences and a small editor, and it lets an editor highlight only
-the rows it draws.
+Highlighting is line-oriented and dependency-free, with a `LexState` carried from the end
+of one line to the start of the next: `highlightLine(line, theme, state)` answers the line
+and the state it ends in. So a `/* … */` block comment (Scala, TypeScript, SQL), a
+triple-quoted string (Scala `"""`, Python `"""` and `'''`, a TypeScript template literal)
+and, in YAML, a block scalar (`key: |`), a quoted scalar closed on a later line and a flow
+collection (`{a: 1, b: [x, y]}`) that spans lines are highlighted on every line they cover.
+`highlight`, a Markdown fence and `textArea` all thread the state for you; a `textArea`
+remembers the state each line ends in and re-lexes only from the first line an edit
+changed. A lexer of your own that keeps no state implements only the two-argument
+`highlightLine`; the stateful form defaults to it.
 
 ## Lists and navigation
 

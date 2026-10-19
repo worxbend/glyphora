@@ -131,19 +131,23 @@ private[widgets] object MarkdownParser:
     val out   = Vector.newBuilder[MarkdownBlock]
     // Some(None) is an open fence no lexer claimed; Some(Some(lexer)) one that is highlighted
     var fence = Option.empty[Option[Lexer]]
-    var lists = List.empty[Int] // indents of the open list levels, innermost first
+    var lists = List.empty[Int]  // indents of the open list levels, innermost first
+    var lexed = LexState.Initial // where the fence's lexer stands, carried from one fenced line to the next
     var index = 0
     while index < raw.size do
       val line = raw(index)
       if line.trim.startsWith("```") then
         fence = if fence.isDefined then None else Some(Lexer.among(options.lexers, line.trim.drop(3)))
+        lexed = LexState.Initial
         lists = Nil
         out += MarkdownBlock.Prose(Line(Seq.empty))
         index += 1
       else
         fence match
           case Some(Some(lexer)) =>
-            out += MarkdownBlock.Prose(lexer.highlightLine(line, theme.syntax))
+            val (highlighted, next) = lexer.highlightLine(line, theme.syntax, lexed)
+            lexed = next
+            out += MarkdownBlock.Prose(highlighted)
             index += 1
           case Some(None)        =>
             out += MarkdownBlock.Prose(Line.styled(line, theme.code))

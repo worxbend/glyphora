@@ -112,6 +112,37 @@ final class TextAreaState(initial: String = "", killRing: KillRing = KillRing())
 
   def newline(): Unit = insert("\n")
 
+  // --- multi-line lexing ----------------------------------------------------------------------------------------
+
+  // The state each line ends in under `lexedWith`, with the very cluster vector the line had when it was lexed. A line
+  // an edit did not touch keeps its vector, so after an edit the prefix of unchanged lines keeps its states and only the
+  // lines from the first changed one down are lexed again — and only as far as a drawn row needs.
+  private var lexedWith: Option[Lexer]            = None
+  private var lexedSource: Vector[Vector[String]] = Vector.empty
+  private val lexedLines                          = scala.collection.mutable.ArrayBuffer.empty[Vector[String]]
+  private val lexedEnds                           = scala.collection.mutable.ArrayBuffer.empty[LexState]
+
+  /** The [[LexState]] line `line` starts in under `lexer` — the state the line above it ended in. */
+  private[widgets] def lexStateBefore(line: Int, lexer: Lexer, syntax: SyntaxTheme): LexState =
+    val lines  = clusterLines
+    if !lexedWith.exists(_ eq lexer) then
+      lexedWith = Some(lexer)
+      lexedLines.clear()
+      lexedEnds.clear()
+    else if !(lexedSource eq lines) then
+      var valid = 0
+      while valid < lexedLines.size && valid < lines.size && (lexedLines(valid) eq lines(valid)) do valid += 1
+      lexedLines.dropRightInPlace(lexedLines.size - valid)
+      lexedEnds.dropRightInPlace(lexedEnds.size - valid)
+    lexedSource = lines
+    val target = math.min(line, lines.size)
+    while lexedEnds.size < target do
+      val index = lexedEnds.size
+      val start = if index == 0 then LexState.Initial else lexedEnds(index - 1)
+      lexedEnds += lexer.highlightLine(lines(index).mkString, syntax, start)._2
+      lexedLines += lines(index)
+    if target == 0 then LexState.Initial else lexedEnds(target - 1)
+
   // --- incremental search ----------------------------------------------------------------------------------------
 
   private var searchOrigin: Option[TextPosition]                  = None
@@ -454,7 +485,9 @@ final case class TextArea(
       style = style,
       cursorStyle = cursorStyle,
       paintEndCell = false,
-      tokenStyles = options.lexer.fold(IndexedSeq.empty)(lexer => tokenStyles(clusters, lexer)),
+      tokenStyles = options.lexer.fold(IndexedSeq.empty)(lexer =>
+        tokenStyles(clusters, lexer, state.lexStateBefore(row.line, lexer, options.syntax))
+      ),
       highlights = highlightsOn(row.line, clusters.size, state, searched),
       until = if row.last then clusters.size + 1 else row.end,
     )
@@ -484,8 +517,9 @@ final case class TextArea(
   /** One style per cluster from `lexer`, or none when its spans do not segment back into the same clusters — a lexer
     * that rewrote the text has its styling ignored rather than painted onto the wrong cells.
     */
-  private def tokenStyles(clusters: Vector[String], lexer: Lexer): IndexedSeq[Style] =
-    val graphemes = lexer.highlightLine(clusters.mkString, options.syntax).styledGraphemes(Style.Default).toVector
+  private def tokenStyles(clusters: Vector[String], lexer: Lexer, start: LexState): IndexedSeq[Style] =
+    val graphemes =
+      lexer.highlightLine(clusters.mkString, options.syntax, start)._1.styledGraphemes(Style.Default).toVector
     if graphemes.map(_.cluster) == clusters then graphemes.map(_.style) else IndexedSeq.empty
 
   /** Scrolls all lines left just enough that the cursor's column, measured on the cursor's own line, stays visible. The

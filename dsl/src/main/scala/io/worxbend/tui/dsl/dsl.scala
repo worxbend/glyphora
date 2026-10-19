@@ -396,6 +396,7 @@ export io.worxbend.tui.widgets.{
   ProgressColumn,
   ProgressTask,
   Lexer,
+  LexState,
   TableOverflow,
   TextAreaOptions,
   Clipboard,
