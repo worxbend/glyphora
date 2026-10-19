@@ -919,7 +919,10 @@ trait TuiApp:
         key.code == KeyCode.Escape || routeFresh(key, run, handle)
 
   private def routeFresh(key: KeyEvent, run: RunState, handle: RunnerHandle): Boolean =
-    val consumed = FrameworkKeys.currentPageStep.withValue(frameworkKeys.pageStep)(run.host.dispatchKey(key))
+    val keys     = frameworkKeys
+    val consumed = FrameworkKeys.current.withValue(keys) {
+      FrameworkKeys.currentPageStep.withValue(keys.pageStep)(run.host.dispatchKey(key))
+    }
     val bound    = !consumed && !palette.isOpenNow && dispatchBinding(key)
     if consumed || bound then true else handleFrameworkKey(key, run.tracker, handle)
 

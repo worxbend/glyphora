@@ -21,6 +21,9 @@ final case class FrameworkKeys(
     quit: KeyEvent = KeyEvent(KeyCode.Char('c'), KeyModifiers.Ctrl),
     closeModal: KeyEvent = KeyEvent.of(KeyCode.Escape),
     pageStep: Int = 10,
+    menuBar: KeyEvent = KeyEvent.of(KeyCode.F(10)),
+    windowMove: KeyEvent = KeyEvent(KeyCode.Char('m'), KeyModifiers.Alt),
+    windowResize: KeyEvent = KeyEvent(KeyCode.Char('r'), KeyModifiers.Alt),
 ):
   require(pageStep > 0, s"pageStep must be positive, was $pageStep")
 
@@ -31,6 +34,9 @@ final case class FrameworkKeys(
     (FrameworkKeys.CommandPalette, commandPalette, "open the command palette"),
     (FrameworkKeys.Quit, quit, "quit"),
     (FrameworkKeys.CloseModal, closeModal, "close the modal on top"),
+    (FrameworkKeys.MenuBar, menuBar, "open the menu bar"),
+    (FrameworkKeys.WindowMove, windowMove, "move the focused window with the arrows"),
+    (FrameworkKeys.WindowResize, windowResize, "resize the focused window with the arrows"),
   )
 
   /** These keys with every id in `keymap` moved to its sequence; ids that name no framework key are ignored, so one
@@ -50,6 +56,9 @@ final case class FrameworkKeys(
       commandPalette = key(FrameworkKeys.CommandPalette, commandPalette),
       quit = key(FrameworkKeys.Quit, quit),
       closeModal = key(FrameworkKeys.CloseModal, closeModal),
+      menuBar = key(FrameworkKeys.MenuBar, menuBar),
+      windowMove = key(FrameworkKeys.WindowMove, windowMove),
+      windowResize = key(FrameworkKeys.WindowResize, windowResize),
     )
 
   /** Whether `event` is `key` held with at least `key`'s modifiers. */
@@ -63,6 +72,9 @@ object FrameworkKeys:
   val CommandPalette: BindingId = BindingId("command-palette")
   val Quit: BindingId           = BindingId("quit")
   val CloseModal: BindingId     = BindingId("close-modal")
+  val MenuBar: BindingId        = BindingId("menu-bar")
+  val WindowMove: BindingId     = BindingId("window-move")
+  val WindowResize: BindingId   = BindingId("window-resize")
 
   /** Tab, Shift+Tab, Ctrl+P, Ctrl+C, Esc and a page step of 10 — what every `TuiApp` used before these became ids. */
   val default: FrameworkKeys = FrameworkKeys()
@@ -71,6 +83,12 @@ object FrameworkKeys:
     * [[FrameworkKeys.pageStep]]; per thread, so two runners in one JVM keep their own.
     */
   private[dsl] val currentPageStep: DynamicVariable[Int] = DynamicVariable(default.pageStep)
+
+  /** The framework keys the key dispatch on this thread runs under — what a `menuBar` reads its `menu-bar` key and a
+    * `window` its arrange keys from. `TuiApp` binds it around each dispatch to its own [[TuiApp.frameworkKeys]]; an
+    * embedding host that binds nothing gets [[default]].
+    */
+  private[dsl] val current: DynamicVariable[FrameworkKeys] = DynamicVariable(default)
 
 /** User keymaps: a plain-text file of `id = spec` lines read into the `Map[BindingId, KeySequence]` that
   * `KeyBindings.rebind` and `FrameworkKeys.rebind` take, and a Markdown export of the keys an app ends up with.

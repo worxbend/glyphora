@@ -67,6 +67,14 @@ trait Element:
   /** Framework paste behavior: how a bracketed paste lands in this element while focused. */
   private[dsl] def builtinPasteHandler: Option[BuiltinPasteHandler] = None
 
+  /** Framework key behavior offered *before* the focused element sees the key, on every live node of the tree whether
+    * or not it holds focus — the capture phase. For the few nodes whose keys belong to the whole screen while they are
+    * in a certain state: a `menuBar` taking its `Alt+<mnemonic>` keys and, while a menu is open, the arrows; a `window`
+    * in its keyboard arrange mode; an open `contextMenu`. A handler must decline everything outside that state, or it
+    * would take keys from the focused control. Not run on a disabled node or under an inert one.
+    */
+  private[dsl] def captureKeyHandler: Option[BuiltinKeyHandler] = None
+
   /** The mouse pointer this node wants shown over it, when it wants one: the hand over a `button` or a `link`, the
     * I-beam over a text field. `None` leaves the pointer as it is. An explicit `.pointer(shape)` on the node lands in
     * `props.pointerShape` and takes precedence; the interactive nodes override this with their own default.
