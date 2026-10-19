@@ -329,8 +329,11 @@ Three changes reach almost every app, so check them first:
 - **`each` scopes its rows' hooks under the item key** (research bug B6).
   `each(items)(key)(render)` runs `render` inside `keyed(key)` as well as stamping `.key(key)`, so
   focus and `useSignal`/`useState` share one identity and follow the item through reorders. Hook
-  state declared inside an `each` row therefore starts fresh once on upgrade. A row also wrapped
-  in `keyed(sameKey)` now has that scope twice — harmless, and the inner `keyed` can go:
+  state declared directly inside an `each` row (with no `keyed` of its own) therefore moves from a
+  positional slot to the key's and starts fresh once on upgrade. A row that was already wrapped in
+  `keyed(sameKey)` keeps its state: a `keyed` opened as the first thing inside a scope of the same
+  key *is* that scope, not a second one under it, so the path stays `sameKey`. The inner `keyed`
+  can go:
 
   ```scala
   // before
