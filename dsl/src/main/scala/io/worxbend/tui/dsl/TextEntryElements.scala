@@ -17,8 +17,13 @@ private def singleLineText(text: String): String = text.replace("\r", "").replac
 /** The single-line widget a text node draws with: the painted cursor shows only while the node is focused *and* its
   * caret style paints — the one place that rule is spelled, so every input node agrees with [[reportCaret]].
   */
-private def focusedInput(props: ElementProps, placeholder: String = ""): w.TextInput =
-  w.TextInput(placeholder, showCursor = props.focused && props.caretStyle.paints, style = componentStyled(props))
+private def focusedInput(props: ElementProps, placeholder: String = "", mask: Option[String] = None): w.TextInput =
+  w.TextInput(
+    placeholder,
+    showCursor = props.focused && props.caretStyle.paints,
+    style = componentStyled(props),
+    mask = mask,
+  )
 
 /** Hands the caret cell to the frame's [[CaretRegister]] when this node is the focused one and its caret style moves
   * the terminal cursor. Called from inside the node's render, after the widget painted, with the widget's own answer.
@@ -99,8 +104,14 @@ final case class InputElement(
     state: w.TextInputState,
     placeholder: String = "",
     props: ElementProps = ElementProps(focusable = true),
+    mask: Option[String] = None,
 ) extends Element:
   type Self = InputElement
+
+  /** Draws every character typed as `glyph` — a password field. The value in the state is unchanged; unlike `.hidden`,
+    * the field shows how much has been typed and where the cursor is.
+    */
+  def masked(glyph: String = "•"): InputElement = copy(mask = Some(glyph))
 
   /** The caller-owned state this node paints, watched for writes made between frames. */
   override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
@@ -109,7 +120,7 @@ final case class InputElement(
   private[dsl] override def componentRole: Option[ComponentRole]             = Some(InputRole)
   override def pointerShape: Option[PointerShape]                            = textPointer(props)
   def widget: Widget                                                         =
-    val input = focusedInput(props, placeholder)
+    val input = focusedInput(props, placeholder, mask)
     (area, buffer) =>
       input.render(area, buffer, state)
       reportCaret(props, input.caretAt(area, state))

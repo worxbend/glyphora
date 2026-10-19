@@ -1384,7 +1384,7 @@ glyph reserves two.
 
 | Widget | State | Notes |
 |---|---|---|
-| `input` | `TextInputState` | one line, horizontal scrolling, paste folds newlines |
+| `input` | `TextInputState` | one line, horizontal scrolling, paste folds newlines; `.masked()` draws each character as `•` (or `.masked("*")`) for a password |
 | `textArea` | `TextAreaState` | multiple lines, soft wrap (`.wrap`), line numbers (`.lineNumbers`), `.lexer(…)`, search (`Ctrl+F`), `.readOnly` viewer |
 | `promptComposer` | `PromptComposerState` | LLM-CLI prompt: Enter submits, history, `Ctrl+R`, ghost suggestions, `/` and `@` completion, paste compaction |
 | `numberInput` | `TextInputState` | whole numbers only; add `.decimal` to accept one decimal point |
