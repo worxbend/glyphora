@@ -193,7 +193,7 @@ build         ████████████░░░░░  75% 00:04 00:
 | `ProgressColumn.Description` | the task's label |
 | `ProgressColumn.Bar(width)` | the bar: `width` cells, or a share of what the text columns leave |
 | `ProgressColumn.Percentage` | ` 40%` |
-| `ProgressColumn.Eta` | time left at the average rate, `mm:ss` |
+| `ProgressColumn.Eta` | time left at the current rate, `mm:ss` |
 | `ProgressColumn.Rate(bytes)` | `12.5 it/s`, or `1.2 MiB/s` |
 | `ProgressColumn.Bytes` | `1.0 KiB/4.0 KiB` |
 | `ProgressColumn.Elapsed` | time since the start, frozen at the finish |
@@ -210,3 +210,9 @@ state it is render-thread-only, and a write to it repaints the element on its ow
 worker reports progress by posting `task.advance()` back to the render thread from an
 `Async` continuation. Times come from the task's own `clock`, the monotonic system clock
 by default; a test passes `() => manualClock.elapsed` and the ETA becomes exact.
+
+The rate — and the ETA computed from it — is measured over a sliding window, the last
+ten seconds by default, so a transfer that speeds up or stalls shows it within one
+window instead of averaging it away; a stall longer than the window prints `-`/`--:--`.
+`ProgressTask(label, total, rateWindow = Some(30.seconds))` widens it, and
+`rateWindow = None` keeps the average since the start.

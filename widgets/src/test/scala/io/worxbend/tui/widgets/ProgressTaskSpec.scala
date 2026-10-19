@@ -2,7 +2,7 @@ package io.worxbend.tui.widgets
 
 import org.scalatest.funsuite.AnyFunSuite
 
-import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
+import scala.concurrent.duration.{Duration, DurationDouble, DurationInt, FiniteDuration}
 
 final class ProgressTaskSpec extends AnyFunSuite:
 
@@ -68,3 +68,43 @@ final class ProgressTaskSpec extends AnyFunSuite:
     t.label = "renamed"
     t.total = Some(7L)
     assert(t.version >= before + 4)
+
+  test("the rate follows a sliding window, so a speed change shows up rather than averaging away"):
+    val clock = Clock()
+    val t     = ProgressTask("copy", Some(10_000L), () => clock.now, rateWindow = Some(10.seconds))
+    t.start()
+    // a slow first minute: 1 unit a second
+    (1 to 60).foreach { s =>
+      clock.now = s.seconds
+      t.advance(1L)
+    }
+    // then 100 units a second for ten seconds
+    (61 to 70).foreach { s =>
+      clock.now = s.seconds
+      t.advance(100L)
+    }
+    assert(t.rate.contains(100.0), "the last ten seconds, not the 15.1/s average since the start")
+    assert(t.eta.contains(89.4.seconds))
+
+  test("rateWindow = None keeps the average since the start"):
+    val clock = Clock()
+    val t     = ProgressTask("copy", Some(10_000L), () => clock.now, rateWindow = None)
+    t.start()
+    clock.now = 60.seconds
+    t.advance(60L)
+    clock.now = 70.seconds
+    t.advance(1000L)
+    assert(t.rate.contains(1060.0 / 70))
+
+  test("a stall longer than the window leaves the rate and the eta unknown"):
+    val clock = Clock()
+    val t     = ProgressTask("copy", Some(100L), () => clock.now, rateWindow = Some(5.seconds))
+    t.advance(0L)
+    clock.now = 1.second
+    t.advance(10L)
+    clock.now = 30.seconds
+    assert(t.rate.isEmpty)
+    assert(t.eta.isEmpty)
+
+  test("the default window is ten seconds"):
+    assert(ProgressTask.DefaultRateWindow == 10.seconds)
