@@ -88,7 +88,7 @@ private val HelpColumnGap    = 3
 private val MaxHelpKeyColumn = 24
 
 /** A centered help dialog listing every hinted binding — render it last (over the view) while visible. */
-def helpOverlay(bindings: KeyBindings, title: String = "Help")(using theme: Theme): Element =
+def helpOverlay(bindings: KeyBindings, title: String = Messages.active.helpTitle)(using theme: Theme): Element =
   // bindings with modes list every mode, each under a `name:` heading, after the mode-less ones — the overlay is where
   // a user learns what the other modes do, so it is not narrowed to the live one the way the status bar is
   val sections = bindings.helpSections

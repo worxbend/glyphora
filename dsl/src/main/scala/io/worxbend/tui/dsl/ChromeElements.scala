@@ -113,11 +113,12 @@ private[dsl] object WizardElement:
           state.clearError()
           onFinish()
         case None          => state.next(steps.size)
-    val nextText = if last then "Finish" else "Next"
-    val back     = ButtonElement("Back", () => state.back()).disabled(current == 0).key("wizard-back")
+    val labels   = Messages.active
+    val nextText = if last then labels.wizardFinish else labels.wizardNext
+    val back     = ButtonElement(labels.wizardBack, () => state.back()).disabled(current == 0).key("wizard-back")
     val next     = ButtonElement(nextText, advance).key("wizard-next")
     val buttons  = RowElement(
-      Seq(back.length(CharWidth.of("Back") + 4), SpacerElement(), next.length(CharWidth.of(nextText) + 4))
+      Seq(back.length(CharWidth.of(labels.wizardBack) + 4), SpacerElement(), next.length(CharWidth.of(nextText) + 4))
     ).length(1)
     WizardElement(ColumnElement(Seq(header) ++ error.toSeq ++ Seq(body, buttons)), state)
 

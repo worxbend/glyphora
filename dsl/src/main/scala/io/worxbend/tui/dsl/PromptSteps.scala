@@ -88,8 +88,8 @@ private[dsl] trait PromptStep[A]:
 
 private[dsl] object PromptStep:
 
-  /** What a cancelled step leaves instead of an answer. */
-  val Cancelled: String = "(cancelled)"
+  /** What a cancelled step leaves instead of an answer: [[Messages.promptCancelled]] of the table in force. */
+  def Cancelled: String = Messages.active.promptCancelled
 
   def summaryText(label: String, answer: String): String =
     if answer.isEmpty then s"? $label" else s"? $label $answer"
@@ -184,7 +184,7 @@ private[dsl] final class ConfirmStep(val label: String, default: Boolean) extend
   def activeRows: Int = 2
 
   def view(error: Option[String], onKey: KeyEvent => Boolean)(using scope: ReactiveScope, theme: Theme): Element =
-    val choices = if default then "(Y/n)" else "(y/N)"
+    val choices = if default then Messages.active.promptYesNoDefaultYes else Messages.active.promptYesNoDefaultNo
     val control = Element
       .interactiveWidget((), InteractiveHandlers[Unit](onKey = (_, event) => onKey(event))) { (_, _) =>
         PromptWidgets.textRow(choices, Style.Default.dim)
@@ -213,13 +213,18 @@ private[dsl] final class ConfirmStep(val label: String, default: Boolean) extend
   def current: Either[String, Boolean] = Right(pending.getOrElse(default))
 
   def fromAnswer(raw: String): Either[String, Boolean] =
+    val labels = Messages.active
+    val yes    = labels.promptYes.toLowerCase(java.util.Locale.ROOT)
+    val no     = labels.promptNo.toLowerCase(java.util.Locale.ROOT)
     raw.trim.toLowerCase(java.util.Locale.ROOT) match
-      case ""                   => Right(default)
-      case "y" | "yes" | "true" => Right(true)
-      case "n" | "no" | "false" => Right(false)
-      case other                => Left(s"answer yes or no, not '$other'")
+      case ""                            => Right(default)
+      case "y" | "yes" | "true"          => Right(true)
+      case "n" | "no" | "false"          => Right(false)
+      case localized if localized == yes => Right(true)
+      case localized if localized == no  => Right(false)
+      case other                         => Left(s"answer ${labels.promptYes} or ${labels.promptNo}, not '$other'")
 
-  def show(value: Boolean): String = if value then "yes" else "no"
+  def show(value: Boolean): String = if value then Messages.active.promptYes else Messages.active.promptNo
 
   override def question: String = s"$label ${if default then "[Y/n]" else "[y/N]"}"
 
@@ -268,7 +273,7 @@ private[dsl] final class ChoiceStep[O, A](
   def activeRows: Int = 2 + visible
 
   def view(error: Option[String], onKey: KeyEvent => Boolean)(using scope: ReactiveScope, theme: Theme): Element =
-    val hint    = if multi then "(space to select, enter to confirm)" else "(arrows to move, enter to select)"
+    val hint    = if multi then Messages.active.promptMultiSelectHint else Messages.active.promptSelectHint
     val header  = Element.row(PromptStep.prompt(label), Element.text(hint).dim.fill).length(1)
     val handler = InteractiveHandlers[ChoiceState](onKey = (_, event) => onKey(event))
     val list    = Element
@@ -331,8 +336,10 @@ private[dsl] object PromptWidgets:
           val start = math.min(first, state.cursor)
           labels.indices.slice(start, start + math.min(visible, area.height)).zipWithIndex.foreach { (index, row) =>
             val here   = index == state.cursor
-            val marker = if here then "❯ " else "  "
-            val tick   = if !multi then "" else if state.chosen(index) then "◉ " else "◯ "
+            val glyphs = Messages.active
+            val marker = if here then glyphs.promptPointer else " " * CharWidth.of(glyphs.promptPointer)
+            val tick   =
+              if !multi then "" else if state.chosen(index) then glyphs.promptChecked else glyphs.promptUnchecked
             val style  = if here then theme.accent else Style.Default
             val _      = buffer.setString(area.x, area.y + row, marker + tick + labels(index), style, area.width)
           }

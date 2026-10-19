@@ -591,8 +591,8 @@ private[dsl] trait ElementFactories:
     * app's own state and overlay it with [[layers]] (or push it as a modal [[Screen]]). Colours come from the ambient
     * [[Theme]]: the frame and text in `primary`, the selected button in `focus`.
     */
-  def dialog(title: String, message: String, buttons: Seq[String] = Seq("OK"), selected: Int = 0)(using
-      theme: Theme
+  def dialog(title: String, message: String, buttons: Seq[String] = Seq(Messages.active.dialogOk), selected: Int = 0)(
+      using theme: Theme
   ): WidgetElement =
     LateBinding.themed(theme) { theme =>
       WidgetElement(

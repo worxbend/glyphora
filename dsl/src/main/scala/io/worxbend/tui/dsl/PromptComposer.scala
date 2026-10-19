@@ -203,8 +203,11 @@ final class PromptComposerState(
     val clean = text.replace("\r", "")
     val lines = clean.split("\n", -1).length
     if lines >= pasteLines then
-      val base        = s"[Pasted $lines lines]"
-      val placeholder = if pastes.contains(base) then s"[Pasted $lines lines #${pastes.size + 1}]" else base
+      val base        = Messages.active.pastedLines(lines)
+      // a repeat is numbered inside the closing bracket when the template has one: `[Pasted 3 lines #2]`
+      val numbered    =
+        if base.endsWith("]") then s"${base.dropRight(1)} #${pastes.size + 1}]" else s"$base #${pastes.size + 1}"
+      val placeholder = if pastes.contains(base) then numbered else base
       pastes(placeholder) = clean
       editor.insert(placeholder)
     else editor.insert(clean)
@@ -257,7 +260,7 @@ final case class PromptComposerElement(
       val caret = editor.caretAt(text, state.editor)
       for cell <- caret; rest <- state.ghost do paintGhost(buffer, text, cell.x, cell.y, rest)
       state.reverse.foreach { open =>
-        val bar = s"(reverse-i-search)`${open.query}': ${state.reverseMatch.getOrElse("")}"
+        val bar = s"${Messages.active.composerReverseSearch}`${open.query}': ${state.reverseMatch.getOrElse("")}"
         buffer.setString(area.x, area.bottom - 1, CharWidth.substringByWidth(bar, area.width), props.style)
       }
       reportCaret(props, if state.reverse.isDefined then None else caret)

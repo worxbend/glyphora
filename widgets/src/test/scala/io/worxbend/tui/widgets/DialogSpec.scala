@@ -32,6 +32,11 @@ final class DialogSpec extends AnyFunSuite:
   /** Geometry only — the box is centred on both axes and never escapes the area it was given. `Rect.centered` itself is
     * covered by core's `RectOpsSpec`; these pin that the dialog actually routes its box through it.
     */
+  test("a dialog widens its box for buttons wider than the message, so a translated label is not dropped"):
+    val dialog = Dialog("Salir", Text.raw("¿Seguro?"), Seq("Sí", "Cancelar"))
+    val lines  = trimmedLines(rendered(dialog, 50, 9))
+    assert(lines.exists(_.contains("[ Sí ] [ Cancelar ]")), lines.mkString("\n"))
+
   test("a dialog centres its box on both axes"):
     val lines  = trimmedLines(rendered(Dialog("T", Text.raw("hi")), 30, 9))
     val top    = lines.indexWhere(_.contains("╔"))

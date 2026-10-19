@@ -56,8 +56,8 @@ private[dsl] final class CommandPalette(declared: () => KeyBindings):
       Element.text(s"$marker${bound.label}  ${bound.description}").styled(_ => style).length(1)
     }
     val body    = Element
-      .panel("Commands")(
-        (Element.input(query, placeholder = "type to filter…").length(1) +: listing)*
+      .panel(Messages.active.paletteTitle)(
+        (Element.input(query, placeholder = Messages.active.palettePlaceholder).length(1) +: listing)*
       )
       .frameStyle(theme.accent)
       .onKeyEvent(handleKey)
