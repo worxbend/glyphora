@@ -28,6 +28,8 @@ output has the same shape and two runs diff cleanly in a terminal.
 ./mill widgets.test.runMain io.worxbend.tui.widgets.SearchBench
 ./mill widgets.test.runMain io.worxbend.tui.widgets.TextAreaWrapBench
 ./mill dsl.test.runMain io.worxbend.tui.dsl.RevealBench
+./mill widgets.test.runMain io.worxbend.tui.widgets.EffectPatternBench
+./mill widgets.test.runMain io.worxbend.tui.widgets.DiffViewBench
 ```
 
 None prints anything but a table. None asserts anything, and none is run by any
@@ -130,6 +132,37 @@ it did. The shared SGR codec behind the terminal, print mode and the exports lea
 (dashboard 80x24, recording off: 132–166 µs before, 112–123 µs after; wide tree:
 6.1–8.7 ms before, 5.3–6.1 ms after) even though every focusable inside a `scrollView`
 now reports where it painted, which the next frame's reveal looks up.
+
+### Patterned effects and the diff viewer
+
+- `EffectPatternBench` — one op is a whole one-second effect run, 61 frames at 60 fps over
+  an unchanging 120 x 40 frame: a plain `fadeIn` (the floor), a `patterned` radial
+  `fadeIn` and a `patterned` sweep `hslShift`. `patterned` now caches each progress step's
+  evaluation while the content underneath is unchanged, so a run evaluates the inner
+  effect at most `PatternLevels + 1` times instead of up to that many per frame.
+- `DiffViewBench` — `Patch.of` over a 5 000-line file with one line in twenty edited; a
+  fresh `DiffViewState` laying the rows out and painting one 120 x 40 frame; a steady
+  frame reusing the laid-out rows; and `Patch.of` over two unrelated 20 000-line texts,
+  the case `Patch.DefaultMaxEditDistance` exists for.
+
+Three runs each, before (the 0.20.0 integration branch at `644c3431`) and after, on the
+same shared machine (2 GB heap, SerialGC, load average around 6), so read the ranges:
+
+| Run | Before | After |
+|---|---|---|
+| `fadeIn`, unpatterned (61 frames) | 4.6–4.7 ms | 4.6–5.5 ms |
+| `patterned` radial `fadeIn` (61 frames) | 133–135 ms | 25–27 ms |
+| `patterned` sweep `hslShift` (61 frames) | 75–76 ms | 13–16 ms |
+| `Patch.of`, 5 000 lines, 250 edits | 6.6–6.9 ms | 5.9–8.0 ms |
+| `diffView` layout + frame | 6.7–7.3 ms | 7.1–7.8 ms |
+| `diffView` steady frame | 156–177 µs | 153–167 µs |
+| `Patch.of`, 20 000 unrelated lines | out of memory (2 GB) | 23 ms, approximate |
+
+The patterned runs are five times cheaper; the diff viewer's interactive additions
+(expandable folds, horizontal scroll, the lexer picked from the path) leave its frames
+within noise; and a diff whose edit distance passes the cap now finishes in bounded
+memory — marked `Patch.approximate`, with one replacement where the cap cut the search
+short — where it used to exhaust the heap.
 
 ### What a frame walks
 

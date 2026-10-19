@@ -583,7 +583,13 @@ key the app binds. SLF4J users route through `jul-to-slf4j` — there is no SLF4
 `Added` and `Removed` lines. It returns `Either[PatchError, Patch]`, the error naming the input
 line that did not parse; `patch.unified` writes the text back. `Patch.of(before, after)` compares
 two texts line by line with Myers' algorithm and groups the changes into hunks with three lines
-of context, the way `git diff` does (`Patch.of(a, b, context = 10)` for more).
+of context, the way `git diff` does (`Patch.of(a, b, context = 10)` for more). Myers'
+search costs memory in the square of the number of differences, so `Patch.of` stops looking
+for a shortest diff past `Patch.DefaultMaxEditDistance` (2 000) added plus removed lines —
+`maxEditDistance` changes it. Past the cap the common prefix and suffix are still matched,
+everything between them becomes one removal followed by one addition, and the patch is
+marked `approximate`; `diffView` says so on its first row. Two unrelated 20 000-line texts
+then take milliseconds rather than the whole heap.
 
 ```scala
 private val state = DiffViewState()
@@ -604,12 +610,18 @@ Added lines take the theme's `success` style, removed lines `error`, hunk header
 - `.contextLines(n)` keeps `n` unchanged lines around each change and folds a longer run into
   one `… 12 unchanged lines` row.
 - `.lexer(Lexer.Scala)` highlights the code through any `Lexer`, over the added and removed
-  colours.
+  colours. Without it, each file is highlighted by the built-in lexer its path's extension
+  names (`src/App.scala`, `web/app.ts`, `deploy.yaml`, …); `DiffViewOptions(lexerFromPath =
+  false)` turns that off. Each line is lexed on its own.
 - `.withOptions(DiffViewOptions(...))` sets everything at once, including every style and the
   divider and fold glyphs.
 
 The pane is focusable. `n` or `]` scrolls the next hunk's header to the top row, `p` or `[`
-the previous one; the arrows, PageUp/PageDown, Home/End and the wheel scroll. `DiffViewState`
+the previous one; Up/Down, PageUp/PageDown, Home/End and the wheel scroll. Enter expands
+the first folded run on screen, and a click expands the one under the pointer
+(`state.expandAt(row)`, `expandFirstVisible()` and `collapseAll()` from code). Left/Right,
+Shift+wheel and a sideways wheel scroll every line's text sideways, the gutter, markers and
+headers staying put (`state.scrollLeft()`, `scrollRight()`, `column`). `DiffViewState`
 is caller-owned and render-thread-only — create it once outside `view`. It keeps the rows of
 the last patch it drew, so hand the node the same `Patch` value each frame. Without the DSL,
 `DiffView(patch, options)` is a `StatefulWidget[DiffViewState]` that also implements

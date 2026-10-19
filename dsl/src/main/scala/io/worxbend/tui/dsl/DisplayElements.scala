@@ -8,8 +8,10 @@ import io.worxbend.tui.core.{
   Flex,
   KeyCode,
   KeyEvent,
+  KeyModifiers,
   Line,
   Measured,
+  MouseButton,
   Rect,
   Span,
   Style,
@@ -728,7 +730,7 @@ final case class DiffViewElement(
     val view = w.DiffView(patch, options.copy(style = props.style.patch(options.style)))
     new Widget with Measured:
       def render(area: Rect, buffer: Buffer): Unit   = view.render(area, buffer, state)
-      override def heightAt(width: Int): Option[Int] = view.heightAt(width)
+      override def heightAt(width: Int): Option[Int] = Some(view.heightAt(width, state))
 
   private[dsl] def withProps(props: ElementProps): DiffViewElement = copy(props = props)
 
@@ -737,12 +739,27 @@ final case class DiffViewElement(
       keys {
         case KeyEvent(KeyCode.Char('n') | KeyCode.Char(']'), _) => state.nextHunk()
         case KeyEvent(KeyCode.Char('p') | KeyCode.Char('['), _) => state.previousHunk()
+        case KeyEvent(KeyCode.Enter, mods) if mods.isEmpty      => val _ = state.expandFirstVisible()
+        case KeyEvent(KeyCode.Left, mods) if mods.isEmpty       => state.scrollLeft()
+        case KeyEvent(KeyCode.Right, mods) if mods.isEmpty      => state.scrollRight()
       }.orElse(scrollKeys(rows => state.scrollUp(rows), rows => state.scrollDown(rows)))
         .orElse(scrollJumpKeys(() => state.first(), () => state.last()))
     )
 
+  /** The wheel scrolls rows, Shift+wheel (or a sideways wheel) the line text, and a click on a folded run expands it.
+    */
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
-    Some(wheelScrolls(() => state.scrollUp(), () => state.scrollDown()))
+    Some { (event, area) =>
+      val sideways = event.modifiers.hasAny(KeyModifiers.Shift)
+      event.kind match
+        case MouseEventKind.ScrollUp if sideways                     => { state.scrollLeft(); true }
+        case MouseEventKind.ScrollDown if sideways                   => { state.scrollRight(); true }
+        case MouseEventKind.ScrollLeft                               => { state.scrollLeft(); true }
+        case MouseEventKind.ScrollRight                              => { state.scrollRight(); true }
+        case MouseEventKind.Down if event.button == MouseButton.Left =>
+          state.expandAt(state.offset + event.position.y - area.y)
+        case _ => wheelScrolls(() => state.scrollUp(), () => state.scrollDown())(event, area)
+    }
 
 /** A prototyping stand-in: a dashed box with `label` centred in it and the size the layout actually gave it written
   * underneath. Takes whatever room its container hands out, the way the panel it stands in for eventually will, so
