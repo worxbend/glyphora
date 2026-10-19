@@ -94,7 +94,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 
 **Testing and tooling**
 
-- `TuiApp.boundsOf(key)` / `ElementHost.boundsOf`, `Pilot.click(rect)` / `Pilot.hover(rect)`; `NodeBounds`.
+- `TuiApp.boundsOf(key)` / `ElementHost.boundsOf`, `Pilot.click(rect)` / `Pilot.hover(rect)`; `NodeBounds`; `ElementHost.enableBoundsRecording()` for an embedding host.
 - `ElementTreeSnapshot.render(app)` and `Element.debugName`.
 - `BufferExport.svg` / `html` / `ansi` with `ExportOptions`; styled goldens `GoldenFrames.assertMatchesStyled` / `Pilot.assertGoldenStyled`.
 - Asciicast recording via `RunnerConfig.withRecording(path)`, `-Dglyphora.record=…` or `AsciicastRecorder`; `Tape.parse` / `Tape.run`.

@@ -45,9 +45,18 @@ final class ElementHost:
 
   /** Whether the next frames record the painted rect of every node, which is what [[boundsOf]], the element-tree
     * snapshot and the click-outside backdrop read. Off by default because it costs a wrapper per node per frame; a call
-    * to [[boundsOf]] switches it on, as does `TuiApp` for a headless run and for a click-outside modal.
+    * to [[boundsOf]] switches it on, as does `TuiApp` for a headless run and for a click-outside modal. Written by the
+    * host and `TuiApp`; an embedding host opts in through [[enableBoundsRecording]].
     */
-  @volatile var recordBounds: Boolean = false
+  @volatile private[dsl] var recordBounds: Boolean = false
+
+  /** Whether this host records the painted rect of every node — see [[enableBoundsRecording]]. */
+  def recordingBounds: Boolean = recordBounds
+
+  /** Records the painted rect of every node from the next frame on, for [[boundsOf]] and the gestures that hit-test
+    * against it. Stays on for the life of the host; a call to [[boundsOf]] does the same.
+    */
+  def enableBoundsRecording(): Unit = recordBounds = true
 
   /** Pointer capture and click counting between mouse events — see [[PointerCapture]]. */
   private var pointer = PointerCapture()
