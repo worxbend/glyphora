@@ -47,7 +47,7 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
         backend.cursorBlinkSuppressed,
         backend.keyEventTypesActive,
         backend.pointerShape,
-        backend.taskbarProgress,
+        backend.taskbarState,
       )
     val failures = Seq.newBuilder[BackendError]
 
@@ -61,7 +61,7 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
     undress(state.mouse.isDefined, backend.disableMouseCapture())
     undress(state.cursorShape != CursorShape.Default, backend.setCursorShape(CursorShape.Default))
     undress(state.pointerShape != PointerShape.Default, backend.setPointerShape(PointerShape.Default))
-    undress(state.taskbarProgress.isDefined, backend.setTaskbarProgress(None))
+    undress(state.taskbarState != TaskbarState.Cleared, backend.setTaskbarState(TaskbarState.Cleared))
     undress(state.cursorBlinkSuppressed, backend.setCursorBlink(true))
     undress(state.cursorHidden, backend.showCursor())
     undress(state.alternateScreen, backend.leaveAlternateScreen())
@@ -80,11 +80,14 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
   private def parkBelowInlineFrame(): Either[BackendError, Unit] =
     backend.size.flatMap { size =>
       backend.inlineKept.filter(_ < backend.inlineRows) match
-        // a run that asked to keep fewer rows than it reserved (`keepInlineRows`): the rows below the kept ones are
-        // blank in its last frame, so the shell's next output starts on the first of them rather than below the strip
+        // a run that asked to keep fewer rows than it reserved (`keepInlineRows`): the shell's next output starts on the
+        // first row below the kept ones rather than below the strip, and those rows are erased first — whatever the
+        // last frame left there, the shell must not print over a leftover half of it
         case Some(kept) =>
           val top = math.max(0, size.height - backend.inlineRows)
-          backend.writeRaw(AnsiSequences.moveTo(0, math.min(size.height - 1, top + kept)))
+          backend.writeRaw(
+            AnsiSequences.moveTo(0, math.min(size.height - 1, top + kept)) + AnsiSequences.clear(ClearType.AfterCursor)
+          )
         case None       => backend.writeRaw(AnsiSequences.moveTo(0, math.max(0, size.height - 1)) + "\r\n")
     }
 
@@ -104,7 +107,7 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
     if state.cursorHidden then bestEffort(backend.hideCursor())
     if state.cursorShape != CursorShape.Default then bestEffort(backend.setCursorShape(state.cursorShape))
     if state.pointerShape != PointerShape.Default then bestEffort(backend.setPointerShape(state.pointerShape))
-    if state.taskbarProgress.isDefined then bestEffort(backend.setTaskbarProgress(state.taskbarProgress))
+    if state.taskbarState != TaskbarState.Cleared then bestEffort(backend.setTaskbarState(state.taskbarState))
     // DECSCUSR also selects blinking/steady: restore the app's explicit blink suppression after its shape.
     if state.cursorBlinkSuppressed then bestEffort(backend.setCursorBlink(false))
     state.mouse.foreach(mode => bestEffort(backend.enableMouseCapture(mode)))
@@ -132,7 +135,7 @@ private[terminal] object TerminalDressing:
       cursorBlinkSuppressed: Boolean,
       keyEventTypes: Boolean,
       pointerShape: PointerShape = PointerShape.Default,
-      taskbarProgress: Option[Double] = None,
+      taskbarState: TaskbarState = TaskbarState.Cleared,
   )
 
   object TerminalState:

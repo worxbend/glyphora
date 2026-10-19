@@ -3,6 +3,7 @@ package io.worxbend.tui.dsl
 import io.worxbend.tui.core.{ColorScheme, Effect}
 import io.worxbend.tui.runtime.{Reactive, ReactiveScope, Signal}
 import io.worxbend.tui.widgets.{Clipboard, NoticeLevel}
+import io.worxbend.tui.terminal.TaskbarState
 
 import java.nio.file.Path
 import scala.concurrent.duration.FiniteDuration
@@ -109,6 +110,12 @@ trait AppServices extends Notifications:
     */
   def taskbarProgress(progress: Reactive[Option[Double]]): Unit
 
+  /** [[taskbarProgress]] with the indicator's other states — `TaskbarState.Error(fraction)`, `Indeterminate`,
+    * `Paused(fraction)` — under the same rules: read every frame, pushed on change, cleared on exit, replaced by a
+    * second binding of either kind and unbound by [[clearTaskbarProgress]].
+    */
+  def taskbarState(state: Reactive[TaskbarState]): Unit
+
   /** Stops mirroring a progress source and clears whatever the taskbar was showing. */
   def clearTaskbarProgress(): Unit
 
@@ -137,6 +144,7 @@ object AppServices:
     def desktop(title: String, body: String): Unit                                  = ()
     def colorScheme: Reactive[ColorScheme]                                          = unknownScheme
     def taskbarProgress(progress: Reactive[Option[Double]]): Unit                   = ()
+    def taskbarState(state: Reactive[TaskbarState]): Unit                           = ()
     def clearTaskbarProgress(): Unit                                                = ()
     def pushScreen(screen: Screen): Unit                                            = ()
     def popScreen(): Unit                                                           = ()

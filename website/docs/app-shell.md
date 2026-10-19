@@ -1064,6 +1064,12 @@ reports every switch of the user's system theme, and the next frame follows. A t
 that answers nothing resolves to `Theme.Dark` — exactly what every app got before the
 terminal could be asked.
 
+Building on it keeps it automatic: `Theme.auto.withAccent(brand).withName("brand")` is
+still an auto theme (`theme.isAuto`), and resolves to `Theme.Light.withAccent(brand)` on
+a light terminal and `Theme.Dark.withAccent(brand)` otherwise — every `with*` builder is
+applied to both variants. `theme.resolve(scheme)` is the same resolution, for a test or
+a host outside `TuiApp`.
+
 An app that returns any other theme pins it and sees none of this. To pick between two
 palettes of your own, read the scheme yourself:
 
@@ -1150,6 +1156,12 @@ printAbove("deployment finished", s"id: ${deployment.id}")
   frame so a change schedules the frame that pushes it, and the indicator is cleared
   when the app exits or the terminal is handed over. The same binding is available to
   helpers as `AppServices.taskbarProgress`.
+- `taskbarState(signal)` binds a `Reactive[TaskbarState]` instead, for the indicator's
+  other states: `TaskbarState.Error(fraction)` (Windows Terminal paints it red),
+  `TaskbarState.Indeterminate` (busy, no known extent), `TaskbarState.Paused(fraction)`,
+  plus `Progress(fraction)` and `Cleared`. It follows the same rules — read every frame,
+  pushed on change, cleared on exit — and binding either kind replaces the other. A
+  terminal that only draws a determinate bar shows a state by its fraction.
 
 These are no-ops or unavailable before a runner is active, so invoke them from event
 handlers or from `onStart()` — never from a constructor.
@@ -1159,7 +1171,9 @@ handlers or from `onStart()` — never from a constructor.
 While a `TuiApp` runs, `System.out` and `System.err` — and Scala's `println` with them —
 are captured: each completed line is written into the scrollback above the live UI
 through `printAbove`, so a stray debug print or a library that logs to `System.err` no
-longer paints over the frame. Whatever is still buffered without a newline is flushed to
+longer paints over the frame. Lines are batched per frame — everything printed between
+two frames, from any thread, goes into the scrollback in one trip — so a chatty library
+costs one scrollback write per frame, not one per line. Whatever is still buffered without a newline is flushed to
 the real streams when the run ends, under the restored prompt, and `suspend` passes the
 streams straight through to the terminal for the duration of its body.
 

@@ -58,3 +58,16 @@ final class TextInputCaretSpec extends AnyFunSuite:
     // the host decides whether the painted cursor shows; the caret cell is geometry and does not depend on it
     val hidden = TextInput(showCursor = false)
     assert(hidden.caretAt(Rect(0, 0, 10, 1), TextInputState("ab")) == Some(Position(2, 0)))
+
+  test("a masked input draws one mask glyph per cluster, and the caret follows the mask, not the hidden text"):
+    val masked = TextInput(mask = Some("•"))
+    val state  = TextInputState()
+    state.insert("日本x")
+    val area   = Rect(0, 0, 10, 1)
+    val buffer = Buffer(Rect(0, 0, 10, 1))
+    masked.render(area, buffer, state)
+    assert((0 until 3).map(x => buffer.get(x, 0).symbol).mkString == "•••")
+    assert(!(0 until 10).exists(x => Set("日", "本", "x").contains(buffer.get(x, 0).symbol)))
+    // three one-column bullets: the caret sits on the fourth column, where the painted cursor is
+    assert(masked.caretAt(area, state).contains(Position(3, 0)))
+    assert(paintedCursor(buffer, area).contains(Position(3, 0)))

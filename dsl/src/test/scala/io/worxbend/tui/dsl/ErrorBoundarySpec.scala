@@ -64,6 +64,18 @@ final class ErrorBoundarySpec extends AnyFunSuite with PilotFixture:
       bridge.cancel()
       logger.setUseParentHandlers(true)
 
+  test("handed a LogRing directly, the boundary records the failure there without a JUL bridge"):
+    val ring             = LogRing(10)
+    def explode: Element = throw IllegalStateException("boom")
+    val tree             = errorBoundary(_ => text("fallback"), ring)(explode)
+    val frame            = BufferAssertions.rendered(tree.widget, 20, 1)
+    assert(BufferAssertions.text(frame).trim == "fallback")
+    val logged           = ring.snapshot
+    assert(logged.sizeIs == 1)
+    assert(logged.head.level == LogLevel.Error)
+    assert(logged.head.logger == "io.worxbend.tui.dsl")
+    assert(logged.head.throwable.exists(_.getMessage == "boom"))
+
   test("a healthy subtree is unchanged by the boundary: it renders, measures and focuses as itself"):
     val inner = text("fine").wrapped
     val tree  = errorBoundary(_ => text("fallback"))(inner)

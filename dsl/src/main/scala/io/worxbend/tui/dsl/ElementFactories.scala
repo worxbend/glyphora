@@ -1117,6 +1117,15 @@ private[dsl] trait ElementFactories:
       )
     }
 
+  /** [[logConsole]] that scrolls: `state` is the caller-owned [[LogConsoleState]] — scroll back, detach from the tail
+    * and follow it again (`state.toggleFollow()` for a key of the app's own). Focusable; while focused Up/Down and
+    * PageUp/PageDown scroll, `Home` jumps to the oldest record and `End` follows the tail, and the wheel scrolls on
+    * hover. Create the state once, outside `view`.
+    */
+  def logConsole(ring: LogRing, state: LogConsoleState)(using theme: Theme): LogConsoleElement =
+    val console = logConsole(ring)
+    console.copy(scroll = Some(state), props = console.props.copy(focusable = true))
+
   /** Keeps a failing `subtree` from ending the run: a non-fatal throwable while it is built or painted paints
     * `fallback(error)` in its area instead, logs the failure, and the next frame tries the subtree again. See
     * [[ErrorBoundaryElement]].
@@ -1129,6 +1138,12 @@ private[dsl] trait ElementFactories:
     */
   def errorBoundary(fallback: Throwable => Element)(subtree: => Element): ErrorBoundaryElement =
     ErrorBoundaryElement(() => subtree, fallback)
+
+  /** [[errorBoundary]] that records the failure in `ring` — at `Error`, under the `io.worxbend.tui.dsl` logger — rather
+    * than through `java.util.logging`, so the `logConsole(ring)` showing it needs no `JulBridge`.
+    */
+  def errorBoundary(fallback: Throwable => Element, ring: LogRing)(subtree: => Element): ErrorBoundaryElement =
+    ErrorBoundaryElement(() => subtree, fallback, Some(ring))
 
   /** A one-row horizontal divider, optionally captioned. Drawn in the ambient [[Theme]]'s `border` style, with the
     * caption in `muted`, so it matches the frames around it.

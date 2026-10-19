@@ -793,11 +793,14 @@ terminal is dressed — a path that cannot be written ends `run` with `RunnerErr
 and the terminal untouched — then writes a JSON header and one `[time, "o", data]`
 event per flushed frame that changed something, where `data` is the very ANSI diff a
 terminal would have received (`FrameEncoder`'s, so the playback is what the screen
-showed). A frame that changed nothing writes no event; the file is closed first thing in
-teardown, so the last frame is on disk whatever `onStop` does. Recording happens
-synchronously after each flush, on the render thread, alongside any `onFrame` observer:
-one buffered write per frame, which is cheap, but it is still I/O inside the frame — do
-not leave it on in a release build.
+showed). A frame that changed nothing writes no event. The render thread only stamps each
+flushed frame and hands it to a bounded queue; a background writer thread encodes the diff
+and writes it, so no I/O happens inside the frame (a disk slower than the frame rate fills
+the queue and then slows the app rather than dropping frames). The queue is drained and the
+file flushed before `suspend` hands the terminal over, and drained and closed first thing
+in teardown on every exit — a normal quit, a thrown handler — so the last frame is on disk
+whatever `onStop` does. A write failure on the writer thread ends the run as
+`RunnerError.Handler` at the next frame or at close.
 
 `AsciicastRecorder` is also a plain `CompletedFrame => Unit` with an injectable clock,
 which is how the tape runner below produces deterministic recordings.

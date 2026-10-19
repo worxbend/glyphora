@@ -108,6 +108,21 @@ final class PromptFormSpec extends AnyFunSuite with PilotFixture:
     assert(pilot.awaitTermination())
     assert(result.get.contains(Some(base.resolve("settings.json"))))
 
+  test("password with a bullet mask shows one bullet per typed character and never the text"):
+    val backend = HeadlessBackend(Size(40, 4))
+    val result  = AtomicReference(Option.empty[Option[String]])
+    val pilot   = startPilot(backend) {
+      result.set(Some(Prompt.password("Token", mask = Some("•"))(using PromptSession.on(backend))))
+      Right(())
+    }
+    pilot.waitForIdle().typeText("hunter2").waitForIdle()
+    assert(pilot.screenText.contains("•••••••"), pilot.screenText)
+    assert(!pilot.screenText.contains("hunter2"))
+    pilot.press("enter")
+    assert(pilot.awaitTermination())
+    assert(result.get.contains(Some("hunter2")))
+    assert(!pilot.screenText.contains("hunter2"))
+
   test("password hides what is typed and summarises with a fixed mask"):
     given PromptSession = Prompt.answers(Seq("hunter2"), _ => ())
     assert(Prompt.password("Token") == Some("hunter2"))

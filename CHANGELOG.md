@@ -111,6 +111,12 @@ note in [Versioning & releases](website/docs/versioning.md).
 - Desktop notifications `Notifications.desktop`, taskbar progress `AppServices.taskbarProgress`, in-band resize (mode 2048), grapheme widths (mode 2027).
 - `Backend.keepInlineRows(n)`; `StandardOutput.isTerminal` / `isInputTerminal` / `width`.
 - `TerminalCapabilities.terminalVersion` (XTVERSION), `kittyGraphics`, `inlineImages`; `ImageProtocol.select`.
+- `TaskbarState` (`Error`, `Indeterminate`, `Paused`, …) with `AppServices.taskbarState(signal)`, `Backend.setTaskbarState`, `RunnerHandle.setTaskbarState`.
+- `NonInteractivePolicy.awaitIdle(timeout)`: print mode waits for queued `Async` work, timers and ticks to settle before printing.
+- `logConsole(ring, state)` with `LogConsoleState`: scroll back, detach from the tail, `toggleFollow()`; `errorBoundary(fallback, ring)(subtree)` logs into a `LogRing`.
+- `Codec` version tags with `codec.versioned(n) { case old => Codec.readAs[Old](upgrade) }` migrations.
+- `Theme.isAuto` / `Theme.resolve(scheme)`; `ProgressTask(…, rateWindow)`; `input(state).masked()`, `TextInput(mask = …)`, `Prompt.password(label, mask = Some("•"))`.
+- `AsciicastRecorder.flush()`; `HeadlessBackend.printAboveCalls`, `taskbarStateRequests`, `currentTaskbarState`.
 
 **Testing and tooling**
 
@@ -156,6 +162,11 @@ note in [Versioning & releases](website/docs/versioning.md).
 - A soft-wrapped `textArea` moves Up/Down by wrapped row and re-wraps only the lines an edit changed.
 - Every `scrollView` around a focused or `.ensureVisible` child scrolls to it, nested ones included.
 - `terminal.Sgr`, `BufferExport.ansi` and `FrameEncoder.encodeLines` write through one SGR codec (`core.SgrCodec`); their bytes are unchanged.
+- Captured `println` under `CaptureStdio.PrintAbove` reaches the scrollback in one trip per frame, not one per line.
+- Asciicast recording encodes and writes on a background writer thread, flushed before `suspend` and on every exit.
+- `ProgressTask` rate and ETA follow a ten-second sliding window (`rateWindow = None` for the old average).
+- `Theme.auto.withX(…)` stays automatic: every builder applies to both the light and the dark variant.
+- A mode 2048 in-band resize report fills the window-size pixel cache.
 - `Effect.patterned` caches each progress step's evaluation while the content is unchanged: a radial reveal over 120x40 costs about a fifth of what it did (`EffectPatternBench`).
 - `ScrollWindow.offsetForItems` reads a multi-row `ListView`'s heights in place, bounded by the viewport.
 - `log` draws each line at its own `Line.alignment`, and its search highlight follows.
@@ -173,6 +184,9 @@ note in [Versioning & releases](website/docs/versioning.md).
 - A `scrollView` that scrolls to reveal a child no longer paints its content twice on that frame, so `boundsOf` and the other recorded rects are never one frame stale.
 - A mouse selection stays on its node when nodes are added elsewhere in the tree, and moves with the content when a `scrollView` scrolls.
 - `scrollbar(…)` and `notice(…)` can be placed in a `grid` with `.at(row, col)`.
+- One resize on a mode 2048 terminal (SIGWINCH plus the in-band report) delivers one `Event.Resize`, not two.
+- `keepInlineRows` erases the rows below the kept ones on close.
+- `CaptureStdio.PrintAbove` lines still queued when the loop closes reach the original stream instead of being lost.
 - `hexViewer` pads the ASCII column of a short final row, so its closing bar lines up.
 - `Patch.of` over two very different large texts no longer exhausts the heap.
 
@@ -206,3 +220,4 @@ Each item has a before/after migration note in
 - `AnsiParser` / `Text.fromAnsi` expand tabs and apply `\r` as an overwrite instead of dropping both; `log` honours `Line.alignment`.
 - `DiffViewOptions` gained `lexerFromPath` (after `lexer`, on by default) and `approximateNotice`; `Patch` gained `approximate`; a focused `diffView` consumes Left/Right/Enter and a click; `DataTableOptions` gained `multiLine` after `alignments`; `TreeNode` gained `id`; `TextAreaElement` and `PromptComposerElement` gained trailing fields; the YAML lexer reads a block scalar's lines as one string.
 - `RunnerConfig.mouseCapture: Boolean` is now `mouse: MouseCaptureMode` (`MouseCaptureMode` gained `Off`); `RunnerConfig(mouseCapture = true)` becomes `RunnerConfig(mouse = MouseCaptureMode.Buttons)`. `withMouseCapture`, `withoutMouseCapture`, a derived `mouseCapture` and the positional Boolean arities still work.
+- `Codec` text gains a leading `@<version>;` tag (untagged files still decode); `NonInteractivePolicy` gained `AwaitingIdle`; `AppServices` gained `taskbarState`.

@@ -38,6 +38,10 @@ final class TextInputState(initial: String = "", killRing: KillRing = KillRing()
   * The cursor is drawn by styling the cluster under it (or a trailing space) with `cursorStyle` — pass
   * `showCursor = false` for unfocused inputs so only the focused field shows a cursor. A selection paints in
   * `selectionStyle`.
+  *
+  * `mask` draws every grapheme cluster of the value as that one glyph — `Some("•")` for a password field — so neither
+  * the text nor its display width shows; scrolling, the cursor and [[caretAt]] all follow the masked row. The value in
+  * the state is untouched, and the placeholder of an empty field is drawn as is.
   */
 final case class TextInput(
     placeholder: String = "",
@@ -46,11 +50,16 @@ final case class TextInput(
     cursorStyle: Style = Style.Default.reverse,
     placeholderStyle: Style = Style.Default.dim,
     selectionStyle: Style = Style.Default.reverse,
+    mask: Option[String] = None,
 ) extends StatefulWidget[TextInputState]:
+
+  /** The clusters as drawn: the value's own, or one mask glyph per cluster. */
+  private def shown(state: TextInputState): Vector[String] =
+    mask.fold(state.clusterSeq)(glyph => Vector.fill(state.clusterSeq.size)(glyph))
 
   def render(area: Rect, buffer: Buffer, state: TextInputState): Unit =
     if !area.isEmpty then
-      val clusters = state.clusterSeq
+      val clusters = shown(state)
       if clusters.isEmpty then renderEmpty(area, buffer)
       else
         state.scrollCluster = ClusterRow.scrolledTo(clusters, state.scrollCluster, state.cursor, area.width)
@@ -69,7 +78,7 @@ final case class TextInput(
   def caretAt(area: Rect, state: TextInputState): Option[Position] =
     if area.isEmpty then None
     else
-      val clusters = state.clusterSeq
+      val clusters = shown(state)
       val column   =
         if clusters.isEmpty then area.x
         else

@@ -4,6 +4,8 @@ import io.worxbend.tui.core.{Buffer, Rect}
 
 import org.scalatest.funsuite.AnyFunSuite
 
+import scala.concurrent.duration.{DurationInt, DurationLong}
+
 /** Covers the no-TTY policies: what `TuiApp.run()` does when [[TuiApp.printTarget]] says the process has no terminal to
   * be interactive on. The target is injected — a fixed size, a fixed colour depth and a `StringBuilder` for standard
   * output — so nothing here depends on how Mill's forked test JVM happens to be attached.
@@ -72,6 +74,42 @@ final class NonInteractiveRunSpec extends AnyFunSuite:
         Left(BackendError.UnsupportedTerminal("no tty in this test"))
       def view(using ReactiveScope, Theme): Element                         = text("unused")
     assert(app.run().isLeft)
+
+  /** An app whose content arrives from background work started in `onStart`, after `delayMillis`. */
+  private final class LoadingApp(policy: NonInteractivePolicy, out: StringBuilder, delayMillis: Long) extends TuiApp:
+    private val loaded                                      = Signal("loading…")
+    override def config: RunnerConfig                       = RunnerConfig().withNonInteractive(policy)
+    override def onStart(): Unit                            =
+      Async.run { Thread.sleep(delayMillis); "loaded 42 rows" }(loaded.set)
+    override protected def printTarget: Option[PrintTarget] =
+      Some(PrintTarget(Size(24, 2), ColorDepth.NoColor, text => { val _ = out.append(text) }))
+    def view(using ReactiveScope, Theme): Element           = text(loaded.get)
+
+  test("PrintFinalFrame alone prints the initial state, without waiting for background work"):
+    val out = StringBuilder()
+    assert(LoadingApp(NonInteractivePolicy.PrintFinalFrame, out, 200).run() == Right(()))
+    assert(out.result().contains("loading"), out.result())
+
+  test("awaitIdle waits for the queued async work, then prints the settled frame well before the timeout"):
+    val out     = StringBuilder()
+    val policy  = NonInteractivePolicy.PrintFinalFrame.awaitIdle(10.seconds)
+    val started = System.nanoTime()
+    assert(LoadingApp(policy, out, 150).run() == Right(()))
+    val elapsed = (System.nanoTime() - started).nanos
+    assert(out.result().contains("loaded 42 rows"), out.result())
+    assert(out.result().linesIterator.count(_.nonEmpty) == 1, "still exactly one frame")
+    assert(elapsed < 5.seconds, s"returned once idle, not at the timeout: $elapsed")
+
+  test("awaitIdle gives up at the timeout and prints whatever the app composed by then"):
+    val out = StringBuilder()
+    assert(LoadingApp(NonInteractivePolicy.PrintFinalFrame.awaitIdle(100.millis), out, 3000).run() == Right(()))
+    assert(out.result().contains("loading"), out.result())
+
+  test("awaitIdle keeps the policy's output and leaves Fail as Fail"):
+    assert(NonInteractivePolicy.Fail.awaitIdle(1.second) == NonInteractivePolicy.Fail)
+    assert(NonInteractivePolicy.Plain.awaitIdle(1.second).output == NonInteractivePolicy.Plain)
+    assert(NonInteractivePolicy.PrintFinalFrame.awaitIdle(1.second).idleTimeout.contains(1.second))
+    assert(NonInteractivePolicy.PrintFinalFrame.idleTimeout.isEmpty)
 
   // ---------------------------------------------------------------- the frame sink on its own
 

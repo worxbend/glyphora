@@ -1,7 +1,7 @@
 package io.worxbend.tui.runtime
 
 import io.worxbend.tui.core.{Buffer, Event, Position, Widget}
-import io.worxbend.tui.terminal.{Backend, BackendError, MouseCaptureMode, PointerShape}
+import io.worxbend.tui.terminal.{Backend, BackendError, MouseCaptureMode, PointerShape, TaskbarState}
 
 import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
 import scala.util.control.NonFatal
@@ -104,7 +104,16 @@ final class TerminalRunner(
               result = Left(RunnerError.Backend(error))
             case Right(())   =>
               setupIncomplete = false
-              val outcome = runLoop(onStart, handleEvent, render, loop, configWith(opened), capture)
+              val outcome =
+                runLoop(
+                  onStart,
+                  handleEvent,
+                  render,
+                  loop,
+                  configWith(opened),
+                  capture,
+                  () => opened.foreach(_.flush()),
+                )
               result = report(outcome, failures.collected)
               // One final bounded batch per queue, not a drain-until-empty: self-requeueing producers cannot postpone
               // onStop and backend restoration forever. Remaining owned work is discarded by close after onStop.
@@ -149,6 +158,9 @@ final class TerminalRunner(
       if setupIncomplete then release(backend.emergencyRestore())
       // last, once the terminal is the shell's again: the partial line this flushes belongs under the restored prompt,
       // not on an alternate screen that is about to be discarded
+      // a batch whose flush the closed loop discarded: its lines belong under the prompt too, before the partial line
+      release(printAboveBatch.foreach(_.drainToFallback()))
+      printAboveBatch = None
       release(capture.foreach(_.restore()))
     thrown.foreach(error => throw error)
     result
@@ -230,8 +242,21 @@ final class TerminalRunner(
       loop: RenderThread.RenderLoop,
       effective: RunnerConfig,
       capture: Option[StdioCapture],
+      beforeSuspend: () => Unit,
   ): Option[LoopFailure] =
-    val body = LoopBody(backend, effective, nanoTime, redrawRequested, onStart, handleEvent, render, loop, capture)
+    val body =
+      LoopBody(
+        backend,
+        effective,
+        nanoTime,
+        redrawRequested,
+        onStart,
+        handleEvent,
+        render,
+        loop,
+        capture,
+        beforeSuspend,
+      )
     capture match
       case Some(active) => Console.withOut(active.outStream)(Console.withErr(active.errStream)(body.run()))
       case None         => body.run()
@@ -264,10 +289,13 @@ final class TerminalRunner(
     config.captureStdio.getOrElse(CaptureStdio.Off) match
       case CaptureStdio.Off           => None
       case CaptureStdio.PrintAbove    =>
-        // the fallback is the *original* stream: writing to the capturing one from inside its own sink would loop
-        lazy val capture: StdioCapture =
-          StdioCapture(printAboveSink(loop, capture.priorOut), printAboveSink(loop, capture.priorErr))
+        // one batch for both streams, so stdout and stderr lines keep their relative order in the scrollback; the
+        // fallback is the *original* stream: writing to the capturing one from inside its own sink would loop
+        lazy val capture: StdioCapture  = StdioCapture(batch.offer, batch.offer)
+        lazy val batch: PrintAboveBatch =
+          PrintAboveBatch(loop, lines => { val _ = backend.printAbove(lines) }, line => capture.priorOut.println(line))
         capture.install()
+        printAboveBatch = Some(batch)
         Some(capture)
       case CaptureStdio.Console(ring) =>
         val capture = StdioCapture(
@@ -277,12 +305,10 @@ final class TerminalRunner(
         capture.install()
         Some(capture)
 
-  private def printAboveSink(loop: RenderThread.RenderLoop, fallback: => java.io.PrintStream): String => Unit =
-    line =>
-      val accepted =
-        try loop.execute { val _ = backend.printAbove(Seq(line)) }
-        catch case _: java.util.concurrent.RejectedExecutionException => false
-      if !accepted then fallback.println(line)
+  /** The `PrintAbove` batch of the current run, if any: drained to the original stream at teardown, where a flush the
+    * closing loop discarded would otherwise lose its lines. Set and read on the render thread.
+    */
+  private var printAboveBatch: Option[PrintAboveBatch] = None
 
 object TerminalRunner:
   /** Releases an already-owned backend when application preparation failed before a runner existed. No terminal modes
@@ -319,11 +345,12 @@ private final class LoopBody(
     render: Frame => Unit,
     loop: RenderThread.RenderLoop,
     capture: Option[StdioCapture],
+    beforeSuspend: () => Unit,
 ):
 
   private val state    = LoopState()
   private val ticks    = TickSchedule(config.tickRate, nanoTime)
-  private val handle   = BackendHandle(backend, state, capture)
+  private val handle   = BackendHandle(backend, state, capture, beforeSuspend)
   private val composer = FrameComposer(backend, render, config.onFrame, config.viewport, config.onFrameTiming, nanoTime)
 
   private def isLive: Boolean = state.isLive && !loop.stopRequested
@@ -639,8 +666,12 @@ private final class LoopState:
   * is not thrown: it is recorded on the shared [[LoopState]], which ends the loop after the current iteration rather
   * than unwinding it mid-frame.
   */
-private final class BackendHandle(backend: Backend, state: LoopState, capture: Option[StdioCapture])
-    extends RunnerHandle:
+private final class BackendHandle(
+    backend: Backend,
+    state: LoopState,
+    capture: Option[StdioCapture],
+    beforeSuspend: () => Unit,
+) extends RunnerHandle:
 
   def quit(): Unit                           = state.stop()
   def runOnRenderThread(body: => Unit): Unit = RenderThread.runOnRenderThread(body)
@@ -649,14 +680,18 @@ private final class BackendHandle(backend: Backend, state: LoopState, capture: O
 
   // the backend forces a full repaint once `body` hands the terminal back; while it is away, captured output goes to
   // the real streams, because the terminal the body is using *is* the real stream
-  def suspend(body: => Unit): Unit         = state.record(backend.suspend(StdioCapture.passingThrough(capture)(body)))
+  // and the recording is flushed first, so the `.cast` file is complete for as long as the terminal is away
+  def suspend(body: => Unit): Unit         =
+    beforeSuspend()
+    state.record(backend.suspend(StdioCapture.passingThrough(capture)(body)))
   def printAbove(lines: Seq[String]): Unit = state.record(backend.printAbove(lines))
 
   def insertBefore(height: Int, widget: Widget): Unit = state.record(backend.insertBefore(height, widget))
 
-  def setPointerShape(shape: PointerShape): Unit         = state.record(backend.setPointerShape(shape))
-  def notifyDesktop(title: String, body: String): Unit   = state.record(backend.notifyDesktop(title, body))
-  def setTaskbarProgress(progress: Option[Double]): Unit = state.record(backend.setTaskbarProgress(progress))
+  def setPointerShape(shape: PointerShape): Unit            = state.record(backend.setPointerShape(shape))
+  def notifyDesktop(title: String, body: String): Unit      = state.record(backend.notifyDesktop(title, body))
+  def setTaskbarProgress(progress: Option[Double]): Unit    = state.record(backend.setTaskbarProgress(progress))
+  override def setTaskbarState(taskbar: TaskbarState): Unit = state.record(backend.setTaskbarState(taskbar))
 
   override def setMouseCaptureMode(mode: MouseCaptureMode): Unit = state.record(backend.enableMouseCapture(mode))
 

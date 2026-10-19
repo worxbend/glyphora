@@ -2,6 +2,7 @@ package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{Buffer, Cell, Constraint, GlyphSupport, Position, Rect, Style, Widget}
 import io.worxbend.tui.terminal.PointerShape
+import io.worxbend.tui.runtime.{LogLevel, LogRing}
 import io.worxbend.tui.widgets as w
 
 import java.util.logging.{Level, Logger}
@@ -141,10 +142,11 @@ private[dsl] final case class PointerElement(inner: Element, pointerId: Int, tra
   * *built* (`subtree` is by-name and evaluated here, once per element) and while it is *painted* (the inner widget's
   * `render`). Either way `fallback(error)` is painted in the area the subtree was given — on top of a cleared area, so
   * a half-drawn widget leaves no debris — and the failure is logged at `SEVERE` on the `io.worxbend.tui.dsl` logger,
-  * where a `JulBridge` ring and a `logConsole` can show it; the same failure again (same type, message and throw site),
-  * as a subtree that stays broken produces on every frame, is logged at `FINE`. Nothing is remembered between frames:
-  * the view is rebuilt on the next redraw and the subtree gets to try again, so a failure that was transient heals on
-  * its own.
+  * where a `JulBridge` ring and a `logConsole` can show it; built with a `ring` (`errorBoundary(fallback, ring)`) it is
+  * appended to that [[LogRing]] at `Error` under the same logger name instead, with no bridge needed. Logged, the same
+  * failure again (same type, message and throw site), as a subtree that stays broken produces on every frame, goes out
+  * at `FINE`. Nothing is remembered between frames: the view is rebuilt on the next redraw and the subtree gets to try
+  * again, so a failure that was transient heals on its own.
   *
   * Transparent otherwise, like every decorator: a healthy subtree measures, focuses and routes events as itself. Fatal
   * throwables (`OutOfMemoryError`, `InterruptedException`) are not caught.
@@ -152,6 +154,7 @@ private[dsl] final case class PointerElement(inner: Element, pointerId: Int, tra
 final case class ErrorBoundaryElement(
     build: () => Element,
     fallback: Throwable => Element,
+    ring: Option[LogRing] = None,
 ) extends DecoratingElement:
   type Self = ErrorBoundaryElement
 
@@ -160,7 +163,7 @@ final case class ErrorBoundaryElement(
     try build()
     catch
       case NonFatal(error) =>
-        ErrorBoundaryElement.report("building", error)
+        ErrorBoundaryElement.report("building", error, ring)
         fallback(error)
 
   def widget: Widget =
@@ -168,7 +171,7 @@ final case class ErrorBoundaryElement(
       try inner.widget.render(area, buffer)
       catch
         case NonFatal(error) =>
-          ErrorBoundaryElement.report("painting", error)
+          ErrorBoundaryElement.report("painting", error, ring)
           w.Clear().render(area, buffer)
           fallback(error).widget.render(area, buffer)
 
@@ -188,16 +191,21 @@ private object ErrorBoundaryElement:
 
   private val RememberedFailures = 256
 
-  /** Logs `error` at `SEVERE` the first time this failure is seen, and at `FINE` on every repeat. */
-  private def report(phase: String, error: Throwable): Unit =
-    val site  = error.getStackTrace.headOption.fold("")(_.toString)
-    val seen  = s"$phase|${error.getClass.getName}|${error.getMessage}|$site"
-    val first = reported.synchronized {
-      if reported.size >= RememberedFailures then reported.clear()
-      reported.add(seen)
-    }
-    val level = if first then Level.SEVERE else Level.FINE
-    log.log(level, s"errorBoundary: the subtree threw while $phase; painting the fallback instead", error)
+  /** Appends `error` to `ring` when there is one; else logs it at `SEVERE` the first time this failure is seen and at
+    * `FINE` on every repeat.
+    */
+  private def report(phase: String, error: Throwable, ring: Option[LogRing]): Unit =
+    val message = s"errorBoundary: the subtree threw while $phase; painting the fallback instead"
+    ring match
+      case Some(target) => target.log(LogLevel.Error, log.getName, message, Some(error))
+      case None         =>
+        val site  = error.getStackTrace.headOption.fold("")(_.toString)
+        val seen  = s"$phase|${error.getClass.getName}|${error.getMessage}|$site"
+        val first = reported.synchronized {
+          if reported.size >= RememberedFailures then reported.clear()
+          reported.add(seen)
+        }
+        log.log(if first then Level.SEVERE else Level.FINE, message, error)
 
 /** Wraps an element marked `.ensureVisible` during the focus pass, so the area it is handed is reported to the
   * enclosing `scrollView` through [[RevealProbe]]. `id` identifies the request across frames — the element's focus key

@@ -92,3 +92,35 @@ final class ColorSchemeThemeSpec extends AnyFunSuite with PilotFixture:
     given AppServices   = AppServices.NoOp
     given ReactiveScope = ReactiveScope.untracked
     assert(lightDark(Color.Black, Color.White) == Color.White)
+
+  // ------------------------------------------------------------------ Theme.auto through the builders
+
+  private val Red = io.worxbend.tui.core.Style(fg = Some(Color.Red))
+
+  test("Theme.auto.withX stays auto: it resolves to Light or Dark with the same change applied"):
+    val custom = Theme.auto.withAccent(Red).withName("brand")
+    assert(custom.isAuto)
+    assert(custom.resolve(ColorScheme.Light) == Theme.Light.withAccent(Red).withName("brand"))
+    assert(custom.resolve(ColorScheme.Dark) == Theme.Dark.withAccent(Red).withName("brand"))
+    assert(custom.resolve(ColorScheme.Unknown) == Theme.Dark.withAccent(Red).withName("brand"))
+    // outside a TuiApp it is still the dark variant, as Theme.auto itself is
+    assert(custom.accent == Red && custom.primary == Theme.Dark.primary)
+
+  test("Theme.auto resolves to exactly the presets, and an ordinary theme resolves to itself"):
+    assert(Theme.auto.resolve(ColorScheme.Light) == Theme.Light)
+    assert(Theme.auto.resolve(ColorScheme.Dark) == Theme.Dark)
+    assert(!Theme.Dark.isAuto && !Theme.Dark.withAccent(Red).isAuto)
+    assert(Theme.HighContrast.resolve(ColorScheme.Light) == Theme.HighContrast)
+
+  test("an auto theme is not equal to the plain theme its fields match"):
+    assert(Theme.auto != Theme.Dark.withName("auto"))
+    assert(Theme.auto.withAccent(Red) == Theme.auto.withAccent(Red))
+
+  private final class BrandedAutoApp extends TuiApp:
+    override def theme: Theme                     = Theme.auto.withName("brand")
+    def view(using ReactiveScope, Theme): Element =
+      val resolved = summon[Theme]
+      text(s"light=${resolved.primary == Theme.Light.primary} name=${resolved.name}")
+
+  test("a TuiApp whose theme is Theme.auto.withName(...) still follows a light terminal"):
+    running(lightTerminal(), BrandedAutoApp())(pilot => assert(pilot.screenLines.head == "light=true name=brand"))

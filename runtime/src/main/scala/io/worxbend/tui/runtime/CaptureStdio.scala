@@ -25,8 +25,9 @@ enum CaptureStdio:
   case Off
 
   /** Each completed line is printed into the terminal scrollback above the live UI through [[RunnerHandle.printAbove]],
-    * so it is durable and the frame is untouched. A line written off the render thread is queued onto it. What `TuiApp`
-    * does unless its `config` says otherwise.
+    * so it is durable and the frame is untouched. Lines are batched: everything printed between two drains of the
+    * render thread's work queue — from any thread — goes out in one scrollback trip, so a flood of output costs one
+    * trip per frame rather than one per line. What `TuiApp` does unless its `config` says otherwise.
     */
   case PrintAbove
 
