@@ -80,7 +80,9 @@ textArea(source, TextAreaOptions(wrap = true, lineNumbers = true, gutterStyle = 
 `.wrap` breaks long lines at the editor's width instead of scrolling sideways. A line
 breaks after its last space where there is one, and between graphemes where there is not,
 so CJK text wraps between characters and a wide glyph is never cut in half. Up and Down
-still move by logical line.
+move by the rows you see: from the first row of a wrapped line, Down goes to its second row
+at the same display column, not to the next line. Each line's wrap is cached, so typing
+re-wraps only the line being edited.
 
 `.lineNumbers` adds a gutter of right-aligned line numbers, one column wider than the
 largest number. The gutter grows by a column at line 10 and again at line 100. A wrapped

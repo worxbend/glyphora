@@ -338,6 +338,17 @@ Three changes reach almost every app, so check them first:
   `assertCursorAt(x, y)` instead, or set `CaretStyle.Painted` on the field under test.
 - **`TextAreaState` search normalises to NFC**, so a precomposed `é` in the query matches `e` plus a
   combining acute in the text, which used to find nothing. Smartcase is unchanged.
+- **Up and Down under `.wrap` move by wrapped row.** In a soft-wrapped `textArea`, Down from
+  the first row of a long line now goes to that line's second row at the same display column;
+  before, it jumped to the next logical line, skipping every wrapped row in between. Without
+  wrap nothing changes. A test that pinned the old jump moves its expectation, or renders
+  without wrap:
+
+  ```scala
+  // "aaaa bbbb cccc\nxy" in a 10-column textArea, caret at (0, 2)
+  state.moveDown()
+  // before: (1, 2) on the next line; after: (0, 12) on the wrapped row below
+  ```
 
 ### State and hooks
 
