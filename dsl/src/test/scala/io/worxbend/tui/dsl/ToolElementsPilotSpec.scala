@@ -39,6 +39,30 @@ final class ToolElementsPilotSpec extends AnyFunSuite with PilotFixture:
     assert(pilot.screenText.contains("October 2026"))
     quitApp(pilot)
 
+  test("datePicker: min/max keep keys and clicks inside the range"):
+    val state  = DatePickerState(
+      LocalDate.of(2026, 7, 14),
+      () => LocalDate.of(2026, 10, 19),
+      min = Some(LocalDate.of(2026, 7, 10)),
+      max = Some(LocalDate.of(2026, 7, 20)),
+    )
+    var chosen = Option.empty[LocalDate]
+    val pilot  = startApp(datePicker(state, date => chosen = Some(date)))
+    pilot.pressKey(KeyCode.Up).pressKey(KeyCode.Up).waitForIdle()
+    assert(state.cursor == LocalDate.of(2026, 7, 10))
+    pilot.pressKey(KeyCode.PageDown).waitForIdle()
+    assert(state.cursor == LocalDate.of(2026, 7, 20))
+    assert(pilot.screenText.contains("July 2026"))
+    // the 21st (second slot, fourth week row: x = 3, y = 5) is out of range — a click on it does nothing
+    pilot.click(3, 5).waitForIdle()
+    assert(chosen.isEmpty)
+    assert(state.cursor == LocalDate.of(2026, 7, 20))
+    // the 15th (third slot, third week row: x = 6, y = 4) is in range — a click chooses it
+    pilot.click(6, 4).waitForIdle()
+    assert(state.cursor == LocalDate.of(2026, 7, 15))
+    assert(chosen.contains(LocalDate.of(2026, 7, 15)))
+    quitApp(pilot)
+
   test("timePicker: 23:59 plus a minute wraps to 00:00"):
     val state = TimePickerState(LocalTime.of(23, 59), withSeconds = false)
     val pilot = startApp(timePicker(state))

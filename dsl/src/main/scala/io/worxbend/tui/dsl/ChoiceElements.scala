@@ -454,8 +454,9 @@ final case class ConfirmDialogElement(
 
 /** An interactive month grid over a caller-owned [[w.DatePickerState]]. While focused, Left/Right move the cursor a day
   * and Up/Down a week — across month and year ends, so the grid follows — PageUp/PageDown move it a month, `t` jumps to
-  * today, and Enter or Space chooses the cursor's date and hands it to `onSelect`. The cursor wears the focus style;
-  * the chosen date, once the cursor leaves it, is underlined.
+  * today, and Enter or Space chooses the cursor's date and hands it to `onSelect`; a click on a day chooses that day.
+  * The cursor wears the focus style; the chosen date, once the cursor leaves it, is underlined. Days outside the
+  * state's `min`/`max` are dimmed, and neither the keys nor a click can reach them.
   */
 final case class DatePickerElement(
     state: w.DatePickerState,
@@ -487,6 +488,18 @@ final case class DatePickerElement(
           onSelect(state.cursor)
       }
     )
+
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
+    Some { (event, area) =>
+      val hit = w.DatePicker().dateAt(area, event.position.x, event.position.y, state)
+      (event.kind, hit) match
+        case (MouseEventKind.Down, Some(date)) =>
+          state.cursor = date
+          state.select()
+          onSelect(date)
+          true
+        case _                                 => false
+    }
 
   /** The grid a [[w.Calendar]] draws with both headers: seven two-column days with one-column gaps, and a title row, a
     * weekday row and up to six weeks.

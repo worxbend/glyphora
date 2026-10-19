@@ -15,20 +15,41 @@ import scala.util.Try
   * outside the event path is painted too, with no `Signal` write.
   *
   * @param initial
-  *   where the cursor starts
+  *   where the cursor starts With `min` or `max` set the cursor never leaves the range they bound: every move,
+  *   `goToToday` and a direct write to [[cursor]] clamp to the nearer bound, so a date outside it can never be chosen.
+  *   The picker draws such days in its `disabledStyle` and a click on one does nothing.
+  *
   * @param today
   *   the clock `goToToday` reads; injectable so a test does not depend on the day it runs
+  * @param min
+  *   the earliest date the cursor may reach, inclusive; `None` for no lower bound
+  * @param max
+  *   the latest date the cursor may reach, inclusive; `None` for no upper bound. A `max` before `min` leaves only `min`
+  *   reachable
   */
-final class DatePickerState(initial: LocalDate, today: () => LocalDate = () => LocalDate.now()) extends VersionedState:
+final class DatePickerState(
+    initial: LocalDate,
+    today: () => LocalDate = () => LocalDate.now(),
+    val min: Option[LocalDate] = None,
+    val max: Option[LocalDate] = None,
+) extends VersionedState:
 
-  /** The date under the cursor — the highlighted day, and the month the grid shows. */
+  /** The date under the cursor — the highlighted day, and the month the grid shows. Always inside `min`..`max`. */
   def cursor: LocalDate = cursorValue
 
+  /** Moves the cursor to `value`, or to the nearer bound when `value` lies outside `min`..`max`. */
   def cursor_=(value: LocalDate): Unit =
-    cursorValue = value
+    cursorValue = clamp(value)
     touch()
 
-  private var cursorValue: LocalDate = initial
+  private var cursorValue: LocalDate = clamp(initial)
+
+  /** Whether `date` lies inside `min`..`max` — a day the cursor can reach and the user can choose. */
+  def isSelectable(date: LocalDate): Boolean = clamp(date) == date
+
+  private def clamp(date: LocalDate): LocalDate =
+    val floored = max.filter(date.isAfter).getOrElse(date)
+    min.filter(floored.isBefore).getOrElse(floored)
 
   /** The date the user last confirmed with [[select]]; `None` until they do. */
   def selected: Option[LocalDate] = selectedValue
@@ -63,17 +84,32 @@ final class DatePickerState(initial: LocalDate, today: () => LocalDate = () => L
   *   here still apply; the chosen date's style is layered over its entry
   * @param selectedStyle
   *   marks the chosen date while the cursor is elsewhere
+  * @param disabledStyle
+  *   layered over the days outside the state's `min`..`max`, which the cursor cannot reach
   */
 final case class DatePicker(
     options: CalendarOptions = CalendarOptions(),
     selectedStyle: Style = Style.Default.underline,
+    disabledStyle: Style = Style.Default.dim,
 ) extends StatefulWidget[DatePickerState]:
 
   def render(area: Rect, buffer: Buffer, state: DatePickerState): Unit =
-    if !area.isEmpty then
-      val cursor    = state.cursor
-      val dayStyles = state.selected.fold(options.dayStyles) { chosen =>
-        options.dayStyles.updated(chosen, options.dayStyles.get(chosen).fold(selectedStyle)(_.patch(selectedStyle)))
-      }
-      Calendar(cursor.getYear, cursor.getMonthValue, Some(cursor.getDayOfMonth), options.copy(dayStyles = dayStyles))
-        .render(area, buffer)
+    if !area.isEmpty then calendarFor(state).render(area, buffer)
+
+  /** The selectable date drawn at `x`, `y` when the picker is rendered into `area`, or `None` for anything else — a
+    * header, a gap, an empty slot, or a day outside the state's bounds. The DSL's click handler goes through this.
+    */
+  def dateAt(area: Rect, x: Int, y: Int, state: DatePickerState): Option[LocalDate] =
+    calendarFor(state).dateAt(area, x, y).filter(state.isSelectable)
+
+  private def calendarFor(state: DatePickerState): Calendar =
+    val cursor    = state.cursor
+    val first     = cursor.withDayOfMonth(1)
+    val disabled  = (0 until cursor.lengthOfMonth).map(day => first.plusDays(day.toLong)).filterNot(state.isSelectable)
+    val withLimit = disabled.foldLeft(options.dayStyles) { (styles, date) =>
+      styles.updated(date, styles.get(date).fold(disabledStyle)(_.patch(disabledStyle)))
+    }
+    val dayStyles = state.selected.fold(withLimit) { chosen =>
+      withLimit.updated(chosen, withLimit.get(chosen).fold(selectedStyle)(_.patch(selectedStyle)))
+    }
+    Calendar(cursor.getYear, cursor.getMonthValue, Some(cursor.getDayOfMonth), options.copy(dayStyles = dayStyles))
