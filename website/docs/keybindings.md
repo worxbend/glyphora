@@ -116,15 +116,18 @@ description slugged — `binding("ctrl+s", "save")` is `save`, `"go to top"` is
 
 ```text
 # ~/.config/myapp/keys
-save      = ctrl+w
+save      = ctrl+w   # muscle memory from the old editor
 go-to-top = g t
 quit      = ctrl+q
+mark      = \#       # the # key itself
 ```
 
 `Keymap.parse(text)` reads it into a `Map[BindingId, KeySequence]`, or a
 `Left(LineError(line, message))` naming the first bad line — the same error type a theme
-file's `Theme.parse` answers. Blank lines and lines starting with `#` are skipped. Apply it with
-`rebind`:
+file's `Theme.parse` answers. Blank lines and lines starting with `#` are skipped, and a
+`#` that starts a word of the keys — at their start or after a space — begins a comment
+that runs to the end of the line. The `#` key itself is spelled `\#` there; inside a step,
+as in `ctrl+#`, it is the key already. Apply the map with `rebind`:
 
 ```scala
 private val userKeys: Map[BindingId, KeySequence] =
@@ -162,10 +165,25 @@ The keys the framework handles once nothing else claimed them are ids as well:
 
 Override `frameworkKeys` to move them, and set `pageStep` — how many rows
 PageUp/PageDown move every list, table and scroll view, 10 by default — on the same
-value: `FrameworkKeys.default.copy(pageStep = 20)`. A framework key is always a single
-key, and fires when the key is pressed with at least its modifiers held. Moving `quit`
-moves the Ctrl+C *key event*; a terminal that delivers Ctrl+C as an interrupt still
-quits through `onInterrupt`.
+value: `FrameworkKeys.default.copy(pageStep = 20)`. A framework key fires when its key is
+pressed with at least its modifiers held. Moving `quit` moves the Ctrl+C *key event*; a
+terminal that delivers Ctrl+C as an interrupt still quits through `onInterrupt`.
+
+The keys `TuiApp` handles itself — `focus-next`, `focus-previous`, `command-palette`,
+`quit`, `close-modal`, `inspector` and `copy-selection` — may be sequences. They wait under
+the same pending prefix as the app's own sequences, and are tried after them, so an app
+binding that shares a prefix wins:
+
+```scala
+override def frameworkKeys =
+  FrameworkKeys.default.rebind(Map(FrameworkKeys.Quit -> keyseq"ctrl+x ctrl+c"))
+```
+
+`menu-bar`, `window-move` and `window-resize` are read by a `menuBar` or `window` while it
+handles a single key, so each stays one key; `rebind` throws `IllegalArgumentException`
+when given a sequence for one of them. `unbind(ids*)` takes keys away altogether —
+`FrameworkKeys.default.unbind(FrameworkKeys.Inspector)` leaves F12 to nothing — by binding
+them to `KeySequence.unbound`, which never fires.
 
 ### Exporting the keymap
 

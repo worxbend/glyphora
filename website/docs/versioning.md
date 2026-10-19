@@ -299,6 +299,29 @@ Three changes reach almost every app, so check them first:
   `FrameworkKeys` gained these six fields at the end, all defaulted, so positional construction
   and `copy` keep compiling; a positional pattern over `FrameworkKeys(…)` needs more binders.
   `FrameworkKeys.entries`, and so `Keymap.markdown(bindings, frameworkKeys)`, lists more rows.
+- **`FrameworkKeys` fields are `KeySequence`s, not `KeyEvent`s**, so the keys `TuiApp` handles
+  itself (`focus-next`, `focus-previous`, `command-palette`, `quit`, `close-modal`, `inspector`,
+  `copy-selection`) can be sequences, and `KeymapEntry.key` is a `KeySequence` too.
+  `FrameworkKeys.rebind` no longer throws for a multi-key `quit` or `inspector`; it still throws
+  for `menu-bar`, `window-move` and `window-resize`, which elements read one key at a time.
+  `fires(key, event)` keeps its name and takes the sequence. Code going through `rebind` and
+  `keyseq"…"` is unaffected; code that builds the value or compares a field to a `KeyEvent`
+  wraps it:
+
+  ```scala
+  // before
+  FrameworkKeys.default.copy(quit = KeyEvent(KeyCode.Char('q'), KeyModifiers.Ctrl))
+  keys.inspector == KeyEvent.of(KeyCode.F(11))
+  // after
+  FrameworkKeys.default.copy(quit = keyseq"ctrl+q")
+  keys.inspector == keyseq"f11"
+  ```
+
+  `FrameworkKeys.unbind(ids*)` and `TuiApp.inspector = false` turn a key — the F12 inspector,
+  typically — off.
+- **Keymap files read `#` after a space as a comment.** `save = ctrl+s # note` used to fail to
+  parse; it now binds `ctrl+s`. A keymap that bound the `#` key as `mark = #` must spell it
+  `mark = \#` (inside a step, `ctrl+#` is unchanged).
 - **Keys taken ahead of the focused control.** A `menuBar` takes `Alt+<mnemonic>` (and the arrows,
   Enter and Esc while a menu is open) before the focused control sees it, and a `window` takes
   Alt+M/Alt+R while focus is inside it. A menu bar with a `File` menu therefore takes Alt+F word

@@ -74,6 +74,9 @@ object KeySequence:
       case Right(sequence) => sequence
       case Left(problem)   => throw IllegalArgumentException(s"bad key spec '$spec': $problem")
 
+  /** The sequence of no keys: bound to it, a framework key never fires (see `FrameworkKeys.unbind`). Spelled `none`. */
+  val unbound: KeySequence = KeySequence(Vector.empty)("none")
+
   /** A sequence of already-parsed keys, spelled with [[show]]. */
   def of(events: KeyEvent*): KeySequence =
     KeySequence(events.toVector.map(KeyStep.Key(_)))(events.map(show).mkString(" "))

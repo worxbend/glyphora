@@ -38,6 +38,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 
 - Key sequences: `binding("g g", …)`, `KeySequence`, the compile-checked `keyseq"…"` literal, `KeyLeader`, `TuiApp.sequenceTimeout`.
 - `whichKeyPopup` for pending prefixes; modes via `KeyBindings.modes(Mode(…), …)`, `ModeId`, `keyMode`.
+- Framework keys handled by `TuiApp` may be sequences (`FrameworkKeys.rebind(Map(FrameworkKeys.Quit -> keyseq"ctrl+x ctrl+c"))`); keymap files take trailing `# comments`, with `\#` for the `#` key.
 - User keymaps: `BindingId`, `Keymap.parse`, `KeyBindings.rebind`, `Keymap.markdown`; `FrameworkKeys` ids via `TuiApp.frameworkKeys`. Key help is typed: `KeyHint`, `HelpSection` (`KeyBindings.continuations`, `helpSections`) and `KeymapEntry` (`FrameworkKeys.entries`).
 - `.disabled(cond)`, `.hoverStyle(…)`, `.pressedStyle(…)`, `TuiApp.accessibleLabel(key)`.
 - `focusGroup(children*)` (one tab stop, arrows inside), `.trapFocus`, `TuiApp.spatialNavigation` (Alt+arrows).
@@ -108,7 +109,8 @@ note in [Versioning & releases](website/docs/versioning.md).
 - `BufferExport.svg` / `html` / `ansi` with `ExportOptions`; styled goldens `GoldenFrames.assertMatchesStyled` / `Pilot.assertGoldenStyled`.
 - Asciicast recording via `RunnerConfig.withRecording(path)`, `-Dglyphora.record=…` or `AsciicastRecorder`; `Tape.parse` / `Tape.run`.
 - Inspector overlay (F12, framework key `inspector`); `GLYPHORA_DEBUG_LAYOUT=1` debug borders; `examples/doctor`.
-- `pilot.a11yReport(app)` accessibility lint (`A11yFinding`, `A11yRule`).
+- `pilot.a11yReport(app)` accessibility lint (`A11yFinding`, `A11yRule`); its focus-cue exemption follows the node's own `selectionIsFocusCue`.
+- `TuiApp.inspector = false` and `FrameworkKeys.unbind(ids*)` (`KeySequence.unbound`) turn the inspector — or any framework key — off.
 - JDK Flight Recorder events `FrameDrawn`, `EventRouted`, `FocusChanged`, `AsyncAdmitted`, `AsyncRejected` (`JfrEvents`).
 - Environment overrides `GLYPHORA_COLOR_DEPTH`, `GLYPHORA_KEYBOARD`, `GLYPHORA_MOUSE`, `GLYPHORA_ESCAPE_DELAY`.
 
@@ -155,6 +157,7 @@ Each item has a before/after migration note in
 - `each` hook state starts fresh once; `ListState`, `MenuState`, `DropdownState` lose `new`; `TreeState` takes a type parameter.
 - `MouseEvent` gained `clickCount`; consumed presses capture the pointer.
 - `TerminalCapabilities` and `FrameworkKeys` gained fields (positional patterns break); `Event` gained `ColorSchemeChanged`.
+- `FrameworkKeys` fields and `KeymapEntry.key` are `KeySequence` (were `KeyEvent`); a keymap's `#` after a space starts a comment (`\#` is the key).
 - `AppServices`, `Notifications` and `RunnerHandle` gained abstract members.
 - `Console` under the one import is glyphora's print-mode object.
 - `Language` is an alias for the open `Lexer` trait; `responsive` is an object; `PanelElement` field `children` → `content`.

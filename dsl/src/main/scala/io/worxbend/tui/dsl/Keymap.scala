@@ -8,26 +8,37 @@ import scala.util.DynamicVariable
   * scrollable — each key under a [[BindingId]], so a user keymap moves them the way it moves an app's own bindings.
   *
   * A framework key fires when the pressed key is the same key holding at least the declared modifiers, so the default
-  * `ctrl+p` also answers to Ctrl+Alt+P, as it always has. Each is a single key: the framework does not take part in
-  * sequence dispatch. Rebinding `quit` moves the `Ctrl+C` *key event*; a terminal that delivers Ctrl+C as SIGINT still
-  * quits through `onInterrupt`.
+  * `ctrl+p` also answers to Ctrl+Alt+P, as it always has. The keys `TuiApp` handles itself — focus traversal, the
+  * command palette, quit, close-modal, the inspector and copy-selection — may be sequences (`ctrl+x ctrl+c`): they take
+  * part in the same pending-prefix dispatch as the app's bindings, after them, so an app binding that shares a prefix
+  * wins. `menu-bar`, `window-move` and `window-resize` are read by an element while it handles one key, so each stays a
+  * single key. [[KeySequence.unbound]] takes a key away (see [[unbind]]). Rebinding `quit` moves the `Ctrl+C` *key
+  * event*; a terminal that delivers Ctrl+C as SIGINT still quits through `onInterrupt`.
   *
   * An immutable value; `TuiApp.frameworkKeys` is read on the render thread for every key that reaches this stage.
   */
 final case class FrameworkKeys(
-    focusNext: KeyEvent = KeyEvent.of(KeyCode.Tab),
-    focusPrevious: KeyEvent = KeyEvent(KeyCode.Tab, KeyModifiers.Shift),
-    commandPalette: KeyEvent = KeyEvent(KeyCode.Char('p'), KeyModifiers.Ctrl),
-    quit: KeyEvent = KeyEvent(KeyCode.Char('c'), KeyModifiers.Ctrl),
-    closeModal: KeyEvent = KeyEvent.of(KeyCode.Escape),
+    focusNext: KeySequence = KeySequence.of(KeyEvent.of(KeyCode.Tab)),
+    focusPrevious: KeySequence = KeySequence.of(KeyEvent(KeyCode.Tab, KeyModifiers.Shift)),
+    commandPalette: KeySequence = KeySequence.of(KeyEvent(KeyCode.Char('p'), KeyModifiers.Ctrl)),
+    quit: KeySequence = KeySequence.of(KeyEvent(KeyCode.Char('c'), KeyModifiers.Ctrl)),
+    closeModal: KeySequence = KeySequence.of(KeyEvent.of(KeyCode.Escape)),
     pageStep: Int = 10,
-    menuBar: KeyEvent = KeyEvent.of(KeyCode.F(10)),
-    windowMove: KeyEvent = KeyEvent(KeyCode.Char('m'), KeyModifiers.Alt),
-    windowResize: KeyEvent = KeyEvent(KeyCode.Char('r'), KeyModifiers.Alt),
-    inspector: KeyEvent = KeyEvent.of(KeyCode.F(12)),
-    copySelection: KeyEvent = KeyEvent(KeyCode.Char('c'), KeyModifiers.Ctrl | KeyModifiers.Shift),
+    menuBar: KeySequence = KeySequence.of(KeyEvent.of(KeyCode.F(10))),
+    windowMove: KeySequence = KeySequence.of(KeyEvent(KeyCode.Char('m'), KeyModifiers.Alt)),
+    windowResize: KeySequence = KeySequence.of(KeyEvent(KeyCode.Char('r'), KeyModifiers.Alt)),
+    inspector: KeySequence = KeySequence.of(KeyEvent.of(KeyCode.F(12))),
+    copySelection: KeySequence = KeySequence.of(KeyEvent(KeyCode.Char('c'), KeyModifiers.Ctrl | KeyModifiers.Shift)),
 ):
   require(pageStep > 0, s"pageStep must be positive, was $pageStep")
+  Seq(
+    menuBar      -> FrameworkKeys.MenuBar,
+    windowMove   -> FrameworkKeys.WindowMove,
+    windowResize -> FrameworkKeys.WindowResize,
+  )
+    .foreach((sequence, id) =>
+      require(sequence.steps.sizeIs <= 1, s"framework key '$id' takes a single key, not \"${sequence.spelling}\"")
+    )
 
   /** Each framework key with its id and a description, in the order the framework tries them. The descriptions come
     * from the [[Messages]] table in force on the calling thread, so a translated app documents its keys in its own
@@ -50,16 +61,11 @@ final case class FrameworkKeys(
     )
 
   /** These keys with every id in `keymap` moved to its sequence; ids that name no framework key are ignored, so one
-    * keymap can serve both this and `KeyBindings.rebind`. Throws `IllegalArgumentException` for a multi-key sequence.
+    * keymap can serve both this and `KeyBindings.rebind`. Throws `IllegalArgumentException` for a multi-key sequence
+    * given to `menu-bar`, `window-move` or `window-resize`.
     */
   def rebind(keymap: Map[BindingId, KeySequence]): FrameworkKeys =
-    def key(id: BindingId, current: KeyEvent): KeyEvent =
-      keymap.get(id).fold(current) { sequence =>
-        sequence.keys match
-          case Vector(single) => single
-          case _              =>
-            throw IllegalArgumentException(s"framework key '$id' takes a single key, not \"${sequence.spelling}\"")
-      }
+    def key(id: BindingId, current: KeySequence): KeySequence = keymap.getOrElse(id, current)
     copy(
       focusNext = key(FrameworkKeys.FocusNext, focusNext),
       focusPrevious = key(FrameworkKeys.FocusPrevious, focusPrevious),
@@ -73,9 +79,29 @@ final case class FrameworkKeys(
       copySelection = key(FrameworkKeys.CopySelection, copySelection),
     )
 
-  /** Whether `event` is `key` held with at least `key`'s modifiers. */
-  def fires(key: KeyEvent, event: KeyEvent): Boolean =
-    event.code == key.code && event.modifiers.hasAll(key.modifiers)
+  /** These keys with each of `ids` bound to nothing ([[KeySequence.unbound]]): the action it named no longer fires —
+    * `FrameworkKeys.default.unbind(FrameworkKeys.Inspector)` turns the F12 overlay off.
+    */
+  def unbind(ids: BindingId*): FrameworkKeys = rebind(ids.map(_ -> KeySequence.unbound).toMap)
+
+  /** Whether `event`, pressed with no prefix pending, fires `key`: `key` is a single key and `event` is that key held
+    * with at least its modifiers. A sequence never fires on one key; it goes through [[completes]].
+    */
+  def fires(key: KeySequence, event: KeyEvent): Boolean =
+    key.keys match
+      case Vector(single) => FrameworkKeys.matches(single, event)
+      case _              => false
+
+  /** Whether the keys typed so far, `typed`, are the whole of `key` — each step matched as [[fires]] matches one. */
+  def completes(key: KeySequence, typed: Vector[KeyEvent]): Boolean =
+    key.keys.sizeIs == typed.size && key.keys.nonEmpty && key.keys.lazyZip(typed).forall(FrameworkKeys.matches)
+
+  /** Whether `typed` is a proper prefix of one of the framework's sequences — the dispatch keeps waiting for the rest.
+    */
+  def continues(typed: Vector[KeyEvent]): Boolean =
+    Seq(focusPrevious, focusNext, commandPalette, quit, closeModal, inspector, copySelection).exists { key =>
+      key.keys.sizeIs > typed.size && key.keys.lazyZip(typed).forall(FrameworkKeys.matches)
+    }
 
 object FrameworkKeys:
 
@@ -92,6 +118,9 @@ object FrameworkKeys:
   /** F12 by default: cycles the inspector overlay — node card, card plus element tree, off. */
   val Inspector: BindingId = BindingId("inspector")
 
+  private def matches(key: KeyEvent, event: KeyEvent): Boolean =
+    event.code == key.code && event.modifiers.hasAll(key.modifiers)
+
   /** Tab, Shift+Tab, Ctrl+P, Ctrl+C, Esc, a page step of 10 and F12 for the inspector. */
   val default: FrameworkKeys = FrameworkKeys()
 
@@ -104,7 +133,7 @@ object FrameworkKeys:
 /** One framework key as [[FrameworkKeys.entries]] lists it: the id a keymap rebinds it by, the key it is bound to now
   * and what it does.
   */
-final case class KeymapEntry(id: BindingId, key: KeyEvent, description: String)
+final case class KeymapEntry(id: BindingId, key: KeySequence, description: String)
 
 /** User keymaps: a plain-text file of `id = spec` lines read into the `Map[BindingId, KeySequence]` that
   * `KeyBindings.rebind` and `FrameworkKeys.rebind` take, and a Markdown export of the keys an app ends up with.
@@ -119,15 +148,18 @@ final case class KeymapEntry(id: BindingId, key: KeyEvent, description: String)
 object Keymap:
 
   /** Reads a keymap. Blank lines and lines whose first non-blank character is `#` are skipped; every other line is
-    * `id = spec`, split at its first `=` with both sides trimmed, the spec in [[KeySequence.parse]]'s vocabulary. A
-    * line that is not of that shape, a spec that does not parse, or an id given twice is a [[LineError]] naming the
-    * line.
+    * `id = spec`, split at its first `=` with both sides trimmed, the spec in [[KeySequence.parse]]'s vocabulary. A `#`
+    * that starts a word of the spec — at its start or after a space — ends the line as a comment, so `save = ctrl+s #
+    * the usual one` binds `ctrl+s`; the `#` key itself is spelled `\#` there (`mark = \#`), while a `#` inside a step
+    * (`ctrl+#`) is the key already. A line that is not of that shape, a spec that does not parse, or an id given twice
+    * is a [[LineError]] naming the line.
     */
   def parse(text: String): Either[LineError, Map[BindingId, KeySequence]] =
     KeyValueLines.read(text, "id = keys").flatMap { lines =>
-      lines.foldLeft[Either[LineError, Map[BindingId, KeySequence]]](Right(Map.empty)) { (acc, line) =>
+      lines.foldLeft[Either[LineError, Map[BindingId, KeySequence]]](Right(Map.empty)) { (acc, entry) =>
         acc.flatMap { parsed =>
-          val id = BindingId(line.key)
+          val line = entry.copy(value = withoutComment(entry.value))
+          val id   = BindingId(line.key)
           if id.value.isEmpty || line.value.isEmpty then
             Left(LineError(line.number, s"expected 'id = keys', found '${line.key} = ${line.value}'"))
           else if parsed.contains(id) then Left(LineError(line.number, s"'$id' is bound twice"))
@@ -141,6 +173,11 @@ object Keymap:
       }
     }
 
+  /** `spec` up to its first comment — a `#` at the start of a word — trimmed, with each `\#` read as the `#` key. */
+  private def withoutComment(spec: String): String =
+    val words = spec.split("\\s+").toVector.filter(_.nonEmpty).takeWhile(word => !word.startsWith("#"))
+    words.map(_.replace("\\#", "#")).mkString(" ")
+
   /** The bindings as a Markdown table — key, action, id, and the mode when the bindings declare modes — for a help page
     * or a README. Shows the bindings as rebound, so it documents the keys the user actually has.
     */
@@ -148,7 +185,7 @@ object Keymap:
 
   /** [[markdown]] followed by the framework's own keys, listed under their ids. */
   def markdown(bindings: KeyBindings, framework: FrameworkKeys): String =
-    table(bindings, framework.entries.map(entry => (None, KeySequence.show(entry.key), entry.description, entry.id)))
+    table(bindings, framework.entries.map(entry => (None, entry.key.spelling, entry.description, entry.id)))
 
   private def table(bindings: KeyBindings, extra: Seq[(Option[ModeId], String, String, BindingId)]): String =
     val rows   = bindings.bindings.map(bound =>

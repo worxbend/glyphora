@@ -146,7 +146,14 @@ node itself is highlighted in place. `F12` again adds the element tree beside th
 closes it. The key is the rebindable framework key `inspector`
 (`FrameworkKeys.default.rebind(Map(FrameworkKeys.Inspector -> keyseq"f11"))`), so an
 app that wants `F12` for itself can move it, and an app binding `F12` already wins,
-since framework keys are the last stage of key routing.
+since framework keys are the last stage of key routing. To ship without the overlay,
+override `inspector` to `false` on the `TuiApp`, or unbind the key with
+`FrameworkKeys.default.unbind(FrameworkKeys.Inspector)`:
+
+```scala
+object Main extends TuiApp:
+  override def inspector: Boolean = false
+```
 
 **Debug borders.** Run with `GLYPHORA_DEBUG_LAYOUT=1` (or override
 `TuiApp.debugLayout` to `true`) and every container on every frame is outlined dimly —
