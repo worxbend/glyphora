@@ -5,7 +5,7 @@ import io.worxbend.tui.terminal.{HeadlessBackend, MouseCaptureMode}
 
 import org.scalatest.funsuite.AnyFunSuite
 
-/** `RunnerConfig.mouseMotion` picks the capture mode setup asks for; a handle can upgrade it mid-run. */
+/** `RunnerConfig.mouse` picks the capture mode setup asks for; a handle can upgrade it mid-run. */
 final class MouseMotionConfigSpec extends AnyFunSuite:
 
   private def modeDuringRun(config: RunnerConfig, onFirst: RunnerHandle => Unit = _ => ()): Option[MouseCaptureMode] =
@@ -24,19 +24,27 @@ final class MouseMotionConfigSpec extends AnyFunSuite:
     )
     seen
 
-  test("withMouseMotion asks for all-motion tracking and implies mouse capture"):
-    val config = RunnerConfig.Default.withMouseMotion
-    assert(config.mouseCapture && config.mouseMotion)
+  test("mouse = AllMotion asks for all-motion tracking, which is mouse capture"):
+    val config = RunnerConfig.Default.withMouse(MouseCaptureMode.AllMotion)
+    assert(config.mouse == MouseCaptureMode.AllMotion && config.mouseCapture)
     assert(modeDuringRun(config).contains(MouseCaptureMode.AllMotion))
 
-  test("plain mouse capture stays button-only, and motion is off by default"):
-    assert(!RunnerConfig.Default.mouseMotion)
+  test("mouse capture is off by default, and withMouseCapture is button-only"):
+    assert(RunnerConfig.Default.mouse == MouseCaptureMode.Off && !RunnerConfig.Default.mouseCapture)
+    assert(modeDuringRun(RunnerConfig.Default).isEmpty)
+    assert(RunnerConfig.Default.withMouseCapture.mouse == MouseCaptureMode.Buttons)
     assert(modeDuringRun(RunnerConfig.Default.withMouseCapture).contains(MouseCaptureMode.Buttons))
-    assert(!RunnerConfig.Default.withMouseMotion.withoutMouseMotion.mouseMotion)
+    assert(RunnerConfig.Default.withMouse(MouseCaptureMode.AllMotion).withoutMouseCapture == RunnerConfig.Default)
 
-  test("the config prints and compares its motion flag"):
-    assert(RunnerConfig.Default.withMouseMotion.toString.contains("mouseMotion=true"))
-    assert(RunnerConfig.Default.withMouseMotion != RunnerConfig.Default.withMouseCapture)
+  test("the config prints and compares its one mouse setting"):
+    assert(RunnerConfig.Default.withMouse(MouseCaptureMode.AllMotion).toString == "RunnerConfig(mouse=AllMotion)")
+    assert(RunnerConfig.Default.withMouse(MouseCaptureMode.AllMotion) != RunnerConfig.Default.withMouseCapture)
+    assert(RunnerConfig(mouse = MouseCaptureMode.Buttons) == RunnerConfig.Default.withMouseCapture)
+
+  test("the kept positional arities still take a Boolean, true meaning buttons"):
+    val config = RunnerConfig(None, true, None, None, Viewport.Fullscreen, false, None)
+    assert(config.mouse == MouseCaptureMode.Buttons)
+    assert(RunnerConfig(None, false, None, None, Viewport.Fullscreen, false, None).mouse == MouseCaptureMode.Off)
 
   test("a handle switches a running app's capture mode"):
     val mode = modeDuringRun(RunnerConfig.Default.withMouseCapture, _.setMouseCaptureMode(MouseCaptureMode.AllMotion))

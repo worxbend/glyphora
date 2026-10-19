@@ -215,7 +215,7 @@ final class TerminalRunner(
         case Viewport.Fullscreen     => backend.enterAlternateScreen()
         case inline: Viewport.Inline => backend.reserveInlineRows(inline.reservedRows)
       _ <- backend.hideCursor()
-      _ <- if config.mouseCapture then backend.enableMouseCapture(config.mouseCaptureMode) else Right(())
+      _ <- if config.mouseCapture then backend.enableMouseCapture(config.mouse) else Right(())
       _ <- if config.keyEventTypes then backend.enableKeyEventTypes() else Right(())
     yield ()
 

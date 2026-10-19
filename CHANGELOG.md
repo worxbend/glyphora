@@ -41,7 +41,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 **Mouse, selection and drag and drop**
 
 - Pointer capture for drags; `.onMouse(ctx => …)` with `MouseContext`; synthesised `MouseEvent.clickCount`.
-- `RunnerConfig.withMouseMotion`, `RunnerHandle.setMouseCaptureMode`.
+- `RunnerConfig.withMouse(MouseCaptureMode)` — one mouse setting, `Off`, `Buttons` or `AllMotion`; `RunnerHandle.setMouseCaptureMode`.
 - Mouse text selection over `text`, `markdown`, `log`, `logConsole` and tables, copied through OSC 52; `.selectable(…)`, framework key `copy-selection`.
 - Typed drag and drop: `.draggable(payload)`, `.dropTarget[A](accept)(onDrop)`, `DragKey[A]`.
 - Pointer shapes (OSC 22) with `.pointer(PointerShape.…)`.
@@ -152,3 +152,4 @@ Each item has a before/after migration note in
 
 - `TuiApp` gained an overridable `messages` member; an app that declares its own `messages` needs `override` or a rename.
 - `Dialog` widens its box to fit its buttons, so a button row wider than the message is no longer dropped.
+- `RunnerConfig.mouseCapture: Boolean` is now `mouse: MouseCaptureMode` (`MouseCaptureMode` gained `Off`); `RunnerConfig(mouseCapture = true)` becomes `RunnerConfig(mouse = MouseCaptureMode.Buttons)`. `withMouseCapture`, `withoutMouseCapture`, a derived `mouseCapture` and the positional Boolean arities still work.

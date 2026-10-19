@@ -27,7 +27,7 @@ class ProcmonApp(val source: ProcessSource = ProcessSource.detect()) extends Tui
 
   import ProcmonApp.*
 
-  override def config: RunnerConfig = RunnerConfig(tickRate = Some(TickRate), mouseCapture = true)
+  override def config: RunnerConfig = RunnerConfig(tickRate = Some(TickRate), mouse = MouseCaptureMode.Buttons)
 
   // ---- state that must outlive `view` ----
 

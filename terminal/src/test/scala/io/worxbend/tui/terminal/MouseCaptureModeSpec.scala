@@ -58,6 +58,12 @@ final class MouseCaptureModeSpec extends AnyFunSuite:
     assert(backend.disableMouseCapture().isRight)
     assert(backend.mouseCaptureMode.isEmpty)
 
+    // `Off` through the mode-taking form is a request to stop, the same as disabling
+    assert(backend.enableMouseCapture(MouseCaptureMode.Buttons).isRight)
+    assert(backend.enableMouseCapture(MouseCaptureMode.Off).isRight)
+    assert(!backend.isMouseCaptured)
+    assert(AnsiSequences.enableMouseCapture(MouseCaptureMode.Off) == AnsiSequences.DisableMouseCapture)
+
   test("an SGR motion report with no button held decodes as Moved, not Drag"):
     // 32 is the motion bit; +3 in the low two bits means "no button", which is a hover
     assert(

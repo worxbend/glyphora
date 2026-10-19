@@ -22,20 +22,13 @@ final class EnvironmentOverridesSpec extends AnyFunSuite:
     assert(JLine3Backend.gatedByEnvironment(offered, Map.empty).kittyKeyboard == Support.Yes)
 
   test("GLYPHORA_MOUSE turns capture off, or holds it to buttons when an app asks for all motion"):
-    assert(EnvironmentOverrides.mouseMode(MouseCaptureMode.AllMotion, Map("GLYPHORA_MOUSE" -> "off")).isEmpty)
-    assert(
-      EnvironmentOverrides
-        .mouseMode(MouseCaptureMode.AllMotion, Map("GLYPHORA_MOUSE" -> "buttons"))
-        .contains(MouseCaptureMode.Buttons)
-    )
-    assert(
-      EnvironmentOverrides.mouseMode(MouseCaptureMode.AllMotion, Map.empty).contains(MouseCaptureMode.AllMotion)
-    )
-    assert(
-      EnvironmentOverrides
-        .mouseMode(MouseCaptureMode.Buttons, Map("GLYPHORA_MOUSE" -> "buttons"))
-        .contains(MouseCaptureMode.Buttons)
-    )
+    val off     = Map("GLYPHORA_MOUSE" -> "off")
+    val buttons = Map("GLYPHORA_MOUSE" -> "buttons")
+    assert(EnvironmentOverrides.mouseMode(MouseCaptureMode.AllMotion, off) == MouseCaptureMode.Off)
+    assert(EnvironmentOverrides.mouseMode(MouseCaptureMode.AllMotion, buttons) == MouseCaptureMode.Buttons)
+    assert(EnvironmentOverrides.mouseMode(MouseCaptureMode.AllMotion, Map.empty) == MouseCaptureMode.AllMotion)
+    assert(EnvironmentOverrides.mouseMode(MouseCaptureMode.Buttons, buttons) == MouseCaptureMode.Buttons)
+    assert(EnvironmentOverrides.mouseMode(MouseCaptureMode.Off, buttons) == MouseCaptureMode.Off)
 
   test("GLYPHORA_ESCAPE_DELAY sets how long a lone Esc waits, in milliseconds, within bounds"):
     assert(EnvironmentOverrides.escapeDelayMillis(Map.empty) == InputDecoder.DefaultEscapeTimeoutMillis)

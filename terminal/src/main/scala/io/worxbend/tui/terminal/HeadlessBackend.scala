@@ -126,7 +126,9 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
   def enableMouseCapture(): Either[BackendError, Unit] = enableMouseCapture(MouseCaptureMode.Buttons)
 
   override def enableMouseCapture(mode: MouseCaptureMode): Either[BackendError, Unit] =
-    attempt(Op.EnableMouseCapture) { mouseCapture = Some(mode) }
+    mode match
+      case MouseCaptureMode.Off => disableMouseCapture()
+      case _                    => attempt(Op.EnableMouseCapture) { mouseCapture = Some(mode) }
 
   def disableMouseCapture(): Either[BackendError, Unit] =
     mouseCapture = None

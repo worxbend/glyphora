@@ -426,7 +426,7 @@ Three changes reach almost every app, so check them first:
   movement (more input traffic over ssh). Apps with mouse capture off never switch; to stay on
   button-only tracking, use neither. `ElementHost.dispatchMouse` may now answer `true` for an
   unconsumed event when a hover or pressed cue needs a repaint.
-- **Mouse-capturing apps select text.** With `RunnerConfig(mouseCapture = true)`, a left drag over
+- **Mouse-capturing apps select text.** With `RunnerConfig(mouse = MouseCaptureMode.Buttons)`, a left drag over
   `text`, `markdown`, `log`, `logConsole` or a table selects text and copies it through OSC 52 on
   release, because capturing the mouse took the terminal's own selection away. A press an element
   consumes (a button, a list row) never starts one. Opt a subtree out:
@@ -521,13 +521,32 @@ Three changes reach almost every app, so check them first:
   Only a configuration whose `captureStdio` is *unset* takes the app default, so an existing
   `override def config = RunnerConfig(tickRate = Some(d))` keeps the capture. A bare
   `TerminalRunner` reads the unset field as `Off` and behaves as before.
-- **`RunnerConfig` gained four fields**: `captureStdio` (`withCaptureStdio` / `withoutCaptureStdio`),
-  `recording` (`withRecording` / `withoutRecording`), `nonInteractive` (`withNonInteractive`,
-  default `NonInteractivePolicy.Fail`, the old behaviour) and `mouseMotion` (`withMouseMotion` /
-  `withoutMouseMotion`). As the [growth policy](#types-that-will-break-when-they-grow) promised,
-  every earlier arity of the companion `apply` — seven, eight, nine and ten fields — is kept as a
-  default-free overload, so compiled callers keep linking; named arguments and `with*` chains
-  compile unchanged. A positional call to one of the intermediate pre-release arities is
+- **`RunnerConfig`'s mouse setting is one `MouseCaptureMode`, not a Boolean.** 0.19.0's
+  `mouseCapture: Boolean` could say "off" or "buttons", and a second Boolean for hover would have
+  allowed motion tracking with capture off. The field is now `mouse: MouseCaptureMode` — `Off` (the
+  default), `Buttons` or `AllMotion` — and `MouseCaptureMode` gained the `Off` case
+  (`Backend.enableMouseCapture(MouseCaptureMode.Off)` is `disableMouseCapture()`, so an exhaustive
+  match on the enum needs that case). `withMouseCapture` (buttons) and `withoutMouseCapture` (off)
+  keep working, `withMouse(mode)` sets any mode, and `config.mouseCapture` stays as a derived
+  `Boolean`. The positional Boolean arities of `apply` still compile, `true` meaning `Buttons`; the
+  named argument `mouseCapture = true` does not, since the defaulted `apply` can only take one type
+  for it:
+
+  ```scala
+  // before
+  RunnerConfig(tickRate = Some(rate), mouseCapture = true)
+  // after
+  RunnerConfig(tickRate = Some(rate), mouse = MouseCaptureMode.Buttons)
+  // or, unaffected by the next field: RunnerConfig.Default.withTickRate(rate).withMouseCapture
+  ```
+
+- **`RunnerConfig` gained three fields**: `captureStdio` (`withCaptureStdio` / `withoutCaptureStdio`),
+  `recording` (`withRecording` / `withoutRecording`) and `nonInteractive` (`withNonInteractive`,
+  default `NonInteractivePolicy.Fail`, the old behaviour). As the
+  [growth policy](#types-that-will-break-when-they-grow) promised, every earlier arity of the
+  companion `apply` — seven, eight, nine and ten fields, each with its Boolean `mouseCapture` — is
+  kept as a default-free overload, so compiled callers keep linking; `with*` chains compile
+  unchanged. A positional call to one of the intermediate pre-release arities is
   clearest rewritten as a builder chain:
 
   ```scala
@@ -832,8 +851,9 @@ added. Their companion `apply` keeps today's defaults for convenience but is sti
 arity-sensitive — adding a field changes its descriptor, so a call to it needs a recompile —
 and at that growth the previous arity is kept as a plain default-free overload so compiled
 callers keep working. 0.20.0 is the first release to exercise that promise: `RunnerConfig`
-grew four fields (`captureStdio`, `recording`, `nonInteractive`, `mouseMotion`) and keeps a
-default-free `apply` for each earlier arity — seven, eight, nine and ten fields — and
+grew three fields (`captureStdio`, `recording`, `nonInteractive`) and turned its mouse Boolean into
+a `MouseCaptureMode`, and keeps a default-free `apply` for each earlier arity — seven, eight, nine
+and ten fields — and
 `Layout.apply` keeps its 0.19.0 five-argument arity beside the new `crossAlign` parameter.
 `Theme.apply` gained a defaulted `components` parameter without an overload, so a compiled call
 to it needs a recompile; `Theme.Dark.with*` chains do not.

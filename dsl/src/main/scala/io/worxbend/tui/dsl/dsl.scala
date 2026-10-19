@@ -310,6 +310,7 @@ export io.worxbend.tui.runtime.{
 // package exposes, and the code that constructs one (a `main` wiring a custom terminal, a test wiring `Pilot`) is
 // already reaching into `tui-terminal` or `tui-test` on purpose.
 export io.worxbend.tui.terminal.{Backend, BackendError, ColorDepth, PointerShape, TerminalGlyphs}
+export io.worxbend.tui.terminal.MouseCaptureMode
 
 /** `light` on a light terminal, `dark` on a dark one — and on one that could not say, because dark is what every
   * terminal was assumed to be before any of them could be asked.
@@ -643,8 +644,9 @@ extension [E <: Element](element: E)
     element.withProps(element.props.copy(disabled = condition))
 
   /** The style layered over this element while the pointer rests on it. Needs mouse-motion tracking, which a `TuiApp`
-    * turns on by itself once a frame asks for a hover cue — see `RunnerConfig.withMouseMotion` for an embedding host.
-    * Only the innermost target under the pointer is hovered, so a container's cue shows where none of its children is.
+    * turns on by itself once a frame asks for a hover cue — see `RunnerConfig.withMouse(MouseCaptureMode.AllMotion)`
+    * for an embedding host. Only the innermost target under the pointer is hovered, so a container's cue shows where
+    * none of its children is.
     */
   def hoverStyle(style: Style): element.Self =
     element.withProps(element.props.copy(hoverStyle = Some(style)))

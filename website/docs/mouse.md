@@ -399,9 +399,10 @@ backend.enableMouseCapture(MouseCaptureMode.AllMotion)
 
 It is opt-in because it is not free: the terminal sends a report for every cell the
 pointer crosses, which costs nothing locally and is noticeable over a slow ssh link.
-`MouseCaptureMode.Buttons` is the default and is what the no-argument
-`enableMouseCapture()` requests. A runner asks for all-motion tracking from its first
-frame with `RunnerConfig.Default.withMouseMotion`, which implies mouse capture.
+`MouseCaptureMode.Buttons` is what the no-argument `enableMouseCapture()` requests, and
+`MouseCaptureMode.Off` through the mode-taking form stops capture. A runner picks one of the
+three for its whole run with `RunnerConfig.Default.withMouse(MouseCaptureMode.AllMotion)` —
+one setting, so "motion without capture" cannot be written.
 
 A `TuiApp` running with mouse capture does not need to: the first frame that contains a
 `.hoverStyle(...)` or an explicit `.pointer(shape)` switches the terminal to all-motion
@@ -487,7 +488,7 @@ nothing in the tree and no binding claimed reaches it, and it stays inside a
 ## Select and copy text
 
 A mouse-capturing app takes the terminal's own text selection away, which users notice
-immediately. A `TuiApp` running with `RunnerConfig(mouseCapture = true)` gives it back:
+immediately. A `TuiApp` running with `RunnerConfig(mouse = MouseCaptureMode.Buttons)` gives it back:
 
 - a left drag over `text`, `markdown`, `log`, `logConsole`, `table`, `styledTable` or
   `dataTable` selects the cells under it, highlighted in the theme's focus cue;

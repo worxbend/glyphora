@@ -1065,7 +1065,7 @@ trait TuiApp:
     * that left mouse capture off: turning the mouse on would take the terminal's own text selection away.
     */
   private def syncMouseMotion(run: RunState): Unit =
-    if !motionRequested && run.host.wantsMouseMotion && run.config.mouseCapture && !run.config.mouseMotion then
+    if !motionRequested && run.host.wantsMouseMotion && run.config.mouse == MouseCaptureMode.Buttons then
       motionRequested = true
       activeHandle.get().foreach(_.setMouseCaptureMode(MouseCaptureMode.AllMotion))
 
