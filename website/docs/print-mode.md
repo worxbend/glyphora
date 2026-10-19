@@ -119,7 +119,8 @@ anything but empty, `0` or `false`). The app then runs once without a terminal:
 and the run ends the first time the loop would wait for a key — none is ever going to
 arrive — so an app that only exits on `q` still exits, and exits 0. Background work
 and ticks are not waited for: what is printed is the app's initial state plus
-whatever `onStart` set synchronously.
+whatever `onStart` set synchronously — unless the policy says
+[`awaitIdle`](#waiting-for-the-app-to-settle).
 
 | `NonInteractivePolicy` | What a run without a terminal does |
 |---|---|
@@ -127,6 +128,25 @@ whatever `onStart` set synchronously.
 | `PrintFinalFrame` | Writes the last frame the run composed, styled per the colour rules above. |
 | `PrintEveryFrame` | Writes every frame the run composed, in order. |
 | `Plain` | Writes the text rows of each frame with no styling, identical consecutive frames once — for a screen reader, a log or `grep`. |
+
+### Waiting for the app to settle
+
+An app that loads its content in the background — an `Async.run` started from
+`onStart`, a timer, a few ticks of an animation — would print its "loading…" state.
+`awaitIdle(timeout)` makes any printing policy wait for it:
+
+```scala
+override def config: RunnerConfig =
+  RunnerConfig().withNonInteractive(NonInteractivePolicy.PrintFinalFrame.awaitIdle(5.seconds))
+```
+
+The run then keeps going — ticks fire, `Async` results land and repaint — until the loop
+is idle or `timeout` has passed since the run started, whichever is first. Idle means no
+queued render-thread work, no `Async` work, delayed or repeating timer still outstanding,
+and no frame composed since the loop last waited. An app that is never idle (an
+`Async.every`, an animation repainting on every tick) prints the frame it had reached at
+the timeout; the timeout is the ceiling, not the usual cost. `awaitIdle` on `Fail` is still
+`Fail`, and `policy.output` / `policy.idleTimeout` read back what was asked for.
 
 While a no-TTY run is printing, the app's own `println` goes straight to standard
 output instead of being captured above the UI, because there is no UI for it to land

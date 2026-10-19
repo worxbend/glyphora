@@ -59,3 +59,40 @@ final class AsciicastRecorderSpec extends AnyFunSuite:
     val lines    = out.toString.split("\n").toSeq
     assert(lines(1).contains("""a\"b\\c"""))
     assert(lines(2).contains("\\u001b[2J"), "a changed area is a full repaint")
+
+  /** A writer that records which thread wrote to it and can be made to fail. */
+  private final class ThreadNoting(failing: Boolean = false) extends java.io.Writer:
+    val text                                                      = StringBuilder()
+    @volatile var writers: Set[String]                            = Set.empty
+    @volatile var closedCleanly                                   = false
+    def write(chars: Array[Char], offset: Int, length: Int): Unit =
+      writers += Thread.currentThread().getName
+      if failing then throw java.io.IOException("disk full")
+      text.synchronized { val _ = text.appendAll(chars, offset, length) }
+    def flush(): Unit                                             = ()
+    def close(): Unit                                             = closedCleanly = true
+
+  test("frames are encoded and written on a background writer thread, never the caller's"):
+    val out      = ThreadNoting()
+    val recorder = AsciicastRecorder(out, () => 0L, () => 0L)
+    recorder(frame(0, "one"))
+    recorder(frame(1, "two"))
+    recorder.close()
+    assert(out.closedCleanly)
+    assert(out.writers.nonEmpty && !out.writers.contains(Thread.currentThread().getName))
+    assert(out.text.toString.split("\n").length == 3, "close waits until every queued frame is written")
+
+  test("flush returns once every frame handed in so far is in the writer"):
+    val out      = ThreadNoting()
+    val recorder = AsciicastRecorder(out, () => 0L, () => 0L)
+    (0 until 50).foreach(i => recorder(frame(i.toLong, s"f$i")))
+    recorder.flush()
+    assert(out.text.toString.split("\n").length == 51)
+    recorder.close()
+
+  test("a write failure on the writer thread surfaces on the caller at the next frame or at close"):
+    val out      = ThreadNoting(failing = true)
+    val recorder = AsciicastRecorder(out, () => 0L, () => 0L)
+    recorder(frame(0, "one"))
+    val failure  = intercept[java.io.IOException](recorder.close())
+    assert(failure.getMessage == "disk full")

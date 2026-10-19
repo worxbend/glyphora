@@ -58,6 +58,43 @@ final class StdioCaptureSpec extends AnyFunSuite:
       assert(System.out eq before, "System.out is the original object once run returns")
     }
 
+  test("a flood of println under PrintAbove reaches the scrollback in one trip, in order"):
+    withRealStreams { (realOut, _) =>
+      val backend = HeadlessBackend(Size(20, 3))
+      backend.postEvent(quitKey)
+      val result  = TerminalRunner(backend, RunnerConfig.Default.withCaptureStdio(CaptureStdio.PrintAbove)).run(
+        _ => (),
+        (_, handle) =>
+          (1 to 500).foreach(i => println(s"line $i"))
+          handle.quit()
+          EventOutcome.Ignored
+        ,
+        paint,
+      )
+      assert(result == Right(()))
+      assert(backend.printedAbove == (1 to 500).map(i => s"line $i"))
+      assert(backend.printAboveCalls == 1, "one scrollback trip for the whole burst")
+      assert(realOut.toString("UTF-8").isEmpty)
+    }
+
+  test("lines printed from another thread are batched too, and none is lost"):
+    withRealStreams { (realOut, _) =>
+      val backend = HeadlessBackend(Size(20, 3))
+      val result  = TerminalRunner(backend, RunnerConfig.Default.withCaptureStdio(CaptureStdio.PrintAbove)).run(
+        handle =>
+          val worker = Thread(() => (1 to 300).foreach(i => System.out.println(s"bg $i")))
+          worker.start()
+          worker.join()
+          handle.quit()
+        ,
+        (_, _) => EventOutcome.Ignored,
+        paint,
+      )
+      assert(result == Right(()))
+      assert(backend.printedAbove ++ realOut.toString("UTF-8").linesIterator.toSeq == (1 to 300).map(i => s"bg $i"))
+      assert(backend.printAboveCalls <= 2, s"${backend.printAboveCalls} trips for one burst")
+    }
+
   test("System.out and System.err are restored when the app throws"):
     withRealStreams { (_, _) =>
       val backend   = HeadlessBackend(Size(20, 3))

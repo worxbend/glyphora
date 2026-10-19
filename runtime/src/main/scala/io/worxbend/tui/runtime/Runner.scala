@@ -1,7 +1,7 @@
 package io.worxbend.tui.runtime
 
 import io.worxbend.tui.core.{Event, Widget}
-import io.worxbend.tui.terminal.{BackendError, MouseCaptureMode, PointerShape}
+import io.worxbend.tui.terminal.{BackendError, MouseCaptureMode, PointerShape, TaskbarState}
 
 import java.nio.file.Path
 import scala.concurrent.duration.FiniteDuration
@@ -393,9 +393,39 @@ object RunnerConfig:
   *   - [[PrintEveryFrame]] — every frame the run composed, in order, each in the same encoding.
   *   - [[Plain]] — the text rows of every frame with no styling whatsoever, consecutive identical frames written once:
   *     the form for a screen reader, a log file, or a `grep`.
+  *   - [[AwaitingIdle]] — any of the three above, made to wait for the app to settle: built with
+  *     `PrintFinalFrame.awaitIdle(5.seconds)`. Instead of ending at the first wait for input, the run goes on — ticks
+  *     fire, `Async` results land and repaint — until the loop is idle (no queued render-thread work, no outstanding
+  *     `Async` work or timer, and no frame composed since it last waited) or `timeout` has passed since the run
+  *     started, whichever comes first. An app with a repeating `Async.every` or an animation that repaints on every
+  *     tick is never idle, so it prints the frame it had reached at the timeout.
   */
 enum NonInteractivePolicy:
   case Fail, PrintFinalFrame, PrintEveryFrame, Plain
+
+  /** `printing`'s output, once the run is idle or `timeout` has passed — see the enum's notes. */
+  case AwaitingIdle(printing: NonInteractivePolicy, timeout: FiniteDuration)
+
+  /** This policy, waiting for the app to settle (queued `Async` work, timers, ticks) for at most `timeout` before it
+    * prints. `Fail` stays `Fail`; a policy already waiting takes the new timeout.
+    */
+  def awaitIdle(timeout: FiniteDuration): NonInteractivePolicy =
+    this match
+      case Fail                   => Fail
+      case AwaitingIdle(inner, _) => AwaitingIdle(inner, timeout)
+      case printing               => AwaitingIdle(printing, timeout)
+
+  /** What is printed: this policy itself, or the one an [[AwaitingIdle]] wraps. */
+  def output: NonInteractivePolicy =
+    this match
+      case AwaitingIdle(inner, _) => inner.output
+      case other                  => other
+
+  /** How long the run may wait for the app to settle, when it waits at all. */
+  def idleTimeout: Option[FiniteDuration] =
+    this match
+      case AwaitingIdle(_, timeout) => Some(timeout)
+      case _                        => None
 
 /** An event handler's answer to one question: does this event change what is on screen?
   *
@@ -507,6 +537,12 @@ trait RunnerHandle:
     * fraction changes.
     */
   def setTaskbarProgress(progress: Option[Double]): Unit
+
+  /** [[setTaskbarProgress]] with the protocol's error, indeterminate and paused states — see
+    * [[io.worxbend.tui.terminal.Backend.setTaskbarState]]. The default shows the state by its fraction, so a handle
+    * written before the method existed keeps compiling.
+    */
+  def setTaskbarState(state: TaskbarState): Unit = setTaskbarProgress(state.progress)
 
   /** Switches how much mouse traffic the terminal sends, mid-run — `MouseCaptureMode.AllMotion` for hover. Only
     * meaningful while mouse capture is on; the DSL calls it the first time a frame asks for a hover cue. The default

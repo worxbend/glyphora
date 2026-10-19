@@ -137,6 +137,7 @@ private[dsl] final class TextStep[A](
     display: A => String,
     override val masked: Boolean = false,
     complete: Option[String => Seq[String]] = None,
+    maskGlyph: Option[String] = None,
 ) extends PromptStep[A]:
 
   val state: TextInputState      = TextInputState()
@@ -146,7 +147,7 @@ private[dsl] final class TextStep[A](
 
   def view(error: Option[String], onKey: KeyEvent => Boolean)(using ReactiveScope, Theme): Element =
     val field  = Element.input(state, default).autofocus.onKeyEvent(onKey)
-    val shown  = if masked then field.hidden else field
+    val shown  = if !masked then field else maskGlyph.fold(field.hidden)(field.masked(_))
     val second = if error.isEmpty && hint.nonEmpty then Element.text("  " + hint.mkString("  ")).dim.length(1)
     else PromptStep.errorRow(error)
     Element.column(Element.row(PromptStep.prompt(label), shown.fill).length(1), second)

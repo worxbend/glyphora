@@ -16,17 +16,33 @@ import scala.util.control.NonFatal
   */
 private[terminal] final class EventPump(decoder: InputDecoder):
 
-  private val pendingResize    = AtomicReference[Option[Size]](None)
+  private val pendingResize    = AtomicReference[Option[EventPump.PendingResize]](None)
   private val pendingInterrupt = AtomicBoolean(false)
   private val woken            = AtomicBoolean(false)
   // the thread currently parked in `blockingRead`, if any, so `wake` knows whom to interrupt
   private val pollingThread    = AtomicReference[Option[Thread]](None)
 
+  /** The size of the last `Event.Resize` [[poll]] delivered. Read and written by [[poll]] alone, so render-thread
+    * confined.
+    *
+    * One resize on a mode 2048 terminal arrives twice — as `SIGWINCH` and as the in-band report on the input stream —
+    * in either order. A resize to the size the runner was just told about is that second copy: delivering it composes
+    * one extra frame for nothing, so it is dropped here, whichever of the two sources it came from.
+    */
+  private var lastDelivered: Option[Size] = None
+
   /** Queues the coalesced resize the next [[poll]] reports, and wakes an in-flight poll so it is seen promptly. Safe
     * from any thread.
     */
   def postResize(size: Size): Unit =
-    pendingResize.set(Some(size))
+    pendingResize.set(Some(EventPump.PendingResize(size, forced = false)))
+    wake()
+
+  /** Like [[postResize]], but delivered even when the size is the one the runner already has: `SIGCONT` posts this so a
+    * terminal handed back after a suspend is repainted although its size never changed. Safe from any thread.
+    */
+  def postForcedResize(size: Size): Unit =
+    pendingResize.set(Some(EventPump.PendingResize(size, forced = true)))
     wake()
 
   /** Queues the interrupt the next [[poll]] reports, and wakes an in-flight poll so it is seen promptly. Safe from any
@@ -47,10 +63,21 @@ private[terminal] final class EventPump(decoder: InputDecoder):
     if pendingInterrupt.getAndSet(false) then Right(Some(Event.Interrupt))
     else
       pendingResize.getAndSet(None) match
-        case Some(resized) => Right(Some(Event.Resize(resized)))
-        case None          =>
+        case Some(EventPump.PendingResize(resized, forced)) =>
+          if forced || !lastDelivered.contains(resized) then deliverResize(resized) else Right(None)
+        case None                                           =>
           // something queued render-thread work while we were away: go round the loop instead of blocking again
-          if woken.getAndSet(false) then Right(None) else blockingRead(timeout)
+          if woken.getAndSet(false) then Right(None)
+          else
+            blockingRead(timeout).map {
+              case Some(Event.Resize(resized)) if lastDelivered.contains(resized) => None
+              case Some(Event.Resize(resized)) => deliverResize(resized).toOption.flatten
+              case other                       => other
+            }
+
+  private def deliverResize(size: Size): Either[BackendError, Option[Event]] =
+    lastDelivered = Some(size)
+    Right(Some(Event.Resize(size)))
 
   private def blockingRead(timeout: Duration): Either[BackendError, Option[Event]] =
     pollingThread.set(Some(Thread.currentThread()))
@@ -79,3 +106,8 @@ private[terminal] final class EventPump(decoder: InputDecoder):
     woken.set(true)
     // a thread never interrupts its own read: the `woken` flag above already sends it back round the loop
     pollingThread.get().filter(_ ne Thread.currentThread()).foreach(_.interrupt())
+
+private[terminal] object EventPump:
+
+  /** A resize a signal handler posted: the size it read, and whether it must be delivered even unchanged. */
+  final case class PendingResize(size: Size, forced: Boolean)

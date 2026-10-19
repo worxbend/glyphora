@@ -12,9 +12,14 @@ import scala.deriving.Mirror
   * followed by the value when present, a collection is its size followed by its elements, and an enum or sealed trait
   * is the case name followed by that case's fields. Any string can therefore be carried verbatim, decoding is one left
   * to right pass with no backtracking, and a file truncated or edited by hand fails with a message rather than an
-  * exception or a half-read value. It is a storage format, not a wire or interchange format: there is no version tag,
-  * and a type whose fields change decodes its old file as a `Left`, which [[Persisted]] in `tui-runtime` treats as
-  * "start from the initial value".
+  * exception or a half-read value. It is a storage format, not a wire or interchange format.
+  *
+  * The text [[encode]] produces starts with a version tag, `@<version>;`, and [[decode]] reads it back: a codec's
+  * [[version]] is 1 unless it was built with [[versioned]], whose migration hook reads an older version's text into
+  * today's type — `Codec.derived[Prefs].versioned(2) { case 1 => Codec.readAs[PrefsV1](old => Prefs(...)) }`. Text with
+  * no tag, which is what a pre-tag release wrote, is version 1; no untagged text can start with `@`, because every atom
+  * starts with a digit. A version the codec cannot read decodes as a `Left`, which [[Persisted]] in `tui-runtime`
+  * treats as "start from the initial value". The tag is written once, at the top: a nested value carries none.
   *
   * Instances for the primitives, `Option` and the immutable collections are in the companion, and so is
   * [[Codec.derived]], which hands any case class, enum or sealed hierarchy the codec [[deriveCodec]] builds — so a
@@ -38,17 +43,48 @@ trait Codec[A]:
   /** Reads one value from the reader's current position, advancing it past what was consumed. */
   def read(in: Codec.Reader): Either[String, A]
 
-  /** The whole text form of `value`. */
+  /** The version of the text form this codec writes, carried in [[encode]]'s tag. 1 unless built with [[versioned]].
+    */
+  def version: Int = 1
+
+  /** Reads text written at `older`, a version other than [[version]], from the reader's position — the migration hook
+    * [[versioned]] fills in. The default knows no other version.
+    */
+  def readVersion(older: Int, in: Codec.Reader): Either[String, A] =
+    val _ = in
+    Left(s"the text is version $older and this codec reads version $version")
+
+  /** This codec at `current`, reading the older versions `migrate` covers: each case maps an older version to how its
+    * text is read into an `A`, usually [[Codec.readAs]] over the codec of the type as it was then. Writes stay this
+    * codec's; a version neither `current` nor in `migrate` decodes as a `Left`.
+    */
+  final def versioned(current: Int)(migrate: PartialFunction[Int, Codec.Reader => Either[String, A]]): Codec[A] =
+    val underlying = this
+    new Codec[A]:
+      override def version: Int                                                 = current
+      def write(value: A, out: StringBuilder): Unit                             = underlying.write(value, out)
+      def read(in: Codec.Reader): Either[String, A]                             = underlying.read(in)
+      override def readVersion(older: Int, in: Codec.Reader): Either[String, A] =
+        migrate.lift(older).fold(super.readVersion(older, in))(_(in))
+
+  /** The whole text form of `value`, behind its version tag. */
   final def encode(value: A): String =
     val out = StringBuilder()
+    out.append('@').append(version).append(';')
     write(value, out)
     out.result()
 
-  /** Decodes text produced by [[encode]]. Trailing text after the value is an error: the file holds one value. */
+  /** Decodes text produced by [[encode]] — at this codec's [[version]], at an older one through [[readVersion]], or
+    * untagged as version 1. Trailing text after the value is an error: the file holds one value.
+    */
   final def decode(text: String): Either[String, A] =
     val in = Codec.Reader(text)
-    read(in).flatMap { value =>
-      if in.atEnd then Right(value) else Left(s"unexpected text after the value at offset ${in.position}")
+    in.versionTag().flatMap { tagged =>
+      val written = tagged.getOrElse(1)
+      val value   = if written == version then read(in) else readVersion(written, in)
+      value.flatMap { decoded =>
+        if in.atEnd then Right(decoded) else Left(s"unexpected text after the value at offset ${in.position}")
+      }
     }
 
 object Codec:
@@ -59,6 +95,21 @@ object Codec:
 
     def position: Int  = offset
     def atEnd: Boolean = offset >= text.length
+
+    /** The `@<version>;` tag at the reader's position, consumed — `None` when the text has none, which is the format
+      * written before the tag existed.
+      */
+    def versionTag(): Either[String, Option[Int]] =
+      if offset >= text.length || text.charAt(offset) != '@' then Right(None)
+      else
+        val semicolon = text.indexOf(';', offset)
+        if semicolon < 0 then Left(s"version tag at offset $offset is not closed with ';'")
+        else
+          text.slice(offset + 1, semicolon).toIntOption match
+            case Some(version) =>
+              offset = semicolon + 1
+              Right(Some(version))
+            case None          => Left(s"expected a version number at offset ${offset + 1}")
 
     /** The next `<length>:<text>` atom, or why there is none. */
     def atom(): Either[String, String] =
@@ -85,6 +136,15 @@ object Codec:
     new Codec[A]:
       def write(value: A, out: StringBuilder): Unit = writeAtom(show(value), out)
       def read(in: Codec.Reader): Either[String, A] = in.atom().flatMap(parse)
+
+  /** A migration step for [[Codec.versioned]]: read the text with the codec of `Old` — the type as it was at that
+    * version, kept around (or re-declared) for exactly this — and turn it into today's value with `upgrade`.
+    */
+  def readAs[Old](using old: Codec[Old]): ReadAs[Old] = ReadAs(old)
+
+  /** The second half of [[readAs]]: `Codec.readAs[PrefsV1](old => Prefs(old.theme, old.width, sidebar = true))`. */
+  final class ReadAs[Old](old: Codec[Old]):
+    def apply[A](upgrade: Old => A): Reader => Either[String, A] = in => old.read(in).map(upgrade)
 
   private def parsed[A](name: String)(parse: String => Option[A]): Codec[A] =
     atom[A](_.toString, raw => parse(raw).toRight(s"'$raw' is not $name"))

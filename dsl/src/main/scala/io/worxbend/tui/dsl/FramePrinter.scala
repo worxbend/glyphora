@@ -26,11 +26,12 @@ private[dsl] final class FramePrinter(policy: NonInteractivePolicy, colors: Colo
 
   /** One flushed frame; `buffer` is a snapshot the caller does not mutate afterwards. */
   def frame(buffer: Buffer): Unit =
-    policy match
-      case NonInteractivePolicy.Fail            => ()
-      case NonInteractivePolicy.PrintFinalFrame => latest = Some(buffer)
-      case NonInteractivePolicy.PrintEveryFrame => write(FrameEncoder.encodeLines(buffer, colors) + "\n")
-      case NonInteractivePolicy.Plain           =>
+    policy.output match
+      case NonInteractivePolicy.Fail               => ()
+      case NonInteractivePolicy.AwaitingIdle(_, _) => () // `output` never answers a wrapper
+      case NonInteractivePolicy.PrintFinalFrame    => latest = Some(buffer)
+      case NonInteractivePolicy.PrintEveryFrame    => write(FrameEncoder.encodeLines(buffer, colors) + "\n")
+      case NonInteractivePolicy.Plain              =>
         val rows = FrameEncoder.plainLines(buffer).reverse.dropWhile(_.isEmpty).reverse
         if !lastPlainRows.contains(rows) then
           write(rows.mkString("", "\n", "\n"))

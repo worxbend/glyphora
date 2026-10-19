@@ -60,12 +60,12 @@ final class JLine3Backend private (
   @volatile private[terminal] var pointerShape = PointerShape.Default
 
   /** The taskbar progress last shown, so a handover can clear it and the reacquire put it back; `None` once cleared. */
-  @volatile private[terminal] var taskbarProgress: Option[Double] = None
+  @volatile private[terminal] var taskbarState: TaskbarState = TaskbarState.Cleared
   // how many rows an inline run reserved on the primary screen, so the dressing choreography can park the cursor below
   // the frame such a run leaves behind
-  @volatile private[terminal] var inlineRows                      = 0
+  @volatile private[terminal] var inlineRows                 = 0
   // how many of those rows the run asked a close to keep (`keepInlineRows`); `None` keeps them all
-  @volatile private[terminal] var inlineKept: Option[Int]         = None
+  @volatile private[terminal] var inlineKept: Option[Int]    = None
 
   /** The terminal modes [[TerminalDressing]] found active when SIGTSTP handed the terminal back, so SIGCONT can put
     * them back. Written and read on JLine's signal-dispatch thread alone.
@@ -82,17 +82,20 @@ final class JLine3Backend private (
     */
   private val notificationProtocol: Option[DesktopNotificationProtocol] = DesktopNotificationProtocol.detect(env)
 
-  /** The terminal's last reported text-area size in pixels, and whether it has been asked at all.
+  /** The terminal's last known text-area size in pixels, stamped with the [[pixelsGeneration]] it was measured at;
+    * `None` until it has been asked.
     *
     * Cached because the answer only changes when the window does, and because the query costs a round trip on the
-    * stream the event loop reads from. `onResize` clears both, so the next `windowSize` asks again.
+    * stream the event loop reads from. It has one writer, the render thread: `windowSize` fills it from the `CSI 14 t`
+    * query, and `readEvent` fills it from the pixel fields of a mode 2048 in-band resize report, which carries the same
+    * fact for free. A resize does not touch it — `onResize` only bumps the generation, which makes an entry stamped
+    * with an older one stale, so the next `windowSize` asks again.
     */
-  @volatile private var textAreaPixels: Option[Size] = None
-  @volatile private var pixelsAsked                  = false
+  @volatile private var pixelCache: Option[JLine3Backend.PixelEntry] = None
 
-  /** Versions the pixel cache above. Bumped by `onResize` on the signal-dispatch thread, captured by `windowSize`
-    * before it queries and compared after the query returns: a reply that measured the pre-resize window is discarded,
-    * not published as geometry of the window that exists now.
+  /** Versions the pixel cache above. Bumped by `onResize` on the signal-dispatch thread (its only writer), captured by
+    * `windowSize` before it queries and compared after the query returns: a reply that measured the pre-resize window
+    * is discarded, not published as geometry of the window that exists now.
     */
   @volatile private var pixelsGeneration: Long = 0L
 
@@ -158,28 +161,31 @@ final class JLine3Backend private (
     * outside raw mode there is no reader to receive a reply at all, so the query is skipped entirely rather than
     * spending the timeout.
     *
-    * `pixelsAsked` is set only where the query actually runs, and only after it returns: asked outside raw mode, or on
-    * a transient I/O failure, it stays unset so the next call — raw mode entered, the error cleared — still asks. A
+    * The cache is filled only where the query actually runs, and only after it returns: asked outside raw mode, or on a
+    * transient I/O failure, it stays empty so the next call — raw mode entered, the error cleared — still asks. A
     * resize landing mid-query discards the reply the same way: the generation `onResize` bumps is compared against the
-    * one captured before the round trip, a mismatch leaves the cache unset, and the next call asks at the new size.
+    * one captured before the round trip, a mismatch leaves the cache unset, and the next call asks at the new size. An
+    * in-band resize report that carried pixel fields has already filled it, and then nothing is asked at all.
     */
   override def windowSize: Either[BackendError, WindowSize] =
     Backend.attempt {
-      if pixelsAsked then WindowSize(currentSize, textAreaPixels)
-      else
-        // Capture the generation before the query and compare after it. Without the comparison a WINCH during the
-        // round trip lets the render thread publish pixels that measured the pre-resize window and mark them current —
-        // mixed with the new cell count that is a stale cell geometry surviving until the next resize.
-        val generation = pixelsGeneration
-        textAreaPixels =
-          if cookedAttributes.isEmpty then None
-          else
-            val pixels = queries.textAreaSize(JLine3Backend.PixelQueryTimeout)
-            if generation == pixelsGeneration then
-              pixelsAsked = true
-              pixels
-            else None
-        WindowSize(currentSize, textAreaPixels)
+      pixelCache match
+        case Some(JLine3Backend.PixelEntry(generation, pixels)) if generation == pixelsGeneration =>
+          WindowSize(currentSize, pixels)
+        case _                                                                                    =>
+          // Capture the generation before the query and compare after it. Without the comparison a WINCH during the
+          // round trip lets the render thread publish pixels that measured the pre-resize window and mark them
+          // current — mixed with the new cell count that is a stale cell geometry surviving until the next resize.
+          val generation = pixelsGeneration
+          val measured   =
+            if cookedAttributes.isEmpty then None
+            else
+              val pixels = queries.textAreaSize(JLine3Backend.PixelQueryTimeout)
+              if generation == pixelsGeneration then
+                pixelCache = Some(JLine3Backend.PixelEntry(generation, pixels))
+                pixels
+              else None
+          WindowSize(currentSize, measured)
     }
 
   def draw(buffer: Buffer): Either[BackendError, Unit] =
@@ -443,9 +449,13 @@ final class JLine3Backend private (
     * reacquire put it back, and so `close()` knows whether there is anything to clear.
     */
   override def setTaskbarProgress(progress: Option[Double]): Either[BackendError, Unit] =
+    setTaskbarState(TaskbarState.fromProgress(progress))
+
+  /** Writes OSC 9;4 in any of its five states, under the same gate and memory as [[setTaskbarProgress]]. */
+  override def setTaskbarState(state: TaskbarState): Either[BackendError, Unit] =
     Backend.attempt {
-      if probed.taskbarProgress.usable then write(AnsiSequences.taskbarProgress(progress))
-      taskbarProgress = progress
+      if probed.taskbarProgress.usable then write(AnsiSequences.taskbarState(state))
+      taskbarState = state
     }
 
   /** Writes CUP (`CSI row ; column H`) to park the terminal's own caret on `position`.
@@ -468,7 +478,14 @@ final class JLine3Backend private (
       cursorBlinkSuppressed = !blinking
     }
 
-  def readEvent(timeout: Duration): Either[BackendError, Option[Event]] = pump.poll(timeout)
+  def readEvent(timeout: Duration): Either[BackendError, Option[Event]] =
+    val event = pump.poll(timeout)
+    // a mode 2048 report measured the window it announced, so its pixel fields are the answer the next `windowSize`
+    // would otherwise spend a round trip on — stamped with the generation current now, which a later SIGWINCH outdates
+    decoder
+      .takeInBandPixels()
+      .foreach(pixels => pixelCache = Some(JLine3Backend.PixelEntry(pixelsGeneration, Some(pixels))))
+    event
 
   /** Cuts short an in-flight [[readEvent]]. Safe from any thread. */
   override def wake(): Unit = pump.wake()
@@ -638,21 +655,21 @@ final class JLine3Backend private (
   /** Whether raw mode is currently on, which is exactly "we are holding someone's cooked attributes to put back". */
   private[terminal] def isRawMode: Boolean = cookedAttributes.nonEmpty
 
-  /** SIGWINCH: drop the cached pixel geometry and queue a coalesced resize for the next poll.
+  /** SIGWINCH: outdate the cached pixel geometry and queue a coalesced resize for the next poll. `forced` (SIGCONT)
+    * delivers the resize even when the size is unchanged, so the repaint after a suspend still happens.
     *
     * Runs on JLine's signal-dispatch thread, and so does the `Backend.sizeOf` inside `currentSize`: an uncaught throw
     * here — `terminal.getSize` on a terminal `close()` is racing — would kill the JDK's one signal-dispatch thread,
     * after which every Java signal handler in the process is silently dead. Total like `onStop`, at the price of a
     * missed resize notification on a terminal that is already gone.
     */
-  private def onResize(): Unit =
+  private def onResize(forced: Boolean = false): Unit =
     try
       // the window moved, so a cached pixel size describes a window that no longer exists; the generation bump is what
-      // invalidates an in-flight `windowSize` query, whose reply would otherwise be published as fresh geometry
+      // outdates the cache and an in-flight `windowSize` query, whose reply would otherwise be published as fresh
+      // geometry. The cache itself is left to its one writer, the render thread.
       pixelsGeneration += 1
-      pixelsAsked = false
-      textAreaPixels = None
-      pump.postResize(currentSize)
+      if forced then pump.postForcedResize(currentSize) else pump.postResize(currentSize)
     catch case NonFatal(_) => ()
 
   private def onInterrupt(): Unit = pump.postInterrupt()
@@ -666,7 +683,7 @@ final class JLine3Backend private (
   private def onContinue(): Unit =
     dressing.reacquireTerminal(suspendedState)
     suspendedState = TerminalDressing.TerminalState.Undressed
-    onResize()
+    onResize(forced = true)
 
   private def currentSize: Size = Backend.sizeOf(terminal)
 
@@ -701,6 +718,11 @@ object JLine3Backend:
     * noticed.
     */
   private val PixelQueryTimeout: FiniteDuration = 100.millis
+
+  /** One pixel-cache entry: the text-area size in pixels (`None` when the terminal did not answer) and the resize
+    * generation it was measured at.
+    */
+  private final case class PixelEntry(generation: Long, pixels: Option[Size])
 
   /** How long [[JLine3Backend.enableRawMode]] waits for the capability answers before starting the app anyway.
     *

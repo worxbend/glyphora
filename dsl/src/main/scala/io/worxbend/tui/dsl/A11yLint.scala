@@ -68,7 +68,7 @@ private[dsl] object A11yLint:
   private def cueIsSelection(node: Element): Boolean =
     node match
       case _: ScrollViewElement | _: LogElement | _: DataTableElement[?] | _: SplitPaneElement | _: HexViewerElement |
-          _: TreeTableElement[?] | _: DiffViewElement =>
+          _: TreeTableElement[?] | _: DiffViewElement | _: LogConsoleElement =>
         true
       case other => other.componentRole.contains(ListRole)
 

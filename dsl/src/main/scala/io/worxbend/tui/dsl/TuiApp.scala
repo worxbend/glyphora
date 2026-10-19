@@ -16,7 +16,15 @@ import io.worxbend.tui.runtime.{
   Signal,
   TerminalRunner,
 }
-import io.worxbend.tui.terminal.{Backend, BackendError, ColorDepth, HeadlessBackend, JLine3Backend, PointerShape}
+import io.worxbend.tui.terminal.{
+  Backend,
+  BackendError,
+  ColorDepth,
+  HeadlessBackend,
+  JLine3Backend,
+  PointerShape,
+  TaskbarState,
+}
 import io.worxbend.tui.terminal.MouseCaptureMode
 import io.worxbend.tui.terminal.ImageProtocol
 import io.worxbend.tui.widgets.{Clipboard, NoticeLevel}
@@ -184,13 +192,18 @@ trait TuiApp:
     * [[AppServices.taskbarProgress]]. Call it from [[onStart]] or a handler; binding again replaces the source.
     */
   protected final def taskbarProgress(progress: Reactive[Option[Double]]): Unit =
-    taskbarSource = Some(progress)
+    taskbarSource = Some(scope => TaskbarState.fromProgress(progress.get(using scope)))
+    requestRedraw()
+
+  /** [[taskbarProgress]] with the error, indeterminate and paused states — see [[AppServices.taskbarState]]. */
+  protected final def taskbarState(state: Reactive[TaskbarState]): Unit =
+    taskbarSource = Some(scope => state.get(using scope))
     requestRedraw()
 
   /** Stops mirroring the bound progress source and clears the indicator. */
   protected final def clearTaskbarProgress(): Unit =
     taskbarSource = None
-    showTaskbar(None)
+    showTaskbar(TaskbarState.Cleared)
 
   /** A toast, plus a desktop notification when the terminal window is unfocused — see [[Notifications.desktop]]. */
   protected final def notifyDesktop(title: String, body: String): Unit =
@@ -438,6 +451,7 @@ trait TuiApp:
     def desktop(title: String, body: String): Unit                = TuiApp.this.notifyDesktop(title, body)
     def colorScheme: Reactive[ColorScheme]                        = colorSchemeSignal
     def taskbarProgress(progress: Reactive[Option[Double]]): Unit = TuiApp.this.taskbarProgress(progress)
+    def taskbarState(state: Reactive[TaskbarState]): Unit         = TuiApp.this.taskbarState(state)
     def clearTaskbarProgress(): Unit                              = TuiApp.this.clearTaskbarProgress()
     override def clipboard: Clipboard                             = appClipboard
     def keyMode: Signal[ModeId]                                   = keyModeSignal
@@ -669,7 +683,7 @@ trait TuiApp:
     */
   private def runPrinting(policy: NonInteractivePolicy, target: PrintTarget): Either[RunnerError, Unit] =
     val printer = FramePrinter(policy, target.colors, target.write)
-    val backend = PrintBackend(target.size, printer.frame, () => quit())
+    val backend = PrintBackend(target.size, printer.frame, () => quit(), policy.idleTimeout)
     val result  = runWith(backend)
     printer.finish()
     result
@@ -746,7 +760,7 @@ trait TuiApp:
         run.host.imageProtocol = ImageProtocol.select(backend.capabilities)
         shownPointer = PointerShape.Default
         motionRequested = false
-        shownTaskbar = None
+        shownTaskbar = TaskbarState.Cleared
         terminalFocused = true
         screenStack.beginRun()
         Messages.scoped(runMessages)(onStart())
@@ -1031,15 +1045,15 @@ trait TuiApp:
     * merely installed as a given around the call — a given installed here is lexically scoped to this method and would
     * not be in scope inside an app's own `view` body.
     */
-  /** [[theme]] with [[Theme.auto]] resolved against the terminal's colour scheme; any other theme is returned as is.
-    * Reading the scheme through `scope` is what subscribes a frame to a later mode 2031 report.
+  /** [[theme]] with an auto theme ([[Theme.isAuto]]) resolved against the terminal's colour scheme; any other theme is
+    * returned as is. Reading the scheme through `scope` is what subscribes a frame to a later mode 2031 report.
     */
   private def resolvedTheme(using scope: ReactiveScope): Theme =
     // subscribed before `theme` is asked and whether or not it answers `auto`, so an override that reads
     // `colorSchemeNow` to choose between two palettes of its own is repainted by a mode 2031 report too
     val scheme     = colorSchemeSignal.get(using scope)
     val configured = theme
-    if configured eq Theme.auto then Theme.forScheme(scheme) else configured
+    configured.resolve(scheme)
 
   /** Pushes the bound progress source's current value to the taskbar when it differs from what is showing. Read under
     * `scope`, so a change to the source schedules the frame that pushes it.
@@ -1053,13 +1067,13 @@ trait TuiApp:
       frame.renderWidget(Inspector.overlay(run.host, inspectorMode, inspectedPointer), frame.area)
 
   private def syncTaskbar(using scope: ReactiveScope): Unit =
-    taskbarSource.foreach(source => showTaskbar(source.get(using scope)))
+    taskbarSource.foreach(source => showTaskbar(source(scope)))
 
-  /** Hands `progress` to the backend when it is not what the taskbar already shows. */
-  private def showTaskbar(progress: Option[Double]): Unit =
-    if progress != shownTaskbar then
-      activeHandle.get().foreach(_.setTaskbarProgress(progress))
-      shownTaskbar = progress
+  /** Hands `state` to the backend when it is not what the taskbar already shows. */
+  private def showTaskbar(state: TaskbarState): Unit =
+    if state != shownTaskbar then
+      activeHandle.get().foreach(_.setTaskbarState(state))
+      shownTaskbar = state
 
   /** Upgrades a run with mouse capture to all-motion tracking the first frame that contains a hover cue or an explicit
     * pointer shape, so `.hoverStyle` works without the app configuring anything. Once per run, and never for an app
@@ -1141,10 +1155,10 @@ trait TuiApp:
   private var inspectorMode: InspectorMode       = InspectorMode.Off
   private var inspectedPointer: Option[Position] = None
 
-  private var shownPointer: PointerShape                      = PointerShape.Default
-  private var shownTaskbar: Option[Double]                    = None
-  private var taskbarSource: Option[Reactive[Option[Double]]] = None
-  private var terminalFocused: Boolean                        = true
+  private var shownPointer: PointerShape                           = PointerShape.Default
+  private var shownTaskbar: TaskbarState                           = TaskbarState.Cleared
+  private var taskbarSource: Option[ReactiveScope => TaskbarState] = None
+  private var terminalFocused: Boolean                             = true
 
   /** Whether this run already asked for all-motion tracking — see `syncMouseMotion`. Render thread only. */
   private var motionRequested: Boolean = false

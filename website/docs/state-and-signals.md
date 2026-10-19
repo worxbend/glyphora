@@ -204,10 +204,27 @@ case class, enum or sealed hierarchy built from `String`, `Int`, `Long`, `Double
 `Boolean`, `Option`, `Seq`, `List`, `Vector` and `Set`; a type the derivation cannot see
 through is taught with one line next to it — `given Codec[Email] = Codec.atom[Email](_.value, Email.parse)` —
 and a hand-written given always wins over the derivation. The text is a compact
-length-prefixed form made for round-tripping, not for editing by hand or for exchange:
-a type whose fields change simply decodes its old file as a failure, and a missing,
+length-prefixed form made for round-tripping, not for editing by hand or for exchange,
+and it starts with a version tag (`@1;` unless you say otherwise). A missing,
 unreadable or undecodable file yields `initial`, so a stale file is never a reason the
 app cannot start.
+
+When a persisted type changes shape, bump its codec's version and say how to read the
+old one — keep (or re-declare) the old shape and upgrade from it:
+
+```scala
+final case class PrefsV1(theme: String, sidebar: Boolean)
+final case class Prefs(theme: String, sidebar: Boolean, recent: List[String])
+
+given Codec[Prefs] =
+  Codec.derived[Prefs].versioned(2) {
+    case 1 => Codec.readAs[PrefsV1](old => Prefs(old.theme, old.sidebar, Nil))
+  }
+```
+
+`versioned(current)` writes `@2;…` from then on and hands text of any version its
+partial function covers to that reader; a file written before the tag existed counts as
+version 1, and a version nobody covers decodes as a failure and so yields `initial`.
 
 Writes coalesce — a burst of changes leaves at most one write in flight and the newest
 value pending — and each one lands through an atomic rename, so the file always holds a

@@ -57,11 +57,20 @@ object Prompt:
   )(using session: PromptSession): Option[String] =
     single(session, TextStep[String](label, default, raw => validate(raw).map(_ => raw), identity))
 
-  /** [[text]] with the input hidden as it is typed; the summary shows a fixed mask, never the length. */
-  def password(label: String, validate: String => Either[String, Unit] = required)(using
-      session: PromptSession
-  ): Option[String] =
-    single(session, TextStep[String](label, "", raw => validate(raw).map(_ => raw), identity, masked = true))
+  /** [[text]] with the input hidden as it is typed; the summary shows a fixed mask, never the length.
+    *
+    * With `mask = None` (the default) the characters are drawn invisibly; `mask = Some("•")` draws one bullet per
+    * character instead, so the user sees how much they typed and where the cursor is — never the text itself.
+    */
+  def password(
+      label: String,
+      validate: String => Either[String, Unit] = required,
+      mask: Option[String] = None,
+  )(using session: PromptSession): Option[String] =
+    single(
+      session,
+      TextStep[String](label, "", raw => validate(raw).map(_ => raw), identity, masked = true, maskGlyph = mask),
+    )
 
   /** Yes or no: `y` or `n` answer at once, Enter takes `default`. */
   def confirm(label: String, default: Boolean = false)(using session: PromptSession): Option[Boolean] =

@@ -157,6 +157,20 @@ private[terminal] final class InputDecoder(
     */
   private var reportedTextArea: Option[Size] = None
 
+  /** The pixel fields of the last mode 2048 in-band resize report, until [[takeInBandPixels]] collects them. A report
+    * whose pixel fields are absent or zero leaves this unset: it measured nothing, and the pixel query stays the
+    * source.
+    */
+  private var inBandPixels: Option[Size] = None
+
+  /** The pixel size the last in-band resize report carried, once — the backend folds it into its pixel cache right
+    * after the read that decoded the report. Render-thread-confined, like every other decoder state.
+    */
+  private[terminal] def takeInBandPixels(): Option[Size] =
+    val taken = inBandPixels
+    inBandPixels = None
+    taken
+
   /** Decodes the next event, blocking up to `timeoutMillis` for the first character.
     *
     * `None` means "no event": either the timeout elapsed or the bytes read were a sequence with no glyphora meaning.
@@ -693,12 +707,15 @@ private[terminal] final class InputDecoder(
     */
   private def captureTextAreaReport(numbers: Seq[Int]): Option[Event] =
     numbers match
-      case Seq(TextAreaReport, height, width) if height >= 0 && width >= 0       =>
+      case Seq(TextAreaReport, height, width) if height >= 0 && width >= 0            =>
         reportedTextArea = Some(Size(width, height))
         None
-      case InBandResizeReport +: rows +: columns +: _ if rows > 0 && columns > 0 =>
+      case InBandResizeReport +: rows +: columns +: pixels if rows > 0 && columns > 0 =>
+        inBandPixels = pixels match
+          case height +: width +: _ if height > 0 && width > 0 => Some(Size(width, height))
+          case _                                               => None
         Some(Event.Resize(Size(columns, rows)))
-      case _                                                                     => None
+      case _                                                                          => None
 
   /** Whether a `CSI … R` is F3 rather than a cursor-position report.
     *

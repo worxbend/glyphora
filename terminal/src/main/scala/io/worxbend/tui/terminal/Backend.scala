@@ -264,6 +264,14 @@ trait Backend:
     val _ = progress
     Right(())
 
+  /** [[setTaskbarProgress]] with the protocol's other states: error, indeterminate and paused — see [[TaskbarState]].
+    *
+    * The same terminal state under the same rules. The default shows the state by its fraction through
+    * [[setTaskbarProgress]] (an indeterminate bar reads as cleared), so a backend written before this method existed
+    * keeps working with the subset it can draw. Must run on the render thread.
+    */
+  def setTaskbarState(state: TaskbarState): Either[BackendError, Unit] = setTaskbarProgress(state.progress)
+
   /** Reserves `rows` lines at the bottom of the *primary* screen for an app that is not taking the alternate screen.
     *
     * The complement of [[enterAlternateScreen]]. Instead of switching to a blank second screen, this scrolls whatever
@@ -282,9 +290,9 @@ trait Backend:
     * the cursor on the row below them instead of below the whole strip.
     *
     * For a run whose last frame is shorter than the strip it needed while live — a prompt that asked with a list of
-    * options and answers with one summary line. The rows below the kept ones must already be blank in the last frame
-    * drawn; this only moves where the shell's next output starts, so those blank rows are reused rather than left as a
-    * gap. A value at or above the strip's height keeps the whole strip, which is what closing does without this call.
+    * options and answers with one summary line. The rows below the kept ones are erased on close, whatever the last
+    * frame drew there, and the shell's next output starts on the first of them, so they are reused rather than left as
+    * a gap. A value at or above the strip's height keeps the whole strip, which is what closing does without this call.
     *
     * The default is a no-op, for a backend with no real screen.
     */
