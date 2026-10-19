@@ -19,7 +19,7 @@ import io.worxbend.tui.core.{
 import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets as w
 
-/** A subtree chosen by the terminal's size — a media query, not a container query.
+/** A subtree chosen by the terminal's size — a media query — or, built by `responsive.local`, by its own area.
   *
   * `build` is handed the size of the whole terminal, not this node's allotted area, and runs during [[ResponsivePass]]
   * before the focus pass, so whatever it returns is an ordinary part of the tree: its focusables take Tab stops, its
@@ -36,11 +36,22 @@ import io.worxbend.tui.widgets as w
   * test that draws `element.widget` straight into a buffer without a [[TuiApp]] behind it shows content rather than
   * blank space. That fallback has no focus pass behind it, so focusables inside it are inert — which is why the pass
   * exists rather than doing this at render time.
+  *
+  * '''Container queries.''' With `local` set — `responsive.local` — `build` is handed this node's *own* area instead,
+  * found by the layout pre-pass in [[ResponsivePass.resolveFrame]]: the tree is painted once into a scratch buffer with
+  * this node unresolved, the node records the area it was handed, and the pass builds the branch for that size — still
+  * before the focus pass, so the branch is as much a part of the tree as a media query's. Because the area has to be
+  * known before the branch exists, a local node's size never depends on its branch: it claims what its own constraint
+  * says, or a fill, and measures as unmeasurable unless given a `.length(n)` — the size containment a CSS container
+  * query asks for too. `probe` is the pre-pass's handle on an unresolved local node; like `resolved`, only the pass
+  * writes it.
   */
 final case class ResponsiveElement(
     build: Size => Element,
     resolved: Option[Element] = None,
     props: ElementProps = ElementProps(),
+    local: Boolean = false,
+    probe: Int = -1,
 ) extends Element:
   type Self = ResponsiveElement
   override def debugName: String                                                    = "responsive"
@@ -49,7 +60,11 @@ final case class ResponsiveElement(
   def widget: Widget                                                                =
     resolved match
       case Some(branch) => branch.widget
-      case None         => (area, buffer) => build(area.size).widget.render(area, buffer)
+      case None         =>
+        (area, buffer) =>
+          // the pre-pass paints this node unresolved only to learn its area: it records the area and draws nothing
+          if LocalProbe.measuring then LocalProbe.record(probe, area.size)
+          else build(area.size).widget.render(area, buffer)
   private[dsl] def withProps(props: ElementProps): ResponsiveElement                = copy(props = props)
   private[dsl] override def withChildren(children: Seq[Element]): ResponsiveElement =
     copy(resolved = children.headOption.orElse(resolved))
@@ -57,18 +72,24 @@ final case class ResponsiveElement(
   /** This node holding what `build` produces at `size` — [[ResponsivePass]]'s single mutation. */
   private[dsl] def resolvedAt(branch: Element): ResponsiveElement = copy(resolved = Some(branch))
 
-  private[dsl] override def claim: SizeClaim = resolved.map(_.claim).getOrElse(SizeClaim.Fill)
+  /** This unresolved local node carrying the pre-pass handle `token` — see the class notes. */
+  private[dsl] def probedAs(token: Int): ResponsiveElement = copy(probe = token)
+
+  /** A local node claims a fill whatever its branch is — see the class notes; a media query claims its branch's. */
+  private[dsl] override def claim: SizeClaim =
+    if local then SizeClaim.Fill else resolved.map(_.claim).getOrElse(SizeClaim.Fill)
 
   /** With no constraint of its own, this node measures as the branch [[ResponsivePass]] built — and as unmeasurable
-    * until it has one. The trait default cannot serve here: this node's `widget` is a lambda that either forwards to
-    * the branch or builds one from the render area, so it is never a [[io.worxbend.tui.core.Measured]] itself.
+    * until it has one, or always when it is local. The trait default cannot serve here: this node's `widget` is a
+    * lambda that either forwards to the branch or builds one from the render area, so it is never a
+    * [[io.worxbend.tui.core.Measured]] itself.
     */
   private[dsl] override def intrinsicHeight(width: Int): Option[Int] =
-    constrainedHeight(resolved.flatMap(_.intrinsicHeight(width)))
+    constrainedHeight(if local then None else resolved.flatMap(_.intrinsicHeight(width)))
 
   /** @see [[intrinsicHeight]] */
   private[dsl] override def intrinsicWidth(height: Int): Option[Int] =
-    constrainedWidth(resolved.flatMap(_.intrinsicWidth(height)))
+    constrainedWidth(if local then None else resolved.flatMap(_.intrinsicWidth(height)))
 
 object ResponsiveElement:
   /** Capture the declaration's hook scope once. Case-class copies retain the already captured builder. */
@@ -76,7 +97,9 @@ object ResponsiveElement:
       build: Size => Element,
       resolved: Option[Element] = None,
       props: ElementProps = ElementProps(),
-  ): ResponsiveElement = new ResponsiveElement(ViewState.deferred(build), resolved, props)
+      local: Boolean = false,
+      probe: Int = -1,
+  ): ResponsiveElement = new ResponsiveElement(ViewState.deferred(build), resolved, props, local, probe)
 
 /** A scrollable viewport over taller-than-the-screen content. Up/Down/PageUp/PageDown scroll while focused.
   *
@@ -122,20 +145,32 @@ final case class ScrollViewElement(
       val portals  = PortalQueue.mark
       val requests = RevealRequests(followsFocus)
       RevealProbe.collecting(requests)(view.render(area, buffer, state))
-      requests.chosen match
-        case None             => state.revealedRequest = None
-        case Some((id, rect)) =>
-          // act on a request once, when it appears: acting on it every frame would pin the view and undo every
-          // scroll the reader makes while the same element stays focused or marked
-          if !state.revealedRequest.contains(id) then
-            state.revealedRequest = Some(id)
-            val before = state.offset
-            state.reveal(rect.y, rect.height)
-            // painted again in the same frame, so the request is honoured on the frame it was made; the portals the
-            // first pass queued are dropped so they are not drawn twice
-            if state.offset != before then
-              PortalQueue.rollback(portals)
-              RevealProbe.collecting(RevealRequests(followsFocus))(view.render(area, buffer, state))
+      // the container-query pre-pass paints an undecorated tree, which asks for nothing: that is not a request going
+      // away, so the pre-pass leaves the bookkeeping of the frames that do ask alone
+      if !LocalProbe.measuring then revealChosen(requests, area, buffer, view, portals)
+
+  /** Acts on the reveal request the paint just collected, if it is a new one — see the class notes. */
+  private def revealChosen(
+      requests: RevealRequests,
+      area: Rect,
+      buffer: io.worxbend.tui.core.Buffer,
+      view: w.ScrollView,
+      portals: Int,
+  ): Unit =
+    requests.chosen match
+      case None             => state.revealedRequest = None
+      case Some((id, rect)) =>
+        // act on a request once, when it appears: acting on it every frame would pin the view and undo every
+        // scroll the reader makes while the same element stays focused or marked
+        if !state.revealedRequest.contains(id) then
+          state.revealedRequest = Some(id)
+          val before = state.offset
+          state.reveal(rect.y, rect.height)
+          // painted again in the same frame, so the request is honoured on the frame it was made; the portals the
+          // first pass queued are dropped so they are not drawn twice
+          if state.offset != before then
+            PortalQueue.rollback(portals)
+            RevealProbe.collecting(RevealRequests(followsFocus))(view.render(area, buffer, state))
 
   /** Whether this view scrolls to keep its focused child on screen — on by default. Moving focus with Tab onto a child
     * below or above the window scrolls just far enough to show it; turn it off for a view whose offset the app drives

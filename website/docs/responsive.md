@@ -99,9 +99,8 @@ panel("Throughput")(
 `responsive` takes a `Size => Element`. It is a **media query, not a container
 query**: the size it receives is the whole terminal's, the same value
 `terminalSize` reports, regardless of how deeply the node is nested or how narrow
-its own allotted area is. If you need the node's actual rectangle, that is a raw
-widget — `Element.widget { (area, buffer) => … }` — and it opts out of focus and
-event routing.
+its own allotted area is. When the decision depends on the room the node itself
+was given, use `responsive.local` — the container query below.
 
 The branch is resolved before the focus pass, so whatever it returns is an
 ordinary part of the tree: its focusables take Tab stops, its handlers receive
@@ -116,6 +115,41 @@ responsive(build).length(3).onKeyEvent(handler)
 
 A constraint set on the node wins; with none set, the node claims whatever the
 selected branch claims.
+
+## Branch on the node's own area
+
+A sidebar component should not care how wide the terminal is; it cares how wide
+the sidebar is. `responsive.local` is a **container query**: its builder receives
+the node's own area, so the same component lays itself out differently in a
+28-column sidebar and in a full-width page, at any terminal size:
+
+```scala
+def services(using Theme): Element =
+  responsive.local {
+    case size if size.width < 40 => column(entries.map(e => text(e.name))*)
+    case _                       => column(entries.map(e => row(text(e.name), text(e.status), text(e.uptime)))*)
+  }
+
+row(panel("Services")(services).length(30), detail.fill)
+```
+
+The area is found by a layout pre-pass: the frame is laid out once with the
+query unresolved, the node records the rectangle it was given, and the branch is
+built for it — still before the focus pass, so the branch's focusables take Tab
+stops on the very first frame, exactly as with `responsive`. A query nested
+inside another query's branch takes one more pass. A frame with no
+`responsive.local` in it pays nothing for the feature.
+
+Because the area must be known before the branch is chosen, the node's size can
+never depend on the branch: it takes what its own constraint says (`.length(n)`,
+`.percent(p)`, …) or fills its slot, and inside a measuring container (a
+`scrollView`, an `.auto` slot) give it a `.length(n)` — it does not measure
+itself by its branch the way a `responsive` node does. A query the pre-pass never
+reaches, such as one scrolled outside a scroll view's window, builds when it is
+drawn instead; its focusables are inert until it is on screen.
+
+The plain `responsive` keeps its media-query meaning, so the two combine: branch
+the screen on the terminal and each component on its own slot.
 
 ## React to the resize itself
 
