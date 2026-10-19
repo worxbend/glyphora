@@ -206,7 +206,11 @@ scrollView(
 
 Each request is acted on once, so a child that stays focused or marked does not drag
 the view back after the reader scrolls away; take the mark off and put it back to ask
-again. `.followFocus(false)` turns focus-following off for a view whose offset the app
+again. Scroll views inside scroll views each scroll their part of the way, so a focused
+button deep in a nested list ends up on screen. The view works out where to scroll from
+where the last frame painted the child, before it paints, so the content is drawn once
+and `boundsOf` answers where the child really is; a child that has only just appeared is
+scrolled to on the frame after it first paints. `.followFocus(false)` turns focus-following off for a view whose offset the app
 drives itself, and `ScrollViewState.reveal(top, height)` is the same "scroll just far
 enough" move for code that keeps its own state.
 

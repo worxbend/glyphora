@@ -438,6 +438,9 @@ private[dsl] object FocusPass:
     // focused node — the path key routing follows instead of searching the tree for it
     var trail          = List.empty[Int]
     var focusedTrail   = Option.empty[Vector[Int]]
+    // the scroll views enclosing the node being transformed, innermost first, each gathering the visibility request it
+    // will act on before it paints — the focused descendant's, or the first `.ensureVisible` mark's
+    var revealing      = List.empty[PendingReveal]
 
     def themed(
         element: Element,
@@ -503,7 +506,9 @@ private[dsl] object FocusPass:
           val index  = counter
           counter += 1
           val target = Some(InputTarget.Focus(index))
-          if index == tracker.focusedIndex then focusedTrail = Some(trail.reverse.toVector)
+          if index == tracker.focusedIndex then
+            focusedTrail = Some(trail.reverse.toVector)
+            revealing.foreach(_.focus(RevealProbe.focusId(index)))
           TrackedElement(
             themed(element, focused = index == tracker.focusedIndex, disabled, target, states, inherited),
             index,
@@ -523,6 +528,14 @@ private[dsl] object FocusPass:
             tracker,
           )
         else themed(element, focused = false, disabled, None, states, inherited)
+      if element.props.ensureVisible && !inert then
+        val id = RevealProbe.visibleId(element.props.focusKey.getOrElse(nodeId.toString))
+        revealing.foreach(_.visible(id))
+      val enclosing    = revealing
+      val gathering    = element match
+        case scroll: ScrollViewElement if !inert => Some(PendingReveal(scroll.followsFocus))
+        case _                                   => None
+      gathering.foreach(pending => revealing = pending :: revealing)
       // Inert trees still paint, including deferred portals: keep theme and coordinate wrappers, but no input records.
       val outer        = trail
       var position     = 0
@@ -539,6 +552,10 @@ private[dsl] object FocusPass:
           },
         )
       trail = outer
+      revealing = enclosing
+      element match
+        case scroll: ScrollViewElement => scroll.state.pendingReveal = gathering.flatMap(_.chosen)
+        case _                         => ()
       def rolesOf(node: Element, g: PointerGestures, disabled: Boolean): PointerRoles =
         PointerRoles(
           selectable = g.selection.enabled && !unselectable &&
@@ -600,3 +617,17 @@ private[dsl] object FocusPass:
     element match
       case scroll: ScrollViewElement => children.map(child => ScrollViewportElement(child, scroll.state))
       case _                         => children
+
+/** One scroll view's visibility request as the focus pass finds it, before anything paints: an `.ensureVisible` mark
+  * wins over the focused descendant, which counts only when the view follows focus. Built and read inside one
+  * [[FocusPass.decorate]] call.
+  */
+private[dsl] final class PendingReveal(followFocus: Boolean):
+  private var marked: Option[String]  = None
+  private var focused: Option[String] = None
+
+  def visible(id: String): Unit = if marked.isEmpty then marked = Some(id)
+
+  def focus(id: String): Unit = if followFocus && focused.isEmpty then focused = Some(id)
+
+  def chosen: Option[String] = marked.orElse(focused)

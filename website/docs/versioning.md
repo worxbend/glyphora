@@ -102,6 +102,20 @@ Three changes reach almost every app, so check them first:
   scrollView(content, state).followFocus(false)
   ```
 
+- **Every enclosing `scrollView` follows a reveal, and none paints twice.** A focused child or an
+  `.ensureVisible` mark inside nested scroll views now scrolls each of them — before, only the
+  innermost moved, and the outer one could leave the target off screen. The view resolves the
+  scroll before painting, from where the previous frame painted the target, instead of painting
+  its content a second time at the new offset; `boundsOf` and the other recorded rects are
+  therefore never one frame stale. A child that was not on the previous frame (one that just
+  appeared marked `.ensureVisible`) is scrolled to on the next frame rather than the same one,
+  and a `Pilot` test that waits for idle sees no difference. An outer view whose offset the app
+  pins opts out as before:
+
+  ```scala
+  scrollView(column(header, scrollView(list, inner).length(5)), outer).followFocus(false)
+  ```
+
 - **`button(…)` measures its own width** (`Button` is `Measured`). A `flow` now lays buttons side
   by side instead of one per line, and `.auto` sizes a button to its label. To keep a button on a
   line of its own, put it in its own `column(…)` or give it `.fill`.

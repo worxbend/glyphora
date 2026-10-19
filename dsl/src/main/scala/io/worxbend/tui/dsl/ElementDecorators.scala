@@ -61,8 +61,9 @@ private[dsl] final case class TrackedElement(inner: Element, index: Int, tracker
   def widget: Widget                                                             =
     (area, buffer) =>
       tracker.record(index, area)
-      // the focused element tells an enclosing scrollView where it landed, so the view can keep it on screen
-      if inner.props.focused then RevealProbe.focused(index, area)
+      // every focusable tells the enclosing scroll views where it landed: the focused one so they keep it on screen,
+      // the rest so that the frame after focus moves onto one of them can scroll to it before painting
+      RevealProbe.tracked(index, area, inner.props.focused)
       inner.widget.render(area, buffer)
   private[dsl] def withProps(props: ElementProps): TrackedElement                = copy(inner = inner.withProps(props))
   private[dsl] override def withChildren(children: Seq[Element]): TrackedElement =

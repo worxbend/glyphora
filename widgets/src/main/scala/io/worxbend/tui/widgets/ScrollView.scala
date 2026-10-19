@@ -59,6 +59,24 @@ final class ScrollViewState extends VersionedState:
     */
   private[tui] var revealedRequest: Option[String] = None
 
+  /** The visibility request the DSL's focus pass found under this view for the coming frame (the focused child's, or
+    * the first `.ensureVisible` mark's), so the view can scroll to it *before* it paints. Written only by the DSL.
+    */
+  private[tui] var pendingReveal: Option[String] = None
+
+  /** Where each request the last paint could have made landed, in content coordinates — every focusable and every mark
+    * under this view, by request identity. What [[pendingReveal]] is looked up in. Written only by the DSL.
+    */
+  private[tui] var placements: collection.Map[String, Rect] = Map.empty
+
+  /** Set when the DSL moved the offset *after* this frame painted (a request it could not place beforehand), so the
+    * frame that shows the new offset is owed even though the version was read after the paint. Written only by the DSL.
+    */
+  private[tui] var owesFrame: Boolean = false
+
+  /** The viewport height the last render recorded, at least one row. */
+  private[tui] def viewportRows: Int = math.max(1, lastViewportHeight)
+
   def scrollUp(count: Int = 1): Unit =
     scrollBy(-count)
 
