@@ -295,6 +295,14 @@ trait TuiApp:
     */
   protected final def runEffect(key: String, effect: Effect): Unit = effects.start(key, effect)
 
+  /** Starts a post-render [[Effect]] under `key` confined to the element declared with `.key(scope)` — flash this
+    * panel, dissolve this toast. The effect covers only the rect that node was painted into, looked up on every frame,
+    * so it follows the node when the layout moves and paints nothing on a frame the node is not on screen. Starting one
+    * turns the host's bounds recording on. `runEffect("flash", fx, scope = "flash")` keys and scopes it by the same
+    * name.
+    */
+  protected final def runEffect(key: String, effect: Effect, scope: String): Unit = effects.start(key, effect, scope)
+
   /** Pushes a screen; modal screens layer over the current view, full screens replace it.
     *
     * During a run, the screen's `Screen.onEnter` runs immediately afterwards, on the render thread, before the frame
@@ -405,6 +413,8 @@ trait TuiApp:
     def closePalette(): Unit                                                        = TuiApp.this.closePalette()
     def runEffect(effect: Effect): Unit                                             = TuiApp.this.runEffect(effect)
     def runEffect(key: String, effect: Effect): Unit                                = TuiApp.this.runEffect(key, effect)
+    override def runEffect(key: String, effect: Effect, scope: String): Unit        =
+      TuiApp.this.runEffect(key, effect, scope)
     def requestRedraw(): Unit                                                       = TuiApp.this.requestRedraw()
     def copyToClipboard(text: String): Unit                                         = TuiApp.this.copyToClipboard(text)
     def quit(): Unit                                                                = TuiApp.this.quit()
@@ -776,12 +786,14 @@ trait TuiApp:
       // a modal that closes on a click outside reads where its dialog was painted, so the frame that first shows it
       // already records — the host's own demand detection would only switch recording on for the frame after
       if !run.host.recordBounds && modalClosesOnClickOutside then run.host.recordBounds = true
+      // an effect scoped to an element resolves that element's rect from this very frame's bounds
+      if !run.host.recordBounds && effects.hasScoped then run.host.recordBounds = true
       // inside the generation, so a `Theme.auto` frame subscribes to the colour scheme and a mode 2031 report repaints
       val resolved = resolvedTheme(using scope)
       run.host.renderComposed(frame, resolved, effectiveView(resolved)(using scope), () => syncFocusLayers(run))(using
         scope
       )
-      effects.applyTo(frame)
+      effects.applyTo(frame, key => run.host.bounds.current.boundsOf(key))
       syncTaskbar(using scope)
       syncMouseMotion(run)
     // asked after either branch: an intro is an animation like any other, and it is what a run with no configured
