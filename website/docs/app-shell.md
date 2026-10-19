@@ -72,6 +72,22 @@ scaffold(
 For layouts without the full chrome, use `sidebarLayout`, `masterDetail`, `centered`,
 or `place`; see [Layout & style](./layout-and-style).
 
+A desktop-style shell adds a menu bar above everything, a toolbar under it, and
+floating windows over the content — `menuBar`, `toolbar` and `window` in the
+[widgets guide](./widgets#application-chrome):
+
+```scala
+column(
+  menuBar(menus, bar)(runMenuItem),
+  toolbar(button("New")(newDoc()), button("Save")(save())),
+  layers(mainView, windowStack(inspector, console)).fill,
+)
+```
+
+`Alt+<letter>` and `F10` reach the menu bar whatever holds focus, and `Alt+M` / `Alt+R`
+move and resize the focused window; all three are rebindable framework keys
+(`menu-bar`, `window-move`, `window-resize` — see [Key bindings](./keybindings)).
+
 ## Declare commands once
 
 ```scala
@@ -412,7 +428,7 @@ same depth read without subscribing, for a handler.
 
 ### Name the screens, and draw a breadcrumb
 
-A screen can carry a short human name. Nothing in the library draws it — it is there so
+A screen can carry a short human name. Nothing draws it on its own — it is there so
 the application can build its own trail:
 
 ```scala
@@ -427,6 +443,9 @@ def view(using ReactiveScope, Theme): Element =
     body,
   )
 ```
+
+`breadcrumb("Home" +: screenLabels, onSelect)` draws the same trail clickable, folding its
+middle items into `…` when the row runs short — see the widgets guide.
 
 `screenLabels` lists the stacked screens outermost first, which is the order a breadcrumb
 reads in, and skips any screen that has no label — a dialog that never wanted a name adds

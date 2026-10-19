@@ -38,11 +38,29 @@ private[dsl] object EventRouter:
     *     key: the documented contract is that it comes straight back out unconsumed, on its way to the app's bindings.
     *     Walking the tree here would fire the `onKeyEvent` of elements the person at the terminal is not pointing at.
     */
-  def dispatchKey(root: Element, event: KeyEvent): Boolean =
-    pathToFocused(root) match
+  def dispatchKey(root: Element, event: KeyEvent, focusPath: Option[Vector[Int]] = None): Boolean =
+    focusedPath(root, focusPath) match
       case Some(leafToRoot)           => leafToRoot.exists(handlesKey(_, event))
       case None if hasFocusable(root) => false
       case None                       => dispatchKeyDepthFirst(root, event)
+
+  /** Offers a key press to every live node's [[Element.captureKeyHandler]], in tree pre-order, before anything else
+    * sees it — `true` when one consumed it. Inert subtrees and disabled nodes are skipped. A decorator delegates its
+    * handler to the node it wraps, so each real node is offered the key once, however many wrappers it carries.
+    */
+  def dispatchCapture(root: Element, event: KeyEvent): Boolean =
+    val offered = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap[Element, java.lang.Boolean])
+    def unwrapped(element: Element): Element =
+      element match
+        case decorator: DecoratingElement => unwrapped(decorator.inner)
+        case other                        => other
+    def walk(element: Element): Boolean      =
+      if element.props.inert || element.props.isDisabled then false
+      else
+        val own = element.captureKeyHandler.isDefined && offered.add(unwrapped(element)) &&
+          element.captureKeyHandler.exists(_(event))
+        own || element.children.exists(walk)
+    walk(root)
 
   /** Whether this tree offers anything to focus, ignoring subtrees a layer above has made inert — those are exactly the
     * elements that are out of the tab order, so a modal's focusables are what counts while it is open.
@@ -170,14 +188,14 @@ private[dsl] object EventRouter:
     *   - The caller does not fall back to the application's bindings — see `TuiApp`. A binding is a press vocabulary,
     *     and firing it on the way up would run every chord twice.
     */
-  def dispatchKeyRelease(root: Element, event: KeyEvent): Boolean =
-    pathToFocused(root) match
+  def dispatchKeyRelease(root: Element, event: KeyEvent, focusPath: Option[Vector[Int]] = None): Boolean =
+    focusedPath(root, focusPath) match
       case Some(leafToRoot) => leafToRoot.exists(_.props.onKeyUp.exists(_(event)))
       case None             => false
 
   /** Delivers a bracketed paste to the focused element's paste behavior. */
-  def dispatchPaste(root: Element, text: String): Boolean =
-    pathToFocused(root) match
+  def dispatchPaste(root: Element, text: String, focusPath: Option[Vector[Int]] = None): Boolean =
+    focusedPath(root, focusPath) match
       case Some(leafToRoot) =>
         val leaf = leafToRoot.head
         leaf.props.onPaste.exists(_(text)) || leaf.builtinPasteHandler.exists(_(text))
@@ -201,4 +219,20 @@ private[dsl] object EventRouter:
 
   /** The focused element and its ancestors, innermost first. */
   private def pathToFocused(element: Element): Option[List[Element]] =
-    pathWhere(element, node => node.props.focused && node.props.focusable)
+    pathWhere(element, isFocused)
+
+  private def isFocused(node: Element): Boolean = node.props.focused && node.props.focusable
+
+  /** [[pathToFocused]], following `retained` — the child positions the focus pass recorded on its way to the focused
+    * element — instead of searching, when they still lead to a focused element through no inert node. They always do
+    * for the tree the same pass decorated; the search is the answer for any other tree, and for none recorded.
+    */
+  private def focusedPath(root: Element, retained: Option[Vector[Int]]): Option[List[Element]] =
+    retained
+      .flatMap(
+        _.foldLeft(Option(List(root)))((path, position) =>
+          path.flatMap(nodes => nodes.head.children.lift(position).map(_ :: nodes))
+        )
+      )
+      .filter(path => isFocused(path.head) && path.forall(!_.props.inert))
+      .orElse(pathToFocused(root))

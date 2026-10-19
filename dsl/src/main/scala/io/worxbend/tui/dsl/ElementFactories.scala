@@ -347,6 +347,25 @@ private[dsl] trait ElementFactories:
   def list(items: Seq[String | Line | Text], state: w.ListState): ListElement =
     ListElement(items, state)
 
+  /** A virtual list of `count` items, `itemHeight` rows each, over caller-owned [[w.LazyListState]]: `item(i)` is
+    * called only for the items on screen plus one either side, so `lazyList(100000, 1, state)(row)` costs a screenful
+    * per frame, not a hundred thousand elements.
+    *
+    * {{{
+    * val rows = LazyListState()
+    * def view(using ReactiveScope, Theme): Element =
+    *   lazyList(log.size, 1, rows)(i => text(log(i)))
+    * }}}
+    *
+    * Unlike `scrollView(column(items*))`, nothing outside the window is built, measured, decorated or painted. Items
+    * are real elements — key the focusable ones (`.key(s"row-$id")`) so focus follows them as the window moves. Each
+    * item's hooks are scoped by its index. The state follows the same ownership rules as [[list]]'s; see
+    * [[LazyListElement]] for scrolling, selection and how it behaves inside a `scrollView`.
+    */
+  def lazyList(count: Int, itemHeight: Int, state: w.LazyListState)(item: Int => Element): LazyListElement =
+    val build = ViewState.deferred((range: Range) => range.map(i => ViewState.scopeIfActive(s"lazyList:$i")(item(i))))
+    LazyListElement(math.max(0, count), math.max(1, itemHeight), build, state)
+
   /** A collapsible tree over caller-owned [[w.TreeState]] — same state ownership rules as [[list]]. */
   def tree(nodes: Seq[w.TreeNode], state: w.TreeState[?]): TreeElement =
     TreeElement(nodes, state)
@@ -970,11 +989,30 @@ private[dsl] trait ElementFactories:
     * }}}
     *
     * The size is the whole terminal's, the same one [[TuiApp.terminalSize]] reports — nesting this inside a `panel` or
-    * a `splitPane` does not narrow what `build` sees. Branch on [[Breakpoint.of]] instead of raw columns when the named
-    * bands say what you mean.
+    * a `splitPane` does not narrow what `build` sees; `responsive.local` is the one that sees its own area. Branch on
+    * [[Breakpoint.of]] instead of raw columns when the named bands say what you mean.
     */
-  def responsive(build: Size => Element): ResponsiveElement =
-    ResponsiveElement(build)
+  object responsive:
+
+    /** Picks a subtree from the terminal's size — see [[responsive]]. */
+    def apply(build: Size => Element): ResponsiveElement = ResponsiveElement(build)
+
+    /** A container query: picks a subtree from *this node's own* area rather than the terminal's.
+      *
+      * {{{
+      * panel("Sidebar")(
+      *   responsive.local {
+      *     case size if size.width < 30 => column(icons*)
+      *     case _                       => column(labelledEntries*)
+      *   }
+      * ).length(28)
+      * }}}
+      *
+      * The area is found by a layout pre-pass before the focus pass, so the branch's focusables take Tab stops on the
+      * first frame. The node's size cannot depend on the branch it is about to pick, so it takes what its own
+      * constraint says — `.length(n)`, `.percent(p)` — or fills, and never sizes itself to its branch.
+      */
+    def local(build: Size => Element): ResponsiveElement = ResponsiveElement(build, local = true)
 
   /** A scrollable viewport over `content`, whose full height you state yourself as `contentHeight` rows.
     *
@@ -1200,3 +1238,95 @@ private[dsl] trait ElementFactories:
     * text draws `QR: too long`. See [[w.QrCode]].
     */
   def qrCode(text: String, ecc: w.QrEcc = w.QrEcc.Medium): QrCodeElement = QrCodeElement(w.QrCode(text, ecc))
+
+  /** A one-row navigation trail — `breadcrumb("Home" +: screenLabels, index => …)` inside a [[TuiApp]] — whose middle
+    * items fold into `…` when the row is too narrow, by display width. A click on a visible item hands its index to
+    * `onSelect`. The separators draw in the theme's muted style, the last item (where the user is) in its accent. See
+    * [[w.Breadcrumb]].
+    */
+  def breadcrumb(items: Seq[String], onSelect: Int => Unit = _ => ())(using theme: Theme): BreadcrumbElement =
+    LateBinding.themed(theme) { theme =>
+      BreadcrumbElement(items, onSelect, separatorStyle = theme.muted, currentStyle = theme.accent.bold)
+    }
+
+  /** Titled sections of which at most one is open: `accordion(state)("General" -> general, "Network" -> network)`. Each
+    * header is a [[collapsible]] — Enter or Space toggles it — and opening one closes the other; the open body fills
+    * the rows the headers leave. `state` is caller-owned: keep it in a field. See [[w.AccordionState]].
+    */
+  def accordion(state: w.AccordionState)(sections: (String, Element)*): AccordionElement =
+    AccordionElement.of(state, sections)
+
+  /** An ordered multi-step flow: a progress header (`✓ Account ─ ● Profile ─ ○ Confirm`), the current step's content,
+    * and `Back` / `Next` buttons. `Next` runs the step's `validate` first and stays put, showing the message in the
+    * theme's error style, when it refuses; on the last step it reads `Finish` and runs `onFinish`. `state` is
+    * caller-owned and holds the step on screen — keep it in a field. See [[WizardStep]] and [[w.WizardState]].
+    *
+    * {{{
+    * wizard(signup)(
+    *   WizardStep("Account", input(email), () => Option.when(email.value.isEmpty)("email is required")),
+    *   WizardStep("Confirm", summary),
+    * )(submit())
+    * }}}
+    */
+  def wizard(state: w.WizardState)(steps: WizardStep*)(onFinish: => Unit)(using theme: Theme): WizardElement =
+    LateBinding.themed(theme)(theme => WizardElement.of(state, steps, () => onFinish, theme.error))
+
+  /** A row of controls that is one tab stop: `Tab` enters on the control last used, `Left`/`Right` move between them
+    * (see [[focusGroup]]). Controls sit at their natural widths a column apart; when the row is too narrow it shows the
+    * ones that fit, marked `«`/`»`, and slides to keep the focused one on screen. See [[w.Toolbar]].
+    */
+  def toolbar(buttons: Element*): FocusGroupElement =
+    FocusGroupElement(ToolbarElement(buttons, gap = 1, divider = None))
+
+  /** [[toolbar]] drawn as one segmented control — `[ Left ]│[ Center ]│[ Right ]` — for a set of related actions. */
+  def buttonGroup(buttons: Element*): FocusGroupElement =
+    FocusGroupElement(ToolbarElement(buttons, gap = 0, divider = Some("│")))
+
+  /** A tag (chip) field over caller-owned [[w.TagInputState]]: committed tags draw as chips that wrap onto more rows,
+    * followed by the text being typed. Enter or a comma commits the text as a tag, Backspace on an empty field removes
+    * the last tag, Tab accepts the dim suggestion from `state.suggestions`. `onChange` hears the tags after each commit
+    * or removal; `state.tags` holds them. See [[w.TagInput]].
+    */
+  def tagInput(
+      state: w.TagInputState,
+      onChange: Seq[String] => Unit = _ => (),
+      placeholder: String = "",
+  ): TagInputElement =
+    TagInputElement(state, onChange, placeholder)
+
+  /** A one-row menu bar whose menus drop down over everything else: `Alt+<mnemonic>` (the title's first letter unless
+    * the [[w.MenuBarMenu]] names another) opens a menu and `F10` (the `menu-bar` framework key) the first, whatever
+    * holds focus. While a menu is open the arrows move between menus and items, Enter runs the item — `onSelect`
+    * receives the menu's and the item's index — and Esc closes it. `state` is caller-owned: keep it in a field.
+    *
+    * {{{
+    * menuBar(Seq(MenuBarMenu("File", Seq(MenuEntry.Item("Open", Some("^O")), MenuEntry.Item("Quit")))), bar) {
+    *   case (0, 1) => quit()
+    *   case _      => ()
+    * }
+    * }}}
+    */
+  def menuBar(menus: Seq[w.MenuBarMenu], state: w.MenuBarState)(onSelect: (Int, Int) => Unit): MenuBarElement =
+    MenuBarElement(menus, state, onSelect)
+
+  /** `target` with a right-click menu: a right-button press inside it opens the [[menu]] over `items` at the pointer,
+    * flipped away from the frame's edges. Up/Down/Enter work while it is open whatever holds focus; Enter or a click
+    * hands the item's index to `onSelect`; Esc or a click elsewhere closes it. `state` is caller-owned.
+    */
+  def contextMenu(items: Seq[w.MenuEntry], state: w.ContextMenuState)(onSelect: Int => Unit)(
+      target: Element
+  ): ContextMenuElement =
+    ContextMenuElement(target, items, state, onSelect)
+
+  /** A movable, resizable floating window titled `title` around `content`, at the rectangle in caller-owned
+    * [[w.WindowState]]. Put windows in a [[windowStack]]: a press raises a window, dragging its title moves it and
+    * dragging its `◢` grip resizes it; with focus inside, `Alt+M` / `Alt+R` (the `window-move` / `window-resize`
+    * framework keys) enter a keyboard mode where the arrows move or resize it and Enter or Esc leave. See [[w.Window]].
+    */
+  def window(title: String, state: w.WindowState)(content: Element): WindowElement =
+    WindowElement.of(title, state, content)
+
+  /** Draws `windows` at their states' rectangles in stacking order — the window raised last on top — over the area it
+    * is given; usually the overlay of `layers(base, windowStack(...))`. Paints nothing between the windows.
+    */
+  def windowStack(windows: Element*): WindowStackElement = WindowStackElement(windows)

@@ -36,6 +36,9 @@ final class ElementHost:
   private var session                   = ViewSession(key => boundsOf(key))
   private var lastTree: Option[Element] = None
 
+  /** The child positions leading to the focused element in [[lastTree]], recorded while it was decorated. */
+  private var lastFocusPath: Option[Vector[Int]] = None
+
   /** The one recorder of where every node was painted — see [[NodeBounds]]. Filled only while [[recordBounds]] is on.
     */
   private[dsl] val bounds: NodeBounds = NodeBounds()
@@ -73,6 +76,7 @@ final class ElementHost:
     pointer = PointerCapture()
     session = ViewSession(key => boundsOf(key))
     lastTree = None
+    lastFocusPath = None
     lastFocus = (-1, None)
 
   /** Resolves `view` for an area of this size, reconciles focus, decorates the tree with `theme`'s focus cue and paints
@@ -82,8 +86,8 @@ final class ElementHost:
     * this before dispatching anything: with no frame rendered yet there is no tree, and every dispatch answers `false`.
     */
   def render(area: Rect, buffer: Buffer, theme: Theme, view: View)(using scope: ReactiveScope): Unit =
-    val raw = session.resolve(view, Size(area.width, area.height), theme)
-    renderTree(raw, theme.focus, tree => session.paint(tree, area, buffer), theme.disabled, theme)
+    val frame = session.resolve(view, Size(area.width, area.height), theme)
+    renderFrame(frame, theme.focus, tree => session.paint(tree, area, buffer), theme.disabled, theme)
 
   /** [[render]] against a runner's `Frame`, for a host inside a `TerminalRunner`. */
   def render(frame: Frame, theme: Theme, view: View)(using scope: ReactiveScope): Unit =
@@ -92,9 +96,9 @@ final class ElementHost:
   private[dsl] def renderComposed(frame: Frame, theme: Theme, view: View, beforeFocus: () => Unit)(using
       scope: ReactiveScope
   ): Unit =
-    val raw = session.resolve(view, Size(frame.area.width, frame.area.height), theme)
+    val resolved = session.resolve(view, Size(frame.area.width, frame.area.height), theme)
     beforeFocus()
-    renderTree(raw, theme.focus, tree => paintWithCaret(frame, tree), theme.disabled, theme)
+    renderFrame(resolved, theme.focus, tree => paintWithCaret(frame, tree), theme.disabled, theme)
 
   /** Paints `tree` into `frame`, then parks the frame's caret where the focused text node said its insertion point is.
     *
@@ -109,12 +113,8 @@ final class ElementHost:
     }
     caret.foreach(frame.setCursorPosition)
 
-  /** The half of [[render]] after the view has been resolved: reconcile, decorate, remember, paint.
-    *
-    * Split out for [[TuiApp]], which has work of its own to do between resolving the view and reconciling focus (it
-    * synchronises the focus layers a pushed screen or an open palette adds) and paints through a `Frame`. Everything
-    * that decides *where focus is* lives here, so the app and an embedding host cannot answer that question
-    * differently.
+  /** [[renderFrame]] for a tree that needs no resolving — a test composing one by hand. The analysis the resolution
+    * pass would have collected is collected by one walk here instead.
     */
   private[dsl] def renderTree(
       raw: Element,
@@ -123,7 +123,30 @@ final class ElementHost:
       disabledStyle: Style = Style.Default.dim,
       theme: Theme = Theme.default,
   ): Unit =
-    tracker.reconcile(FocusPass.focusKeys(raw), FocusPass.autofocusRequest(raw), FocusScope.of(raw))
+    renderFrame(ResolvedFrame(raw, FrameAnalysis.of(raw)), focusStyle, paint, disabledStyle, theme)
+
+  /** The half of [[render]] after the view has been resolved: reconcile, decorate, remember, paint.
+    *
+    * Split out for [[TuiApp]], which has work of its own to do between resolving the view and reconciling focus (it
+    * synchronises the focus layers a pushed screen or an open palette adds) and paints through a `Frame`. Everything
+    * that decides *where focus is* lives here, so the app and an embedding host cannot answer that question
+    * differently.
+    *
+    * The frame costs two walks of the tree before its paint: the resolution pass, which collected the tab order,
+    * autofocus request, focus scopes and watched states on the way ([[FrameAnalysis]]), and the decoration below, which
+    * records the path to the focused element for key routing. Reconciling needs the whole tab order before any node can
+    * be told whether it is focused, which is what keeps those two walks apart.
+    */
+  private[dsl] def renderFrame(
+      frame: ResolvedFrame,
+      focusStyle: Style,
+      paint: Element => Unit,
+      disabledStyle: Style = Style.Default.dim,
+      theme: Theme = Theme.default,
+  ): Unit =
+    val raw      = frame.tree
+    val analysis = frame.analysis
+    tracker.reconcile(analysis.focusKeys, analysis.autofocus, analysis.scopes)
     recordFocusChange()
     val recorder = Option.when(recordBounds)(bounds)
     motionDemanded = false
@@ -139,12 +162,13 @@ final class ElementHost:
       onMotionDemand = () => motionDemanded = true,
       onCueDemand = () => cuesDemanded = true,
       theme = theme,
+      onFocusPath = path => lastFocusPath = path,
     )
     lastTree = Some(tree)
     recorder.foreach(_.begin())
     try paint(tree)
     finally recorder.foreach(_.publish())
-    session.afterPaint(raw)
+    session.afterPaint(frame)
 
   /** Focus as of the last frame, for the Flight Recorder `FocusChanged` event; `-1` before the first one. */
   private var lastFocus: (Int, Option[String]) = (-1, None)
@@ -202,14 +226,16 @@ final class ElementHost:
     */
   private[dsl] def decoratedTree: Option[Element] = lastTree
 
-  /** Delivers a key to the focused element and the ancestors it bubbles through.
+  /** Delivers a key to the focused element and the ancestors it bubbles through — after the capture phase, which offers
+    * it to the few nodes that take keys whatever holds focus (see [[Element.captureKeyHandler]]).
     *
     * `false` means nothing on screen consumed it and the decision is the host's. This method deliberately does not move
     * focus and does not quit: Tab traversal and Ctrl+C are policy, and policy belongs to whoever owns the loop — call
     * [[focusNext]] or [[focusPrevious]] from your own key handling if you want the usual meaning.
     */
   def dispatchKey(key: KeyEvent): Boolean =
-    lastTree.exists(EventRouter.dispatchKey(_, key)) || (lastTree.isDefined && groupArrow(key))
+    lastTree.exists(EventRouter.dispatchCapture(_, key)) ||
+      lastTree.exists(EventRouter.dispatchKey(_, key, lastFocusPath)) || (lastTree.isDefined && groupArrow(key))
 
   /** An unmodified arrow nobody on the focus path consumed moves focus inside the focused element's focus group. That
     * is the group's own behaviour rather than app policy, so it belongs here and an embedding host gets it too.
@@ -273,10 +299,11 @@ final class ElementHost:
     lastTree.fold(PointerShape.Default)(EventRouter.pointerShapeAt(_, position, tracker.mouseHit(position)))
 
   /** Offers a key release to the focused element and its ancestors — see [[EventRouter.dispatchKeyRelease]]. */
-  def dispatchKeyRelease(key: KeyEvent): Boolean = lastTree.exists(EventRouter.dispatchKeyRelease(_, key))
+  def dispatchKeyRelease(key: KeyEvent): Boolean =
+    lastTree.exists(EventRouter.dispatchKeyRelease(_, key, lastFocusPath))
 
   /** Delivers a bracketed-paste payload to the focused element. `false` when nothing took it. */
-  def dispatchPaste(text: String): Boolean = lastTree.exists(EventRouter.dispatchPaste(_, text))
+  def dispatchPaste(text: String): Boolean = lastTree.exists(EventRouter.dispatchPaste(_, text, lastFocusPath))
 
   /** Moves focus to the next focusable in tab order, wrapping at the end. `true` when it moved. */
   def focusNext(): Boolean = tracker.focusNext()

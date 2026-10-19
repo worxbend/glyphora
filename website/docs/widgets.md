@@ -947,6 +947,43 @@ Directory links are followed, even outside the root; this is a browser, not a
 sandbox. Acquired identities prevent ancestor cycles while leaving sibling aliases
 browsable. All snapshot types and `TaskScope` are available from the DSL import.
 
+### A virtual list of elements
+
+`list(...)` draws strings and lines; when every row is a whole element — a card, a
+row with a button in it — and there are thousands of them, use
+`lazyList(count, itemHeight, state)(i => element)`. It builds, decorates and paints
+only the items on screen plus one either side, so the frame costs a screenful
+whatever `count` is, where `scrollView(column(rows.map(card)*))` builds and measures
+every card on every frame.
+
+```scala
+val rows = LazyListState()
+
+def view(using ReactiveScope, Theme): Element =
+  panel("Events")(
+    lazyList(events.size, 2, rows) { i =>
+      val event = events(i)
+      column(text(event.title).bold, text(event.detail).dim).key(s"event-${event.id}")
+    }
+  )
+```
+
+Every item is `itemHeight` rows tall. While the list is focused Up/Down move the
+selection, Home/End jump to the ends and PageUp/PageDown move a page; the wheel
+moves it on hover and a press selects the item under the pointer. `rows.selected`
+and `rows.offset` are the caller's to read and write, like a `ListState`'s, and a
+write made outside an event handler is drawn on the next loop iteration.
+
+Items are ordinary elements: a button in one takes a Tab stop, a focused input in
+one drives the terminal caret. Give anything focusable a `.key(...)`, because an
+unkeyed focusable is identified by its tab position and that shifts as items
+scroll in and out. Hooks inside an item are scoped by its index.
+
+Inside a `scrollView` the list measures as `count * itemHeight` rows and builds
+only the items the window shows. After a jump of more than a row the newly shown
+items are blank for one frame while the next frame builds them; a one-row scroll
+is covered by the overscan.
+
 ### Tab bars
 
 `tabs(titles, selected)` draws a one-row bar of titles with the chosen one
@@ -2444,6 +2481,204 @@ the terminal's own background is. The widget, `QrCode(text, ecc, quietZone,
 darkColor, lightColor)`, is `Measured`, and the node claims exactly its box: a code is
 only readable whole, so give it that room.
 
+## Application chrome
+
+The pieces around an application's content: where the user is, what they can do, and
+the windows and menus they do it in.
+
+### A breadcrumb trail
+
+`breadcrumb(items, onSelect)` draws a one-row trail, `Home › Projects › glyphora`, with
+the last item — where the user is — in the theme's accent and the separators muted. A
+click on a visible item hands its index to `onSelect`:
+
+```scala
+// clicking a step pops every screen above it; "Home" (index 0) resets the stack
+breadcrumb("Home" +: screenLabels, step => (step until screenLabels.size).foreach(_ => popScreen()))
+```
+
+When the row is too narrow the middle items fold into one `…`, earliest first, so the
+start of the trail and the items nearest the end stay readable longest:
+`Home › … › widgets › Breadcrumb`, then `Home › … › Breadcrumb`, then `… › Breadcrumb`,
+and finally the last item alone, clipped. Every width is measured by display width, so
+CJK labels fold at the right column. The fold itself is not clickable. The widget,
+`Breadcrumb(items, separator, style, currentStyle, separatorStyle, ellipsis)`, exposes
+the same fold as `segments(width)` and `itemAt(width, x)` for a caller doing its own hit
+testing.
+
+### An accordion
+
+`accordion(state)(sections*)` stacks titled sections of which at most one is open. Each
+header is a `collapsible` — a tab stop that Enter or Space toggles — and opening one
+closes whichever was open:
+
+```scala
+private val settings = AccordionState(open = Some(0))
+
+accordion(settings)(
+  "General" -> generalForm,
+  "Network" -> networkForm,
+  "About"   -> text(s"version $version"),
+)
+```
+
+The open body fills the rows the headers leave, and a folded body leaves the tab order
+just as a lone `collapsible`'s does. The policy lives in `AccordionState.toggle`, so the
+app can open a section itself (`settings.open = Some(2)`) and the next frame shows it.
+Outside the DSL the same picture is the `Accordion(sections, style, openStyle,
+collapsedSymbol, expandedSymbol)` widget over the same state.
+
+### A wizard
+
+`wizard(state)(steps*)(onFinish)` is an ordered flow of screens: a progress header, the
+current step's content, and a `Back` / `Next` row. Each `WizardStep` names its title, its
+content and the check `Next` runs before leaving it:
+
+```scala
+private val signup = WizardState()
+private val email  = TextInputState()
+
+wizard(signup)(
+  WizardStep("Account", input(email), () => Option.when(email.value.isEmpty)("email is required")),
+  WizardStep("Profile", profileForm),
+  WizardStep("Confirm", summary),
+)(submit())
+```
+
+The header reads `✓ Account ─ ● Profile ─ ○ Confirm` — finished, current, ahead — and
+says `Step 2 of 3 · Profile` when the row is too narrow for every title. A check that
+returns `Some(message)` keeps the user on the step and shows the message in the theme's
+error style until they move; on the last step `Next` reads `Finish` and runs `onFinish`
+once the step passes. `Back` is disabled on the first step. The buttons carry the focus
+keys `wizard-back` and `wizard-next`, so focus stays on `Next` while the user walks
+forward. `WizardState` holds the step and the message — `signup.current` is the step on
+screen — and the header alone is the `Wizard(titles, current)` widget.
+
+### Toolbars and button groups
+
+`toolbar(buttons*)` is a row of controls that is one tab stop — a `focusGroup` laid out
+as a strip. `Tab` enters it on the control last used, `Left` and `Right` move between
+its controls, and the next `Tab` leaves it:
+
+```scala
+toolbar(
+  button("New")(newDocument()),
+  button("Open")(openPicker()),
+  button("Save")(save()).disabled(!dirty.get),
+)
+```
+
+The controls sit at their natural widths a column apart. When the row is too narrow
+for all of them it shows the ones that fit, marks what is cut off with `«` and `»`,
+and slides to keep the focused control on screen, so the arrows still reach every one.
+`buttonGroup(buttons*)` is the same strip drawn as one segmented control,
+`[ Bold ]│[ Italic ]│[ Underline ]`. The strip alone is the `Toolbar(items, focus, gap,
+divider)` widget; a `Button` now measures its own width (`[ label ]`), which is what the
+strip — and a `flow` — lays it out by.
+
+### Tag input
+
+`tagInput(state, onChange)` is a field of chips. Committed tags draw as ` tag ` chips
+laid out like a `flow`, wrapping onto another row when one fills, followed by the text
+being typed:
+
+```scala
+private val topics = TagInputState(suggestions = Seq("scala", "native-image", "terminal"))
+
+tagInput(topics, tags => saveTopics(tags), placeholder = "add a topic")
+```
+
+While focused, typing edits the text with every key a text field knows. Enter or a
+comma commits it as a tag (blank text and duplicates are refused), Backspace on an empty
+field removes the last tag, and when the text begins a suggestion the rest of it shows
+dim after the caret — Tab, or Right at the end of the text, accepts it. `onChange`
+hears the tags after each commit or removal and `state.tags` holds them. An Enter on a
+blank field and a Tab with nothing to accept keep bubbling, so a form's submit and
+focus traversal still work. The node measures as many rows as its chips wrap onto; the
+widget is `TagInput(placeholder, showCursor, style, chipStyle, suggestionStyle)`.
+
+### Floating windows
+
+`window(title, state)(content)` is a movable, resizable window; `windowStack(windows*)`
+draws a set of them over the area it is given, usually as the overlay of a `layers`:
+
+```scala
+private val inspector = WindowState(x = 4, y = 2, width = 30, height = 10)
+private val console   = WindowState(x = 20, y = 8, width = 40, height = 8)
+
+layers(
+  mainView,
+  windowStack(
+    window("Inspector", inspector)(inspect(selected.get)),
+    window("Console", console)(logConsole(ring)),
+  ),
+)
+```
+
+Each window is drawn at its state's rectangle — nudged back inside the stack when it has
+been dragged past an edge — in stacking order, so the window raised last draws on top
+and takes the pointer where windows overlap. Windows are opaque; the stack paints
+nothing between them, so a press there reaches whatever is underneath.
+
+A press anywhere on a window raises it. Dragging its title row moves it and dragging the
+`◢` grip in its bottom-right corner resizes it; the press captures the pointer, so the
+drag keeps following once the pointer has left the window. From the keyboard, with focus
+inside the window, `Alt+M` enters a move mode and `Alt+R` a resize mode — the arrows then
+move or resize it a cell at a time, the title shows `· move` or `· resize`, and `Enter`
+or `Esc` leave. Both keys are the rebindable `window-move` and `window-resize`
+framework keys. A window whose content has nothing to focus is a tab stop itself, so it
+can always be arranged from the keyboard. `WindowState` keeps the rectangle (`rect`),
+the stacking order (`z`, raised with `raise()`), and the mode; the frame alone is the
+`Window(title, style, borderStyle, titleStyle, gripSymbol, borderType)` widget.
+
+### Menu bars and context menus
+
+`menuBar(menus, state)(onSelect)` is a one-row bar of titles whose menus drop down over
+everything else, drawn by the same `Menu` widget a `menu` uses:
+
+```scala
+private val bar = MenuBarState()
+
+private val menus = Seq(
+  MenuBarMenu("File", Seq(MenuEntry.Item("Open", Some("^O")), MenuEntry.Separator, MenuEntry.Item("Quit"))),
+  MenuBarMenu("Edit", Seq(MenuEntry.Item("Undo"), MenuEntry.Item("Redo"))),
+  MenuBarMenu("View", Seq(MenuEntry.Item("Zoom")), mnemonic = Some('w')),
+)
+
+menuBar(menus, bar) {
+  case (0, 2) => quit()
+  case (menu, item) => log(s"chose $item of $menu")
+}
+```
+
+Each title's mnemonic — its first letter unless `mnemonic` names another — is drawn
+underlined, and `Alt+<mnemonic>` opens that menu whatever holds focus; `F10`, the
+`menu-bar` framework key, opens the first. While a menu is open `Left` and `Right` move
+to the neighbouring menu, `Up` and `Down` move the highlight past separators and
+disabled items, `Enter` runs the item — `onSelect` gets the menu's index and the item's —
+and `Esc` closes the bar. A click on a title opens or closes its menu, a click on an
+item runs it, and a click anywhere else closes the bar. The bar is not a tab stop; it
+takes the keyboard only while a menu is open, and its keys come before the focused
+control's, so a field's own `Alt+F` word motion yields to a bar with a `File` menu.
+
+`contextMenu(items, state)(onSelect)(target)` gives any subtree a right-click menu:
+
+```scala
+private val rowMenu = ContextMenuState()
+
+contextMenu(Seq(MenuEntry.Item("Copy"), MenuEntry.Item("Delete")), rowMenu)(runRowAction)(
+  list(files, fileList),
+)
+```
+
+A right-button press inside `target` that nothing in it consumed opens the menu with its
+top-left corner on the clicked cell. Near the right edge of the frame it opens to the
+left of the pointer and near the bottom it opens upwards, so it always ends on the
+clicked cell rather than running off screen (`ContextMenu.placement(at, width, height,
+frame)` is that rule). While it is open the arrows and `Enter` drive it whatever holds
+focus; `Esc`, `Tab` or a click elsewhere close it. Both menus float through the frame
+root like a `portal`, so a menu opened inside a bordered panel spills past its border.
+
 ## Drop to a raw Widget
 
 The DSL is not a separate renderer. Any core `Widget` can become a leaf:
@@ -2530,7 +2765,7 @@ The internal tiers document dependency order, not quality:
    spinner, animated text, marquee, skeleton, indeterminate bar, big text, notice,
    badge, tooltip, dialog, markdown, syntax highlighter.
 4. **Application-scale state** — data table, directory tree, text area, log, log
-   console, error boundary, diff view, menu, paginator, scroll view, image, links, date and time
+   console, error boundary, diff view, menu, paginator, scroll view, lazy list, image, links, date and time
   pickers, colour picker, tree table, hex viewer, and inspect.
 
 Every built-in has render-to-`Buffer` tests. Interactive DSL wrappers additionally
