@@ -77,6 +77,7 @@ final class Theme private (
     val syntax: SyntaxTheme,
     val glyphs: GlyphSupport,
     val components: Map[StyleName, StateStyles],
+    private val adaptiveVariants: Option[Theme.Variants] = None,
 ):
 
   /** This theme with the named fields replaced — the one place the builders below spell out the constructor. */
@@ -115,9 +116,56 @@ final class Theme private (
       components,
     )
 
+  /** Applies a builder's change: to this theme, and — for an adaptive theme such as [[Theme.auto]] — to both of the
+    * variants it resolves to as well, so `Theme.auto.withAccent(...)` is still auto and resolves to `Light` or `Dark`
+    * with the same accent. `change` always produces a plain theme (via [[updated]]); the variants are put back here.
+    */
+  private def edit(change: Theme => Theme): Theme =
+    adaptiveVariants match
+      case None                              => change(this)
+      case Some(Theme.Variants(dark, light)) =>
+        change(this).withVariants(Some(Theme.Variants(change(dark), change(light))))
+
+  /** This theme's fields with `variants` as its adaptive pair. */
+  private def withVariants(variants: Option[Theme.Variants]): Theme =
+    new Theme(
+      name,
+      primary,
+      accent,
+      muted,
+      error,
+      warning,
+      success,
+      surface,
+      border,
+      focus,
+      loading,
+      markdown,
+      syntax,
+      glyphs,
+      components,
+      variants,
+    )
+
+  /** Whether this theme is resolved against the terminal's colour scheme: [[Theme.auto]] and every theme built from it
+    * with a `with*` method. A flag carried through the builders, not an identity check, so a customised auto theme
+    * keeps following the terminal.
+    */
+  def isAuto: Boolean = adaptiveVariants.isDefined
+
+  /** The theme to paint with under `scheme`: for an [[isAuto]] theme the light or dark variant (dark when the terminal
+    * could not say), carrying every builder applied since [[Theme.auto]]; for any other theme, itself. `TuiApp` calls
+    * this on every frame.
+    */
+  def resolve(scheme: ColorScheme): Theme =
+    adaptiveVariants match
+      case Some(Theme.Variants(_, light)) if scheme == ColorScheme.Light => light
+      case Some(Theme.Variants(dark, _))                                 => dark
+      case None                                                          => this
+
   /** The name [[toString]] prints and a theme switcher shows; the presets are `"dark"`, `"light"`, `"high-contrast"`.
     */
-  def withName(name: String): Theme = updated(name = name)
+  def withName(name: String): Theme = edit(_.updated(name = name))
 
   /** The style the focus pass stamps on a `.disabled` control: [[muted]] with `dim` added, so a disabled button reads
     * as greyed out in every preset without a role of its own. Derived rather than stored — a theme that changes `muted`
@@ -126,38 +174,38 @@ final class Theme private (
     */
   def disabled: Style = muted.dim
 
-  def withPrimary(style: Style): Theme = updated(primary = style)
-  def withAccent(style: Style): Theme  = updated(accent = style)
-  def withMuted(style: Style): Theme   = updated(muted = style)
-  def withError(style: Style): Theme   = updated(error = style)
-  def withWarning(style: Style): Theme = updated(warning = style)
-  def withSuccess(style: Style): Theme = updated(success = style)
-  def withSurface(style: Style): Theme = updated(surface = style)
+  def withPrimary(style: Style): Theme = edit(_.updated(primary = style))
+  def withAccent(style: Style): Theme  = edit(_.updated(accent = style))
+  def withMuted(style: Style): Theme   = edit(_.updated(muted = style))
+  def withError(style: Style): Theme   = edit(_.updated(error = style))
+  def withWarning(style: Style): Theme = edit(_.updated(warning = style))
+  def withSuccess(style: Style): Theme = edit(_.updated(success = style))
+  def withSurface(style: Style): Theme = edit(_.updated(surface = style))
 
   /** The frame style `panel` and `rule` draw with when the caller sets none of their own. */
-  def withBorder(style: Style): Theme = updated(border = style)
+  def withBorder(style: Style): Theme = edit(_.updated(border = style))
 
   /** The focus cue, and the selection highlight of every "pick a row" element. */
-  def withFocus(style: Style): Theme = updated(focus = style)
+  def withFocus(style: Style): Theme = edit(_.updated(focus = style))
 
   /** The loading palette as a unit — [[LoadingTheme.from]] derives a coherent one from `accent`, `muted` and `surface`
     * rather than making a custom theme spell out all five.
     */
-  def withLoading(palette: LoadingTheme): Theme = updated(loading = palette)
+  def withLoading(palette: LoadingTheme): Theme = edit(_.updated(loading = palette))
 
   /** The document palette `markdown(…)` renders through. Its `syntax` is independent of [[withSyntax]]: the presets
     * bind both to one `SyntaxTheme` so fenced code and the standalone highlighter cannot drift apart, and a custom
     * theme that changes one should usually change the other.
     */
-  def withMarkdown(theme: MarkdownTheme): Theme = updated(markdown = theme)
+  def withMarkdown(theme: MarkdownTheme): Theme = edit(_.updated(markdown = theme))
 
   /** Token colours for the standalone `SyntaxHighlighter` — see [[withMarkdown]] for the pairing. */
-  def withSyntax(theme: SyntaxTheme): Theme = updated(syntax = theme)
+  def withSyntax(theme: SyntaxTheme): Theme = edit(_.updated(syntax = theme))
 
   /** The glyph ceiling every themed factory keeps under — what [[Theme.detected]] lowers. Only the ceiling moves; every
     * colour is kept.
     */
-  def withGlyphs(ceiling: GlyphSupport): Theme = updated(glyphs = ceiling)
+  def withGlyphs(ceiling: GlyphSupport): Theme = edit(_.updated(glyphs = ceiling))
 
   /** The styles every element of `role` draws in, per interaction state — see [[StateStyles]]. Replaces whatever this
     * theme held under exactly that name; a parent or child name is untouched, and still merges with this one when it is
@@ -168,11 +216,11 @@ final class Theme private (
   /** This theme with no component styles at all, so every element draws as it would with none — the start for a custom
     * component set that should not inherit a preset's.
     */
-  def withoutComponents: Theme = updated(components = Map.empty)
+  def withoutComponents: Theme = edit(_.updated(components = Map.empty))
 
   /** [[withComponent]] by name, for a role the application spells as text. */
   def withComponent(name: StyleName, styles: StateStyles): Theme =
-    updated(components = components.updated(name, styles))
+    edit(theme => theme.updated(components = theme.components.updated(name, styles)))
 
   /** The [[StateStyles]] for `role`, merged down its name's lineage: `"button.primary"` is `"button"` with
     * `"button.primary"` layered over it, field by field, so a child only says what makes it different. A name nothing
@@ -198,7 +246,8 @@ final class Theme private (
         (name == that.name && glyphs == that.glyphs && primary == that.primary && accent == that.accent &&
           muted == that.muted && error == that.error && warning == that.warning && success == that.success &&
           surface == that.surface && border == that.border && focus == that.focus && loading == that.loading &&
-          markdown == that.markdown && syntax == that.syntax && components == that.components)
+          markdown == that.markdown && syntax == that.syntax && components == that.components &&
+          adaptiveVariants == that.adaptiveVariants)
       case _           => false
 
   /** Hashes every field [[equals]] compares, so a `Set[Theme]` or a memo keyed by theme cannot conflate two that differ
@@ -219,7 +268,8 @@ final class Theme private (
     hash = 31 * hash + markdown.hashCode
     hash = 31 * hash + syntax.hashCode
     hash = 31 * hash + glyphs.hashCode
-    31 * hash + components.hashCode
+    hash = 31 * hash + components.hashCode
+    31 * hash + adaptiveVariants.hashCode
 
   /** `Theme(dark)` — the name alone. Fourteen styles and palettes printed in full were unreadable in exactly the place
     * a theme is printed most, a failed assertion, and the name is what distinguishes one theme from another to a
@@ -450,17 +500,20 @@ object Theme:
 
   /** "Whichever of [[Light]] and [[Dark]] matches the terminal" — the default `TuiApp.theme` since 0.20.0.
     *
-    * A placeholder rather than a palette of its own: `TuiApp` recognises this exact value (by identity) and resolves it
-    * on every frame through [[forScheme]] against the colour scheme the terminal reported — OSC 11 at start-up, mode
-    * 2031 afterwards — so an app that never set a theme gets `Light` on a light terminal and follows a live switch. A
+    * A placeholder rather than a palette of its own: it is [[Theme.isAuto]], and `TuiApp` resolves it on every frame
+    * through [[Theme.resolve]] against the colour scheme the terminal reported — OSC 11 at start-up, mode 2031
+    * afterwards — so an app that never set a theme gets `Light` on a light terminal and follows a live switch. A
     * terminal that could not say resolves to `Dark`, which is what every app got before the terminal could be asked.
     *
-    * Outside a `TuiApp` it *is* `Dark` under another name, so a widget-level test or a helper handed it renders exactly
-    * as it would under `Dark`. Building on it with a `with*` method produces an ordinary theme that is no longer
-    * resolved: start from [[Light]] or [[Dark]] for a custom palette, and read `TuiApp.colorScheme` or `lightDark` to
-    * pick between two of your own.
+    * Outside a `TuiApp` its fields are `Dark`'s under another name, so a widget-level test or a helper handed it
+    * renders exactly as it would under `Dark`. Building on it with a `with*` method keeps it auto:
+    * `Theme.auto.withAccent(s)` resolves to `Light.withAccent(s)` on a light terminal and `Dark.withAccent(s)`
+    * otherwise. To pick between two palettes of your own, read `TuiApp.colorScheme` or `lightDark` instead.
     */
-  val auto: Theme = Dark.withName("auto")
+  val auto: Theme = Dark.withName("auto").withVariants(Some(Variants(Dark, Light)))
+
+  /** The two plain themes an adaptive theme resolves to — see [[Theme.resolve]]. */
+  private[dsl] final case class Variants(dark: Theme, light: Theme)
 
   /** The preset for `scheme`: [[Light]] for a light terminal, [[Dark]] for a dark one and for one that could not say.
     */

@@ -1045,15 +1045,15 @@ trait TuiApp:
     * merely installed as a given around the call — a given installed here is lexically scoped to this method and would
     * not be in scope inside an app's own `view` body.
     */
-  /** [[theme]] with [[Theme.auto]] resolved against the terminal's colour scheme; any other theme is returned as is.
-    * Reading the scheme through `scope` is what subscribes a frame to a later mode 2031 report.
+  /** [[theme]] with an auto theme ([[Theme.isAuto]]) resolved against the terminal's colour scheme; any other theme is
+    * returned as is. Reading the scheme through `scope` is what subscribes a frame to a later mode 2031 report.
     */
   private def resolvedTheme(using scope: ReactiveScope): Theme =
     // subscribed before `theme` is asked and whether or not it answers `auto`, so an override that reads
     // `colorSchemeNow` to choose between two palettes of its own is repainted by a mode 2031 report too
     val scheme     = colorSchemeSignal.get(using scope)
     val configured = theme
-    if configured eq Theme.auto then Theme.forScheme(scheme) else configured
+    configured.resolve(scheme)
 
   /** Pushes the bound progress source's current value to the taskbar when it differs from what is showing. Read under
     * `scope`, so a change to the source schedules the frame that pushes it.

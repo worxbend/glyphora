@@ -1052,6 +1052,12 @@ reports every switch of the user's system theme, and the next frame follows. A t
 that answers nothing resolves to `Theme.Dark` — exactly what every app got before the
 terminal could be asked.
 
+Building on it keeps it automatic: `Theme.auto.withAccent(brand).withName("brand")` is
+still an auto theme (`theme.isAuto`), and resolves to `Theme.Light.withAccent(brand)` on
+a light terminal and `Theme.Dark.withAccent(brand)` otherwise — every `with*` builder is
+applied to both variants. `theme.resolve(scheme)` is the same resolution, for a test or
+a host outside `TuiApp`.
+
 An app that returns any other theme pins it and sees none of this. To pick between two
 palettes of your own, read the scheme yourself:
 
