@@ -67,29 +67,36 @@ private[widgets] object ScrollWindow:
     val count = heights.size
     if count == 0 || viewportHeight <= 0 then 0
     else
-      val rows      = heights.map(height => math.max(1, height)).toArray
+      // heights are read in place: a ListView hands over its remembered per-item heights, and copying them would make
+      // every frame over a long multi-row list cost the list rather than the viewport. Every walk below stops once it
+      // has gathered a viewport's worth of rows, so the reads are bounded by the viewport, not by `count`.
+      // (`toIndexedSeq` returns an immutable indexed sequence itself, unchanged; only a linear `Seq` is copied)
+      val indexed               = heights.toIndexedSeq
+      def rows(index: Int): Int = math.max(1, indexed(index))
       // the largest offset whose remaining items still fill the viewport: walk back from the end while they fit.
       // The walk starts at `count` — one past the last item — and stops without moving when even the last item alone
       // overflows the viewport, so its result is capped at `count - 1`: an offset equal to the item count would slice
       // every item away and paint a blank area over content the reader can still be shown the top of.
-      val maxOffset =
+      val maxOffset             =
         var index = count
         var taken = 0
         while index > 0 && taken + rows(index - 1) <= viewportHeight do
           taken += rows(index - 1)
           index -= 1
         math.min(index, count - 1)
-      val clamped   = math.max(0, math.min(offset, maxOffset))
+      val clamped               = math.max(0, math.min(offset, maxOffset))
       selected match
         case None        => clamped
         case Some(index) =>
           val target = math.max(0, math.min(index, count - 1))
           if clamped > target then target
           else
-            // rows between the window start and the end of the selected item; advance the window until they fit
-            var start = clamped
-            var span  = (start to target).map(rows).sum
-            while span > viewportHeight && start < target do
-              span -= rows(start)
-              start += 1
+            // the lowest window start whose rows down to the end of the selected item still fit, found by walking back
+            // from the selection — never further than a viewport — and never below the selection itself, so an item
+            // taller than the viewport shows its top. The window advances to it only when it sits below `clamped`.
+            var start = target
+            var span  = rows(target)
+            while start > clamped && span + rows(start - 1) <= viewportHeight do
+              start -= 1
+              span += rows(start)
             start

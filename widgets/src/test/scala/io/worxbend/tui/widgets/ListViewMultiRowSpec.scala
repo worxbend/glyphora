@@ -161,3 +161,21 @@ final class ScrollWindowItemsSpec extends AnyFunSuite:
     // The answer must still be an item index the caller can slice with — 1, the tall item's own top — because an
     // offset of 2 would drop every item and paint the whole area blank.
     assert(ScrollWindow.offsetForItems(2, None, Seq(1, 4), 3) == 1)
+
+  test("the row walk reads the heights in place, proportional to the viewport, not to the list"):
+    // a million items, every third one two rows tall: the rule must read only the heights near the window and the
+    // selection, never copy or sum the whole sequence.
+    final class CountingHeights extends scala.collection.immutable.AbstractSeq[Int] with IndexedSeq[Int]:
+      var touched: Int                     = 0
+      def length: Int                      = 1_000_000
+      def apply(index: Int): Int           =
+        touched += 1
+        if index % 3 == 0 then 2 else 1
+      override def iterator: Iterator[Int] = Iterator.tabulate(length)(apply)
+    val heights = CountingHeights()
+    // window at 500 000, selection 40 items further down: the window must advance so the selection's rows fit
+    val offset = ScrollWindow.offsetForItems(500_000, Some(500_040), heights, 10)
+    // rows of 500 033 .. 500 040: 500 034 (2) + 500 037 (2) + 500 040 (2) + five one-row items = 11 > 10, so the
+    // window starts one further on at 500 034 → 500 034 .. 500 040 = 2+1+1+2+1+1+2 = 10 rows.
+    assert(offset == 500_034)
+    assert(heights.touched <= 60, s"read ${heights.touched} heights for a 10-row viewport")
