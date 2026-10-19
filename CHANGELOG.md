@@ -87,7 +87,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 
 - `RunnerConfig.withCaptureStdio(CaptureStdio)`: `println` goes to the scrollback or a `LogRing`.
 - Print mode: `Console.print` / `Console.render` / `Console.printLines`, and `RunnerConfig.withNonInteractive(NonInteractivePolicy)`.
-- Inline prompts: `Prompt.text`, `password`, `confirm`, `select`, `multiSelect`, `number`, `path`, `form`, `task`, `loader`; `PromptSession`, `Prompt.answers`.
+- Inline prompts: `Prompt.text`, `password`, `confirm`, `select`, `multiSelect`, `number`, `path`, `form`, `task`, `loader`; `PromptSession`, `Prompt.answers`. A terminal that fails under a prompt falls back to plain lines rather than throwing.
 - Desktop notifications `Notifications.desktop`, taskbar progress `AppServices.taskbarProgress`, in-band resize (mode 2048), grapheme widths (mode 2027).
 - `Backend.keepInlineRows(n)`; `StandardOutput.isTerminal` / `isInputTerminal` / `width`.
 - `TerminalCapabilities.terminalVersion` (XTVERSION), `kittyGraphics`, `inlineImages`; `ImageProtocol.select`.
