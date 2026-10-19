@@ -504,6 +504,13 @@ selectable panel still clicks, and it stays inside the node it started in — dr
 past the edge clamps to that node's first or last cell. Selection works in whole
 graphemes: a wide character is copied once, never half of it.
 
+A selection belongs to its node and to a place in that node's text, not to the screen.
+Content added elsewhere in the view leaves it where it is, and inside a `scrollView` the
+highlight moves with the content as the view scrolls. Give the node a `.key(…)` and the
+selection follows it even when nodes are inserted before it; without one it is held by
+the node's position in the tree. Copying takes only the rows on screen, since those are
+the rows a scroll view draws.
+
 Opt an element out — with everything inside it — with `.selectable(false)`; opt any other
 node in with `.selectable(true)`:
 

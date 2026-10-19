@@ -565,8 +565,12 @@ private[dsl] object FocusPass:
         )
       val roles        =
         gestures.fold(PointerRoles.Empty)(g => if inert then PointerRoles.Empty else rolesOf(element, g, disabled))
+      // a selection holds on to the node by its key, or else by its path of child positions — both survive nodes being
+      // added elsewhere in the tree, which a pre-order id does not
+      val anchor       =
+        Option.when(roles.selectable)(TextSelection.anchorFor(element.props.focusKey, outer))
       val recorded     = bounds.orElse(gestures.filter(_ => !roles.isEmpty).map(_.recorder)) match
-        case Some(recorder) => boundsWrapped(current, nodeId, nodeCounter - 1, recorder, roles, gestures)
+        case Some(recorder) => boundsWrapped(current, nodeId, nodeCounter - 1, recorder, roles, gestures, anchor)
         case None           => current
       val revealed     =
         if element.props.ensureVisible && !inert then
@@ -592,9 +596,10 @@ private[dsl] object FocusPass:
       recorder: NodeBounds,
       roles: PointerRoles,
       gestures: Option[PointerGestures],
+      anchor: Option[String],
   ): Element =
     def wrap(node: Element): BoundsElement =
-      BoundsElement(node, id, lastDescendantId, recorder, roles, if roles.isEmpty then None else gestures)
+      BoundsElement(node, id, lastDescendantId, recorder, roles, if roles.isEmpty then None else gestures, anchor)
     current match
       case tracked: TrackedElement => tracked.copy(inner = wrap(tracked.inner))
       case pointer: PointerElement => pointer.copy(inner = wrap(pointer.inner))

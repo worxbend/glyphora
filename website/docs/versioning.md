@@ -502,6 +502,13 @@ Three changes reach almost every app, so check them first:
 - Bounds recording is on for every headless run, and on a real terminal from the first
   `boundsOf(key)` call or click-outside modal; it does not change what a frame shows. Nodes with a
   pointer role (selectable text, draggable, drop target) are recorded on every frame.
+- **A mouse selection stays on its node.** It used to be held by the node's position in a
+  pre-order count and by screen cells, so a node added anywhere above it moved the selection onto
+  another node, and scrolling a `scrollView` slid the content out from under a highlight that
+  stayed put. It is now held by the node's `.key(…)` (or, without one, its path of child positions)
+  and by cells of the node's own area, so it survives the tree changing around it and scrolls with
+  the content. Nothing to change in code; a test that expected the highlight to stay on a screen
+  row after a scroll moves its expectation with the content.
 
 ### Terminal protocols and `Theme.auto`
 
