@@ -1316,6 +1316,14 @@ private[dsl] trait ElementFactories:
   def toolbar(buttons: Element*): FocusGroupElement =
     FocusGroupElement(ToolbarElement(buttons, gap = 1, divider = None))
 
+  /** [[toolbar]] with an overflow menu: when the row is too narrow, a click on the trailing `»` opens a popup — floated
+    * over everything through the frame root — holding the controls that did not fit; a click on one presses it and
+    * closes the popup, and a click outside or Esc closes it too. `state` is caller-owned and only remembers whether the
+    * popup is open. See [[w.ToolbarState]].
+    */
+  def toolbar(state: w.ToolbarState)(buttons: Element*): FocusGroupElement =
+    FocusGroupElement(ToolbarElement(buttons, gap = 1, divider = None, overflow = Some(state)))
+
   /** [[toolbar]] drawn as one segmented control — `[ Left ]│[ Center ]│[ Right ]` — for a set of related actions. */
   def buttonGroup(buttons: Element*): FocusGroupElement =
     FocusGroupElement(ToolbarElement(buttons, gap = 0, divider = Some("│")))

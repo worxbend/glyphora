@@ -183,6 +183,10 @@ final class VersionedStatesSpec extends AnyFunSuite:
       "stepChannel"          -> (state => { state.focusNextField(); state.stepChannel(1) }),
       "chooseRgb"            -> (state => { val _ = state.chooseRgb() }),
     ),
+    row("ToolbarState", ToolbarState())(
+      "toggle"               -> (_.toggle()),
+      "close"                -> (_.close()),
+    ),
     row("InspectState", InspectState())(
       "select"               -> (_.select(Vector(1))),
       "collapse"             -> (_.collapse(Vector())),

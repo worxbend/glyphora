@@ -1,6 +1,43 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, CharWidth, Measured, Rect, Style, Widget}
+import io.worxbend.tui.core.{Buffer, CharWidth, Measured, Rect, Style, VersionedState, Widget}
+
+/** Caller-owned state of a toolbar's overflow menu: whether the popup listing the controls that did not fit is open.
+  *
+  * The [[Toolbar]] widget itself only draws the `»` marker; the DSL's `toolbar(state)(buttons*)` opens this popup when
+  * the marker is clicked and floats the hidden controls in it.
+  *
+  * Render-thread-only. Every mutation raises `version` (see [[io.worxbend.tui.core.Versioned]]), so a write made
+  * outside the event path is painted too, with no `Signal` write.
+  */
+final class ToolbarState extends VersionedState:
+
+  private var openValue: Boolean = false
+
+  /** Whether the overflow menu shows. */
+  def open: Boolean = openValue
+
+  /** Opens the overflow menu when it is closed and closes it when it is open. */
+  def toggle(): Unit =
+    openValue = !openValue
+    touch()
+
+  /** Closes the overflow menu. */
+  def close(): Unit =
+    openValue = false
+    touch()
+
+  /** The indices of the controls the toolbar left out the last time it was drawn — what the overflow menu lists. Empty
+    * until the first draw, and whenever everything fit.
+    */
+  def hidden: Seq[Int] = hiddenValue
+
+  private var hiddenValue: Seq[Int] = Seq.empty
+
+  /** Records what the toolbar left out while drawing. An observation of the frame rather than a change to the state, so
+    * it does not raise `version` — a redraw that records the same thing must not schedule another redraw.
+    */
+  private[tui] def recordHidden(indices: Seq[Int]): Unit = hiddenValue = indices
 
 /** A one-row strip of controls, drawn on the first row of its area — a toolbar, a segmented button group — laid left to
   * right at each item's natural width ([[Measured.widthAt]]; an item that cannot say takes one column), `gap` blank
@@ -54,6 +91,11 @@ final case class Toolbar(
           while start > 0 && span(sizes.slice(start - 1, end)) <= room do start -= 1
           (start, end)
         case None        => (0, math.max(1, fromStart).min(sizes.size))
+
+  /** The items [[window]] leaves out at `width` columns, in order — those before the window, then those after it. */
+  def hidden(width: Int): Seq[Int] =
+    val (start, end) = window(width)
+    (0 until start) ++ (end until items.size)
 
   /** Each drawn item with the rectangle it is drawn into, inside `area`. */
   def placements(area: Rect): Seq[(Int, Rect)] =
