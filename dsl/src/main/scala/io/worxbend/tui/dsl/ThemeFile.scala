@@ -1,7 +1,7 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{GlyphSupport, Style}
-import io.worxbend.tui.widgets.{MarkdownTheme, SyntaxTheme}
+import io.worxbend.tui.core.{Color, GlyphSupport, Style}
+import io.worxbend.tui.widgets.{ColorRamp, MarkdownTheme, SyntaxTheme}
 
 import java.util.Locale
 
@@ -32,11 +32,12 @@ import java.util.Locale
   *   - Components: `component.<style name>` sets a component's `base`, and `component.<style name>:<state>` one of its
   *     `focused`, `hovered`, `pressed` or `disabled` styles — see [[StateStyles]] and [[StyleName]].
   *   - `glyphs` is `full`, `box-drawing` or `ascii`.
+  *   - `loading.fill-ramp` is the loading `fillRamp`: its colour stops separated by commas, in
+  *     [[io.worxbend.tui.core.Color.parse]]'s spelling (`green, yellow, red`, `#a3be8c, #bf616a`), or `none`.
   *
   * A setting the file leaves out keeps the base theme's value. Without `extends` the base is [[Theme.Dark]] *with no
   * components*, so a file [[Theme.render]] wrote — which spells every setting out — reads back as exactly the theme it
-  * was written from; with `extends = <preset>` the base is that preset, components included. A loading `fillRamp` is
-  * code, not a style, so it is neither written nor read: it is kept from the base.
+  * was written from; with `extends = <preset>` the base is that preset, components included.
   *
   * Parsed by hand, line by line; no reflection.
   */
@@ -138,6 +139,25 @@ private[dsl] object ThemeFile:
 
   private val ComponentPrefix = "component."
 
+  private val FillRampKey = "loading.fill-ramp"
+
+  /** A `loading.fill-ramp` value: `none`, or one or more comma-separated colours. */
+  private def ramp(number: Int, value: String): Either[LineError, Option[ColorRamp]] =
+    if value.trim.toLowerCase(Locale.ROOT) == "none" then Right(None)
+    else
+      value
+        .split(',')
+        .toVector
+        .foldLeft[Either[LineError, Vector[Color]]](Right(Vector.empty)) { (acc, stop) =>
+          acc.flatMap(stops =>
+            Color.parse(stop).map(stops :+ _).left.map(message => LineError(number, s"$FillRampKey: $message"))
+          )
+        }
+        .map(stops => Some(ColorRamp(stops)))
+
+  private def renderRamp(fill: Option[ColorRamp]): String =
+    fill.fold("none")(_.stops.map(_.render).mkString(", "))
+
   def parse(text: String): Either[LineError, Theme] =
     KeyValueLines.read(text, "key = value").flatMap { lines =>
       val settings = lines.map(line => (line.number, line.key, line.value))
@@ -159,15 +179,17 @@ private[dsl] object ThemeFile:
       def style: Either[LineError, Style] =
         Style.parse(value).left.map(message => LineError(number, s"$key: $message"))
       key match
-        case "extends" => Right(theme)
-        case "name"    =>
+        case "extends"   => Right(theme)
+        case "name"      =>
           if value.isEmpty then Left(LineError(number, "name: a theme needs a name")) else Right(theme.withName(value))
-        case "glyphs"  =>
+        case FillRampKey =>
+          ramp(number, value).map(fill => theme.withLoading(theme.loading.copy(fillRamp = fill)))
+        case "glyphs"    =>
           GlyphNames
             .find(_._1 == value.toLowerCase(Locale.ROOT))
             .map(found => theme.withGlyphs(found._2))
             .toRight(LineError(number, s"glyphs: '$value' is not one of ${GlyphNames.map(_._1).mkString(", ")}"))
-        case _         =>
+        case _           =>
           SettingsByKey.get(key) match
             case Some(setting)                           => style.map(setting.write(theme, _))
             case None if key.startsWith(ComponentPrefix) =>
@@ -199,7 +221,8 @@ private[dsl] object ThemeFile:
 
   def render(theme: Theme): String =
     val header   = Seq(s"name = ${theme.name}", s"glyphs = ${GlyphNames.find(_._2 == theme.glyphs).fold("full")(_._1)}")
-    val settings = Settings.map(setting => s"${setting.key} = ${Style.render(setting.read(theme))}")
+    val settings = Settings.map(setting => s"${setting.key} = ${Style.render(setting.read(theme))}") :+
+      s"$FillRampKey = ${renderRamp(theme.loading.fillRamp)}"
     val components = theme.components.toSeq.sortBy(_._1.value).flatMap { (name, styles) =>
       s"component.${name.value} = ${Style.render(styles.base)}" +:
         States.collect {

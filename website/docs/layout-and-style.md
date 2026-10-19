@@ -690,8 +690,11 @@ withStyle(_.withFg(Color.Cyan)) {
 ```
 
 Descendants can still add or override their own style, and nested `withStyle` calls
-layer inner over outer. Raw `widget(...)` leaves and images intentionally ignore the
-element style because their renderer owns its cells directly.
+layer inner over outer. A raw `widget(...)` leaf takes the style *under* what its widget
+draws: once the widget has painted, every cell of its area gets the style's fields the
+cell left unset, so `widget(myGauge).bg(Color.Indexed(236))` paints a background behind
+the gauge while the gauge's own colours still win. Images still ignore the element style,
+because their renderer owns every cell's colour directly.
 
 `withStyle` is a cascade rather than a rewrite: it wraps the subtree in one node and the
 style reaches each descendant when the frame is painted, on the pass the host already

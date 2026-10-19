@@ -222,7 +222,10 @@ private[dsl] final class ConfirmStep(val label: String, default: Boolean) extend
       case "n" | "no" | "false"          => Right(false)
       case localized if localized == yes => Right(true)
       case localized if localized == no  => Right(false)
-      case other                         => Left(s"answer ${labels.promptYes} or ${labels.promptNo}, not '$other'")
+      case other                         =>
+        Left(
+          labels.filled(labels.promptAnswerYesNo, "yes" -> labels.promptYes, "no" -> labels.promptNo, "input" -> other)
+        )
 
   def show(value: Boolean): String = if value then Messages.active.promptYes else Messages.active.promptNo
 
@@ -299,13 +302,16 @@ private[dsl] final class ChoiceStep[O, A](
 
   def current: Either[String, A] =
     if multi then pick(state.chosen.toSeq.sorted.map(options))
-    else options.lift(state.cursor).fold(Left("there is nothing to choose from"))(option => pick(Seq(option)))
+    else options.lift(state.cursor).fold(Left(Messages.active.promptNothingToChoose))(option => pick(Seq(option)))
 
   def fromAnswer(raw: String): Either[String, A] =
     val wanted = if multi then raw.split(',').toSeq.map(_.trim).filter(_.nonEmpty) else Seq(raw.trim)
     val found  = wanted.map(word => word -> indexOf(word))
     found.collectFirst { case (word, None) => word } match
-      case Some(word) => Left(s"'$word' is not one of: ${labels.mkString(", ")}")
+      case Some(word) =>
+        Left(
+          Messages.active.filled(Messages.active.promptNotAnOption, "input" -> word, "options" -> labels.mkString(", "))
+        )
       case None       => pick(found.flatMap(_._2).distinct.sorted.map(options))
 
   /** An option by its label (case-insensitively) or by its 1-based number. */

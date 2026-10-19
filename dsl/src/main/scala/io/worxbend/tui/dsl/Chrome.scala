@@ -9,8 +9,8 @@ import io.worxbend.tui.widgets as w
 
 /** A one-row title bar over the theme surface: title left, optional tabs center, optional right-side text. */
 def topBar(title: String, tabs: Seq[String] = Seq.empty, selectedTab: Int = 0, right: String = "")(using
-    theme: Theme
-): Element =
+    ambient: Theme
+): Element = LateBinding.composite(ambient) { theme =>
   // the reserved cells must be *display* columns, or a CJK/emoji title asks for fewer cells than it renders into.
   // the gaps are `spacer`s, not spaces baked into the strings: a spacer inside the `FilledElement` still paints the
   // surface, and unlike " $title " it cannot drift out of step with the `.length(...)` beside it
@@ -27,13 +27,15 @@ def topBar(title: String, tabs: Seq[String] = Seq.empty, selectedTab: Int = 0, r
     parts += Element.text(right).styled(_ => theme.surface).length(CharWidth.of(right))
     parts += Element.spacer(1)
   FilledElement(Element.row(parts.result()*), theme.surface).length(1)
+}
 
 /** A one-row status bar of `key description` hints over the theme surface. */
-def statusBar(hints: Seq[(String, String)])(using theme: Theme): Element =
+def statusBar(hints: Seq[(String, String)])(using ambient: Theme): Element = LateBinding.composite(ambient) { theme =>
   val content = hints.map((key, description) => s"$key $description").mkString("  │  ")
   // a leading `spacer`, not a leading space in the string — see `topBar`
   val row     = Element.row(Element.spacer(1), Element.text(content).styled(_ => theme.surface).fill)
   FilledElement(row, theme.surface).length(1)
+}
 
 /** Status bar fed directly from the app's declared [[KeyBindings]]: the live hints, led by the current mode as
   * `[normal]` when the bindings declare modes. While a key sequence is half typed the hints give way to the pending
@@ -44,7 +46,9 @@ def statusBar(bindings: KeyBindings)(using Theme): Element =
   val mode  = Option.when(bindings.modes.nonEmpty)(bindings.mode).flatten.map(id => (s"[$id]", ""))
   val hints = bindings.pending match
     case Some(prefix) =>
-      (s"${prefix.spelling} …", "") +: bindings.continuations(prefix.keys).map(hint => (hint.keys, hint.description))
+      (s"${prefix.spelling} ${Messages.active.whichKeyEllipsis}", "") +: bindings
+        .continuations(prefix.keys)
+        .map(hint => (hint.keys, hint.description))
     case None         => bindings.hints
   statusBar(mode.toSeq ++ hints)
 
@@ -89,7 +93,10 @@ private val HelpColumnGap    = 3
 private val MaxHelpKeyColumn = 24
 
 /** A centered help dialog listing every hinted binding — render it last (over the view) while visible. */
-def helpOverlay(bindings: KeyBindings, title: String = Messages.active.helpTitle)(using theme: Theme): Element =
+def helpOverlay(bindings: KeyBindings, title: String = Messages.active.helpTitle)(using ambient: Theme): Element =
+  LateBinding.composite(ambient)(theme => helpOverlayIn(bindings, title, theme))
+
+private def helpOverlayIn(bindings: KeyBindings, title: String, theme: Theme): Element =
   // bindings with modes list every mode, each under a `name:` heading, after the mode-less ones — the overlay is where
   // a user learns what the other modes do, so it is not narrowed to the live one the way the status bar is
   val sections = bindings.helpSections

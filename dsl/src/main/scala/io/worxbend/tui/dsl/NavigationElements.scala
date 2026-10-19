@@ -148,7 +148,16 @@ final case class ScrollViewElement(
       content match
         case viewport: ScrollViewportElement => viewport.publishScreenArea(area)
         case _                               => ()
-      val view      = searched(w.ScrollView(content.widget, rows, contentIdentity = searchIdentity))
+      val found     = SearchStyles.of(props.focusState.theme)
+      val view      = searched(
+        w.ScrollView(
+          content.widget,
+          rows,
+          contentIdentity = searchIdentity,
+          matchStyle = found.matched,
+          currentMatchStyle = found.current,
+        )
+      )
       // the container-query pre-pass paints an undecorated tree, which asks for nothing: that is not a request going
       // away, so the pre-pass leaves the bookkeeping of the frames that do ask alone
       val measuring = LocalProbe.measuring

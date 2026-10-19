@@ -1,0 +1,22 @@
+[0;33;1mHeading one[0m                                     [0m
+[0;37;1mHeading two[0m                                     [0m
+[0;37;4mHeading three[0m                                   [0m
+[0m                                                [0m
+[0mSome [0;37;1mstrong[0m, [0;37;3memphasis[0m, [0;33;1mcode[0m and a [0;37;1;4m]8;;https://example.com\link]8;;\[0m.         [0m
+[0m                                                [0m
+[0;37;3m▎ a quote[0m                                       [0m
+[0m                                                [0m
+[0;33;1m• [0ma bullet                                      [0m
+[0;32;1m☑ [0mdone                                          [0m
+[0;33;1m☐ [0mopen                                          [0m
+[0m                                                [0m
+[0;33;1mkey[0;37m │ [0;33;1mvalue[0m                                     [0m
+[0;37m────┼──────[0m                                     [0m
+[0ma  [0;37m │ [0m1                                         [0m
+[0m                                                [0m
+[0m                                                [0m
+[0;33;1mdef[0;37m [0;37;1madd[0;37m(a: Int) = a + [0;33;1m1[0;37m [0;37;3m// sum[0m                  [0m
+[0;33;1mval[0;37m s = [0;37;1m"text"[0m                                  [0m
+[0m                                                [0m
+[0m                                                [0m
+[0m                                                [0m

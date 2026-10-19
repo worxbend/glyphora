@@ -630,7 +630,9 @@ def view(using ReactiveScope, Theme): Element =
   )
 ```
 
-Every match is highlighted and the current one stands out; when the query changes, the first
+Every match is highlighted and the current one stands out — in the theme's `SearchRole.Match`
+and `SearchRole.Current` components, or its `warning` and `error` colours when it has none
+(see [the app shell](./app-shell#component-styles-and-variants)); when the query changes, the first
 match at or after the top of the window becomes current and the view scrolls to it. While the
 searched view is focused, `n` and `N` step to the next and previous match, wrapping round;
 in the `searchBar`, Enter (or Down) and Shift+Enter (or Up) do the same, and Esc clears the

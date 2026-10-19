@@ -364,7 +364,9 @@ extension [E <: Element](element: E)
     * panel-free way to box a single node; a `panel` adds a title, captions and slots on top of this.
     */
   def border(glyphs: w.BorderType = w.BorderType.Plain)(using theme: Theme): DecoratedElement =
-    DecoratedElement.around(element, Decoration.Border(glyphs, theme.border, theme.glyphs))
+    LateBinding.themed(theme)(theme =>
+      DecoratedElement.around(element, Decoration.Border(glyphs, theme.border, theme.glyphs))
+    )
 
   /** A frame drawn in `frameStyle` — the border's own colour, not the content's (that is the element's `style`). */
   def border(glyphs: w.BorderType, frameStyle: Style): DecoratedElement =

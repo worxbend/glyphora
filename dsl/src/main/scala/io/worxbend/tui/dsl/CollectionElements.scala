@@ -354,7 +354,8 @@ final case class LogElement(
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some(wheelScrolls(() => state.scrollUp(), () => state.scrollDown()))
   def widget: Widget                                                         =
-    val log = w.Log(props.style)
+    val found = SearchStyles.of(props.focusState.theme)
+    val log   = w.Log(props.style, found.matched, found.current)
     search match
       case Some(found) => (area, buffer) => log.render(area, buffer, state, found)
       case None        => (area, buffer) => log.render(area, buffer, state)
