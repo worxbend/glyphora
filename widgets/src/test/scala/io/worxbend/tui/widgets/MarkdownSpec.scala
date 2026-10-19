@@ -76,3 +76,14 @@ final class MarkdownSpec extends AnyFunSuite:
     val theme = MarkdownTheme()
     val text  = MarkdownParser.parse("```\nplain text\n```", theme)
     assert(text.lines(1) == io.worxbend.tui.core.Line.styled("plain text", theme.code))
+
+  test("a wrapped list item hangs its continuation rows under the item's text, not under its marker"):
+    assert(
+      trimmedLines(rendered(Markdown("- alpha beta gamma delta"), 12, 3)) == Seq("• alpha beta", "  gamma", "  delta")
+    )
+    assert(trimmedLines(rendered(Markdown("1. alpha beta gamma"), 10, 3)) == Seq("1. alpha", "   beta", "   gamma"))
+    assert(Markdown("- alpha beta gamma delta").heightAt(12).contains(3))
+
+  test("a nested wrapped item hangs under its own text, task box included"):
+    val buffer = rendered(Markdown("- top\n  - [ ] one two three"), 12, 3)
+    assert(trimmedLines(buffer) == Seq("• top", "  ☐ one two", "    three"))

@@ -159,3 +159,28 @@ final class SearchElementsSpec extends AnyFunSuite with PilotFixture:
     assert(log(LogState()).searchable(search).search.contains(search))
     assert(scrollView(text("x"), ScrollViewState()).searchable(search).search.contains(search))
     assert(markdown("x").searchable(search).search.contains(search))
+
+  test("a searchable textArea follows a searchBar's query and F3 steps the caret through the matches"):
+    val backend = HeadlessBackend(Size(24, 6))
+    val editor  = TextAreaState("one beta\ntwo\nbeta three\nfour beta")
+    editor.moveToStart()
+    val search  = SearchState()
+    val app     = new TuiApp:
+      override def bindings: KeyBindings            = KeyBindings(binding("f10", "quit")(quit()))
+      def view(using ReactiveScope, Theme): Element =
+        column(textArea(editor).searchable(search).fill, searchBar(search).autofocus)
+    val pilot   = startPilot(backend) { app.runWith(backend) }
+
+    pilot.waitForIdle()
+    pilot.typeText("beta").waitForIdle()
+    assert(pilot.readOnRenderThread(search.matches.map(m => (m.row, m.column))) == Vector((0, 4), (2, 0), (3, 5)))
+    assert(pilot.readOnRenderThread(editor.cursor) == (0, 4))
+    pilot.press("enter").waitForIdle()
+    assert(pilot.readOnRenderThread(editor.cursor) == (2, 0))
+    pilot.press("tab").waitForIdle() // focus the editor: F3 there steps the shared search too
+    pilot.press("f3").waitForIdle()
+    assert(pilot.readOnRenderThread(editor.cursor) == (3, 5))
+    pilot.press("shift+f3").waitForIdle()
+    assert(pilot.readOnRenderThread(editor.cursor) == (2, 0))
+    pilot.press("f10")
+    assert(pilot.awaitTermination())

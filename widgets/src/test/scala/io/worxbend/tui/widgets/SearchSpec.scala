@@ -221,3 +221,67 @@ final class SearchSpec extends AnyFunSuite:
     assert(searched.get(13, 2).style == plain.get(13, 2).style)
     assert(searched.get(18, 2).style == plain.get(18, 2).style)
     GoldenFrames.assertMatchesStyled("search-markdown-table", searched)
+
+  test("a log draws a line at its own alignment and highlights the match where it is drawn"):
+    val log    = LogState()
+    log.append(io.worxbend.tui.core.Line.raw("abc").centered)
+    log.append(io.worxbend.tui.core.Line.raw("xbx").rightAligned)
+    val search = SearchState()
+    search.query = "b"
+    val buffer = render(log, search, width = 9, height = 2)
+    // "abc" centred in nine columns starts at column 3, "xbx" right-aligned at column 6
+    assert(trimmedLines(buffer) == Seq("   abc", "      xbx"))
+    assert(buffer.get(4, 0).style.bg == currentBg)
+    assert(buffer.get(7, 1).style.bg == matchBg)
+    assert(buffer.get(1, 0).style.bg.isEmpty && buffer.get(1, 1).style.bg.isEmpty)
+
+  test("one search shared by two views keeps a match set and a current match per view"):
+    val shared = SearchState()
+    shared.query = "warn"
+    val left   = shared.view("left")
+    val right  = shared.view("right")
+    assert(shared.view("left") eq left, "a view key names one view state")
+    val many   = hundredLines
+    val few    = LogState()
+    few.append("one warn")
+    few.append("nothing")
+    val _      = render(many, left)
+    val _      = render(few, right)
+    assert(left.matches.size == 10)
+    assert(right.matches == Vector(SearchMatch(0, 4, 4)))
+    assert(left.query == "warn" && right.query == "warn", "both views search the one query")
+    // stepping the shared search steps each view through its own matches
+    val before = left.current
+    assert(shared.next())
+    assert(left.current != before)
+    assert(right.current.contains(0))
+    // a query typed once reaches both views, and Esc clears both
+    shared.query = "nothing"
+    val _      = render(few, right)
+    assert(right.matches == Vector(SearchMatch(1, 0, 7)))
+    shared.clear()
+    assert(left.matches.isEmpty && right.matches.isEmpty && !right.isActive)
+
+  test("a text area searched through a SearchState records its matches and moves the caret to the current one"):
+    val area = TextAreaState("alpha beta\nbeta gamma\nx 日本 beta")
+    area.moveToStart() // a new state's caret sits at the end of its text; the search starts from the caret's line
+    val search         = SearchState()
+    search.query = "beta"
+    def draw(): Buffer =
+      val buffer = Buffer(Rect(0, 0, 20, 3))
+      TextArea(showCursor = false).render(buffer.area, buffer, area, search)
+      buffer
+    val first          = draw()
+    // columns are display columns: the wide 日本 puts the third match at column 7
+    assert(search.matches == Vector(SearchMatch(0, 6, 4), SearchMatch(1, 0, 4), SearchMatch(2, 7, 4)))
+    assert(search.current.contains(0))
+    assert(area.cursor == (0, 6))
+    assert(first.get(6, 0).style.bg == currentBg)
+    assert(first.get(0, 1).style.bg == matchBg)
+    assert(search.next())
+    val second         = draw()
+    assert(area.cursor == (1, 0))
+    assert(second.get(0, 1).style.bg == currentBg && second.get(6, 0).style.bg == matchBg)
+    search.query = ""
+    val cleared        = draw()
+    assert(search.matches.isEmpty && cleared.get(0, 1).style.bg.isEmpty)

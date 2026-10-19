@@ -3,7 +3,7 @@ package io.worxbend.tui.widgets.lexers
 import java.util.Locale
 
 import io.worxbend.tui.core.{Line, Span, Style}
-import io.worxbend.tui.widgets.SyntaxTheme
+import io.worxbend.tui.widgets.{LexState, SyntaxTheme}
 
 /** Scanning helpers shared by the built-in lexers. Pure functions over the line passed in. */
 private[widgets] object LexerSupport:
@@ -69,19 +69,41 @@ private[widgets] final case class KeywordSpec(
     stringDelims: Set[Char],
     shellVariables: Boolean = false,
     caseInsensitive: Boolean = false,
+    blockComment: Option[(String, String)] = None,
+    multilineStrings: Seq[String] = Nil,
 )
 
-/** The scanner most languages share: line comments, single-line strings, numbers at token boundaries, keywords, `name(`
-  * call sites and (for shells) `$variables`.
+/** The scanner most languages share: line comments, block comments and multi-line strings that carry across lines
+  * through the [[io.worxbend.tui.widgets.LexState]], single-line strings, numbers at token boundaries, keywords,
+  * `name(` call sites and (for shells) `$variables`.
   */
 private[widgets] final class KeywordLexer(val name: String, val aliases: Set[String], spec: KeywordSpec)
     extends io.worxbend.tui.widgets.Lexer:
   import LexerSupport.*
 
-  def highlightLine(line: String, theme: SyntaxTheme): Line =
+  def highlightLine(line: String, theme: SyntaxTheme): Line = highlightLine(line, theme, LexState.Initial)._1
+
+  override def highlightLine(line: String, theme: SyntaxTheme, state: LexState): (Line, LexState) =
     val sink = SpanSink(theme)
     var i    = 0
     val n    = line.length
+    var next = LexState.Initial
+
+    /** The style of what an open construct holds: a block comment's closer means comment, anything else a string. */
+    def styleOf(closer: String): Style =
+      if spec.blockComment.exists(_._2 == closer) then theme.comment else theme.string
+
+    /** Consumes from `i` through the first `closer` at or after `from`, or to the end of the line — leaving the line
+      * inside the construct — when there is none.
+      */
+    def through(closer: String, from: Int): Unit =
+      val at  = line.indexOf(closer, from)
+      val end = if at < 0 then n else at + closer.length
+      sink.emit(line.slice(i, end), styleOf(closer))
+      i = end
+      if at < 0 then next = LexState(closer)
+
+    if !state.isInitial then through(state.open, 0)
 
     /** Emits `line.slice(i, end)` with `style` and advances the scan past it — the shape every multi-char token takes.
       */
@@ -90,11 +112,15 @@ private[widgets] final class KeywordLexer(val name: String, val aliases: Set[Str
       i = end
 
     while i < n do
-      val c  = line.charAt(i)
+      val c      = line.charAt(i)
       // bound the scan index to a local: a lambda capturing `i` directly would box it into a
       // scala.runtime.IntRef for the whole loop, and this runs per character, per line, per frame
-      val at = i
+      val at     = i
+      val block  = spec.blockComment.filter((opener, _) => line.startsWith(opener, at))
+      val string = spec.multilineStrings.find(delimiter => line.startsWith(delimiter, at))
       if spec.lineComment.exists(marker => line.startsWith(marker, at)) then consume(n, theme.comment)
+      else if block.isDefined then block.foreach((opener, closer) => through(closer, at + opener.length))
+      else if string.isDefined then string.foreach(delimiter => through(delimiter, at + delimiter.length))
       else if spec.stringDelims.contains(c) then consume(scanString(line, i, c), theme.string)
       else if c == '$' && spec.shellVariables && i + 1 < n && isIdentChar(line.charAt(i + 1)) then
         consume(scanWhile(line, i + 1, isIdentChar), theme.variable)
@@ -110,7 +136,7 @@ private[widgets] final class KeywordLexer(val name: String, val aliases: Set[Str
       else
         sink.plainChar(c)
         i += 1
-    sink.result()
+    (sink.result(), next)
 
   private def isKeyword(word: String): Boolean =
     if spec.caseInsensitive then spec.keywords.contains(word.toLowerCase(Locale.ROOT))

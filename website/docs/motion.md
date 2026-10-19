@@ -168,6 +168,16 @@ text halfway through a one-second flash, with every sibling exactly as painted.
 Most finite effects take a duration and optional `Easing`. Scatter effects also take
 a seed; equal seeds produce equal cell order, which makes testing repeatable.
 
+`hslShift` and `paint` act on the text colour by default. Their last parameter,
+`target`, picks the layer: `ColorTarget.Background` shifts or paints every cell's
+background — blank cells included, because a filled panel is mostly blanks, and a cell
+with no background of its own counts as black — and `ColorTarget.Both` does both:
+
+```scala
+Effect.paint(Color.Red, 300.millis, target = ColorTarget.Background)   // flash a panel's fill
+Effect.hslShift(30, 0, 0.1, 2.seconds, target = ColorTarget.Both)        // warm the whole region
+```
+
 ```scala
 Effect.coalesce(
   duration = 600.millis,
@@ -244,8 +254,11 @@ val ripple  = Effect.patterned(Pattern.wave(frequency = 2.0))(Effect.sweepIn(500
 cell's own transition takes: small is a hard front, close to 1 a broad gradient.
 Every pattern starts every cell at 0 and finishes every cell at 1. Per-cell progress
 is resolved to `Effect.PatternLevels` (64) steps, so the cost per frame is bounded by
-that, not by the size of the screen. An endless effect such as `pulse` has no run to
-spread out and plays unpatterned.
+that, not by the size of the screen — and each step's evaluation is cached, so while
+the content underneath does not change, a whole run evaluates the inner effect at
+most once per step however many frames it spans. The cache makes a running
+`patterned` value render-thread-only; build one per place you play it. An endless
+effect such as `pulse` has no run to spread out and plays unpatterned.
 
 An infinite effect such as `pulse` never prunes itself. Use it sparingly, and avoid
 placing one inside a sequence that needs to continue.

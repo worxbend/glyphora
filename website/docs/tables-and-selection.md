@@ -107,9 +107,16 @@ because that key type is `Int`.
 Rows that should not be held in memory at all — a million records behind a query —
 come through a `TableRows[K]` provider instead of a sequence: implement `count` and
 `apply(index)` and pass it as `rows`. A provider *is* a `Seq[KeyedRow[K]]`, so the
-constructor is the same one; the table reads only the rows it paints. What that costs
-and what it does not is in [Lists and tables over large
+constructor is the same one; the table reads only the rows it paints. A provider over
+a store sorts and filters at the source by overriding `view(sort, filter)` to answer
+another provider (`None`, the default, leaves both to the table). What that costs and
+what it does not is in [Lists and tables over large
 data](./performance#lists-and-tables-over-large-data).
+
+`DataTableOptions(multiLine = true)` lets a cell span rows: a `\n` in a cell starts
+another row of the same record, the record is as tall as its tallest cell, and
+scrolling, the selection highlight and `rowAt` count those rows. Without it every
+record is one row.
 
 A fresh `DataTable` per frame is cheap: it holds the rows and nothing derived
 from them. `DataTableState` is the half that must not be rebuilt — constructing

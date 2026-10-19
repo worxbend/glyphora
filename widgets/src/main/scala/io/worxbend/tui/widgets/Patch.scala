@@ -39,8 +39,12 @@ final case class FilePatch(oldPath: Option[String], newPath: Option[String], hun
 /** A unified diff: one [[FilePatch]] per file, in order — what `git diff` prints, read by [[Patch.parse]], or the
   * difference between two texts computed by [[Patch.of]]. An immutable value, safe to share between threads; drawn by
   * [[DiffView]].
+  *
+  * `approximate` is `true` for a [[Patch.of]] that passed its edit-distance cap: the patch still turns the old text
+  * into the new one, but the part the cap cut short is one block of removals followed by one of additions rather than a
+  * line-by-line comparison. A [[DiffView]] says so on its first row.
   */
-final case class Patch(files: Seq[FilePatch]):
+final case class Patch(files: Seq[FilePatch], approximate: Boolean = false):
 
   /** Every hunk of every file, in order. */
   def hunks: Seq[Hunk] = files.flatMap(_.hunks)
@@ -166,18 +170,22 @@ object Patch:
   /** The line-based difference between `before` and `after`, as one headerless [[FilePatch]], with `context` unchanged
     * lines kept around each change — 3, the `git diff` default. Changes whose context windows touch share a hunk.
     * Computed with Myers' algorithm, which finds a shortest edit script and, among the shortest, prefers to delete
-    * before it inserts.
+    * before it inserts — as long as that script needs at most `maxEditDistance` added plus removed lines
+    * ([[DefaultMaxEditDistance]]). Past that the common prefix and suffix are still matched, everything between them is
+    * one removal followed by one addition, and the patch is [[Patch.approximate]]: valid, bounded in memory, not
+    * shortest.
     *
     * A text is split on `\n` (a `\r` before it is dropped), and one trailing newline ends the last line rather than
     * starting an empty one — so `"a\n"` and `"a"` compare equal, and the "no newline at end of file" distinction is not
     * reported.
     */
-  def of(before: String, after: String, context: Int = 3): Patch =
+  def of(before: String, after: String, context: Int = 3, maxEditDistance: Int = DefaultMaxEditDistance): Patch =
     require(context >= 0, s"context must not be negative, was $context")
-    val oldLines = lines(before)
-    val newLines = lines(after)
-    val edits    = MyersDiff.diff(oldLines, newLines)
-    val changes  = edits.indices.filter(index => edits(index).op != MyersDiff.Op.Equal)
+    require(maxEditDistance >= 0, s"maxEditDistance must not be negative, was $maxEditDistance")
+    val oldLines       = lines(before)
+    val newLines       = lines(after)
+    val (edits, exact) = MyersDiff.diffBounded(oldLines, newLines, maxEditDistance)
+    val changes        = edits.indices.filter(index => edits(index).op != MyersDiff.Op.Equal)
     if changes.isEmpty then empty
     else
       val groups = changes.tail.foldLeft(Vector((changes.head, changes.head))) { case (acc, change) =>
@@ -201,7 +209,14 @@ object Patch:
           newStart = if hunk.newCount == 0 then newBefore else newBefore + 1,
         )
       }
-      Patch(Seq(FilePatch(None, None, hunks)))
+      Patch(Seq(FilePatch(None, None, hunks)), approximate = !exact)
+
+  /** The edit distance past which [[of]] stops looking for a shortest diff: 2 000 added plus removed lines. The
+    * search's memory grows with the square of the distance — about 16 MB at this cap, where two unrelated 50 000-line
+    * texts would have wanted gigabytes — so past it the unmatched middle becomes one replacement and the patch is
+    * marked [[Patch.approximate]].
+    */
+  val DefaultMaxEditDistance: Int = 2000
 
   private def lines(text: String): IndexedSeq[String] =
     if text.isEmpty then IndexedSeq.empty

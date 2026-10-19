@@ -519,7 +519,9 @@ a column at a time; a cell that no longer fits wraps onto more rows by default, 
 
 Lists nest by indentation, `listIndent` (2) columns per level, with the bullet cycling
 through `bullets` (`•`, `◦`, `▪`). A `- [ ]` / `- [x]` item draws `taskOpen` / `taskDone`
-(`☐` / `☑`) in place of its bullet, the checked glyph in `MarkdownTheme.taskDone`. The
+(`☐` / `☑`) in place of its bullet, the checked glyph in `MarkdownTheme.taskDone`. An
+item too long for one row wraps with a hanging indent: its further rows line up under the
+item's first word, not under its bullet. The
 table header and rules use `MarkdownTheme.tableHeader` and `tableBorder`. All of these live
 on `MarkdownOptions`, the widget's third argument: `Markdown(source, theme, options)`.
 
@@ -597,7 +599,13 @@ logConsole(ring, consoleScroll).minLevel(LogLevel.Info)
 `Added` and `Removed` lines. It returns `Either[PatchError, Patch]`, the error naming the input
 line that did not parse; `patch.unified` writes the text back. `Patch.of(before, after)` compares
 two texts line by line with Myers' algorithm and groups the changes into hunks with three lines
-of context, the way `git diff` does (`Patch.of(a, b, context = 10)` for more).
+of context, the way `git diff` does (`Patch.of(a, b, context = 10)` for more). Myers'
+search costs memory in the square of the number of differences, so `Patch.of` stops looking
+for a shortest diff past `Patch.DefaultMaxEditDistance` (2 000) added plus removed lines —
+`maxEditDistance` changes it. Past the cap the common prefix and suffix are still matched,
+everything between them becomes one removal followed by one addition, and the patch is
+marked `approximate`; `diffView` says so on its first row. Two unrelated 20 000-line texts
+then take milliseconds rather than the whole heap.
 
 ```scala
 private val state = DiffViewState()
@@ -618,12 +626,18 @@ Added lines take the theme's `success` style, removed lines `error`, hunk header
 - `.contextLines(n)` keeps `n` unchanged lines around each change and folds a longer run into
   one `… 12 unchanged lines` row.
 - `.lexer(Lexer.Scala)` highlights the code through any `Lexer`, over the added and removed
-  colours.
+  colours. Without it, each file is highlighted by the built-in lexer its path's extension
+  names (`src/App.scala`, `web/app.ts`, `deploy.yaml`, …); `DiffViewOptions(lexerFromPath =
+  false)` turns that off. Each line is lexed on its own.
 - `.withOptions(DiffViewOptions(...))` sets everything at once, including every style and the
   divider and fold glyphs.
 
 The pane is focusable. `n` or `]` scrolls the next hunk's header to the top row, `p` or `[`
-the previous one; the arrows, PageUp/PageDown, Home/End and the wheel scroll. `DiffViewState`
+the previous one; Up/Down, PageUp/PageDown, Home/End and the wheel scroll. Enter expands
+the first folded run on screen, and a click expands the one under the pointer
+(`state.expandAt(row)`, `expandFirstVisible()` and `collapseAll()` from code). Left/Right,
+Shift+wheel and a sideways wheel scroll every line's text sideways, the gutter, markers and
+headers staying put (`state.scrollLeft()`, `scrollRight()`, `column`). `DiffViewState`
 is caller-owned and render-thread-only — create it once outside `view`. It keeps the rows of
 the last patch it drew, so hand the node the same `Patch` value each frame. Without the DSL,
 `DiffView(patch, options)` is a `StatefulWidget[DiffViewState]` that also implements
@@ -666,6 +680,13 @@ back.
   Inside a `scrollView` the whole document is searched and the scroll view scrolls to the
   current match. The node becomes focusable, so `n`/`N` work once it has focus, and the
   arrows bubble to the scroll view around it.
+- `textArea(state).searchable(search)` hands the editor's search to the shared state: the
+  `searchBar` types the query, the matches take the same theme styles, and each move of the
+  search puts the caret on the current match. `F3` / `Shift+F3` (and `n` / `N` in a
+  `readOnly` area) step it; `Ctrl+F` and `/` bubble to the app instead of opening the
+  editor's own prompt.
+- A log draws each line at its own alignment — `Line.centered`, `rightAligned` — and the
+  highlight lands where the line is drawn.
 
 Matching is by grapheme cluster, never by `char`: a combining sequence, an emoji or a wide
 CJK character is matched whole, a precomposed `é` matches `e` followed by a combining
@@ -676,9 +697,14 @@ the same matcher.
 `SearchState` is render-thread-only. `query`, `matches` (each a `SearchMatch(row, column,
 width)` in the view's content coordinates), `current`, `next()`, `previous()` and
 `clear()` are its API, and every edit moves its `version`, so the view redraws when you
-change it. Give one state to one view only: two views sharing it would overwrite each
-other's matches. Without the DSL, `Log` and `ScrollView` have a `render` overload that takes
-a `SearchState`, and `Searchable(widget)` makes any widget searchable.
+change it. Give one state to one view only: two views rendered with the same state would
+overwrite each other's matches. To search two views with one query, give each its own
+`search.view(key)` — `log(left).searchable(search.view("left"))`,
+`log(right).searchable(search.view("right"))` — and put `searchBar(search)` over the
+parent: the views share its query, each keeps its own matches and current match, and
+`next()`, `previous()` and `clear()` on the parent reach every view. Without the DSL,
+`Log`, `ScrollView` and `TextArea` have a `render` overload that takes a `SearchState`, and
+`Searchable(widget)` makes any widget searchable.
 
 ### Confining a failing subtree
 
@@ -869,10 +895,16 @@ against `MarkdownOptions.lexers`, so `MarkdownOptions(lexers = Lexer.builtIn :+ 
 teaches every fence your language. A fence that no lexer claims renders verbatim in the
 `code` style.
 
-Highlighting is line-oriented and dependency-free. Block comments and triple-quoted strings
-that span lines fall back to plain text. That is the right trade-off for snippets in help
-screens, READMEs, Markdown fences and a small editor, and it lets an editor highlight only
-the rows it draws.
+Highlighting is line-oriented and dependency-free, with a `LexState` carried from the end
+of one line to the start of the next: `highlightLine(line, theme, state)` answers the line
+and the state it ends in. So a `/* … */` block comment (Scala, TypeScript, SQL), a
+triple-quoted string (Scala `"""`, Python `"""` and `'''`, a TypeScript template literal)
+and, in YAML, a block scalar (`key: |`), a quoted scalar closed on a later line and a flow
+collection (`{a: 1, b: [x, y]}`) that spans lines are highlighted on every line they cover.
+`highlight`, a Markdown fence and `textArea` all thread the state for you; a `textArea`
+remembers the state each line ends in and re-lexes only from the first line an edit
+changed. A lexer of your own that keeps no state implements only the two-argument
+`highlightLine`; the stateful form defaults to it.
 
 ## Lists and navigation
 
@@ -1008,6 +1040,12 @@ which record is selected without mapping a path back through the nodes. Keys are
 compared with `==` and must be unique within the tree. The state's type names the key:
 `TreeState[Seq[Int]]` for the positional one, `TreeState[String]` for a tree keyed by
 label.
+
+When labels repeat and are not even unique among siblings, give the nodes a stable
+`id` — `TreeNode("config", id = Some("app/config"))` — and use `TreeState.byId`: it keys
+each node by its `id`, falling back to the label for a node without one, so two rows
+labelled `config` expand, collapse and highlight one at a time. The `id` never reaches
+the screen.
 
 `DirectoryTreeState(root)` starts
 **unloaded**. Construction, navigation and painting never touch the filesystem;
@@ -2565,7 +2603,7 @@ hexViewer(payload, cursor)
 
 ```text
 00000000  48 65 6c 6c 6f 2c 20 57  6f 72 6c 64 21 0a 54 68  |Hello, World!.Th|
-00000010  69 73 20 69 73 20 67 6c  79 70 68 6f 72 61 2e     |is is glyphora.|
+00000010  69 73 20 69 73 20 67 6c  79 70 68 6f 72 61 2e     |is is glyphora. |
 ```
 
 Left/Right move the selected byte, Up/Down a row, PageUp/PageDown ten rows, Home/End

@@ -275,9 +275,10 @@ final case class KeyedRow[K](key: K, cells: Seq[String])
   * A provider *is* a `Seq[KeyedRow[K]]`, so it goes wherever a row sequence went, `DataTable(columns, rows, widths)`
   * included, and a plain `Vector` of rows needs no adapter at all. Three things follow from that:
   *
-  *   - `state.sort` and `state.filter` still walk every row, because sorting and filtering are defined on the cells the
-  *     table draws. A provider over a store should sort and filter *at the source* and leave both unset — or accept
-  *     that the first frame after a sort materialises the view once, which [[DataTableState]] then memoises.
+  *   - `state.sort` and `state.filter` are offered to the provider first, through [[view]]: a provider over a store
+  *     answers them *at the source* — `ORDER BY`, `WHERE` — with another provider, and the table reads that one a row
+  *     at a time like any other. A provider that answers `None` (the default) is sorted and filtered by the table,
+  *     which walks every row once per sort or filter change and memoises the result in [[DataTableState]].
   *   - The memoised view is keyed by the provider's identity, as it is for a sequence: keep one provider instance while
   *     its contents stand, replace it (or call `state.invalidate()`) when they change.
   *   - [[DataTable.selectKey]] and a selection whose row has moved since the last frame scan for the key, which is as
@@ -295,6 +296,17 @@ abstract class TableRows[K]
 
   /** Row `index`, in `0 until count`. The table calls this only for rows it is about to paint or anchor to. */
   def apply(index: Int): KeyedRow[K]
+
+  /** These rows sorted by `sort` and keeping only the rows `filter` matches, answered at the source, or `None` to have
+    * the table sort and filter them itself. Asked only when there is a sort or a filter, and once per change of either
+    * (the answer is memoised like the table's own view). The table's own rules are what a source should mirror: the
+    * filter keeps a row when any cell contains the text, ignoring case; the sort compares one column, numerically when
+    * every cell in it is a number. Called on the render thread, so a source that has to query should answer from a
+    * result it fetched ahead of time rather than block the frame.
+    */
+  def view(sort: Option[ColumnSort], filter: String): Option[TableRows[K]] =
+    val _ = (sort, filter)
+    None
 
   final def length: Int = count
 
@@ -328,6 +340,11 @@ object TableRows:
   * @param flex
   *   where the columns sit when they do not fill the area — see [[Table]] for the full explanation. The reserved
   *   `highlightSymbol` gutter is taken off the left first, so the flex distributes only what is left over after it.
+  * @param multiLine
+  *   lets a body cell span rows: a `\n` in a cell starts another row of the same record, and the record is as tall as
+  *   its tallest cell, shorter cells left blank below. Scrolling, the selection highlight and `rowAt` count those rows.
+  *   Off by default, when every record is one row whatever its cells hold. Measuring a record reads it, so over a
+  *   [[TableRows]] provider the rows around the window are read as well as the window itself.
   * @param alignments
   *   where each column's text sits inside its own column, by position: `alignments(0)` places column 0, `alignments(1)`
   *   column 1, and so on. This is how a numeric column lines up on its last digit instead of on its first. It applies
@@ -384,6 +401,7 @@ final case class DataTableOptions(
     columnSpacing: Int = 1,
     flex: Flex = Flex.Start,
     alignments: Seq[Alignment] = Seq.empty,
+    multiLine: Boolean = false,
     style: Style = Style.Default,
     headerStyle: Style = Style.Default.bold,
     footerStyle: Style = Style.Default.bold,
@@ -434,25 +452,33 @@ final case class DataTable[K](
   def filteredRows(state: DataTableState[K]): Seq[KeyedRow[K]] =
     val key = DataTableState.ViewKey(state.sort, state.filter, rows)
     state.cachedView(key) {
-      val filtered =
-        if state.filter.isEmpty then rows
-        else
-          // ROOT, not the default locale: in a Turkish locale "ID".toLowerCase is "ıd", which matches nothing.
-          val needle = state.filter.toLowerCase(Locale.ROOT)
-          rows.filter(_.cells.exists(_.toLowerCase(Locale.ROOT).contains(needle)))
-      state.sort match
-        case None                                => filtered
-        case Some(ColumnSort(column, direction)) =>
-          val cells   = filtered.map(_.cells.lift(column).getOrElse(""))
-          val ordered = ordering(cells)
-          val sorted  =
-            filtered.sortWith((a, b) =>
-              ordered.lt(a.cells.lift(column).getOrElse(""), b.cells.lift(column).getOrElse(""))
-            )
-          direction match
-            case SortDirection.Ascending  => sorted
-            case SortDirection.Descending => sorted.reverse
+      val sourced = rows match
+        case provider: TableRows[K @unchecked] if state.sort.isDefined || state.filter.nonEmpty =>
+          provider.view(state.sort, state.filter)
+        case _                                                                                  => None
+      sourced.getOrElse(sortedAndFiltered(state))
     }
+
+  /** The table's own sort and filter over every row — what a source that answers no [[TableRows.view]] gets. */
+  private def sortedAndFiltered(state: DataTableState[K]): Seq[KeyedRow[K]] =
+    val filtered =
+      if state.filter.isEmpty then rows
+      else
+        // ROOT, not the default locale: in a Turkish locale "ID".toLowerCase is "ıd", which matches nothing.
+        val needle = state.filter.toLowerCase(Locale.ROOT)
+        rows.filter(_.cells.exists(_.toLowerCase(Locale.ROOT).contains(needle)))
+    state.sort match
+      case None                                => filtered
+      case Some(ColumnSort(column, direction)) =>
+        val cells   = filtered.map(_.cells.lift(column).getOrElse(""))
+        val ordered = ordering(cells)
+        val sorted  =
+          filtered.sortWith((a, b) =>
+            ordered.lt(a.cells.lift(column).getOrElse(""), b.cells.lift(column).getOrElse(""))
+          )
+        direction match
+          case SortDirection.Ascending  => sorted
+          case SortDirection.Descending => sorted.reverse
 
   /** The rows the widget is currently showing: filtered, sorted, and windowed to the current page — what a selection
     * indexes.
@@ -518,10 +544,30 @@ final case class DataTable[K](
   def rowAt(area: Rect, y: Int, state: DataTableState[K]): Option[Int] =
     val footerRows = if footer.isDefined && area.height > 1 then 1 else 0
     val bodyRow    = y - area.y - 1
-    val index      = state.offset + bodyRow
+    val view       = visibleRows(state)
+    val index      =
+      if !multiLine then state.offset + bodyRow
+      else
+        // walk the records from the top of the window, each as many rows tall as it is
+        var record = state.offset
+        var top    = 0
+        while record < view.size && top + heightOf(view(record)) <= bodyRow do
+          top += heightOf(view(record))
+          record += 1
+        record
     Option
       .when(!area.isEmpty && bodyRow >= 0 && y < area.bottom - footerRows)(index)
-      .filter(_ < visibleRows(state).size)
+      .filter(_ < view.size)
+
+  /** How many rows `row` takes: one, or under [[DataTableOptions.multiLine]] the line count of its tallest cell. */
+  private def heightOf(row: KeyedRow[K]): Int =
+    if !multiLine then 1 else row.cells.iterator.map(cell => cell.count(_ == '\n') + 1).maxOption.getOrElse(1)
+
+  /** The heights of `view`'s records, read one at a time as the scroll rule asks for them. */
+  private def heightsOf(records: Seq[KeyedRow[K]]): IndexedSeq[Int] =
+    new scala.collection.immutable.AbstractSeq[Int] with scala.collection.immutable.IndexedSeq[Int]:
+      def length: Int            = records.size
+      def apply(index: Int): Int = heightOf(records(index))
 
   def render(area: Rect, buffer: Buffer, state: DataTableState[K]): Unit =
     clampPage(state)
@@ -562,7 +608,9 @@ final case class DataTable[K](
     state.selected = selected
     // assigning `selected` clears the recorded key, so the anchor is written after it, from the resolved row
     state.selectedRowKey = selected.map(index => view(index).key)
-    state.offset = ScrollWindow.offsetFor(state.offset, selected, view.size, math.max(1, bodyHeight))
+    state.offset =
+      if multiLine then ScrollWindow.offsetForItems(state.offset, selected, heightsOf(view), math.max(1, bodyHeight))
+      else ScrollWindow.offsetFor(state.offset, selected, view.size, math.max(1, bodyHeight))
 
   /** Paints the reconciled window of body rows that fits; layout and state repair belong to [[render]]. */
   private def renderBody(
@@ -577,17 +625,37 @@ final case class DataTable[K](
     val selected = state.selected
     val padding  = " ".repeat(symbolWidth)
     val cursor   = state.selectedColumn
-    view.slice(state.offset, state.offset + bodyHeight).zipWithIndex.foreach { (keyed, row) =>
-      val cells      = keyed.cells
-      val index      = state.offset + row
-      val isSelected = selected.contains(index)
-      val rowStyle   = if isSelected then style.patch(highlightStyle) else style
-      val y          = area.y + 1 + row
-      if symbolWidth > 0 then
-        val prefix = if isSelected then highlightSymbol else padding
-        buffer.setString(area.x, y, CharWidth.substringByWidth(prefix, symbolWidth), rowStyle)
-      renderRow(buffer, segments, cells, y, cursorStyle(rowStyle, isSelected, cursor, _), Some(cells))
-    }
+    if !multiLine then
+      view.slice(state.offset, state.offset + bodyHeight).zipWithIndex.foreach { (keyed, row) =>
+        val cells      = keyed.cells
+        val index      = state.offset + row
+        val isSelected = selected.contains(index)
+        val rowStyle   = if isSelected then style.patch(highlightStyle) else style
+        val y          = area.y + 1 + row
+        if symbolWidth > 0 then
+          val prefix = if isSelected then highlightSymbol else padding
+          buffer.setString(area.x, y, CharWidth.substringByWidth(prefix, symbolWidth), rowStyle)
+        renderRow(buffer, segments, cells, y, cursorStyle(rowStyle, isSelected, cursor, _), Some(cells))
+      }
+    else
+      // each record takes as many rows as its tallest cell, the last one on screen clipped at the body's bottom
+      val bottom = area.y + 1 + bodyHeight
+      var index  = state.offset
+      var y      = area.y + 1
+      while index < view.size && y < bottom do
+        val cells      = view(index).cells
+        val lines      = cells.map(_.split('\n'))
+        val isSelected = selected.contains(index)
+        val rowStyle   = if isSelected then style.patch(highlightStyle) else style
+        (0 until heightOf(view(index))).takeWhile(line => y + line < bottom).foreach { line =>
+          if symbolWidth > 0 then
+            val prefix = if isSelected && line == 0 then highlightSymbol else padding
+            buffer.setString(area.x, y + line, CharWidth.substringByWidth(prefix, symbolWidth), rowStyle)
+          val shown = lines.map(_.lift(line).getOrElse(""))
+          renderRow(buffer, segments, shown, y + line, cursorStyle(rowStyle, isSelected, cursor, _), Some(cells))
+        }
+        y += heightOf(view(index))
+        index += 1
 
   private def renderHeader(buffer: Buffer, segments: Seq[Rect], state: DataTableState[K]): Unit =
     columns.zipWithIndex.foreach { (title, index) =>
