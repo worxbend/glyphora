@@ -212,6 +212,11 @@ object RenderThread:
     /** A queue observation, not the approximate depth counter: concurrent enqueue also wakes the backend. */
     private[runtime] def hasPending: Boolean = !pending.isEmpty
 
+    /** Nothing queued and nothing reserved: no callback waiting to run here, and no `Async` work, delayed or repeating
+      * timer still holding a slot to deliver into this loop. What a print run's `awaitIdle` waits for.
+      */
+    private[tui] def isIdle: Boolean = monitor.synchronized(admitted == 0) && pending.isEmpty
+
     /** Takes the next waiting body, or `null` when there is none, keeping the depth count in step. */
     private def take(): () => Unit = monitor.synchronized {
       val task = pending.poll()

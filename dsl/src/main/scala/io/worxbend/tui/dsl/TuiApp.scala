@@ -683,7 +683,7 @@ trait TuiApp:
     */
   private def runPrinting(policy: NonInteractivePolicy, target: PrintTarget): Either[RunnerError, Unit] =
     val printer = FramePrinter(policy, target.colors, target.write)
-    val backend = PrintBackend(target.size, printer.frame, () => quit())
+    val backend = PrintBackend(target.size, printer.frame, () => quit(), policy.idleTimeout)
     val result  = runWith(backend)
     printer.finish()
     result
