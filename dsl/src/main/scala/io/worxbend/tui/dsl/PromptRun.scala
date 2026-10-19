@@ -30,15 +30,16 @@ private[dsl] object PromptRun:
       check: Check = NoCheck,
   ): PromptOutcome =
     session.resolve() match
-      case PromptSession.Shape.Scripted(answers)               => scripted(session, answers, steps, check)
-      case PromptSession.Shape.Plain(plain)                    => plainly(session, plain, steps, check)
-      case PromptSession.Shape.Terminal(backend, theme, plain) =>
+      case PromptSession.Shape.Scripted(answers)                    => scripted(session, answers, steps, check)
+      case PromptSession.Shape.Plain(plain)                         => plainly(session, plain, steps, check)
+      case PromptSession.Shape.Terminal(backend, theme, plain, ran) =>
         val app = PromptApp(backend, theme, steps, navigation, check)
         app.runWith(backend) match
           case Left(RunnerError.Backend(_, _))        => plainly(session, plain(), steps, check)
           case Left(RunnerError.Handler(error))       => throw error
           case Left(RunnerError.QueuedTask(failures)) => throw failures.first
           case Right(())                              =>
+            ran()
             app.summaries.foreach(session.record)
             app.outcome
 

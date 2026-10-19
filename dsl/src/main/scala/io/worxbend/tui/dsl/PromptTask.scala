@@ -63,9 +63,9 @@ private[dsl] object PromptTask:
       detail: A => String,
   ): Option[A] =
     session.resolve() match
-      case PromptSession.Shape.Scripted(_)                     => inLine(session, label, work, detail, None)
-      case PromptSession.Shape.Plain(plain)                    => inLine(session, label, work, detail, Some(plain))
-      case PromptSession.Shape.Terminal(backend, theme, plain) =>
+      case PromptSession.Shape.Scripted(_)                          => inLine(session, label, work, detail, None)
+      case PromptSession.Shape.Plain(plain)                         => inLine(session, label, work, detail, Some(plain))
+      case PromptSession.Shape.Terminal(backend, theme, plain, ran) =>
         val app = TaskApp(backend, theme, label, rows, body, work, detail)
         app.runWith(backend) match
           case Left(RunnerError.Backend(_, _))        =>
@@ -77,6 +77,7 @@ private[dsl] object PromptTask:
           case Left(RunnerError.Handler(error))       => throw error
           case Left(RunnerError.QueuedTask(failures)) => throw failures.first
           case Right(())                              =>
+            ran()
             session.record(app.summary)
             if app.outcome.isEmpty then app.awaitCancelled(CancelJoinBound)
             app.outcome match

@@ -143,6 +143,11 @@ assert(session.transcript == Seq("? Name alpha"))
 To drive the interactive prompt itself, run it on a `HeadlessBackend` under
 [`Pilot`](./testing) with `PromptSession.on(backend)` and send it keys.
 
+Each terminal prompt is a one-shot app on a backend of its own, but the terminal is asked
+about its capabilities only once per process: the first prompt probes, and every later
+prompt opens its backend with that answer (`JLine3Backend.create(knownCapabilities = …)`),
+so a run of ten questions costs one probe round trip, not ten.
+
 ## Without a terminal
 
 When there is nothing to draw on, prompts degrade to plain line-based questions instead
