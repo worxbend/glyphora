@@ -181,7 +181,7 @@ final class ChromeElementsPilotSpec extends AnyFunSuite with PilotFixture:
     layers(column(text("desktop " * 5), text("base layer " * 3)), windowStack(windows*))
 
   test("window: dragging the title moves it 5 cells, dragging the grip resizes it"):
-    val notes = WindowState(2, 1, 16, 5)
+    val notes = WindowStack().window(2, 1, 16, 5)
     val pilot = startApp(Size(40, 12))(desk(window("Notes", notes)(text("alpha"))))
     assert(pilot.screenLines(1).drop(2).startsWith("┌ Notes "))
     pilot.drag(5, 1, 10, 1).waitForIdle()
@@ -192,8 +192,8 @@ final class ChromeElementsPilotSpec extends AnyFunSuite with PilotFixture:
     quitApp(pilot)
 
   test("window: two windows overlap; a click on the one beneath brings it to the front"):
-    val back  = WindowState(2, 1, 18, 6)
-    val front = WindowState(10, 3, 18, 6)
+    val back  = WindowStack().window(2, 1, 18, 6)
+    val front = WindowStack().window(10, 3, 18, 6)
     val pilot = startApp(Size(40, 12)) {
       desk(window("Back", back)(text("back window")), window("Front", front)(text("front window")))
     }
@@ -204,7 +204,7 @@ final class ChromeElementsPilotSpec extends AnyFunSuite with PilotFixture:
     quitApp(pilot)
 
   test("window: Alt+M then the arrows move it, Alt+R then the arrows resize it, Enter and Esc leave the mode"):
-    val panel = WindowState(2, 1, 16, 5)
+    val panel = WindowStack().window(2, 1, 16, 5)
     val pilot = startApp(Size(40, 12))(desk(window("Tools", panel)(button("ok")(()))))
     pilot.press("alt+m").waitForIdle()
     assert(panel.mode == WindowMode.Moving)

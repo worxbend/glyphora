@@ -2,8 +2,6 @@ package io.worxbend.tui.widgets
 
 import io.worxbend.tui.core.{Buffer, Line, Position, Rect, StatefulWidget, Style, VersionedState}
 
-import java.util.concurrent.atomic.AtomicLong
-
 /** What the keyboard does to a [[Window]]: nothing (`Normal`), or — in the keyboard arrange mode — move it or resize it
   * with the arrows.
   */
@@ -14,10 +12,19 @@ enum WindowMode:
   * area's top-left), how big it is, its stacking order `z` (larger draws on top), its arrange mode, and the press a
   * pointer drag started from.
   *
+  * Built by [[WindowStack.window]]: [[raise]] draws from its stack's counter, so a window raised later sits above any
+  * window of the same stack raised earlier, and two stacks — two apps, two test suites in one JVM — never share one.
+  *
   * Render-thread-only and `Versioned`: every mutation raises [[version]], which is how a running app learns it owes a
-  * frame. [[raise]] draws from one process-wide counter, so any window raised later sits above any raised earlier.
+  * frame.
   */
-final class WindowState(initialX: Int, initialY: Int, initialWidth: Int, initialHeight: Int) extends VersionedState:
+final class WindowState private[widgets] (
+    stack: WindowStack,
+    initialX: Int,
+    initialY: Int,
+    initialWidth: Int,
+    initialHeight: Int,
+) extends VersionedState:
 
   private var xValue: Int        = initialX
   private var yValue: Int        = initialY
@@ -42,9 +49,9 @@ final class WindowState(initialX: Int, initialY: Int, initialWidth: Int, initial
     modeValue = value
     touch()
 
-  /** Puts this window above every window raised before it. */
+  /** Puts this window above every window of its stack raised before it. */
   def raise(): Unit =
-    zValue = WindowState.order.incrementAndGet()
+    zValue = stack.nextOrder()
     touch()
 
   /** Moves the window by `dx` columns and `dy` rows. */
@@ -95,10 +102,20 @@ object WindowState:
   val MinWidth: Int  = 8
   val MinHeight: Int = 3
 
-  private val order: AtomicLong = AtomicLong(0L)
+/** The caller-owned stacking order of a set of floating windows: the counter each [[WindowState.raise]] draws its `z`
+  * from. Keep one per set of windows — usually one per `windowStack` — in a field, and build its windows with
+  * [[window]]. Render-thread-only, like the windows themselves.
+  */
+final class WindowStack:
 
-  /** A window at `(x, y)` inside its stack's area, `width` x `height` cells. */
-  def apply(x: Int, y: Int, width: Int, height: Int): WindowState = new WindowState(x, y, width, height)
+  private var order: Long = 0L
+
+  /** A window of this stack at `(x, y)` inside the stack's area, `width` x `height` cells. */
+  def window(x: Int, y: Int, width: Int, height: Int): WindowState = new WindowState(this, x, y, width, height)
+
+  private[widgets] def nextOrder(): Long =
+    order += 1
+    order
 
 /** A floating window's frame: a bordered box with ` title ` on its top border — followed by `· move` or `· resize`
   * while the keyboard arrange mode is on — and a `◢` resize grip in its bottom-right corner. The content goes in

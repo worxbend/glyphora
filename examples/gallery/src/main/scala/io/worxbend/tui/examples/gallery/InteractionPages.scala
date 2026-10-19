@@ -133,9 +133,10 @@ object InteractionPages:
   def windows(): Vector[GalleryPage] =
     val family = "Dialogs & windows"
     val choice = Signal(0)
-    val notes  = WindowState(2, 1, 26, 6)
-    val tools  = WindowState(16, 4, 24, 6)
-    val single = WindowState(4, 1, 30, 7)
+    val desk   = WindowStack()
+    val notes  = desk.window(2, 1, 26, 6)
+    val tools  = desk.window(16, 4, 24, 6)
+    val single = WindowStack().window(4, 1, 30, 7)
     Vector(
       page("dialog", family, "a centred box with a message and buttons")(dialog("Saved", "Your changes were written.")),
       page("confirmDialog", family, "a dialog that answers its own keys")(

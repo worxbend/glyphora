@@ -222,7 +222,7 @@ final class VersionedStatesSpec extends AnyFunSuite:
       "move"                 -> (_.move(1, 3)),
       "menu.selected ="      -> (_.menu.selected = Some(0)),
     ),
-    row("WindowState", WindowState(0, 0, 10, 4))(
+    row("WindowState", WindowStack().window(0, 0, 10, 4))(
       "mode ="               -> (_.mode = WindowMode.Moving),
       "raise"                -> (_.raise()),
       "moveBy"               -> (_.moveBy(1, 1)),
