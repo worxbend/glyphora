@@ -268,6 +268,12 @@ jobs:
         env:
           EXAMPLE: ${{ matrix.example }}
         run: python3 scripts/ci-examples.py test --example "$EXAMPLE"
+      # The screenshots the docs show are rendered from the gallery's pages, so a change that moves a pixel of one
+      # has to commit the new picture with it: regenerate them and fail on any difference.
+      - name: Gallery screenshots match the code
+        if: matrix.example == 'gallery'
+        timeout-minutes: 10
+        run: bash scripts/render-gallery.sh --check
 
   native-image:
     name: Native images
