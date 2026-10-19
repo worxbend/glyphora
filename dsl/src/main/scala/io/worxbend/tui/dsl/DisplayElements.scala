@@ -396,10 +396,42 @@ final case class WidgetElement(
     wrapped: Widget,
     rows: Option[Int] = None,
     props: ElementProps = ElementProps(),
+    search: Option[w.SearchState] = None,
 ) extends Element:
   type Self = WidgetElement
-  override def debugName: String = "widget"
-  def widget: Widget             = wrapped
+  override def debugName: String                          = "widget"
+  override private[dsl] def watchedStates: Seq[Versioned] = search.toSeq
+  def widget: Widget                                      = search.fold(wrapped)(searchedWith)
+
+  /** Searches what the widget draws for `state`'s query — `markdown(source).searchable(state)` is the case this is for
+    * — highlighting every match by restyling the cells already drawn, so a match inside a table cell keeps the table's
+    * column alignment. Inside a `scrollView` the whole widget is searched, not just the window, and the view scrolls to
+    * the current match when the query changes or steps. The node becomes focusable; `n`/`N` step through the matches
+    * while it is focused, and the keys it does not use (the arrows, Page keys) bubble to the enclosing scroll view.
+    * Pair it with a [[searchBar]] over the same state. See [[w.SearchState]].
+    */
+  def searchable(state: w.SearchState): WidgetElement =
+    copy(search = Some(state), props = props.copy(focusable = true))
+
+  private def searchedWith(found: w.SearchState): Widget =
+    val view = w.Searchable(wrapped)
+    new Widget with Measured:
+      def render(area: Rect, buffer: Buffer): Unit   =
+        view.render(area, buffer, found)
+        // keyed on the search's move count, so the enclosing scroll view acts once per query change or step and a
+        // reader who scrolls away from the match is not dragged back
+        found.currentMatch.foreach { hit =>
+          val at = Rect(area.x + hit.column, area.y + hit.row, hit.width, 1)
+          RevealProbe.visible(s"search:${System.identityHashCode(found)}:${found.navigation}", at)
+        }
+      override def heightAt(width: Int): Option[Int] = wrapped match
+        case measured: Measured => measured.heightAt(width)
+        case _                  => None
+      override def widthAt(height: Int): Option[Int] = wrapped match
+        case measured: Measured => measured.widthAt(height)
+        case _                  => None
+
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler] = search.map(found => searchSteps(Some(found)))
 
   /** This widget rebuilt to claim exactly `count` rows of height, taking the container's full width.
     *

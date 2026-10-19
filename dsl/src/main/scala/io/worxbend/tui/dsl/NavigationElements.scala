@@ -12,6 +12,7 @@ import io.worxbend.tui.core.{
   Position,
   Rect,
   Size,
+  StatefulWidget,
   Style,
   Versioned,
   Widget,
@@ -118,11 +119,12 @@ final case class ScrollViewElement(
     state: w.ScrollViewState,
     followsFocus: Boolean = true,
     props: ElementProps = ElementProps(focusable = true),
+    search: Option[w.SearchState] = None,
 ) extends Element:
   type Self = ScrollViewElement
 
-  /** The caller-owned state this node paints, watched for writes made between frames. */
-  override private[dsl] def watchedStates: Seq[Versioned] = Seq(state)
+  /** The caller-owned states this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned] = Seq(state) ++ search
   override def debugName: String                          = "scrollView"
   override def children: Seq[Element]                     = Seq(content)
   def widget: Widget                                      =
@@ -141,7 +143,7 @@ final case class ScrollViewElement(
       content match
         case viewport: ScrollViewportElement => viewport.publishScreenArea(area)
         case _                               => ()
-      val view     = w.ScrollView(content.widget, rows)
+      val view     = searched(w.ScrollView(content.widget, rows))
       val portals  = PortalQueue.mark
       val requests = RevealRequests(followsFocus)
       RevealProbe.collecting(requests)(view.render(area, buffer, state))
@@ -154,7 +156,7 @@ final case class ScrollViewElement(
       requests: RevealRequests,
       area: Rect,
       buffer: io.worxbend.tui.core.Buffer,
-      view: w.ScrollView,
+      view: StatefulWidget[w.ScrollViewState],
       portals: Int,
   ): Unit =
     requests.chosen match
@@ -172,6 +174,18 @@ final case class ScrollViewElement(
             PortalQueue.rollback(portals)
             RevealProbe.collecting(RevealRequests(followsFocus))(view.render(area, buffer, state))
 
+  /** The view as drawn: plain, or searched for `search`'s query. */
+  private def searched(view: w.ScrollView): StatefulWidget[w.ScrollViewState] =
+    search.fold[StatefulWidget[w.ScrollViewState]](view)(found =>
+      (area, buffer, state) => view.render(area, buffer, state, found)
+    )
+
+  /** Searches the whole content for `state`'s query — below and above the fold, not just the window — highlighting
+    * every match and scrolling to the current one when the query changes; `n`/`N` step to the next/previous match while
+    * the view is focused. Pair it with a [[searchBar]] over the same state to type the query. See [[w.SearchState]].
+    */
+  def searchable(state: w.SearchState): ScrollViewElement = copy(search = Some(state))
+
   /** Whether this view scrolls to keep its focused child on screen — on by default. Moving focus with Tab onto a child
     * below or above the window scrolls just far enough to show it; turn it off for a view whose offset the app drives
     * itself.
@@ -182,11 +196,28 @@ final case class ScrollViewElement(
     copy(content = children.headOption.getOrElse(content))
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]            =
     Some(
-      scrollKeys(rows => state.scrollUp(rows), rows => state.scrollDown(rows))
+      searchSteps(search)
+        .orElse(scrollKeys(rows => state.scrollUp(rows), rows => state.scrollDown(rows)))
         .orElse(scrollJumpKeys(() => state.first(), () => state.last()))
     )
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler]        =
     Some(wheelScrolls(() => state.scrollUp(), () => state.scrollDown()))
+
+/** `n` / `N` step a searched view to its next / previous match — consumed only while a query is set, so a view with no
+  * search (or an empty one) lets the letters bubble to app bindings.
+  */
+private def searchSteps(search: Option[w.SearchState]): BuiltinKeyHandler =
+  event =>
+    search.exists { found =>
+      found.isActive && isPlainTyping(event) && (event.code match
+        case KeyCode.Char('n') =>
+          val _ = found.next()
+          true
+        case KeyCode.Char('N') =>
+          val _ = found.previous()
+          true
+        case _                 => false)
+    }
 
 /** A tab row plus the selected page (Textual's `TabbedContent`): Left/Right switch pages while focused. Only the active
   * page's focusables participate in the tab order.

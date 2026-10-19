@@ -319,20 +319,28 @@ final case class DataTableElement[K](
 final case class LogElement(
     state: w.LogState,
     props: ElementProps = ElementProps(focusable = true),
+    search: Option[w.SearchState] = None,
 ) extends Element:
   type Self = LogElement
 
-  /** The caller-owned state this node paints, watched for writes made between frames. */
-  override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
+  /** The caller-owned states this node paints, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state) ++ search
   override def debugName: String                                             = "log"
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some(wheelScrolls(() => state.scrollUp(), () => state.scrollDown()))
   def widget: Widget                                                         =
     val log = w.Log(props.style)
-    (area, buffer) => log.render(area, buffer, state)
-  private[dsl] def withProps(props: ElementProps): LogElement                = copy(props = props)
-  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
-    Some(scrollKeys(rows => state.scrollUp(rows), rows => state.scrollDown(rows)))
+    search match
+      case Some(found) => (area, buffer) => log.render(area, buffer, state, found)
+      case None        => (area, buffer) => log.render(area, buffer, state)
+
+  /** Searches every line the log holds for `state`'s query, highlighting the matches and scrolling to the current one;
+    * `n`/`N` step through them while focused. Pair it with a [[searchBar]] over the same state. See [[w.SearchState]].
+    */
+  def searchable(state: w.SearchState): LogElement                       = copy(search = Some(state))
+  private[dsl] def withProps(props: ElementProps): LogElement            = copy(props = props)
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler] =
+    Some(searchSteps(search).orElse(scrollKeys(rows => state.scrollUp(rows), rows => state.scrollDown(rows))))
 
 /** The items a [[LazyListElement]] built for one frame: item `from` onwards, in order. */
 private[dsl] final case class LazyWindow(from: Int, items: Vector[Element]):

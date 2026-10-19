@@ -320,6 +320,13 @@ private[dsl] trait ElementFactories:
   def input(state: w.TextInputState, placeholder: String = ""): InputElement =
     InputElement(state, placeholder)
 
+  /** The query field of a search over a caller-owned [[w.SearchState]] — create the state once outside `view` and hand
+    * the same one to the view it searches with `.searchable(state)`. Typing updates the search live, Enter /
+    * Shift+Enter step to the next / previous match, Esc clears. See [[SearchBarElement]].
+    */
+  def searchBar(state: w.SearchState, placeholder: String = "Search"): SearchBarElement =
+    SearchBarElement(state, placeholder)
+
   /** A labelled checkbox over a caller-owned `Signal`. The signal is read tracked, so any writer repaints it. */
   def checkbox(label: String, checked: Signal[Boolean])(using ReactiveScope): CheckboxElement =
     CheckboxElement(label, checked.get, checked.set)
