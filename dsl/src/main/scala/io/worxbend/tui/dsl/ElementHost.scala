@@ -191,14 +191,16 @@ final class ElementHost:
     */
   private[dsl] def decoratedTree: Option[Element] = lastTree
 
-  /** Delivers a key to the focused element and the ancestors it bubbles through.
+  /** Delivers a key to the focused element and the ancestors it bubbles through — after the capture phase, which offers
+    * it to the few nodes that take keys whatever holds focus (see [[Element.captureKeyHandler]]).
     *
     * `false` means nothing on screen consumed it and the decision is the host's. This method deliberately does not move
     * focus and does not quit: Tab traversal and Ctrl+C are policy, and policy belongs to whoever owns the loop — call
     * [[focusNext]] or [[focusPrevious]] from your own key handling if you want the usual meaning.
     */
   def dispatchKey(key: KeyEvent): Boolean =
-    lastTree.exists(EventRouter.dispatchKey(_, key)) || (lastTree.isDefined && groupArrow(key))
+    lastTree.exists(EventRouter.dispatchCapture(_, key)) || lastTree.exists(EventRouter.dispatchKey(_, key)) ||
+      (lastTree.isDefined && groupArrow(key))
 
   /** An unmodified arrow nobody on the focus path consumed moves focus inside the focused element's focus group. That
     * is the group's own behaviour rather than app policy, so it belongs here and an embedding host gets it too.

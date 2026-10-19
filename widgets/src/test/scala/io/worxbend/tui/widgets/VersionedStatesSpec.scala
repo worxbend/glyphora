@@ -199,6 +199,42 @@ final class VersionedStatesSpec extends AnyFunSuite:
       "expanded +="          -> (state => { val _ = state.expanded += Paths.get(".") }),
       "invalidate"           -> (_.invalidate()),
     ),
+    row("AccordionState", AccordionState())(
+      "open ="               -> (_.open = Some(1)),
+      "toggle"               -> (_.toggle(0)),
+    ),
+    row("WizardState", WizardState())(
+      "next"                 -> (_.next(3)),
+      "back"                 -> (_.back()),
+      "fail"                 -> (_.fail("no")),
+      "clearError"           -> (_.clearError()),
+    ),
+    row("TagInputState", TagInputState(Seq("a")))(
+      "tags ="               -> (_.tags = Seq("b")),
+      "commit"               -> (state => { state.input.setValue("c"); val _ = state.commit() }),
+      "removeLast"           -> (_.removeLast()),
+      "remove"               -> (_.remove(0)),
+      "input.insert"         -> (_.input.insert("x")),
+    ),
+    row("MenuBarState", MenuBarState(Some(0)))(
+      "openMenu"             -> (_.openMenu(1)),
+      "close"                -> (_.close()),
+      "move"                 -> (_.move(1, 3)),
+      "menu.selected ="      -> (_.menu.selected = Some(0)),
+    ),
+    row("WindowState", WindowState(0, 0, 10, 4))(
+      "mode ="               -> (_.mode = WindowMode.Moving),
+      "raise"                -> (_.raise()),
+      "moveBy"               -> (_.moveBy(1, 1)),
+      "resizeBy"             -> (_.resizeBy(1, 1)),
+      "startDrag"            -> (_.startDrag(io.worxbend.tui.core.Position(0, 0), resizing = false)),
+      "endDrag"              -> (_.endDrag()),
+    ),
+    row("ContextMenuState", ContextMenuState())(
+      "openAt"               -> (_.openAt(io.worxbend.tui.core.Position(1, 1))),
+      "close"                -> (_.close()),
+      "menu.selected ="      -> (_.menu.selected = Some(0)),
+    ),
   )
 
   private def register[S <: Versioned](entry: Row[S]): Unit =

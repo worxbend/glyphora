@@ -44,6 +44,24 @@ private[dsl] object EventRouter:
       case None if hasFocusable(root) => false
       case None                       => dispatchKeyDepthFirst(root, event)
 
+  /** Offers a key press to every live node's [[Element.captureKeyHandler]], in tree pre-order, before anything else
+    * sees it — `true` when one consumed it. Inert subtrees and disabled nodes are skipped. A decorator delegates its
+    * handler to the node it wraps, so each real node is offered the key once, however many wrappers it carries.
+    */
+  def dispatchCapture(root: Element, event: KeyEvent): Boolean =
+    val offered = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap[Element, java.lang.Boolean])
+    def unwrapped(element: Element): Element =
+      element match
+        case decorator: DecoratingElement => unwrapped(decorator.inner)
+        case other                        => other
+    def walk(element: Element): Boolean      =
+      if element.props.inert || element.props.isDisabled then false
+      else
+        val own = element.captureKeyHandler.isDefined && offered.add(unwrapped(element)) &&
+          element.captureKeyHandler.exists(_(event))
+        own || element.children.exists(walk)
+    walk(root)
+
   /** Whether this tree offers anything to focus, ignoring subtrees a layer above has made inert — those are exactly the
     * elements that are out of the tab order, so a modal's focusables are what counts while it is open.
     */
