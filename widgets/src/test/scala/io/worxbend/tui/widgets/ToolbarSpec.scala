@@ -36,3 +36,17 @@ final class ToolbarSpec extends AnyFunSuite:
   test("an empty area draws nothing"):
     val buffer = rendered(Toolbar(buttons), 4, 1)
     Toolbar(buttons).render(Rect(0, 0, 0, 1), buffer)
+
+  test("hidden lists the items the window leaves out, before and after it"):
+    assert(Toolbar(buttons).hidden(20) == Seq(2, 3))
+    assert(Toolbar(buttons, focus = Some(3)).hidden(20) == Seq(0, 1))
+    assert(Toolbar(buttons, focus = Some(2)).hidden(20) == Seq(0, 3))
+    assert(Toolbar(buttons).hidden(40).isEmpty)
+
+  test("ToolbarState opens, closes and toggles its overflow menu"):
+    val state = ToolbarState()
+    assert(!state.open)
+    state.toggle()
+    assert(state.open)
+    state.close()
+    assert(!state.open)

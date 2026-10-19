@@ -1226,13 +1226,16 @@ private[dsl] trait ElementFactories:
 
   /** A grid of the 256 xterm colours — the system sixteen, the 6×6×6 cube and the grey ramp — with a caption naming the
     * cursor's index and RGB value. Arrows move, Enter (or a click) chooses: the `Color.Indexed` lands in `state.chosen`
-    * and in `onSelect`. See [[w.ColorPicker]].
+    * and in `onSelect`. With `mode = ColorPickerMode.Rgb` three R/G/B fields sit beside the grid: Tab walks from the
+    * grid through them, digits fill the focused one, and Enter chooses their `Color.Rgb` once all three are in
+    * `0..255`. See [[w.ColorPicker]].
     */
   def colorPicker(
       state: w.ColorPickerState,
       onSelect: io.worxbend.tui.core.Color => Unit = _ => (),
+      mode: w.ColorPickerMode = w.ColorPickerMode.Palette,
   ): ColorPickerElement =
-    ColorPickerElement(state, onSelect)
+    ColorPickerElement(state, onSelect, mode)
 
   /** A scrollable `offset | hex | ASCII` dump of `bytes` with a selected byte the arrows move — a row per 16 bytes, the
     * selection kept on screen. `ArraySeq.unsafeWrapArray(array)` views an `Array[Byte]` without copying. See
@@ -1254,6 +1257,23 @@ private[dsl] trait ElementFactories:
     */
   def inspect[A](value: A)(using pretty: io.worxbend.tui.macros.Pretty[A], theme: Theme): InspectElement =
     InspectElement(pretty.describe(value, PrettyValueShape), theme.accent, theme.muted)
+
+  /** The collapsible form of `inspect(value)`: a focusable tree over a caller-owned [[w.InspectState]] that remembers
+    * which nodes are folded and which row is selected. Up/Down move, Enter/Space (or a click) fold and unfold the
+    * selected node, Right unfolds, Left folds or climbs to the parent. Keep the state in a field: it holds the folds
+    * between frames. See [[w.Inspect]].
+    */
+  def inspect[A](value: A, state: w.InspectState)(using
+      pretty: io.worxbend.tui.macros.Pretty[A],
+      theme: Theme,
+  ): InspectElement =
+    InspectElement(
+      pretty.describe(value, PrettyValueShape),
+      theme.accent,
+      theme.muted,
+      Some(state),
+      ElementProps(focusable = true),
+    )
 
   /** A scannable QR code for `text` — a URL, a pairing token — drawn two modules per cell in half blocks, dark on light
     * whatever the terminal's own background. Byte mode, the smallest version from 1 to 10 that fits at `ecc`; longer
@@ -1300,6 +1320,14 @@ private[dsl] trait ElementFactories:
     */
   def toolbar(buttons: Element*): FocusGroupElement =
     FocusGroupElement(ToolbarElement(buttons, gap = 1, divider = None))
+
+  /** [[toolbar]] with an overflow menu: when the row is too narrow, a click on the trailing `»` opens a popup — floated
+    * over everything through the frame root — holding the controls that did not fit; a click on one presses it and
+    * closes the popup, and a click outside or Esc closes it too. `state` is caller-owned and only remembers whether the
+    * popup is open. See [[w.ToolbarState]].
+    */
+  def toolbar(state: w.ToolbarState)(buttons: Element*): FocusGroupElement =
+    FocusGroupElement(ToolbarElement(buttons, gap = 1, divider = None, overflow = Some(state)))
 
   /** [[toolbar]] drawn as one segmented control — `[ Left ]│[ Center ]│[ Right ]` — for a set of related actions. */
   def buttonGroup(buttons: Element*): FocusGroupElement =

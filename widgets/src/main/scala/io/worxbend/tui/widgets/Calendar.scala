@@ -80,13 +80,36 @@ final case class Calendar(
     if !area.isEmpty then
       // prev/next-month navigation naturally produces month 0 and 13, and every other widget here clips rather than
       // throwing out of `render`; `YearMonth.of` would raise `DateTimeException`
-      val yearMonth = YearMonth.of(
-        math.max(Year.MIN_VALUE, math.min(Year.MAX_VALUE, year)),
-        math.max(1, math.min(12, month)),
-      )
+      val yearMonth = clampedMonth
       if showTitle then drawTitle(area, buffer, yearMonth)
       if showWeekdays then drawWeekdayHeader(area, buffer)
       drawDays(area, buffer, yearMonth)
+
+  /** The date drawn at column `x`, row `y` when this calendar is rendered into `area`, or `None` for a header, the gap
+    * between two days, a cell outside the area, or an empty slot. A surrounding day answers only while
+    * `showSurroundingDays` draws it. This is the hit test a click on the grid goes through: it uses the same geometry
+    * [[render]] does, so a click lands on the day it was drawn over.
+    */
+  def dateAt(area: Rect, x: Int, y: Int): Option[LocalDate] =
+    val row     = y - gridTop(area)
+    val column  = x - area.x
+    val dayLeft = x - column                                  % SlotStride
+    val onDay   = column >= 0 && column < GridWidth && column % SlotStride < DayColumnWidth
+    if area.isEmpty || !onDay || row < 0 || y >= area.bottom || dayLeft + DayColumnWidth > area.right then None
+    else
+      val first   = clampedMonth.atDay(1)
+      val slot    = row * DaysPerWeek + column / SlotStride
+      val inMonth = slot >= columnOf(first) && slot < columnOf(first) + clampedMonth.lengthOfMonth
+      if inMonth || (showSurroundingDays && slot < filledSlots(first)) then dateAt(first, slot - columnOf(first))
+      else None
+
+  /** The month named by `year` and `month`, clamped into what `YearMonth` accepts. */
+  private def clampedMonth: YearMonth =
+    YearMonth.of(math.max(Year.MIN_VALUE, math.min(Year.MAX_VALUE, year)), math.max(1, math.min(12, month)))
+
+  /** Slots the grid fills when surrounding days are shown: every slot of every week row the month touches. */
+  private def filledSlots(first: LocalDate): Int =
+    math.ceil((columnOf(first) + clampedMonth.lengthOfMonth) / DaysPerWeek.toDouble).toInt * DaysPerWeek
 
   private def drawTitle(area: Rect, buffer: Buffer, yearMonth: YearMonth): Unit =
     val title  = s"${yearMonth.getMonth.getDisplayName(JTextStyle.FULL, locale)} ${yearMonth.getYear}"

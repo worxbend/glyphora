@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Color, Constraint, Flex, Modifiers, Style}
+import io.worxbend.tui.core.{Color, Constraint, Flex, Modifiers, Rect, Style}
 import io.worxbend.tui.testsupport.BufferAssertions.{rendered, trimmedLines}
 
 import org.scalatest.funsuite.AnyFunSuite
@@ -350,3 +350,15 @@ final class DataTableSpec extends AnyFunSuite:
     val plain   = rendered(table, DataTableState(), 15, 4)
     val spelled = rendered(withOptions(table)(_.copy(cellStyle = (_, _) => Style.Default)), DataTableState(), 15, 4)
     assert(plain.diff(spelled).isEmpty)
+
+  test("rowAt maps a body row back to its index in the visible rows, past the scroll offset"):
+    val state = DataTableState()
+    val area  = Rect(0, 2, 20, 3) // header + two body rows
+    val _     = rendered(table, state, 20, 3)
+    assert(table.rowAt(area, 2, state).isEmpty) // the header
+    assert(table.rowAt(area, 3, state).contains(0))
+    assert(table.rowAt(area, 4, state).contains(1))
+    assert(table.rowAt(area, 5, state).isEmpty) // below the area
+    state.offset = 1
+    assert(table.rowAt(area, 4, state).contains(2))
+    assert(table.rowAt(Rect(0, 0, 0, 0), 0, state).isEmpty)

@@ -10,6 +10,7 @@ private[dsl] final case class PointerRoles(
     selectable: Boolean,
     drag: Option[DragPayload] = None,
     drop: Option[DropTarget] = None,
+    dragSelects: Boolean = false,
 ):
   def isEmpty: Boolean = !selectable && drag.isEmpty && drop.isEmpty
 
@@ -21,7 +22,8 @@ private[dsl] object PointerRoles:
   *
   * '''Routing.''' A gesture in progress takes the events that continue it before any element sees them ([[intercept]]);
   * a gesture starts from a press only once the elements have had it and declined it ([[afterDelivery]]), so a button
-  * inside a selectable panel still clicks.
+  * inside a selectable panel still clicks. The one exception is a node whose roles say `dragSelects` (a `dataTable`): a
+  * press it consumed arms a selection that starts once a drag covers [[TextSelection.DragThreshold]] cells.
   *
   * '''Composition.''' Each node with a role is recorded into the host's one [[NodeBounds]] recorder by its
   * [[BoundsElement]], and that wrapper calls [[painted]] straight after the node paints — the frame is composed with
@@ -56,6 +58,13 @@ private[dsl] final class PointerGestures(val recorder: NodeBounds):
           selection.release(event.position, AppClipboard.current)
           Some(true)
         case _                   => None
+    else if selection.isArmed then
+      event.kind match
+        case MouseEventKind.Drag if selection.dragArmed(event.position) => Some(true)
+        case MouseEventKind.Up                                          =>
+          selection.disarm()
+          None
+        case _                                                          => None
     else None
 
   /** Starts a gesture from a press the elements declined, and clears the selection on any press. `true` when the next
@@ -67,7 +76,14 @@ private[dsl] final class PointerGestures(val recorder: NodeBounds):
       val cleared = selection.clear()
       // a draggable node arms a drag whether or not its own press handler took the press: it starts only on motion
       if event.button == MouseButton.Left && drag.arm(event, recorder.current) then cleared
-      else if consumed || event.button != MouseButton.Left || !selection.enabled then cleared
+      else if event.button != MouseButton.Left || !selection.enabled then cleared
+      else if consumed then
+        // a node that takes the press for itself but still selects on a drag arms the selection instead of starting it
+        recorder.current.innermostAt(event.position)(_.selectable).filter(_.roles.dragSelects) match
+          case Some(entry) =>
+            selection.arm(entry, event.position)
+            cleared
+          case None        => cleared
       else
         recorder.current.innermostAt(event.position)(_.selectable) match
           case Some(entry) =>

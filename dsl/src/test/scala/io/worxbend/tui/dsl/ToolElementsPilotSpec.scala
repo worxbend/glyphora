@@ -13,8 +13,8 @@ import java.time.{LocalDate, LocalTime}
   */
 final class ToolElementsPilotSpec extends AnyFunSuite with PilotFixture:
 
-  private def startApp(view0: ReactiveScope ?=> Element): Pilot =
-    val backend = HeadlessBackend(Size(40, 20))
+  private def startApp(view0: ReactiveScope ?=> Element, width: Int = 40): Pilot =
+    val backend = HeadlessBackend(Size(width, 20))
     val testApp = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
       def view(using ReactiveScope, Theme): Element = view0
@@ -39,6 +39,30 @@ final class ToolElementsPilotSpec extends AnyFunSuite with PilotFixture:
     assert(pilot.screenText.contains("October 2026"))
     quitApp(pilot)
 
+  test("datePicker: min/max keep keys and clicks inside the range"):
+    val state  = DatePickerState(
+      LocalDate.of(2026, 7, 14),
+      () => LocalDate.of(2026, 10, 19),
+      min = Some(LocalDate.of(2026, 7, 10)),
+      max = Some(LocalDate.of(2026, 7, 20)),
+    )
+    var chosen = Option.empty[LocalDate]
+    val pilot  = startApp(datePicker(state, date => chosen = Some(date)))
+    pilot.pressKey(KeyCode.Up).pressKey(KeyCode.Up).waitForIdle()
+    assert(state.cursor == LocalDate.of(2026, 7, 10))
+    pilot.pressKey(KeyCode.PageDown).waitForIdle()
+    assert(state.cursor == LocalDate.of(2026, 7, 20))
+    assert(pilot.screenText.contains("July 2026"))
+    // the 21st (second slot, fourth week row: x = 3, y = 5) is out of range — a click on it does nothing
+    pilot.click(3, 5).waitForIdle()
+    assert(chosen.isEmpty)
+    assert(state.cursor == LocalDate.of(2026, 7, 20))
+    // the 15th (third slot, third week row: x = 6, y = 4) is in range — a click chooses it
+    pilot.click(6, 4).waitForIdle()
+    assert(state.cursor == LocalDate.of(2026, 7, 15))
+    assert(chosen.contains(LocalDate.of(2026, 7, 15)))
+    quitApp(pilot)
+
   test("timePicker: 23:59 plus a minute wraps to 00:00"):
     val state = TimePickerState(LocalTime.of(23, 59), withSeconds = false)
     val pilot = startApp(timePicker(state))
@@ -46,6 +70,14 @@ final class ToolElementsPilotSpec extends AnyFunSuite with PilotFixture:
     pilot.pressKey(KeyCode.Right).pressKey(KeyCode.Up).waitForIdle()
     assert(state.time == LocalTime.MIDNIGHT)
     assert(pilot.screenText.contains("00:00"))
+    quitApp(pilot)
+
+  test("timePicker: typed digits fill the focused field and move on"):
+    val state = TimePickerState(LocalTime.of(0, 0), withSeconds = false)
+    val pilot = startApp(timePicker(state))
+    pilot.typeText("0930").waitForIdle()
+    assert(state.time == LocalTime.of(9, 30))
+    assert(pilot.screenText.contains("09:30"))
     quitApp(pilot)
 
   test("rangeSlider: Tab moves to the upper thumb, the thumbs cannot cross, Tab from the top leaves"):
@@ -71,6 +103,53 @@ final class ToolElementsPilotSpec extends AnyFunSuite with PilotFixture:
     pilot.pressKey(KeyCode.Enter).waitForIdle()
     assert(chosen.contains(Color.Indexed(196)))
     assert(pilot.screenText.contains("196  #ff0000"))
+    quitApp(pilot)
+
+  test("colorPicker in Rgb mode: Tab walks the fields, digits fill them, Enter emits Color.Rgb only when valid"):
+    val state  = ColorPickerState()
+    var chosen = Option.empty[Color]
+    val other  = TextInputState()
+    val pilot  =
+      startApp(column(colorPicker(state, color => chosen = Some(color), ColorPickerMode.Rgb), input(other)), width = 50)
+    pilot.pressKey(KeyCode.Tab).typeText("300").pressKey(KeyCode.Enter).waitForIdle()
+    assert(chosen.isEmpty)                                  // 300 is out of range
+    assert(pilot.screenText.contains("R [300]"))
+    pilot.pressKey(KeyCode.Backspace).pressKey(KeyCode.Backspace).pressKey(KeyCode.Backspace).typeText("255")
+    pilot.pressKey(KeyCode.Tab).typeText("128").pressKey(KeyCode.Tab).pressKey(KeyCode.Up).waitForIdle()
+    pilot.pressKey(KeyCode.Enter).waitForIdle()
+    assert(chosen.contains(Color.Rgb(255, 128, 1)))
+    pilot.pressKey(KeyCode.Tab).typeText("x").waitForIdle() // Tab from the blue field leaves the picker
+    assert(other.value == "x")
+    pilot.click(40, 2).waitForIdle()                        // a click on the blue field gives it the keyboard
+    assert(state.field == ColorPickerField.Channel(ColorChannel.Blue))
+    quitApp(pilot)
+
+  test("inspect with a state: Enter, Left/Right and a click fold and unfold nodes"):
+    val value = InspectConfig(
+      "glyphora",
+      InspectMode.Prod,
+      InspectDatabase("db.internal", 5432, List("replica-a", "replica-b")),
+      Map("beta" -> true),
+      None,
+    )
+    val state = InspectState()
+    val pilot = startApp(inspect(value, state), width = 60)
+    assert(pilot.screenText.contains("replica-a"))
+    pilot.pressKey(KeyCode.Down).pressKey(KeyCode.Down).pressKey(KeyCode.Down).waitForIdle() // database
+    assert(state.selected.contains(Vector(2)))
+    pilot.pressKey(KeyCode.Enter).waitForIdle()
+    assert(state.isCollapsed(Vector(2)))
+    assert(!pilot.screenText.contains("replica-a"))
+    assert(pilot.screenText.contains("database: InspectDatabase …"))
+    pilot.pressKey(KeyCode.Right).waitForIdle()
+    assert(pilot.screenText.contains("replica-a"))
+    pilot.pressKey(KeyCode.Left).waitForIdle()
+    assert(!pilot.screenText.contains("replica-a"))
+    pilot.pressKey(KeyCode.Left).waitForIdle() // Left on a folded node goes to its parent
+    assert(state.selected.contains(Vector()))
+    pilot.click(5, 3).waitForIdle()            // the database row: a click selects it and unfolds it
+    assert(state.selected.contains(Vector(2)))
+    assert(pilot.screenText.contains("replica-a"))
     quitApp(pilot)
 
   test("hexViewer: Down moves the selection a row and the view scrolls with it"):

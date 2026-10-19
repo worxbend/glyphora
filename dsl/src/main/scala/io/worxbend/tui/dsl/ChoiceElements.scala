@@ -454,8 +454,9 @@ final case class ConfirmDialogElement(
 
 /** An interactive month grid over a caller-owned [[w.DatePickerState]]. While focused, Left/Right move the cursor a day
   * and Up/Down a week — across month and year ends, so the grid follows — PageUp/PageDown move it a month, `t` jumps to
-  * today, and Enter or Space chooses the cursor's date and hands it to `onSelect`. The cursor wears the focus style;
-  * the chosen date, once the cursor leaves it, is underlined.
+  * today, and Enter or Space chooses the cursor's date and hands it to `onSelect`; a click on a day chooses that day.
+  * The cursor wears the focus style; the chosen date, once the cursor leaves it, is underlined. Days outside the
+  * state's `min`/`max` are dimmed, and neither the keys nor a click can reach them.
   */
 final case class DatePickerElement(
     state: w.DatePickerState,
@@ -488,6 +489,18 @@ final case class DatePickerElement(
       }
     )
 
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
+    Some { (event, area) =>
+      val hit = w.DatePicker().dateAt(area, event.position.x, event.position.y, state)
+      (event.kind, hit) match
+        case (MouseEventKind.Down, Some(date)) =>
+          state.cursor = date
+          state.select()
+          onSelect(date)
+          true
+        case _                                 => false
+    }
+
   /** The grid a [[w.Calendar]] draws with both headers: seven two-column days with one-column gaps, and a title row, a
     * weekday row and up to six weeks.
     */
@@ -497,7 +510,8 @@ final case class DatePickerElement(
 
 /** A one-row `hh:mm:ss` field over a caller-owned [[w.TimePickerState]]. While focused, Left/Right move between the
   * hour, minute and second fields and Up/Down step the time by the focused field's unit, wrapping past midnight — one
-  * minute up from `23:59` is `00:00`. The focused field wears the focus style.
+  * minute up from `23:59` is `00:00`. Digits type into the focused field: two make its value (clamped to the field's
+  * maximum) and move focus on, so `0930` sets `09:30`. The focused field wears the focus style.
   */
 final case class TimePickerElement(
     state: w.TimePickerState,
@@ -521,6 +535,8 @@ final case class TimePickerElement(
         case KeyEvent(KeyCode.Right, _) => state.nextField()
         case KeyEvent(KeyCode.Up, _)    => state.increment()
         case KeyEvent(KeyCode.Down, _)  => state.decrement()
+        case KeyEvent(KeyCode.Char(digit), mods) if digit >= '0' && digit <= '9' && mods.isEmpty =>
+          state.typeDigit(digit - '0')
       }
     )
 
@@ -581,46 +597,84 @@ final case class RangeSliderElement(
 /** A 256-colour palette grid over a caller-owned [[w.ColorPickerState]]. While focused, the arrows move the cursor
   * swatch and Enter or Space chooses it, recording it in `state.chosen` and handing the `Color.Indexed` to `onSelect`.
   * A click on a swatch moves the cursor there and chooses it. Claims the 36×17 box the grid and its caption measure.
+  *
+  * In [[w.ColorPickerMode.Rgb]] the R/G/B fields beside the grid take part too: Tab moves the keyboard from the grid
+  * through red, green and blue and Shift+Tab back — from the blue field Tab (and from the grid Shift+Tab) is left
+  * unconsumed, so focus moves on and nobody is trapped. On a field, digits type, Backspace deletes, Up/Down step the
+  * value, and Enter chooses the fields' `Color.Rgb` — only while all three are in `0..255`. A click on a swatch chooses
+  * its RGB value; a click on a field gives it the keyboard.
   */
 final case class ColorPickerElement(
     state: w.ColorPickerState,
     onSelect: Color => Unit,
+    mode: w.ColorPickerMode = w.ColorPickerMode.Palette,
     props: ElementProps = ElementProps(focusable = true),
 ) extends Element:
   type Self = ColorPickerElement
 
   /** The caller-owned state this node paints, watched for writes made between frames. */
-  override private[dsl] def watchedStates: Seq[Versioned]                    = Seq(state)
-  override def debugName: String                                             = "colorPicker"
-  private def picker: w.ColorPicker                                          =
-    w.ColorPicker(style = props.style, markerStyle = Style.Default.bold.patch(cursorCue(props)))
-  def widget: Widget                                                         =
+  override private[dsl] def watchedStates: Seq[Versioned]                = Seq(state)
+  override def debugName: String                                         = "colorPicker"
+  private def picker: w.ColorPicker                                      =
+    val cue = cursorCue(props)
+    w.ColorPicker(mode = mode, style = props.style, markerStyle = Style.Default.bold.patch(cue), highlightStyle = cue)
+  def widget: Widget                                                     =
     val current = picker
     (area, buffer) => current.render(area, buffer, state)
-  private[dsl] def withProps(props: ElementProps): ColorPickerElement        = copy(props = props)
-  private[dsl] override def claim: SizeClaim                                 =
+  private[dsl] def withProps(props: ElementProps): ColorPickerElement    = copy(props = props)
+  private[dsl] override def claim: SizeClaim                             =
     (picker.widthAt(0), picker.heightAt(0)) match
       case (Some(width), Some(height)) => SizeClaim.box(width, height)
       case _                           => SizeClaim.Fill
-  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
-    Some(
-      keys {
-        case KeyEvent(KeyCode.Left, _)                      => state.moveLeft()
-        case KeyEvent(KeyCode.Right, _)                     => state.moveRight()
-        case KeyEvent(KeyCode.Up, _)                        => state.moveUp()
-        case KeyEvent(KeyCode.Down, _)                      => state.moveDown()
-        case KeyEvent(KeyCode.Enter | KeyCode.Char(' '), _) => onSelect(state.choose())
-      }
-    )
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler] =
+    Some { event =>
+      val shifted = event.modifiers.hasAny(KeyModifiers.Shift)
+      (mode, state.field, event.code) match
+        case (w.ColorPickerMode.Rgb, _, KeyCode.Tab) if shifted => state.focusPreviousField()
+        case (w.ColorPickerMode.Rgb, _, KeyCode.Tab)            => state.focusNextField()
+        case (_, w.ColorPickerField.Grid, code)                 => gridKey(code)
+        case (_, w.ColorPickerField.Channel(_), code)           => fieldKey(code, event.modifiers)
+    }
+
+  private def gridKey(code: KeyCode): Boolean = code match
+    case KeyCode.Left                      => consumed(state.moveLeft())
+    case KeyCode.Right                     => consumed(state.moveRight())
+    case KeyCode.Up                        => consumed(state.moveUp())
+    case KeyCode.Down                      => consumed(state.moveDown())
+    case KeyCode.Enter | KeyCode.Char(' ') =>
+      mode match
+        case w.ColorPickerMode.Palette => consumed(onSelect(state.choose()))
+        case w.ColorPickerMode.Rgb     => consumed(chooseRgb())
+    case _                                 => false
+
+  private def fieldKey(code: KeyCode, mods: KeyModifiers): Boolean = code match
+    case KeyCode.Char(digit) if digit >= '0' && digit <= '9' && mods.isEmpty => consumed(state.typeDigit(digit - '0'))
+    case KeyCode.Backspace                                                   => consumed(state.deleteDigit())
+    case KeyCode.Up                                                          => consumed(state.stepChannel(1))
+    case KeyCode.Down                                                        => consumed(state.stepChannel(-1))
+    case KeyCode.Enter                                                       => consumed(chooseRgb())
+    case _                                                                   => false
+
+  private def chooseRgb(): Unit = state.chooseRgb().foreach(onSelect)
+
+  private def consumed(action: => Unit): Boolean =
+    action
+    true
+
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some { (event, area) =>
       val row    = event.position.y - area.y
       val column = (event.position.x - area.x) / 2
       val hit    = w.ColorPicker.Grid.lift(row).flatMap(_.lift(column)).filter(_ => event.position.x >= area.x)
-      (event.kind, hit) match
-        case (MouseEventKind.Down, Some(index)) =>
+      (event.kind, hit, picker.channelAt(area, event.position.x, event.position.y)) match
+        case (MouseEventKind.Down, Some(index), _)      =>
           state.moveTo(index)
-          onSelect(state.choose())
+          mode match
+            case w.ColorPickerMode.Palette => onSelect(state.choose())
+            case w.ColorPickerMode.Rgb     => chooseRgb()
           true
-        case _                                  => false
+        case (MouseEventKind.Down, None, Some(channel)) =>
+          state.focusField(w.ColorPickerField.Channel(channel))
+          true
+        case _                                          => false
     }
