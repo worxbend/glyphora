@@ -29,5 +29,11 @@ def whichKeyPopup(bindings: KeyBindings, size: Size)(using theme: Theme): Option
     val title     = s"${prefix.spelling} …"
     val width     = math.min(size.width, math.max(lines.map(CharWidth.of).max, CharWidth.of(title) + 2) + 4)
     val height    = math.min(size.height, lines.size + 2)
-    val box       = FilledElement(Element.panel(title)(lines.map(line => Element.text(line).length(1))*), theme.surface)
-    Element.portal(math.max(0, size.width - width - 1), math.max(0, size.height - height - 1), width, height)(box)
+    LateBinding.composite(theme) { theme =>
+      val box =
+        FilledElement(
+          Element.panel(title)(lines.map(line => Element.text(line).length(1))*)(using theme),
+          theme.surface,
+        )
+      Element.portal(math.max(0, size.width - width - 1), math.max(0, size.height - height - 1), width, height)(box)
+    }
