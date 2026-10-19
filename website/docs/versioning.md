@@ -189,7 +189,9 @@ Three changes reach almost every app, so check them first:
   object — used to paint dark-theme colours even in a `Theme.Light` app (research G2). It is now
   re-resolved against the app's theme when painted, keeping any builders applied afterwards. A
   helper that *wanted* the dark palette passes it: `panel("x")(body)(using Theme.Dark)`.
-  `statusBar`, `topBar` and `helpOverlay` are not late-bound.
+  The chrome builders `statusBar`, `topBar`, `helpOverlay` and `whichKeyPopup` and the
+  `.border()` decorator are late-bound too: a composite builder rebuilds its subtree under the
+  app's theme and keeps what was applied to the node it returned.
 - **`given Theme.default` is its own instance**, `==` to `Theme.Dark` but not `eq`, so late binding
   can tell "no theme in scope" from an explicit `using Theme.Dark`. Replace
   `summon[Theme] eq Theme.Dark` with `==`.
@@ -210,6 +212,44 @@ Three changes reach almost every app, so check them first:
   With no `.variant(…)` nothing renders differently: no preset styles the default `button`,
   `input`, `list` or `table.header` roles. `Theme.Light` and `Theme.HighContrast` gain values of
   their own for the new `MarkdownTheme` and `SyntaxTheme` fields.
+- **`dialog(…)` returns a `DialogElement`, not a `WidgetElement`.** The picture dialog now has a
+  component role (`DialogRole`, `"dialog"`, and `DialogRole.Selected` for the selected button), so
+  it is a node of its own. Code that only places it compiles unchanged; code that annotated the
+  type, or called a `WidgetElement` member such as `.rows(n)` on it, changes:
+
+  ```scala
+  // before
+  val box: WidgetElement = dialog("Saved", "Written.")
+  // after
+  val box: DialogElement = dialog("Saved", "Written.") // or just Element
+  ```
+
+  `ConfirmDialogElement` keeps the theme's `primary` in a new last field `bodyStyle` instead of
+  in `props.style`, so `confirmDialog(…).props.style` is now `Style.Default` and an explicit
+  `.fg(…)` on it layers over the theme's `"dialog"` component. What is drawn under a theme with no
+  `"dialog"` component is unchanged.
+- **`widget(…)` leaves honour the element style.** `.fg`, `.bg`, `.style(…)` and a `withStyle`
+  cascade used to be ignored on a raw `widget(…)` leaf. They are now painted *under* what the
+  widget draws: every cell of the area takes the style's fields the cell left unset. A leaf that
+  carried a style by accident — usually an inherited `withStyle` — now shows it; drop the style,
+  or move the leaf out of the `withStyle` scope, to keep the old frame.
+- **Search highlights follow the theme.** A searchable `log`, `scrollView` or `markdown` used to
+  highlight in fixed black on yellow (match) and black on bright red, bold (current match). They
+  now take the theme's `"search.match"` / `"search.current"` components (`SearchRole.Match`,
+  `SearchRole.Current`) and, without them, the theme's `warning` and `error` colours as a
+  background under black text. Under `Theme.Dark` the match colour is unchanged and the current
+  match moves from bright red to red; styled golden frames of a searched view need re-recording.
+  To keep the old colours:
+
+  ```scala
+  Theme.Dark
+    .withComponent(SearchRole.Match, StateStyles(base = Style.of(Color.Black, Color.Yellow)))
+    .withComponent(SearchRole.Current, StateStyles(base = Style.of(Color.Black, Color.BrightRed).bold))
+  ```
+
+- **Theme files carry `loading.fill-ramp`.** `Theme.render` writes one more line,
+  `loading.fill-ramp = none` or the ramp's comma-separated stops, and `Theme.parse` reads it, so
+  a ramp no longer falls back to the base theme's. A file written before reads exactly as before.
 
 ### Keys and bindings
 
@@ -724,6 +764,13 @@ the English strings earlier releases drew, so nothing changes until an app overr
 - `Messages` is a new name under the one import; a type of your own called `Messages` in a
   package that wildcard-imports the DSL is now ambiguous — qualify one or exclude the DSL's
   (`import io.worxbend.tui.dsl.{Messages as _, *}`).
+- The table also covers the which-key `…`, the framework-key descriptions
+  (`FrameworkKeys.entries`, so `Keymap.markdown`, now read the active table), the prompts'
+  validation errors, and the severity icons and tags of notices, toasts and `badge(level)`. The
+  English defaults are the strings earlier releases drew, so nothing changes until an app sets
+  them. `Messages` gained these as new trailing fields: positional `Messages(…)` construction
+  past `searchPlaceholder` and pattern matches on `Messages` break; use the `with…` builders.
+  The widget-level `Badge.of` gained a trailing `label: Option[String] = None`.
 
 ### `Dialog` sizes its box to its buttons
 
