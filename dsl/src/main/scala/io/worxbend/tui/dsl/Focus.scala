@@ -540,11 +540,13 @@ private[dsl] object FocusPass:
         )
       trail = outer
       def rolesOf(node: Element, g: PointerGestures, disabled: Boolean): PointerRoles =
+        val selectable = g.selection.enabled && !unselectable &&
+          (node.props.selectable.contains(true) || TextSelection.selectableByDefault(node))
         PointerRoles(
-          selectable = g.selection.enabled && !unselectable &&
-            (node.props.selectable.contains(true) || TextSelection.selectableByDefault(node)),
+          selectable = selectable,
           drag = if disabled then None else node.props.dragPayload,
           drop = if disabled then None else node.props.dropTarget,
+          dragSelects = selectable && TextSelection.selectsOnDrag(node),
         )
       val roles        =
         gestures.fold(PointerRoles.Empty)(g => if inert then PointerRoles.Empty else rolesOf(element, g, disabled))

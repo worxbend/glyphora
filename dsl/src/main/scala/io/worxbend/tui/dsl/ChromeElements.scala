@@ -1,6 +1,18 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{CharWidth, KeyCode, KeyEvent, MouseButton, MouseEventKind, Style, Versioned, Widget}
+import io.worxbend.tui.core.{
+  Buffer,
+  CharWidth,
+  KeyCode,
+  KeyEvent,
+  MouseButton,
+  MouseEvent,
+  MouseEventKind,
+  Rect,
+  Style,
+  Versioned,
+  Widget,
+}
 import io.worxbend.tui.terminal.PointerShape
 import io.worxbend.tui.widgets as w
 
@@ -119,29 +131,166 @@ private[dsl] object WizardElement:
   * widths over [[w.Toolbar]], `gap` columns apart with an optional `divider`. When they do not all fit, the strip shows
   * the window that does, marked `«` / `»`, and slides it so the focused control is always on screen — the controls
   * themselves stay in the enclosing focus group, so the arrows still reach every one of them.
+  *
+  * With an `overflow` state the `»` is also a button: a click on it opens a popup, floated through the frame root under
+  * the marker, holding the controls the strip left out — the very same elements, so a click on one presses it and
+  * closes the popup. A press outside the popup, Esc from the focused control, or another click on `»` closes it. While
+  * it is open the hidden controls are children of the popup rather than of the strip, so they keep their place in the
+  * focus group but come after the visible ones in it.
   */
 final case class ToolbarElement(
-    override val children: Seq[Element],
+    controls: Seq[Element],
     gap: Int,
     divider: Option[String],
+    overflow: Option[w.ToolbarState] = None,
     props: ElementProps = ElementProps(),
+    decorated: Seq[Element] = Seq.empty,
 ) extends Element:
   type Self = ToolbarElement
-  override def debugName: String                                                 = "toolbar"
-  private[dsl] override def layoutOnly: Boolean                                  = true
-  private def strip: w.Toolbar                                                   =
+  override private[dsl] def watchedStates: Seq[Versioned] = overflow.toSeq
+  override def debugName: String                          = "toolbar"
+  private[dsl] override def layoutOnly: Boolean           = overflow.isEmpty
+
+  /** The hidden controls' indices while the overflow popup is open, else empty. */
+  private def floated: Seq[Int] = overflow.filter(_.open).fold(Seq.empty)(_.hidden.filter(controls.indices.contains))
+
+  override def children: Seq[Element] =
+    if decorated.nonEmpty then decorated
+    else
+      val hidden = floated
+      overflow.filter(_ => hidden.nonEmpty) match
+        case Some(state) =>
+          val (inPopup, onStrip) = controls.indices.partition(hidden.contains)
+          onStrip.map(controls) ++ Seq(
+            MenuScrimElement(() => state.close()),
+            ToolbarOverflowElement.of(inPopup.map(controls), () => state.close()),
+          )
+        case None        => controls
+
+  private def strip(items: Seq[Element]): w.Toolbar =
     w.Toolbar(
-      children.map(child => RowChildWidget(child, child.widget)),
-      focus = Some(children.indexWhere(holdsFocus)).filter(_ >= 0),
+      items.map(child => RowChildWidget(child, child.widget)),
+      focus = Some(items.indexWhere(holdsFocus)).filter(_ >= 0),
       gap = gap,
       divider = divider,
       style = props.style,
     )
-  def widget: Widget                                                             = strip
+
+  def widget: Widget =
+    val shown  = children
+    val hidden = floated
+    overflow match
+      case Some(_) if hidden.nonEmpty && shown.size >= 2 =>
+        val current = strip(shown.dropRight(2))
+        val popup   = ToolbarOverflowElement(hidden.map(controls))
+        (area, buffer) =>
+          current.render(area, buffer)
+          if !area.isEmpty then
+            val marker = area.right - CharWidth.of(OverflowMarker)
+            buffer.setString(marker, area.y, OverflowMarker, props.style.patch(Style.Default.dim), area.right - marker)
+            if !props.inert then
+              val placed = overflowTarget(area, popup.width, popup.height)
+              if !placed.isEmpty then
+                val frame = popupFrame(area, 1 + popup.height)
+                floatPopup(area, buffer, placed, Seq(shown(shown.size - 2) -> frame), shown.last)
+      case Some(state)                                   =>
+        val current = strip(shown)
+        (area, buffer) =>
+          state.recordHidden(current.hidden(area.width))
+          current.render(area, buffer)
+      case None                                          => strip(shown)
+
+  /** Where the popup goes, in screen coordinates: right-aligned under the `»` marker — or above the strip when the
+    * frame has less room below than the popup needs and more above — clipped to the frame.
+    */
+  private def overflowTarget(area: Rect, width: Int, height: Int): Rect =
+    val frame      = popupFrame(area, 1 + height)
+    val screen     = FrameCoordinates.translate(area)
+    val x          = math.max(frame.x, math.min(screen.right, frame.right) - width)
+    val below      = frame.bottom - (screen.y + 1)
+    val above      = screen.y - frame.y
+    val opensBelow = below >= height || below >= above
+    val rows       = math.min(height, if opensBelow then below else above)
+    Rect(x, if opensBelow then screen.y + 1 else screen.y - rows, math.min(width, frame.width), math.max(0, rows))
+
   private[dsl] def withProps(props: ElementProps): ToolbarElement                = copy(props = props)
-  private[dsl] override def withChildren(children: Seq[Element]): ToolbarElement = copy(children = children)
+  private[dsl] override def withChildren(children: Seq[Element]): ToolbarElement = copy(decorated = children)
   private[dsl] override def claim: SizeClaim                                     = SizeClaim.OneRow
-  private[dsl] override def intrinsicWidth(height: Int): Option[Int] = constrainedWidth(strip.widthAt(height))
+  private[dsl] override def intrinsicWidth(height: Int): Option[Int] = constrainedWidth(strip(controls).widthAt(height))
+
+  /** Esc closes an open overflow popup, whichever control has focus — offered in the capture phase, because a built-in
+    * key handler only ever hears the keys of the focused node itself.
+    */
+  private[dsl] override def captureKeyHandler: Option[BuiltinKeyHandler] =
+    overflow.filter(_.open).map(state => keys { case KeyEvent(KeyCode.Escape, _) => state.close() })
+
+  /** A press on a drawn overflow marker opens or closes the overflow popup: the `»` at the right end while controls
+    * follow the window (and always while the popup is open), the `«` at the left end while controls precede it.
+    */
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
+    overflow.map { state => (event, area) =>
+      val x        = event.position.x
+      val hidden   = state.hidden
+      val after    = state.open || hidden.contains(controls.size - 1)
+      val before   = !state.open && hidden.contains(0)
+      val onAfter  = after && x >= area.right - CharWidth.of(OverflowMarker)
+      val onBefore = before && x < area.x + CharWidth.of(OverflowBeforeMarker)
+      val pressed  = event.kind == MouseEventKind.Down && event.button == MouseButton.Left
+      if pressed && event.position.y == area.y && (onAfter || onBefore) then
+        state.toggle()
+        true
+      else false
+    }
+
+  /** The markers `w.Toolbar` draws when controls follow and precede the window — the buttons that open the popup. */
+  private val OverflowMarker       = "»"
+  private val OverflowBeforeMarker = "« "
+
+/** The popup of a toolbar's overflow menu: a bordered column of the controls the strip left out, one row each at their
+  * natural width. Built by the toolbar each frame the popup is open, never by application code. A press on a control is
+  * the control's own; the release that follows bubbles here — through the `onMouse` slot [[ToolbarOverflowElement.of]]
+  * fills, since an enclosing node's built-in behaviour only ever hears the wheel — and closes the popup.
+  */
+private[dsl] final case class ToolbarOverflowElement(
+    items: Seq[Element],
+    props: ElementProps = ElementProps(),
+) extends Element:
+  type Self = ToolbarOverflowElement
+  override def debugName: String      = "toolbarOverflow"
+  override def children: Seq[Element] = items
+
+  /** Columns the popup takes: the widest control plus the two border columns. */
+  def width: Int = items.map(_.intrinsicWidth(1).getOrElse(1)).maxOption.getOrElse(0) + 2
+
+  /** Rows the popup takes: one per control plus the two border rows. */
+  def height: Int = items.size + 2
+
+  def widget: Widget                                                                     =
+    (area, buffer) =>
+      val block = w.Block(style = props.style)
+      block.render(area, buffer)
+      val inner = block.inner(area)
+      items.zipWithIndex.foreach { (item, row) =>
+        if row < inner.height then
+          val itemWidth = math.min(inner.width, item.intrinsicWidth(1).getOrElse(inner.width))
+          item.widget.render(Rect(inner.x, inner.y + row, itemWidth, 1), buffer)
+      }
+  private[dsl] def withProps(props: ElementProps): ToolbarOverflowElement                = copy(props = props)
+  private[dsl] override def withChildren(children: Seq[Element]): ToolbarOverflowElement = copy(items = children)
+
+  /** A press on the border is spent here, not on whatever lies beneath. */
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
+    Some((event, _) => event.kind == MouseEventKind.Down)
+
+private[dsl] object ToolbarOverflowElement:
+
+  /** The popup over `items`, closed by `close` on the release that ends a click anywhere inside it. */
+  def of(items: Seq[Element], close: () => Unit): ToolbarOverflowElement =
+    val closeOnRelease: MouseEvent => Boolean = event =>
+      val released = event.kind == MouseEventKind.Up
+      if released then close()
+      released
+    ToolbarOverflowElement(items, ElementProps(onMouse = Some(closeOnRelease)))
 
 /** Whether focus sits on `element` or anywhere under it, as the focus pass marked the decorated tree. */
 private def holdsFocus(element: Element): Boolean = element.props.focused || element.children.exists(holdsFocus)

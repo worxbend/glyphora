@@ -156,6 +156,7 @@ final class VersionedStatesSpec extends AnyFunSuite:
       "previousField"        -> (state => { state.nextField(); state.previousField() }),
       "increment"            -> (_.increment()),
       "decrement"            -> (_.decrement()),
+      "typeDigit"            -> (_.typeDigit(1)),
     ),
     row("RangeSliderState", RangeSliderState(SliderRange.of(0, 100), 10, 90))(
       "thumb ="              -> (_.thumb = RangeThumb.High),
@@ -174,6 +175,23 @@ final class VersionedStatesSpec extends AnyFunSuite:
       "moveDown"             -> (_.moveDown()),
       "moveTo"               -> (_.moveTo(5)),
       "choose"               -> (state => { val _ = state.choose() }),
+      "focusNextField"       -> (state => { val _ = state.focusNextField() }),
+      "focusPreviousField"   -> (state => { val _ = state.focusNextField(); val _ = state.focusPreviousField() }),
+      "focusField"           -> (_.focusField(ColorPickerField.Channel(ColorChannel.Blue))),
+      "typeDigit"            -> (state => { state.focusNextField(); state.typeDigit(4) }),
+      "deleteDigit"          -> (state => { state.focusNextField(); state.deleteDigit() }),
+      "stepChannel"          -> (state => { state.focusNextField(); state.stepChannel(1) }),
+      "chooseRgb"            -> (state => { val _ = state.chooseRgb() }),
+    ),
+    row("ToolbarState", ToolbarState())(
+      "toggle"               -> (_.toggle()),
+      "close"                -> (_.close()),
+    ),
+    row("InspectState", InspectState())(
+      "select"               -> (_.select(Vector(1))),
+      "collapse"             -> (_.collapse(Vector())),
+      "expand"               -> (_.expand(Vector())),
+      "toggle"               -> (_.toggle(Vector(0))),
     ),
     row("HexViewerState", HexViewerState())(
       "selected ="           -> (_.selected = Some(1)),

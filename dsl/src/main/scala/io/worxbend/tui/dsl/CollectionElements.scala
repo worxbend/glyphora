@@ -1,6 +1,17 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{KeyCode, KeyEvent, Line, MouseEvent, MouseEventKind, Rect, Text, Versioned, Widget}
+import io.worxbend.tui.core.{
+  KeyCode,
+  KeyEvent,
+  Line,
+  MouseButton,
+  MouseEvent,
+  MouseEventKind,
+  Rect,
+  Text,
+  Versioned,
+  Widget,
+}
 import io.worxbend.tui.widgets as w
 
 import java.nio.file.Path
@@ -269,10 +280,11 @@ final case class DirectoryTreeElement(
   * `state.paging` is set (they are left unconsumed otherwise, so they keep bubbling). Sorting and filtering have no
   * built-in keys — drive `state.sortBy`/`state.setFilter` from the app's own bindings.
   *
-  * Alone among the selectable collections this one has no wheel behavior. Its selection indexes the *visible* page
-  * (`table.visibleRows(state)`), so a wheel step would have to decide whether it moves within the page or turns it, and
-  * either answer is wrong for half the tables; the page keys say which one the app meant. Bind `onMouseEvent` if this
-  * table wants one of the two.
+  * A click on a body row selects it; a drag that starts on the table and covers a couple of cells selects cell text
+  * instead (see `.selectable`). Alone among the selectable collections this one has no wheel behavior. Its selection
+  * indexes the *visible* page (`table.visibleRows(state)`), so a wheel step would have to decide whether it moves
+  * within the page or turns it, and either answer is wrong for half the tables; the page keys say which one the app
+  * meant. Bind `onMouseEvent` if this table wants one of the two.
   */
 final case class DataTableElement[K](
     table: w.DataTable[K],
@@ -287,6 +299,19 @@ final case class DataTableElement[K](
   def widget: Widget                                                   =
     (area, buffer) => table.render(area, buffer, state)
   private[dsl] def withProps(props: ElementProps): DataTableElement[K] = copy(props = props)
+
+  /** A left press on a body row selects it. In a mouse-capturing app a drag that starts here and covers a couple of
+    * cells selects the cells' text instead of doing anything more to the rows — see [[TextSelection]].
+    */
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
+    Some { (event, area) =>
+      val pressed = event.kind == MouseEventKind.Down && event.button == MouseButton.Left
+      table.rowAt(area, event.position.y, state).filter(_ => pressed) match
+        case Some(index) =>
+          state.selected = Some(index)
+          true
+        case None        => false
+    }
 
   // the visible page is filtered and paginated on each call; name it once so a key press computes it once.
   // it stays a `def`: the thunks below run after `state` may already have moved, so the count is read at call time

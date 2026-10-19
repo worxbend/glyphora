@@ -1,6 +1,7 @@
 package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.{
+  MouseEventKind,
   Alignment,
   Buffer,
   Constraint,
@@ -772,22 +773,71 @@ final case class HexViewerElement(
 
   private def move(delta: Int): Unit = state.moveBy(delta, bytes.size)
 
-/** A read-only tree view of a described value — see [[w.Inspect]]. Claims exactly the rows its tree measures, so it
-  * stacks in a `column` like text; put it in a [[scrollView]] when the value is taller than the screen.
+/** A tree view of a described value — see [[w.Inspect]]. Claims exactly the rows its tree measures, so it stacks in a
+  * `column` like text; put it in a [[scrollView]] when the value is taller than the screen.
+  *
+  * Read-only without a `state`. With one it is focusable and collapsible: Up/Down (Home/End) move the selected row,
+  * Enter or Space folds or unfolds it, Right unfolds, Left folds — or, on a row that is already folded or cannot fold,
+  * moves to the parent — and a click selects the row under the pointer and folds or unfolds it.
   */
 final case class InspectElement(
     value: w.PrettyValue,
     labelStyle: Style,
     guideStyle: Style,
+    state: Option[w.InspectState] = None,
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = InspectElement
+
+  /** The caller-owned state this node paints, if any, watched for writes made between frames. */
+  override private[dsl] def watchedStates: Seq[Versioned]         = state.toSeq
   override def debugName: String                                  = "inspect"
   private def inspector: w.Inspect                                =
-    w.Inspect(value, style = props.style, labelStyle = labelStyle, guideStyle = guideStyle)
-  def widget: Widget                                              = inspector
+    w.Inspect(
+      value,
+      style = props.style,
+      labelStyle = labelStyle,
+      guideStyle = guideStyle,
+      highlightStyle = cursorCue(props),
+    )
+  def widget: Widget                                              =
+    val current = inspector
+    state.fold[Widget](current)(s => (area, buffer) => current.render(area, buffer, s))
   private[dsl] def withProps(props: ElementProps): InspectElement = copy(props = props)
-  private[dsl] override def claim: SizeClaim = inspector.heightAt(0).fold(SizeClaim.Fill)(SizeClaim.rows)
+  private[dsl] override def claim: SizeClaim                      =
+    val current = inspector
+    state.fold(current.heightAt(0))(s => Some(current.heightFor(s))).fold(SizeClaim.Fill)(SizeClaim.rows)
+
+  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler] =
+    state.map { s =>
+      val current               = inspector
+      val paths                 = current.visiblePaths(s)
+      val here                  = s.selected.filter(paths.contains).getOrElse(Vector.empty)
+      val index                 = paths.indexOf(here)
+      def go(target: Int): Unit = s.select(paths(math.max(0, math.min(paths.size - 1, target))))
+      keys {
+        case KeyEvent(KeyCode.Up, _)                                                         => go(index - 1)
+        case KeyEvent(KeyCode.Down, _)                                                       => go(index + 1)
+        case KeyEvent(KeyCode.Home, _)                                                       => go(0)
+        case KeyEvent(KeyCode.End, _)                                                        => go(paths.size - 1)
+        case KeyEvent(KeyCode.Enter | KeyCode.Char(' '), _) if current.isExpandable(here)    => s.toggle(here)
+        case KeyEvent(KeyCode.Right, _) if current.isExpandable(here)                        => s.expand(here)
+        case KeyEvent(KeyCode.Left, _) if current.isExpandable(here) && !s.isCollapsed(here) => s.collapse(here)
+        case KeyEvent(KeyCode.Left, _) if here.nonEmpty                                      => s.select(here.init)
+      }
+    }
+
+  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
+    state.map { s => (event, area) =>
+      val current = inspector
+      val row     = event.position.y - area.y
+      current.visiblePaths(s).lift(row).filter(_ => area.contains(event.position.x, event.position.y)) match
+        case Some(path) if event.kind == MouseEventKind.Down =>
+          s.select(path)
+          if current.isExpandable(path) then s.toggle(path)
+          true
+        case _                                               => false
+    }
 
 /** The [[PrettyShape]] that builds `tui-widgets`' [[w.PrettyValue]] — the glue between the derivation in `tui-macros`
   * and the widget, neither of which can name the other.

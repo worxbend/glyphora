@@ -511,6 +511,18 @@ final case class DataTable[K](
     val lastPage = math.max(0, (total - 1) / pageSizeOf(window))
     math.max(0, math.min(window.page, lastPage))
 
+  /** The index into [[visibleRows]] of the body row drawn on row `y` when the table is rendered into `area` with
+    * `state`'s current scroll offset — `None` for the header, the footer, a row past the last record, or anything
+    * outside `area`. A click on the table goes through this.
+    */
+  def rowAt(area: Rect, y: Int, state: DataTableState[K]): Option[Int] =
+    val footerRows = if footer.isDefined && area.height > 1 then 1 else 0
+    val bodyRow    = y - area.y - 1
+    val index      = state.offset + bodyRow
+    Option
+      .when(!area.isEmpty && bodyRow >= 0 && y < area.bottom - footerRows)(index)
+      .filter(_ < visibleRows(state).size)
+
   def render(area: Rect, buffer: Buffer, state: DataTableState[K]): Unit =
     clampPage(state)
     val view       = visibleRows(state)

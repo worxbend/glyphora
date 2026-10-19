@@ -1,0 +1,14 @@
+[0mConfig                            [0m
+[0m├─ name: "glyphora"               [0m
+[0m├─ [0;7mtags: List(2)[0m                  [0m
+[0m│  ├─ [0] "tui"                   [0m
+[0m│  └─ [1] "scala"                 [0m
+[0m├─ db: Db                         [0m
+[0m│  ├─ host: "localhost"           [0m
+[0m│  └─ pool: 4                     [0m
+[0m├─ plugins: List(1)               [0m
+[0m│  └─ [0] Plugin …                [0m
+[0m├─ mode: Fast                     [0m
+[0m└─ limits: Map(1)                 [0m
+[0m   └─ "cpu" -> 2                  [0m
+[0m                                  [0m

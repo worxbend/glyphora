@@ -42,6 +42,32 @@ private[dsl] final class TextSelection:
   private var copyTo: Option[Clipboard]    = None
   private var paintedThisFrame: Boolean    = false
 
+  /** A press a [[TextSelection.selectsOnDrag]] node consumed: the node and where, waiting for the drag that turns it
+    * into a selection.
+    */
+  private var armed: Option[(NodeBoundsEntry, Position)] = None
+
+  /** Arms a selection at `at` in `entry` that starts only once a drag moves [[TextSelection.DragThreshold]] cells. */
+  def arm(entry: NodeBoundsEntry, at: Position): Unit = armed = Some(entry -> at)
+
+  /** Whether a consumed press is waiting to become a selection. */
+  def isArmed: Boolean = armed.isDefined
+
+  /** Offers a drag to an armed press: past the threshold the selection begins at the press and extends to `to` — `true`
+    * — otherwise nothing happens and the drag goes to the node as usual.
+    */
+  def dragArmed(to: Position): Boolean =
+    armed match
+      case Some((entry, at)) if math.max(math.abs(to.x - at.x), math.abs(to.y - at.y)) >= TextSelection.DragThreshold =>
+        armed = None
+        begin(entry, at, 1)
+        extend(to)
+        true
+      case _ => false
+
+  /** Drops an armed press that never became a selection — its release. */
+  def disarm(): Unit = armed = None
+
   /** Whether a selection is anchored, visible or not. */
   def isActive: Boolean = regionId.isDefined
 
@@ -87,6 +113,7 @@ private[dsl] final class TextSelection:
   /** Forgets the selection; `true` when one was showing, so the frame that drops the highlight is owed. */
   def clear(): Boolean =
     val showing = isVisible
+    armed = None
     regionId = None
     dragging = false
     copyTo = None
@@ -202,6 +229,19 @@ private[dsl] object TextSelection:
         // the last character's continuation cells belong to it
         val tail  = Iterator.iterate(last + 1)(_ + 1).find(c => c >= row.length || row(c).nonEmpty).getOrElse(last + 1)
         Some((first, tail - 1))
+
+  /** Whether `element` takes the press for itself — a `dataTable` selects the row under it — yet still selects its text
+    * once the pointer is dragged past [[DragThreshold]] cells: a press it consumed only arms the selection.
+    */
+  def selectsOnDrag(element: Element): Boolean =
+    element match
+      case _: DataTableElement[?] => true
+      case _                      => false
+
+  /** Cells, along either axis, a drag that began on a press the node consumed must cover before it selects text — so a
+    * click whose pointer drifts a cell is still only a click.
+    */
+  val DragThreshold: Int = 2
 
   /** Whether `element` is one of the text-showing nodes that are selectable unless they opt out. */
   def selectableByDefault(element: Element): Boolean =

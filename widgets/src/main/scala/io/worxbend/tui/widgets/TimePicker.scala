@@ -39,6 +39,7 @@ final class TimePickerState(initial: LocalTime, val withSeconds: Boolean = true)
 
   def field_=(value: TimeField): Unit =
     fieldValue = value
+    pendingDigit = None
     touch()
 
   private var fieldValue: TimeField = TimeField.Hour
@@ -58,7 +59,40 @@ final class TimePickerState(initial: LocalTime, val withSeconds: Boolean = true)
   /** The time one unit of the focused field earlier, wrapping past midnight. */
   def decrement(): Unit = step(-1)
 
+  /** Types one digit into the focused field, the way a time input on a form takes it.
+    *
+    * The first digit sets the field to that value and waits for a second; the second makes a two-digit value, clamped
+    * to the field's maximum (`23` for the hour, `59` otherwise — so `2`, `9` on the hour is `23`), and moves focus to
+    * the next field. A first digit no second one could follow without passing the maximum (`3`–`9` on the hour, `6`–`9`
+    * on a minute or second) is committed at once as `0d`. Moving between fields or stepping drops a half-typed digit.
+    * On the last field focus stays put. A `digit` outside `0..9` is ignored.
+    */
+  def typeDigit(digit: Int): Unit =
+    if digit >= 0 && digit <= 9 then
+      val maximum = if field == TimeField.Hour then 23 else 59
+      pendingDigit match
+        case Some(first) =>
+          setField(math.min(maximum, first * 10 + digit))
+          advance()
+        case None        =>
+          setField(digit)
+          if digit * 10 > maximum then advance() else pendingDigit = Some(digit)
+
+  private var pendingDigit: Option[Int] = None
+
+  private def setField(value: Int): Unit =
+    timeValue = field match
+      case TimeField.Hour   => timeValue.withHour(value)
+      case TimeField.Minute => timeValue.withMinute(value)
+      case TimeField.Second => timeValue.withSecond(value)
+    touch()
+
+  private def advance(): Unit =
+    pendingDigit = None
+    nextField()
+
   private def step(delta: Long): Unit =
+    pendingDigit = None
     time = field match
       case TimeField.Hour   => time.plusHours(delta)
       case TimeField.Minute => time.plusMinutes(delta)
@@ -66,9 +100,9 @@ final class TimePickerState(initial: LocalTime, val withSeconds: Boolean = true)
 
 /** A one-row `hh:mm:ss` time field with the focused field in `highlightStyle`.
   *
-  * The widget only draws; Left/Right moving between fields and Up/Down stepping the time are the DSL's `timePicker`
-  * node calling [[TimePickerState]]'s methods. [[widthFor]] gives the columns the state needs — 8, or 5 without
-  * seconds.
+  * The widget only draws; Left/Right moving between fields, Up/Down stepping the time and digits typed into the focused
+  * field are the DSL's `timePicker` node calling [[TimePickerState]]'s methods. [[widthFor]] gives the columns the
+  * state needs — 8, or 5 without seconds.
   *
   * @param style
   *   the digits and separators

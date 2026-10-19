@@ -35,6 +35,32 @@ final class TextSelectionSpec extends AnyFunSuite with PilotFixture:
       pilot.assertGoldenStyled("text-selection-drag")
     }
 
+  test("dataTable: a press selects the row; a drag past the threshold selects cell text instead"):
+    val table = DataTable.fromStrings(
+      columns = Seq("name", "size"),
+      rows = Seq(Seq("alpha", "100"), Seq("bravo", "20"), Seq("charlie", "3")),
+      widths = Seq(Constraint.Length(8), Constraint.Length(6)),
+      // the selected row underlined rather than reversed, so the golden tells it apart from the text selection
+      options = DataTableOptions(highlightStyle = Style.Default.underline),
+    )
+    val state = DataTableState()
+    val app   = new TuiApp:
+      override def config: RunnerConfig             = RunnerConfig(mouse = MouseCaptureMode.Buttons)
+      def view(using ReactiveScope, Theme): Element = dataTable(table, state)
+    driving(app, Size(20, 5)) { (pilot, backend) =>
+      pilot.click(3, 2).waitForIdle()                          // the second body row
+      assert(state.selected.contains(1))
+      assert(backend.clipboardContents.isEmpty)
+      pilot.drag(Position(2, 3), Position(3, 3)).waitForIdle() // one cell: under the threshold, only a press
+      assert(state.selected.contains(2))
+      assert(backend.clipboardContents.isEmpty)
+      pilot.drag(Position(0, 1), Position(3, 1)).waitForIdle() // four cells along the first row
+      pilot.waitUntil("the release copied")(backend.clipboardContents.isDefined)
+      assert(backend.clipboardContents.contains("alph"))
+      assert(state.selected.contains(0))                       // the press that began the drag still selected its row
+      pilot.assertGoldenStyled("data-table-drag-select")
+    }
+
   test("a drag backwards selects the same cells as the drag forwards"):
     driving(SelectApp(text("hello world"))) { (pilot, backend) =>
       pilot.drag(Position(6, 1), Position(2, 1)).waitForIdle()
