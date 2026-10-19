@@ -345,6 +345,7 @@ export io.worxbend.tui.widgets.{
   ColorPickerMode,
   ColorPickerField,
   ColorChannel,
+  InspectState,
   WindowMode,
   WindowState,
   WindowStack,

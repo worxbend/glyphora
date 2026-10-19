@@ -124,6 +124,34 @@ final class ToolElementsPilotSpec extends AnyFunSuite with PilotFixture:
     assert(state.field == ColorPickerField.Channel(ColorChannel.Blue))
     quitApp(pilot)
 
+  test("inspect with a state: Enter, Left/Right and a click fold and unfold nodes"):
+    val value = InspectConfig(
+      "glyphora",
+      InspectMode.Prod,
+      InspectDatabase("db.internal", 5432, List("replica-a", "replica-b")),
+      Map("beta" -> true),
+      None,
+    )
+    val state = InspectState()
+    val pilot = startApp(inspect(value, state), width = 60)
+    assert(pilot.screenText.contains("replica-a"))
+    pilot.pressKey(KeyCode.Down).pressKey(KeyCode.Down).pressKey(KeyCode.Down).waitForIdle() // database
+    assert(state.selected.contains(Vector(2)))
+    pilot.pressKey(KeyCode.Enter).waitForIdle()
+    assert(state.isCollapsed(Vector(2)))
+    assert(!pilot.screenText.contains("replica-a"))
+    assert(pilot.screenText.contains("database: InspectDatabase …"))
+    pilot.pressKey(KeyCode.Right).waitForIdle()
+    assert(pilot.screenText.contains("replica-a"))
+    pilot.pressKey(KeyCode.Left).waitForIdle()
+    assert(!pilot.screenText.contains("replica-a"))
+    pilot.pressKey(KeyCode.Left).waitForIdle() // Left on a folded node goes to its parent
+    assert(state.selected.contains(Vector()))
+    pilot.click(5, 3).waitForIdle()            // the database row: a click selects it and unfolds it
+    assert(state.selected.contains(Vector(2)))
+    assert(pilot.screenText.contains("replica-a"))
+    quitApp(pilot)
+
   test("hexViewer: Down moves the selection a row and the view scrolls with it"):
     val data  = IndexedSeq.tabulate(400)(_.toByte)
     val state = HexViewerState()

@@ -1253,6 +1253,23 @@ private[dsl] trait ElementFactories:
   def inspect[A](value: A)(using pretty: io.worxbend.tui.macros.Pretty[A], theme: Theme): InspectElement =
     InspectElement(pretty.describe(value, PrettyValueShape), theme.accent, theme.muted)
 
+  /** The collapsible form of `inspect(value)`: a focusable tree over a caller-owned [[w.InspectState]] that remembers
+    * which nodes are folded and which row is selected. Up/Down move, Enter/Space (or a click) fold and unfold the
+    * selected node, Right unfolds, Left folds or climbs to the parent. Keep the state in a field: it holds the folds
+    * between frames. See [[w.Inspect]].
+    */
+  def inspect[A](value: A, state: w.InspectState)(using
+      pretty: io.worxbend.tui.macros.Pretty[A],
+      theme: Theme,
+  ): InspectElement =
+    InspectElement(
+      pretty.describe(value, PrettyValueShape),
+      theme.accent,
+      theme.muted,
+      Some(state),
+      ElementProps(focusable = true),
+    )
+
   /** A scannable QR code for `text` — a URL, a pairing token — drawn two modules per cell in half blocks, dark on light
     * whatever the terminal's own background. Byte mode, the smallest version from 1 to 10 that fits at `ecc`; longer
     * text draws `QR: too long`. See [[w.QrCode]].

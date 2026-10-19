@@ -183,6 +183,12 @@ final class VersionedStatesSpec extends AnyFunSuite:
       "stepChannel"          -> (state => { state.focusNextField(); state.stepChannel(1) }),
       "chooseRgb"            -> (state => { val _ = state.chooseRgb() }),
     ),
+    row("InspectState", InspectState())(
+      "select"               -> (_.select(Vector(1))),
+      "collapse"             -> (_.collapse(Vector())),
+      "expand"               -> (_.expand(Vector())),
+      "toggle"               -> (_.toggle(Vector(0))),
+    ),
     row("HexViewerState", HexViewerState())(
       "selected ="           -> (_.selected = Some(1)),
       "offset ="             -> (_.offset = 16),
