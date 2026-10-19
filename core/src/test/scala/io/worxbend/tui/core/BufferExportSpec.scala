@@ -75,6 +75,25 @@ final class BufferExportSpec extends AnyFunSuite:
     assert(text.contains(s"$Esc[0;38;5;196ma"))
     assert(text.contains(s"$Esc[0;48;2;1;2;3;3mb"))
 
+  test("ansi reads back through Text.fromAnsi to the same text, colours, attributes and link"):
+    val text                            = Text.fromAnsi(BufferExport.ansi(frame()))
+    assert(text.lines.map(_.plainText) == Seq("日ab", "go  "))
+    val spans                           = text.lines.flatMap(_.spans).filter(_.content.trim.nonEmpty)
+    def styleOf(content: String): Style = spans.find(_.content == content).map(_.style).getOrElse(fail(content))
+    assert(styleOf("ab").fg.contains(Color.Red) && styleOf("ab").modifiers.hasAny(Modifiers.Bold))
+    assert(styleOf("日").fg.isEmpty && styleOf("日").modifiers.isEmpty)
+    assert(styleOf("go").link.contains("https://example.com"))
+
+  test("indexed and RGB colours survive the round trip through Text.fromAnsi as themselves"):
+    val buffer = Buffer(Rect(0, 0, 2, 1))
+    buffer.setString(0, 0, "a", Style.fg(Color.Indexed(196)))
+    buffer.setString(1, 0, "b", Style.bg(Color.Rgb(1, 2, 3)).italic)
+    val spans  = Text.fromAnsi(BufferExport.ansi(buffer)).lines.flatMap(_.spans)
+    val a      = spans.find(_.content == "a").map(_.style)
+    val b      = spans.find(_.content == "b").map(_.style)
+    assert(a.flatMap(_.fg).contains(Color.Indexed(196)))
+    assert(b.flatMap(_.bg).contains(Color.Rgb(1, 2, 3)) && b.exists(_.modifiers.hasAny(Modifiers.Italic)))
+
   test("html wraps the frame in a <pre>, styles runs with spans and links them with <a>"):
     val html      = BufferExport.html(frame(), ExportOptions(title = "page"))
     assert(html.contains("<title>page</title>"))
