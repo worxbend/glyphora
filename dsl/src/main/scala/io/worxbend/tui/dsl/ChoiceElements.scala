@@ -418,12 +418,19 @@ final case class ConfirmDialogElement(
     onPress: Int => Unit,
     onCancel: () => Unit,
     props: ElementProps = ElementProps(focusable = true),
+    bodyStyle: Style = Style.Default,
 ) extends Element:
   type Self = ConfirmDialogElement
-  override def debugName: String = "confirmDialog"
+  override def debugName: String                                 = "confirmDialog"
+  private[dsl] override def componentRole: Option[ComponentRole] = Some(DialogRole)
 
+  /** The body in `bodyStyle` (the theme's `primary`, from the factory) with the theme's `"dialog"` component over it
+    * and the node's own style over both; the selected button in `"dialog.selected"` or, when the theme has none, the
+    * picker cursor cue.
+    */
   def widget: Widget =
-    w.Dialog(title, Text.raw(message), buttons, selected, props.style, cursorCue(props))
+    val body = dialogBodyStyle(props, bodyStyle)
+    w.Dialog(title, Text.raw(message), buttons, selected, body, dialogSelectedStyle(props, cursorCue(props)))
 
   private[dsl] def withProps(props: ElementProps): ConfirmDialogElement = copy(props = props)
 
@@ -451,6 +458,39 @@ final case class ConfirmDialogElement(
     Some(clickActivates(() => onPress(selected)))
 
   private def nextIndex: Int = if buttons.isEmpty then 0 else (selected + 1) % buttons.size
+
+/** The picture [[Element.dialog]] draws: a centered box with a title, a message and a row of buttons, `selected`
+  * highlighted. No keys and no callbacks — see [[ConfirmDialogElement]] for the controller.
+  *
+  * Styled through the theme's `"dialog"` component role ([[DialogRole]]): its `base` is layered over `bodyStyle` (the
+  * theme's `primary`, from the factory) and the node's own style over both; the selected button takes
+  * `"dialog.selected"`, or `selectedStyle` (the theme's `focus`) when the theme has no such component. Built on the
+  * render thread like every node; the value is immutable.
+  */
+final case class DialogElement(
+    title: String,
+    message: String,
+    buttons: Seq[String],
+    selected: Int,
+    bodyStyle: Style,
+    selectedStyle: Style,
+    props: ElementProps = ElementProps(),
+) extends Element:
+  type Self = DialogElement
+  override def debugName: String                                 = "dialog"
+  private[dsl] override def componentRole: Option[ComponentRole] = Some(DialogRole)
+
+  def widget: Widget =
+    w.Dialog(
+      title,
+      Text.raw(message),
+      buttons,
+      selected,
+      dialogBodyStyle(props, bodyStyle),
+      dialogSelectedStyle(props, selectedStyle),
+    )
+
+  private[dsl] def withProps(props: ElementProps): DialogElement = copy(props = props)
 
 /** An interactive month grid over a caller-owned [[w.DatePickerState]]. While focused, Left/Right move the cursor a day
   * and Up/Down a week — across month and year ends, so the grid follows — PageUp/PageDown move it a month, `t` jumps to

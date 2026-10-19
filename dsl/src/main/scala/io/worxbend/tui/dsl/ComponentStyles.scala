@@ -135,3 +135,16 @@ case object ListRole extends ComponentRole:
   */
 case object TableHeaderRole extends ComponentRole:
   val styleName: StyleName = StyleName("table.header")
+
+/** The modal boxes — `dialog` and `confirmDialog` — under `"dialog"`. Its `base` is layered over the theme's `primary`
+  * for the frame, title and message; [[DialogRole.Selected]] is the selected button, which falls back to the theme's
+  * `focus` cue (on a `dialog`) or the focus cue / resting underline (on a `confirmDialog`) when the theme leaves it
+  * silent.
+  */
+case object DialogRole extends ComponentRole:
+  val styleName: StyleName = StyleName("dialog")
+
+  /** The selected button, `"dialog.selected"`: its `base` at rest, its `focused` style while a `confirmDialog` has the
+    * keyboard. Inherits whatever `"dialog"` sets, as every hierarchical name does.
+    */
+  val Selected: ComponentRole = ComponentRole.named("dialog.selected")

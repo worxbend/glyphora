@@ -94,6 +94,22 @@ private def selectedRowStyle(props: ElementProps): Style =
   if theme.components.contains(ListRole.Selected.styleName) then theme.style(ListRole.Selected.styleName)
   else props.focusStyle
 
+/** A dialog's body: the factory's theme style with the theme's `"dialog"` component `base` layered over it, and the
+  * node's own style over both.
+  */
+private def dialogBodyStyle(props: ElementProps, themed: Style): Style =
+  themed.patch(props.focusState.component.base).patch(props.style)
+
+/** A dialog's selected button: the theme's `"dialog.selected"` component when it has one — its `focused` style while
+  * the dialog is focused and says one, its `base` otherwise — and `fallback` when the theme is silent.
+  */
+private def dialogSelectedStyle(props: ElementProps, fallback: => Style): Style =
+  val theme = props.focusState.theme
+  if !theme.components.contains(DialogRole.Selected.styleName) then fallback
+  else
+    val states = theme.component(DialogRole.Selected)
+    if props.focused then StateStyles.stated(states.focused).getOrElse(states.base) else states.base
+
 /** The theme colour a severity draws in — the mapping shared by the `notice`/`badge` factories and the toast stack,
   * which reverses it into a padded badge at its own call site.
   */
