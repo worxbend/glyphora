@@ -89,3 +89,44 @@ final class RecordingRunSpec extends AnyFunSuite:
       case other => fail(s"expected a handler failure carrying the I/O error, got $other")
     assert(!backend.isRawMode && !backend.isAlternateScreen)
     assert(backend.drawCount == 0L)
+
+  /** Runs one app against a recording file and hands back the file's text, read at the moment `observe` asks. */
+  private def castOf(path: Path): Seq[String] = Files.readString(path).split("\n").toSeq.filter(_.nonEmpty)
+
+  test("a run that ends with an exception still leaves every frame it drew in the file"):
+    val cast = Files.createTempFile("glyphora-record-throw", ".cast")
+    try
+      val backend = HeadlessBackend(Size(10, 2))
+      backend.postEvent(Event.Key(KeyEvent(KeyCode.Char('x'), io.worxbend.tui.core.KeyModifiers.None)))
+      val result  = TerminalRunner(backend, RunnerConfig.Default.withRecording(cast)).run(
+        _ => (),
+        (_, _) => throw IllegalStateException("handler blew up"),
+        frame => frame.renderWidget((area, buffer) => buffer.setString(area.x, area.y, "up", Style.Default), frame.area),
+      )
+      assert(result.isLeft)
+      val lines   = castOf(cast)
+      assert(lines.head.startsWith("""{"version":2"""))
+      assert(lines.tail.nonEmpty && lines.tail.forall(_.startsWith("[")))
+    finally
+      val _ = Files.deleteIfExists(cast)
+
+  test("suspend flushes the recording first, so the file is complete while the terminal is handed over"):
+    val cast = Files.createTempFile("glyphora-record-suspend", ".cast")
+    try
+      val backend       = HeadlessBackend(Size(10, 2))
+      backend.postEvent(Event.Key(KeyEvent(KeyCode.Char('s'), io.worxbend.tui.core.KeyModifiers.None)))
+      var duringSuspend = Seq.empty[String]
+      val result        = TerminalRunner(backend, RunnerConfig.Default.withRecording(cast)).run(
+        _ => (),
+        (_, handle) =>
+          handle.suspend { duringSuspend = castOf(cast) }
+          handle.quit()
+          EventOutcome.Ignored
+        ,
+        frame =>
+          frame.renderWidget((area, buffer) => buffer.setString(area.x, area.y, "live", Style.Default), frame.area),
+      )
+      assert(result == Right(()))
+      assert(duringSuspend.length == 2, s"header and the first frame on disk before the body runs: $duringSuspend")
+    finally
+      val _ = Files.deleteIfExists(cast)

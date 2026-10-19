@@ -104,7 +104,16 @@ final class TerminalRunner(
               result = Left(RunnerError.Backend(error))
             case Right(())   =>
               setupIncomplete = false
-              val outcome = runLoop(onStart, handleEvent, render, loop, configWith(opened), capture)
+              val outcome =
+                runLoop(
+                  onStart,
+                  handleEvent,
+                  render,
+                  loop,
+                  configWith(opened),
+                  capture,
+                  () => opened.foreach(_.flush()),
+                )
               result = report(outcome, failures.collected)
               // One final bounded batch per queue, not a drain-until-empty: self-requeueing producers cannot postpone
               // onStop and backend restoration forever. Remaining owned work is discarded by close after onStop.
@@ -233,8 +242,21 @@ final class TerminalRunner(
       loop: RenderThread.RenderLoop,
       effective: RunnerConfig,
       capture: Option[StdioCapture],
+      beforeSuspend: () => Unit,
   ): Option[LoopFailure] =
-    val body = LoopBody(backend, effective, nanoTime, redrawRequested, onStart, handleEvent, render, loop, capture)
+    val body =
+      LoopBody(
+        backend,
+        effective,
+        nanoTime,
+        redrawRequested,
+        onStart,
+        handleEvent,
+        render,
+        loop,
+        capture,
+        beforeSuspend,
+      )
     capture match
       case Some(active) => Console.withOut(active.outStream)(Console.withErr(active.errStream)(body.run()))
       case None         => body.run()
@@ -323,11 +345,12 @@ private final class LoopBody(
     render: Frame => Unit,
     loop: RenderThread.RenderLoop,
     capture: Option[StdioCapture],
+    beforeSuspend: () => Unit,
 ):
 
   private val state    = LoopState()
   private val ticks    = TickSchedule(config.tickRate, nanoTime)
-  private val handle   = BackendHandle(backend, state, capture)
+  private val handle   = BackendHandle(backend, state, capture, beforeSuspend)
   private val composer = FrameComposer(backend, render, config.onFrame, config.viewport, config.onFrameTiming, nanoTime)
 
   private def isLive: Boolean = state.isLive && !loop.stopRequested
@@ -643,8 +666,12 @@ private final class LoopState:
   * is not thrown: it is recorded on the shared [[LoopState]], which ends the loop after the current iteration rather
   * than unwinding it mid-frame.
   */
-private final class BackendHandle(backend: Backend, state: LoopState, capture: Option[StdioCapture])
-    extends RunnerHandle:
+private final class BackendHandle(
+    backend: Backend,
+    state: LoopState,
+    capture: Option[StdioCapture],
+    beforeSuspend: () => Unit,
+) extends RunnerHandle:
 
   def quit(): Unit                           = state.stop()
   def runOnRenderThread(body: => Unit): Unit = RenderThread.runOnRenderThread(body)
@@ -653,7 +680,10 @@ private final class BackendHandle(backend: Backend, state: LoopState, capture: O
 
   // the backend forces a full repaint once `body` hands the terminal back; while it is away, captured output goes to
   // the real streams, because the terminal the body is using *is* the real stream
-  def suspend(body: => Unit): Unit         = state.record(backend.suspend(StdioCapture.passingThrough(capture)(body)))
+  // and the recording is flushed first, so the `.cast` file is complete for as long as the terminal is away
+  def suspend(body: => Unit): Unit         =
+    beforeSuspend()
+    state.record(backend.suspend(StdioCapture.passingThrough(capture)(body)))
   def printAbove(lines: Seq[String]): Unit = state.record(backend.printAbove(lines))
 
   def insertBefore(height: Int, widget: Widget): Unit = state.record(backend.insertBefore(height, widget))
