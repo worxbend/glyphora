@@ -27,6 +27,12 @@ final class ScrollViewState extends VersionedState:
     */
   private[widgets] def maxOffset: Int = math.max(0, lastContentHeight - lastViewportHeight)
 
+  /** Whether the view shows the last row of the content as of the most recent render — scrolled all the way down, or
+    * content that fits. `true` on a state that has never rendered. What a follow-the-tail view asks before new content
+    * arrives: at the end, it moves to the new end; scrolled up, it stays.
+    */
+  def isAtEnd: Boolean = offset >= maxOffset
+
   /** Moves the offset `delta` rows — negative is toward the top — and clamps it into the scrollable range. Every other
     * move on this class goes through here, so there is one owner of the clamp.
     */

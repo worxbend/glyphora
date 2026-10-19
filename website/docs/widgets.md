@@ -539,7 +539,10 @@ def view(using ReactiveScope, Theme): Element =
 `markdownStream(stream, scroll)` follows the tail. While its offset is at the bottom, each
 frame moves it to the new bottom; Up, PageUp, Home or the wheel leave the tail and the view
 holds still, and End rejoins it. The one-argument `markdownStream(stream)` is a measured leaf
-for a column or your own `scrollView`. The stream is render-thread-only, and appending does
+for a column or your own `scrollView`, and it follows the tail there too:
+`scrollView(column(header, markdownStream(stream)), scroll)` keeps the stream's newest row
+on screen while the view is scrolled to its end, through the same reveal request
+`.ensureVisible` uses, and holds still once the reader scrolls up. The stream is render-thread-only, and appending does
 not schedule a frame. The [cookbook recipe](./cookbook#stream-an-llm-reply-as-markdown)
 shows a background producer.
 

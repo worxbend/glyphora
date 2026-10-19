@@ -145,7 +145,7 @@ final case class ScrollViewElement(
         case _                               => ()
       val view     = searched(w.ScrollView(content.widget, rows))
       val portals  = PortalQueue.mark
-      val requests = RevealRequests(followsFocus)
+      val requests = RevealRequests(followsFocus, atEnd = state.isAtEnd)
       RevealProbe.collecting(requests)(view.render(area, buffer, state))
       // the container-query pre-pass paints an undecorated tree, which asks for nothing: that is not a request going
       // away, so the pre-pass leaves the bookkeeping of the frames that do ask alone

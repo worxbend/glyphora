@@ -68,7 +68,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 - `Text.fromAnsi`, the streaming `AnsiParser`, and the compile-checked `markup"[bold red]…[/]"` interpolator.
 - `text(content: Text)` for pre-styled text.
 - GFM tables, nested lists and task lists in `markdown`; `MarkdownOptions`, `TableOverflow`.
-- `MarkdownStream` and `markdownStream(stream)` / `markdownStream(stream, scroll)` for streamed output.
+- `MarkdownStream` and `markdownStream(stream)` / `markdownStream(stream, scroll)` for streamed output. Inside a `scrollView`, `markdownStream(stream)` pins the view to its newest row while the view is at its end; `ScrollViewState.isAtEnd`.
 - The open `Lexer` trait with `Lexer.Yaml`, `Sql`, `Markdown`, `Diff`, `TypeScript`, `Python`, `Lexer.forName`.
 - `.searchable(state)` on `log`, `scrollView` and `markdown`, `searchBar(state)`, `SearchState`, `Searchable`.
 
