@@ -576,10 +576,12 @@ private[dsl] trait ElementFactories:
       BadgeElement(label, w.BadgeVariant.Solid, theme.accent)
     }
 
-  /** A badge carrying a severity's own tag and color — `badge(NoticeLevel.Error)` reads `FAIL`. */
+  /** A badge carrying a severity's own tag and color — `badge(NoticeLevel.Error)` reads `FAIL`, or the tag the active
+    * [[Messages]] table gives the level.
+    */
   def badge(level: w.NoticeLevel)(using theme: Theme): BadgeElement =
     LateBinding.themed(theme) { theme =>
-      BadgeElement(level.tag, w.BadgeVariant.Solid, noticeLevelStyle(level)(using theme))
+      BadgeElement(Messages.active.tag(level), w.BadgeVariant.Solid, noticeLevelStyle(level)(using theme))
     }
 
   /** Blanks its area so a popup drawn over it starts from a clean background.

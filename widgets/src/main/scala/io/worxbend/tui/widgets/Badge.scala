@@ -64,6 +64,13 @@ final case class Badge(
 
 object Badge:
 
-  /** A badge carrying a severity's own tag and colour — `Badge.of(NoticeLevel.Error, errorStyle)` is `FAIL`. */
-  def of(level: NoticeLevel, style: Style, variant: BadgeVariant = BadgeVariant.Solid): Badge =
-    Badge(level.tag, variant, style)
+  /** A badge carrying a severity's own tag and colour — `Badge.of(NoticeLevel.Error, errorStyle)` is `FAIL`. Pass
+    * `label` to draw a tag of your own — a translated one — in the level's place.
+    */
+  def of(
+      level: NoticeLevel,
+      style: Style,
+      variant: BadgeVariant = BadgeVariant.Solid,
+      label: Option[String] = None,
+  ): Badge =
+    Badge(label.getOrElse(level.tag), variant, style)

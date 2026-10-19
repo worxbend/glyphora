@@ -26,7 +26,7 @@ def whichKeyPopup(bindings: KeyBindings, size: Size)(using theme: Theme): Option
     val lines     = rows.map { hint =>
       hint.keys + " " * (keyColumn - CharWidth.of(hint.keys) + WhichKeyGap) + hint.description
     }
-    val title     = s"${prefix.spelling} …"
+    val title     = s"${prefix.spelling} ${Messages.active.whichKeyEllipsis}"
     val width     = math.min(size.width, math.max(lines.map(CharWidth.of).max, CharWidth.of(title) + 2) + 4)
     val height    = math.min(size.height, lines.size + 2)
     LateBinding.composite(theme) { theme =>

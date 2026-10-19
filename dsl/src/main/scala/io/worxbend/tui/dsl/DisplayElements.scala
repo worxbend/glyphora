@@ -176,6 +176,7 @@ final case class NoticeElement(
       messageStyle.patch(props.style),
       accentStyle,
       timestampStyle,
+      icon = Some(Messages.active.icon(level)),
       overflow = overflow,
     )
 

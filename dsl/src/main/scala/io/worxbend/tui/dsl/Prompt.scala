@@ -101,7 +101,9 @@ object Prompt:
         options,
         render,
         multi = true,
-        picked => if picked.size < min then Left(s"choose at least $min") else Right(picked),
+        picked =>
+          if picked.size < min then Left(Messages.active.filled(Messages.active.promptChooseAtLeast, "min" -> min))
+          else Right(picked),
         picked => picked.map(render).mkString(", "),
         initial,
       ),
@@ -116,8 +118,9 @@ object Prompt:
   )(using session: PromptSession): Option[Long] =
     val parse: String => Either[String, Long] = raw =>
       raw.trim.toLongOption match
-        case None                          => Left(s"'$raw' is not a whole number")
-        case Some(n) if n < min || n > max => Left(s"enter a number from $min to $max")
+        case None => Left(Messages.active.filled(Messages.active.promptNotANumber, "input" -> raw))
+        case Some(n) if n < min || n > max =>
+          Left(Messages.active.filled(Messages.active.promptNumberRange, "min" -> min, "max" -> max))
         case Some(n)                       => Right(n)
     single(session, TextStep[Long](label, default.fold("")(_.toString), parse, _.toString))
 
@@ -132,10 +135,12 @@ object Prompt:
       mustExist: Boolean = false,
   )(using session: PromptSession): Option[Path] =
     val parse: String => Either[String, Path] = raw =>
-      if raw.trim.isEmpty then Left("a path is required")
+      if raw.trim.isEmpty then Left(Messages.active.promptPathRequired)
       else
         val resolved = base.resolve(raw.trim).normalize
-        if mustExist && !Files.exists(resolved) then Left(s"$raw does not exist") else Right(resolved)
+        if mustExist && !Files.exists(resolved) then
+          Left(Messages.active.filled(Messages.active.promptPathMissing, "input" -> raw))
+        else Right(resolved)
     val display: Path => String               = chosen =>
       if chosen.startsWith(base) then base.relativize(chosen).toString else chosen.toString
     single(session, TextStep[Path](label, default, parse, display, complete = Some(PathCompletion.candidates(base))))

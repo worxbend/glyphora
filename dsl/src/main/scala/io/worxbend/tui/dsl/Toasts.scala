@@ -67,7 +67,7 @@ private[dsl] final class ToastStack(now: () => Long):
         val style  = styleOf(toast.level)
         // the trailing space keeps the reversed style reading as a padded badge rather than as text ending mid-cell
         val notice = NoticeElement(s"${toast.message} ", toast.level, None, style, style, style)
-        val width  = CharWidth.of(s"${toast.level.icon} ${toast.message} ")
+        val width  = CharWidth.of(s"${Messages.active.icon(toast.level)} ${toast.message} ")
         val dx     = math.max(0, areaWidth - width - ToastRightMargin)
         Element.positioned(dx, ToastTopRow + index, width, 1)(notice)
       }

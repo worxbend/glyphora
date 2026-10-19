@@ -46,7 +46,9 @@ def statusBar(bindings: KeyBindings)(using Theme): Element =
   val mode  = Option.when(bindings.modes.nonEmpty)(bindings.mode).flatten.map(id => (s"[$id]", ""))
   val hints = bindings.pending match
     case Some(prefix) =>
-      (s"${prefix.spelling} …", "") +: bindings.continuations(prefix.keys).map(hint => (hint.keys, hint.description))
+      (s"${prefix.spelling} ${Messages.active.whichKeyEllipsis}", "") +: bindings
+        .continuations(prefix.keys)
+        .map(hint => (hint.keys, hint.description))
     case None         => bindings.hints
   statusBar(mode.toSeq ++ hints)
 
