@@ -485,6 +485,10 @@ private[dsl] object FocusPass:
     *
     * `onFocusPath` is handed the child positions, root first, that lead to the focused element in the returned tree
     * (`None` when nothing is focused) — the path key routing would otherwise search the whole tree for on every event.
+    *
+    * `gestures` is the host's [[PointerGestures]]. A node the gestures have a role for — selectable text — is wrapped
+    * in a [[BoundsElement]] carrying its [[PointerRoles]] even when `bounds` is `None`, recording into the same
+    * recorder, so a press can find it and its overlay is composed as it paints. Inert nodes take no role.
     */
   def decorate(
       root: Element,
@@ -497,6 +501,7 @@ private[dsl] object FocusPass:
       onCueDemand: () => Unit = () => (),
       theme: Theme = Theme.default,
       onFocusPath: Option[Vector[Int]] => Unit = _ => (),
+      gestures: Option[PointerGestures] = None,
   ): Element =
     var counter        = 0
     var pointerCounter = 0
@@ -531,18 +536,31 @@ private[dsl] object FocusPass:
         )
       )
 
-    def transform(built: Element, ancestorInert: Boolean, ancestorDisabled: Boolean, inherited: Style): Element =
+    def transform(
+        built: Element,
+        ancestorInert: Boolean,
+        ancestorDisabled: Boolean,
+        inherited: Style,
+        ancestorUnselectable: Boolean = false,
+    ): Element =
       // a node a themed factory built against the ambient default theme takes this frame's theme instead; a `withStyle`
       // scope is marked applied, because the cascade it asks for happens right here, on the way down
-      val element  = LateBinding.resolve(built, theme) match
+      val element      = LateBinding.resolve(built, theme) match
         case scope: StyleScopeElement => scope.copy(applied = true)
         case other                    => other
-      val cascade  = element match
+      val cascade      = element match
         case scope: StyleScopeElement => inherited.patch(scope.cascade)
         case _                        => inherited
-      val inert    = ancestorInert || element.props.inert
-      val disabled = ancestorDisabled || element.props.disabled
-      val nodeId   = nodeCounter
+      val inert        = ancestorInert || element.props.inert
+      // `.selectable(false)` opts the whole subtree out of text selection
+      val unselectable = ancestorUnselectable || element.props.selectable.contains(false)
+      def rolesOf(node: Element, g: PointerGestures): PointerRoles =
+        PointerRoles(selectable =
+          g.selection.enabled && !unselectable &&
+            (node.props.selectable.contains(true) || TextSelection.selectableByDefault(node))
+        )
+      val disabled                                                 = ancestorDisabled || element.props.disabled
+      val nodeId                                                   = nodeCounter
       nodeCounter += 1
       if bounds.isEmpty then
         element match
@@ -550,7 +568,7 @@ private[dsl] object FocusPass:
           case _                     => ()
       // a hover cue, or a pointer shape asked for by name, only shows under all-motion tracking; a theme component
       // with a hovered or pressed style asks for the same as an explicit `.hoverStyle`/`.pressedStyle` does
-      val states   = componentOf(element, theme)
+      val states                                                   = componentOf(element, theme)
       val hoverCue = element.props.hoverStyle.isDefined || states.hovered != Style.Default
       val pressCue = element.props.pressedStyle.isDefined || states.pressed != Style.Default
       if hoverCue || element.props.pointerShape.isDefined then onMotionDemand()
@@ -594,11 +612,14 @@ private[dsl] object FocusPass:
               case _: ScrollViewElement => 0 :: position :: outer
               case _                    => position :: outer
             position += 1
-            transform(child, inert, disabled, cascade)
+            transform(child, inert, disabled, cascade, unselectable)
           },
         )
       trail = outer
-      val recorded = bounds.fold(current)(recorder => boundsWrapped(current, nodeId, nodeCounter - 1, recorder))
+      val roles    = gestures.fold(PointerRoles.Empty)(g => if inert then PointerRoles.Empty else rolesOf(element, g))
+      val recorded = bounds.orElse(gestures.filter(_ => !roles.isEmpty).map(_.recorder)) match
+        case Some(recorder) => boundsWrapped(current, nodeId, nodeCounter - 1, recorder, roles, gestures)
+        case None           => current
       val revealed =
         if element.props.ensureVisible && !inert then
           revealWrapped(recorded, element.props.focusKey.getOrElse(nodeId.toString))
@@ -616,11 +637,20 @@ private[dsl] object FocusPass:
   /** `current` with a [[BoundsElement]] around the themed node — *under* an input wrapper, never over it, so the walks
     * in [[EventRouter]] that match on `TrackedElement`/`PointerElement` keep finding them at the node's own level.
     */
-  private def boundsWrapped(current: Element, id: Int, lastDescendantId: Int, recorder: NodeBounds): Element =
+  private def boundsWrapped(
+      current: Element,
+      id: Int,
+      lastDescendantId: Int,
+      recorder: NodeBounds,
+      roles: PointerRoles,
+      gestures: Option[PointerGestures],
+  ): Element =
+    def wrap(node: Element): BoundsElement =
+      BoundsElement(node, id, lastDescendantId, recorder, roles, if roles.isEmpty then None else gestures)
     current match
-      case tracked: TrackedElement => tracked.copy(inner = BoundsElement(tracked.inner, id, lastDescendantId, recorder))
-      case pointer: PointerElement => pointer.copy(inner = BoundsElement(pointer.inner, id, lastDescendantId, recorder))
-      case other                   => BoundsElement(other, id, lastDescendantId, recorder)
+      case tracked: TrackedElement => tracked.copy(inner = wrap(tracked.inner))
+      case pointer: PointerElement => pointer.copy(inner = wrap(pointer.inner))
+      case other                   => wrap(other)
 
   /** `current` with a [[RevealElement]] around the node — under any input wrapper, for the reason [[boundsWrapped]]
     * gives.

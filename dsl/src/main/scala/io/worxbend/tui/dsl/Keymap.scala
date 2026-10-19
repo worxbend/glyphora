@@ -24,6 +24,7 @@ final case class FrameworkKeys(
     menuBar: KeyEvent = KeyEvent.of(KeyCode.F(10)),
     windowMove: KeyEvent = KeyEvent(KeyCode.Char('m'), KeyModifiers.Alt),
     windowResize: KeyEvent = KeyEvent(KeyCode.Char('r'), KeyModifiers.Alt),
+    copySelection: KeyEvent = KeyEvent(KeyCode.Char('c'), KeyModifiers.Ctrl | KeyModifiers.Shift),
 ):
   require(pageStep > 0, s"pageStep must be positive, was $pageStep")
 
@@ -37,6 +38,7 @@ final case class FrameworkKeys(
     (FrameworkKeys.MenuBar, menuBar, "open the menu bar"),
     (FrameworkKeys.WindowMove, windowMove, "move the focused window with the arrows"),
     (FrameworkKeys.WindowResize, windowResize, "resize the focused window with the arrows"),
+    (FrameworkKeys.CopySelection, copySelection, "copy the mouse text selection"),
   )
 
   /** These keys with every id in `keymap` moved to its sequence; ids that name no framework key are ignored, so one
@@ -59,6 +61,7 @@ final case class FrameworkKeys(
       menuBar = key(FrameworkKeys.MenuBar, menuBar),
       windowMove = key(FrameworkKeys.WindowMove, windowMove),
       windowResize = key(FrameworkKeys.WindowResize, windowResize),
+      copySelection = key(FrameworkKeys.CopySelection, copySelection),
     )
 
   /** Whether `event` is `key` held with at least `key`'s modifiers. */
@@ -75,6 +78,7 @@ object FrameworkKeys:
   val MenuBar: BindingId        = BindingId("menu-bar")
   val WindowMove: BindingId     = BindingId("window-move")
   val WindowResize: BindingId   = BindingId("window-resize")
+  val CopySelection: BindingId  = BindingId("copy-selection")
 
   /** Tab, Shift+Tab, Ctrl+P, Ctrl+C, Esc and a page step of 10 — what every `TuiApp` used before these became ids. */
   val default: FrameworkKeys = FrameworkKeys()

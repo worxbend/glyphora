@@ -713,6 +713,8 @@ trait TuiApp:
         // headless run (a test, which is what `boundsOf` exists for), an app that has asked once, and — switched on
         // frame by frame in `effectiveView` — a modal that closes on a click outside it
         run.host.recordBounds = boundsRequested || recordsBoundsByDefault(backend)
+        // a mouse-capturing app has taken the terminal's own selection away, so it selects text itself
+        run.host.textSelection = runConfig.mouseCapture
         // on the render thread, and while this run is still registered on it: the clock this app's animations read
         // is the one belonging to this loop, and the exit path below can no longer resolve it for itself
         run.renderLoop = Some(AnimationClock.attachToCurrentLoop())
@@ -936,7 +938,13 @@ trait TuiApp:
       FrameworkKeys.currentPageStep.withValue(keys.pageStep)(run.host.dispatchKey(key))
     }
     val bound    = !consumed && !palette.isOpenNow && dispatchBinding(key)
-    if consumed || bound then true else handleFrameworkKey(key, run.tracker, handle)
+    if consumed || bound then true else copySelectionKey(key, run) || handleFrameworkKey(key, run.tracker, handle)
+
+  /** `Ctrl+Shift+C` (the rebindable `copy-selection` framework key) while a mouse selection shows: copies it again.
+    * Tried before the other framework keys, because `Ctrl+C` — quit — also matches a chord that adds Shift.
+    */
+  private def copySelectionKey(key: KeyEvent, run: RunState): Boolean =
+    run.host.selectedText.isDefined && frameworkKeys.fires(frameworkKeys.copySelection, key) && run.host.copySelection()
 
   /** A key no element consumed, offered to the bindings: it fires one, or starts a sequence and waits. */
   private def dispatchBinding(key: KeyEvent): Boolean =
