@@ -25,7 +25,8 @@ import java.util.Locale
   * is part of the value, because colours are written `#rrggbb`). Every value except `name`, `extends` and `glyphs` is a
   * style in [[io.worxbend.tui.core.Style.parse]]'s spelling.
   *
-  *   - The semantic roles: `primary`, `accent`, `muted`, `error`, `warning`, `success`, `surface`, `border`, `focus`.
+  *   - The semantic roles: `primary`, `accent`, `muted`, `error`, `warning`, `success`, `surface`, `border`, `focus`,
+  *     and `disabled` — written back only when the theme set it, since left out it follows `muted`.
   *   - The palettes, by dotted path: `loading.<spinner|label|track|fill|band>`, `markdown.<field>` and
   *     `markdown.syntax.<field>`, `syntax.<field>` — the field names of `LoadingTheme`, `MarkdownTheme` and
   *     `SyntaxTheme`, with camel case written in dashes (`markdown.table-header`).
@@ -141,6 +142,11 @@ private[dsl] object ThemeFile:
 
   private val FillRampKey = "loading.fill-ramp"
 
+  /** The disabled role: written only when the theme set one, so a file that leaves it out keeps it derived from
+    * `muted`.
+    */
+  private val DisabledKey = "disabled"
+
   /** A `loading.fill-ramp` value: `none`, or one or more comma-separated colours. */
   private def ramp(number: Int, value: String): Either[LineError, Option[ColorRamp]] =
     if value.trim.toLowerCase(Locale.ROOT) == "none" then Right(None)
@@ -182,6 +188,8 @@ private[dsl] object ThemeFile:
         case "extends"   => Right(theme)
         case "name"      =>
           if value.isEmpty then Left(LineError(number, "name: a theme needs a name")) else Right(theme.withName(value))
+        case DisabledKey =>
+          style.map(theme.withDisabled)
         case FillRampKey =>
           ramp(number, value).map(fill => theme.withLoading(theme.loading.copy(fillRamp = fill)))
         case "glyphs"    =>
@@ -221,7 +229,8 @@ private[dsl] object ThemeFile:
 
   def render(theme: Theme): String =
     val header   = Seq(s"name = ${theme.name}", s"glyphs = ${GlyphNames.find(_._2 == theme.glyphs).fold("full")(_._1)}")
-    val settings = Settings.map(setting => s"${setting.key} = ${Style.render(setting.read(theme))}") :+
+    val disabled = Option.when(theme.disabledIsSet)(s"$DisabledKey = ${Style.render(theme.disabled)}").toSeq
+    val settings = Settings.map(setting => s"${setting.key} = ${Style.render(setting.read(theme))}") ++ disabled :+
       s"$FillRampKey = ${renderRamp(theme.loading.fillRamp)}"
     val components = theme.components.toSeq.sortBy(_._1.value).flatMap { (name, styles) =>
       s"component.${name.value} = ${Style.render(styles.base)}" +:

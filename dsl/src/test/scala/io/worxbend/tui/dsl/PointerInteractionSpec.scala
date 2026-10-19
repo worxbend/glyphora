@@ -119,3 +119,33 @@ final class PointerInteractionSpec extends AnyFunSuite with PilotFixture:
       override def config: RunnerConfig             = RunnerConfig.Default.withMouseCapture
       def view(using ReactiveScope, Theme): Element = button("Go")(())
     driving(plain) { (_, backend) => assert(backend.mouseCaptureMode.contains(MouseCaptureMode.Buttons)) }
+
+  test("a keyed control stays pressed when the tree reshapes before the next frame; its new neighbour does not"):
+    val extra = Signal(false)
+    val app   = new TuiApp:
+      override def bindings: KeyBindings            = KeyBindings(binding("x", "insert")(extra.set(true)))
+      def view(using ReactiveScope, Theme): Element =
+        def cued(label: String) = button(label)(()).key(label).pressedStyle(Style.Default.underline).length(1)
+        column((if extra.get then Seq(cued("X")) else Seq.empty) ++ Seq(cued("A"), cued("B"), text("").fill)*)
+    driving(app, Size(30, 5)) { (pilot, _) =>
+      pilot.mouseDown(14, 1).waitForIdle() // on B, row 1
+      def underlined(row: Int) =
+        (0 until 30).exists(x => pilot.cellAt(x, row).style.modifiers.hasAny(Modifiers.Underline))
+      assert(underlined(1) && !underlined(0))
+      pilot.press("x").waitForIdle() // X lands on row 0: A moves to row 1, B to row 2
+      assert(pilot.screenLines(2).contains("B"))
+      assert(underlined(2), "B is still the pressed control")
+      assert(!underlined(1), "A took B's old place, not its pressed state")
+      pilot.mouseUp(14, 4).waitForIdle()
+      assert(!underlined(2))
+    }
+
+  test(
+    "a pressed cue alone also turns on motion tracking, so the cue the control returns to after the release is known"
+  ):
+    val app = new TuiApp:
+      override def config: RunnerConfig             = RunnerConfig.Default.withMouseCapture
+      def view(using ReactiveScope, Theme): Element = button("Go")(()).pressedStyle(Style.Default.underline)
+    driving(app) { (pilot, backend) =>
+      pilot.waitUntil("motion tracking on")(backend.mouseCaptureMode.contains(MouseCaptureMode.AllMotion))
+    }

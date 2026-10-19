@@ -1084,9 +1084,9 @@ trait TuiApp:
       activeHandle.get().foreach(_.setTaskbarProgress(progress))
       shownTaskbar = progress
 
-  /** Upgrades a run with mouse capture to all-motion tracking the first frame that contains a hover cue or an explicit
-    * pointer shape, so `.hoverStyle` works without the app configuring anything. Once per run, and never for an app
-    * that left mouse capture off: turning the mouse on would take the terminal's own text selection away.
+  /** Upgrades a run with mouse capture to all-motion tracking the first frame that contains a hover or pressed cue or
+    * an explicit pointer shape, so `.hoverStyle` works without the app configuring anything. Once per run, and never
+    * for an app that left mouse capture off: turning the mouse on would take the terminal's own text selection away.
     */
   private def syncMouseMotion(run: RunState): Unit =
     if !motionRequested && run.host.wantsMouseMotion && run.config.mouse == MouseCaptureMode.Buttons then

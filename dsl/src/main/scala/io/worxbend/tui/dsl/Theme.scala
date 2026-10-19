@@ -77,6 +77,7 @@ final class Theme private (
     val syntax: SyntaxTheme,
     val glyphs: GlyphSupport,
     val components: Map[StyleName, StateStyles],
+    private val disabledRole: Option[Style] = None,
 ):
 
   /** This theme with the named fields replaced — the one place the builders below spell out the constructor. */
@@ -96,6 +97,7 @@ final class Theme private (
       syntax: SyntaxTheme = syntax,
       glyphs: GlyphSupport = glyphs,
       components: Map[StyleName, StateStyles] = components,
+      disabledRole: Option[Style] = disabledRole,
   ): Theme =
     new Theme(
       name,
@@ -113,18 +115,24 @@ final class Theme private (
       syntax,
       glyphs,
       components,
+      disabledRole,
     )
 
   /** The name [[toString]] prints and a theme switcher shows; the presets are `"dark"`, `"light"`, `"high-contrast"`.
     */
   def withName(name: String): Theme = updated(name = name)
 
-  /** The style the focus pass stamps on a `.disabled` control: [[muted]] with `dim` added, so a disabled button reads
-    * as greyed out in every preset without a role of its own. Derived rather than stored — a theme that changes `muted`
-    * changes this too — because the three presets express "de-emphasised" through `muted` already and a second knob for
-    * the same idea would drift from the first. A later theme shape may promote it to a role; the read stays `disabled`.
+  /** The style the focus pass stamps on a `.disabled` control. A stored role: what [[withDisabled]] set, or — for a
+    * theme that never set one, every preset included — [[muted]] with `dim` added, so a disabled button reads as greyed
+    * out in every preset and a theme that changes `muted` changes this too until it says otherwise.
     */
-  def disabled: Style = muted.dim
+  def disabled: Style = disabledRole.getOrElse(muted.dim)
+
+  /** The style disabled controls draw in, replacing the derived `muted.dim` — a theme file's `disabled = …`. */
+  def withDisabled(style: Style): Theme = updated(disabledRole = Some(style))
+
+  /** Whether [[disabled]] was set rather than derived — what a theme file writes back. */
+  private[dsl] def disabledIsSet: Boolean = disabledRole.isDefined
 
   def withPrimary(style: Style): Theme = updated(primary = style)
   def withAccent(style: Style): Theme  = updated(accent = style)
@@ -198,7 +206,8 @@ final class Theme private (
         (name == that.name && glyphs == that.glyphs && primary == that.primary && accent == that.accent &&
           muted == that.muted && error == that.error && warning == that.warning && success == that.success &&
           surface == that.surface && border == that.border && focus == that.focus && loading == that.loading &&
-          markdown == that.markdown && syntax == that.syntax && components == that.components)
+          markdown == that.markdown && syntax == that.syntax && components == that.components &&
+          disabledRole == that.disabledRole)
       case _           => false
 
   /** Hashes every field [[equals]] compares, so a `Set[Theme]` or a memo keyed by theme cannot conflate two that differ
@@ -219,7 +228,8 @@ final class Theme private (
     hash = 31 * hash + markdown.hashCode
     hash = 31 * hash + syntax.hashCode
     hash = 31 * hash + glyphs.hashCode
-    31 * hash + components.hashCode
+    hash = 31 * hash + components.hashCode
+    31 * hash + disabledRole.hashCode
 
   /** `Theme(dark)` — the name alone. Fourteen styles and palettes printed in full were unreadable in exactly the place
     * a theme is printed most, a failed assertion, and the name is what distinguishes one theme from another to a

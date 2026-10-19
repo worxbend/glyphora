@@ -112,6 +112,8 @@ note in [Versioning & releases](website/docs/versioning.md).
 - Inspector overlay (F12, framework key `inspector`); `GLYPHORA_DEBUG_LAYOUT=1` debug borders; `examples/doctor`.
 - `pilot.a11yReport(app)` accessibility lint (`A11yFinding`, `A11yRule`); its focus-cue exemption follows the node's own `selectionIsFocusCue`.
 - `AppServices.screenLabels`: the screen trail for a `breadcrumb` drawn by a helper outside the app.
+- `FormState.disable(name)` / `enable` / `setDisabled` / `disabled`: disabled form fields, announced by `Form.accessible`.
+- `Theme.withDisabled(style)` and a theme file's `disabled = …`: the disabled role is stored, falling back to `muted.dim`.
 - `TuiApp.inspector = false` and `FrameworkKeys.unbind(ids*)` (`KeySequence.unbound`) turn the inspector — or any framework key — off.
 - JDK Flight Recorder events `FrameDrawn`, `EventRouted`, `FocusChanged`, `AsyncAdmitted`, `AsyncRejected` (`JfrEvents`).
 - Environment overrides `GLYPHORA_COLOR_DEPTH`, `GLYPHORA_KEYBOARD`, `GLYPHORA_MOUSE`, `GLYPHORA_ESCAPE_DELAY`.
@@ -136,7 +138,7 @@ note in [Versioning & releases](website/docs/versioning.md).
 - `ColorDepth.detect` honours `FORCE_COLOR`.
 - Frames make two tree walks instead of six; key routing follows the recorded focus path.
 - `ListView` costs the viewport, not the list; `DataTable` no longer scans for its selected key every frame.
-- A mouse-capturing `TuiApp` turns on all-motion tracking when a frame draws a hover cue or `.pointer`.
+- A mouse-capturing `TuiApp` turns on all-motion tracking when a frame draws a hover or pressed cue or `.pointer`; hovered and pressed marks follow a keyed control across a reshaped tree.
 - Searched views cache their matches by content and query: a searched `scrollView` paints its whole content once per query instead of every frame, and a searched `log` re-matches only when its lines change.
 - A soft-wrapped `textArea` moves Up/Down by wrapped row and re-wraps only the lines an edit changed.
 - Every `scrollView` around a focused or `.ensureVisible` child scrolls to it, nested ones included.

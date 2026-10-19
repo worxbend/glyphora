@@ -406,8 +406,9 @@ three for its whole run with `RunnerConfig.Default.withMouse(MouseCaptureMode.Al
 one setting, so "motion without capture" cannot be written.
 
 A `TuiApp` running with mouse capture does not need to: the first frame that contains a
-`.hoverStyle(...)` or an explicit `.pointer(shape)` switches the terminal to all-motion
-tracking by itself. An app with mouse capture off is never switched on — that would take
+`.hoverStyle(...)`, a `.pressedStyle(...)` or an explicit `.pointer(shape)` switches the
+terminal to all-motion tracking by itself — a pressed cue too, because once the button
+comes back up the control returns to hovered or plain, and only motion reports say which. An app with mouse capture off is never switched on — that would take
 the terminal's own text selection away.
 
 ### Hover and pressed styles
@@ -423,7 +424,10 @@ button("Deploy")(deploy())
 
 Only the innermost target under the pointer is hovered, so a container's hover style
 shows where none of its children is. Pressed lasts from the press to the release, wherever
-the release lands. A hover cue must never be the only way to find something: a terminal
+the release lands. A control with a `.key` is remembered by its key, so when the tree
+changes shape before the next frame — a row inserted above it — the hovered or pressed
+mark stays on that control instead of landing on whichever one took its place; an
+unkeyed control is remembered by its position in the frame. A hover cue must never be the only way to find something: a terminal
 without motion reporting never sends a hover.
 
 ## Disable a control
@@ -437,7 +441,8 @@ button("Save")(save()).disabled(!form.isValid)
 
 A disabled control leaves the tab order (`Tab` skips it and `focusTo` refuses it), none of
 its handlers or built-ins run — a click lands on it and stops there, neither activating it
-nor moving focus — and it draws in the theme's `disabled` style (`muted`, dimmed). The
+nor moving focus — and it draws in the theme's `disabled` style (`muted`, dimmed, unless
+the theme sets its own with `theme.withDisabled(style)` or a theme file's `disabled = …`). The
 pointer over it is `PointerShape.NotAllowed`. It stays in the tree and keeps its space, so
 nothing moves when it is re-enabled.
 

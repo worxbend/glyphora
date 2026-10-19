@@ -344,14 +344,18 @@ final class ElementHost:
     * pointer over every event that has a position on screen; pressed is set by a press and cleared by a release.
     */
   private def trackPointerStates(event: MouseEvent, under: Option[MouseHit]): Boolean =
-    val hovered = under.map(_.target)
-    val pressed = event.kind match
-      case MouseEventKind.Down => hovered
-      case MouseEventKind.Up   => None
-      case _                   => tracker.pressedTarget
-    val changed = hovered != tracker.hoveredTarget || pressed != tracker.pressedTarget
+    val hovered               = under.map(_.target)
+    val hoveredKey            = hovered.flatMap(tracker.bounds.targetBounds).flatMap(_.key)
+    val (pressed, pressedKey) = event.kind match
+      case MouseEventKind.Down => (hovered, hoveredKey)
+      case MouseEventKind.Up   => (None, None)
+      case _                   => (tracker.pressedTarget, tracker.pressedKey)
+    val changed               = hovered != tracker.hoveredTarget || pressed != tracker.pressedTarget ||
+      hoveredKey != tracker.hoveredKey || pressedKey != tracker.pressedKey
     tracker.hoveredTarget = hovered
+    tracker.hoveredKey = hoveredKey
     tracker.pressedTarget = pressed
+    tracker.pressedKey = pressedKey
     changed
 
   /** The mouse pointer the last frame wants shown at `position` — see [[EventRouter.pointerShapeAt]]. A host that owns

@@ -50,6 +50,11 @@ private[dsl] object FieldBinding:
 /** Live state for a derived form. Submission first parses all controls with the spec's original parsers. If parsing
   * succeeds, typed field checks validate the candidate without changing it; only a valid candidate is published. Parser
   * errors therefore precede validation errors. Writes and callbacks run on the render thread.
+  *
+  * A field can be disabled by name ([[disable]], [[enable]], [[setDisabled]]): both renderings draw it with the theme's
+  * disabled style and take it out of the tab order, and [[Form.accessible]] announces it as disabled. Its value is kept
+  * and still submitted — the case class needs every field — so disabling is a statement about editing, not about the
+  * result.
   */
 final class FormState[A] private (
     private[dsl] val bindings: Seq[FieldBinding],
@@ -58,6 +63,23 @@ final class FormState[A] private (
 ):
   val errors: Signal[Map[String, String]] = Signal(Map.empty)
   val result: Signal[Option[A]]           = Signal(None)
+
+  /** The names of the fields that are disabled now — read by both renderings, so a change repaints the form. */
+  val disabled: Signal[Set[String]] = Signal(Set.empty)
+
+  /** Disables the field called `name`: drawn dimmed, out of the tab order, announced as disabled. */
+  def disable(name: String): Unit = setDisabled(name, true)
+
+  /** Enables the field called `name` again. */
+  def enable(name: String): Unit = setDisabled(name, false)
+
+  /** Disables or enables the field called `name`. A name no field has is ignored. */
+  def setDisabled(name: String, isDisabled: Boolean): Unit =
+    if bindings.exists(_.spec.name == name) then
+      disabled.set(if isDisabled then disabled.peek + name else disabled.peek - name)
+
+  /** Whether the field called `name` is disabled, without subscribing. */
+  def isDisabled(name: String): Boolean = disabled.peek.contains(name)
 
   /** Parses every control, then validates the typed candidate. Failure always clears the previous result. */
   def submit(): Unit =
@@ -106,9 +128,10 @@ object Form:
       field: (FieldBinding, Int) => Element
   )(using ReactiveScope): Element =
     val currentErrors = state.errors.get
+    val off           = state.disabled.get
     val rows          = state.bindings.zipWithIndex.flatMap { (binding, index) =>
       val error = currentErrors.get(binding.spec.name).map(message => errorRow(errorText(message)))
-      field(binding, index) +: error.toSeq
+      field(binding, index).disabled(off.contains(binding.spec.name)) +: error.toSeq
     }
     Element.column(rows*)
 
@@ -160,30 +183,36 @@ object Form:
     }
 
   /** A screen-reader-friendly rendering of the same [[FormState]] (Huh's `WithAccessible`): every field on its own
-    * labeled line announced as "Field N of M", checkbox state spelled out as text, and validation failures prefixed
-    * with "Error:" rather than signalled by color alone. Pair with a plain Tab/Enter key flow for assistive tech.
+    * labeled line announced as "Field N of M", checkbox state and a disabled field spelled out as text, and validation
+    * failures prefixed with "Error:" rather than signalled by color alone. Pair with a plain Tab/Enter key flow for
+    * assistive tech.
     */
   def accessible[A](state: FormState[A])(using ReactiveScope): Element =
     val total = state.bindings.size
+    val off   = state.disabled.get
     fieldColumn(state, message => s"Error: $message") { (binding, index) =>
-      val position = s"Field ${index + 1} of $total"
+      // a disabled field says so in words, as its checkbox state and choice are, rather than by being dimmed alone
+      val position                         = s"Field ${index + 1} of $total"
+      def status(details: String*): String =
+        val all = details ++ Option.when(off.contains(binding.spec.name))("disabled")
+        if all.isEmpty then "" else all.mkString(" (", ", ", ")")
       binding match
         case FieldBinding.TextLike(spec, inputState, _)          =>
           Element.column(
-            Element.text(s"$position: ${spec.name}").length(1),
+            Element.text(s"$position: ${spec.name}${status()}").length(1),
             textControl(spec, inputState).fill.length(1),
           )
         case FieldBinding.BoolLike(spec, value, _)               =>
           val announced = if value.get then "checked" else "unchecked"
           Element.column(
-            Element.text(s"$position: ${spec.name} ($announced)").length(1),
+            Element.text(s"$position: ${spec.name}${status(announced)}").length(1),
             Element.checkbox(spec.name, value).length(1),
           )
         case FieldBinding.SelectLike(spec, options, selected, _) =>
           // the chosen label is spelled out rather than left to the highlight, which is a colour and announces nothing
           val announced = options.lift(selected.get).getOrElse("nothing to choose from")
           Element.column(
-            Element.text(s"$position: ${spec.name} ($announced, ${options.size} options)").length(1),
+            Element.text(s"$position: ${spec.name}${status(announced, s"${options.size} options")}").length(1),
             Element.select(options, selected).length(1),
           )
     }

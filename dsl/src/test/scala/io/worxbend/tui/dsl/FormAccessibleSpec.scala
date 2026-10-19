@@ -39,3 +39,23 @@ final class FormAccessibleSpec extends AnyFunSuite with PilotFixture:
     assert(pilot.screenText.contains("Error: required"))
     pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)
     assert(pilot.awaitTermination())
+
+  test("a disabled field is out of the tab order, dimmed, and announced as disabled; enabling it brings it back"):
+    val state   = newState()
+    state.disable("username")
+    assert(state.isDisabled("username"))
+    val backend = HeadlessBackend(Size(40, 12))
+    val app     = new TuiApp:
+      override def bindings: KeyBindings            =
+        KeyBindings(binding("ctrl+e", "enable")(state.enable("username")), binding("ctrl+q", "quit")(quit()))
+      def view(using ReactiveScope, Theme): Element = Form.accessible(state)
+    val pilot   = startPilot(backend) { app.runWith(backend) }.waitForIdle()
+    assert(pilot.screenText.contains("Field 1 of 2: username (disabled)"), pilot.screenText)
+    pilot.press("tab", "x").waitForIdle()
+    assert(state.bindings.collectFirst { case FieldBinding.TextLike(_, input, _) => input.value }.contains(""))
+    pilot.press("ctrl+e").waitForIdle()
+    assert(!pilot.screenText.contains("(disabled)"), pilot.screenText)
+    pilot.press("x").waitForIdle() // unkeyed focus stays at index 0, which is the username field again
+    assert(state.bindings.collectFirst { case FieldBinding.TextLike(_, input, _) => input.value }.contains("x"))
+    pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)
+    assert(pilot.awaitTermination())

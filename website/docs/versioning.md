@@ -185,6 +185,10 @@ Three changes reach almost every app, so check them first:
 
 ### Theming, style and `frameStyle`
 
+- **`Theme.disabled` is a stored role.** It still reads `muted.dim` until a theme sets it with
+  `withDisabled(style)` or a theme file's `disabled = …`, so nothing changes for a theme that
+  does not. `Theme` equality now also compares the set role, and `Theme.render` writes a
+  `disabled` line only for a theme that set one.
 - **`style` means the content style on every node; a panel's border is `.frameStyle(…)`.** On a
   `panel` the style builders (`.fg`, `.bg`, `.bold`, `.dim`, `.styled(…)`) used to recolour the
   border; `style` meant the border on `panel`, the text on `text`, the body on a list and nothing
@@ -530,10 +534,15 @@ Three changes reach almost every app, so check them first:
   ```
 
 - **A mouse-capturing `TuiApp` may switch to all-motion tracking by itself**: the first frame that
-  draws a `.hoverStyle(…)` or an explicit `.pointer(shape)` asks the terminal for every pointer
-  movement (more input traffic over ssh). Apps with mouse capture off never switch; to stay on
-  button-only tracking, use neither. `ElementHost.dispatchMouse` may now answer `true` for an
+  draws a `.hoverStyle(…)`, a `.pressedStyle(…)` (or a theme component with a hovered or pressed
+  style) or an explicit `.pointer(shape)` asks the terminal for every pointer movement (more input
+  traffic over ssh). Apps with mouse capture off never switch; to stay on button-only tracking,
+  use none of them. Hovered and pressed marks follow a keyed control when the tree reshapes
+  before the next frame, rather than staying on its old position. `ElementHost.dispatchMouse` may now answer `true` for an
   unconsumed event when a hover or pressed cue needs a repaint.
+- **A dropdown's floating list can let the closing click through**: `.passThroughOutside` closes
+  the list and delivers the click to the control under the pointer; without it the click is still
+  spent on closing.
 - **Mouse-capturing apps select text.** With `RunnerConfig(mouse = MouseCaptureMode.Buttons)`, a left drag over
   `text`, `markdown`, `log`, `logConsole` or a table selects text and copies it through OSC 52 on
   release, because capturing the mouse took the terminal's own selection away. A press an element

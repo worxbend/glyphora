@@ -133,9 +133,9 @@ private[dsl] final class NodeBounds:
     * paint sequence. A target scrolled entirely out of view is not recorded, so neither hit testing nor wheel bubbling
     * can reach it. Render thread only.
     */
-  def recordTarget(target: InputTarget, area: Rect, passThrough: Boolean = false): Unit =
+  def recordTarget(target: InputTarget, area: Rect, passThrough: Boolean = false, key: Option[String] = None): Unit =
     placed(area).foreach { (layout, visible) =>
-      targets(target) = PaintedArea(layout, visible, targetSequence, passThrough)
+      targets(target) = PaintedArea(layout, visible, targetSequence, passThrough, key)
       targetSequence += 1
     }
 

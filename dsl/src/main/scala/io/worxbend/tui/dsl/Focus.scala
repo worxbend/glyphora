@@ -26,7 +26,13 @@ private[dsl] final case class MouseHit(target: InputTarget, layoutArea: Rect)
   * holds exactly one character — painted later means painted *over*. That makes the greatest sequence covering a cell
   * the thing the user actually sees there, which is the rule [[FocusTracker.hitTest]] resolves a click by.
   */
-private[dsl] final case class PaintedArea(layoutArea: Rect, hitArea: Rect, sequence: Int, passThrough: Boolean = false)
+private[dsl] final case class PaintedArea(
+    layoutArea: Rect,
+    hitArea: Rect,
+    sequence: Int,
+    passThrough: Boolean = false,
+    key: Option[String] = None,
+)
 
 /** An element in the tree about to render asking to be given focus: where it sits in the tab order, and what identifies
   * it across renders.
@@ -99,11 +105,12 @@ private[dsl] final class FocusTracker(private[dsl] val bounds: NodeBounds = Node
   private var lastAutofocus = Option.empty[AutofocusRequest]
 
   /** Records where focusable `index` rendered — see [[NodeBounds.recordTarget]]. */
-  def record(index: Int, area: Rect): Unit = bounds.recordTarget(InputTarget.Focus(index), area)
+  def record(index: Int, area: Rect, key: Option[String] = None): Unit =
+    bounds.recordTarget(InputTarget.Focus(index), area, key = key)
 
   /** Records where the non-focusable node with mouse behaviour numbered `id` rendered. */
-  def recordPointer(id: Int, area: Rect, passThrough: Boolean = false): Unit =
-    bounds.recordTarget(InputTarget.Pointer(id), area, passThrough)
+  def recordPointer(id: Int, area: Rect, passThrough: Boolean = false, key: Option[String] = None): Unit =
+    bounds.recordTarget(InputTarget.Pointer(id), area, passThrough, key)
 
   /** Published by a scroll view for exactly the duration of its content render, and paired with [[popViewport]] in a
     * `finally` so an exception mid-render cannot leak a translation into a sibling subtree.
@@ -325,15 +332,35 @@ private[dsl] final class FocusTracker(private[dsl] val bounds: NodeBounds = Node
     anchor = FocusAnchor(clampedIndex(index), scala.None)
 
   /** The input target the pointer last rested over, as of the last mouse event — what the next focus pass marks
-    * `hovered`. Identities are this frame's numbering, applied to the next frame's tree: stable as long as the tree's
-    * shape is, which is the same bargain an unkeyed focus index makes.
+    * `hovered`. A target painted by a node with a `.key` is remembered by that key ([[hoveredKey]]), so the mark
+    * follows the node when the tree reshapes before the next frame; an unkeyed one by this frame's numbering, stable as
+    * long as the tree's shape is — the same bargain an unkeyed focus index makes.
     */
   var hoveredTarget: Option[InputTarget] = None
 
+  /** The `.key` of the node behind [[hoveredTarget]], when it has one. */
+  var hoveredKey: Option[String] = None
+
   /** The input target a button went down on, until it comes back up — what the next focus pass marks `pressed`, and
-    * where pointer capture keeps delivering the drag.
+    * where pointer capture keeps delivering the drag. Remembered by key like [[hoveredTarget]].
     */
   var pressedTarget: Option[InputTarget] = None
+
+  /** The `.key` of the node behind [[pressedTarget]], when it has one. */
+  var pressedKey: Option[String] = None
+
+  /** Whether the node with `key` painted as `target` this frame is the one remembered as `remembered` /
+    * `rememberedKey`: by key when the remembered one had a key, by numbering otherwise.
+    */
+  def isSame(
+      remembered: Option[InputTarget],
+      rememberedKey: Option[String],
+      target: Option[InputTarget],
+      key: Option[String],
+  ): Boolean =
+    rememberedKey match
+      case Some(name) => key.contains(name)
+      case None       => remembered.isDefined && remembered == target
 
   /** The visible, clipped screen rect focusable `index` rendered into — for hit eligibility and spatial navigation. */
   def areaOf(index: Int): Option[Rect] = bounds.targetBounds(InputTarget.Focus(index)).map(_.hitArea)
@@ -460,8 +487,8 @@ private[dsl] object FocusPass:
             focusStyle = focusStyle,
             disabled = disabled,
             disabledStyle = disabledStyle,
-            hovered = live && tracker.hoveredTarget == target,
-            pressed = live && tracker.pressedTarget == target,
+            hovered = live && tracker.isSame(tracker.hoveredTarget, tracker.hoveredKey, target, element.props.focusKey),
+            pressed = live && tracker.isSame(tracker.pressedTarget, tracker.pressedKey, target, element.props.focusKey),
             component = component,
             theme = theme,
           ),
@@ -493,12 +520,14 @@ private[dsl] object FocusPass:
         element match
           case _: BoundsAwareElement => onBoundsDemand()
           case _                     => ()
-      // a hover cue, or a pointer shape asked for by name, only shows under all-motion tracking; a theme component
+      // a hover cue, a pressed cue or a pointer shape asked for by name needs all-motion tracking; a theme component
       // with a hovered or pressed style asks for the same as an explicit `.hoverStyle`/`.pressedStyle` does
       val states       = componentOf(element, theme)
       val hoverCue     = element.props.hoverStyle.isDefined || states.hovered != Style.Default
       val pressCue     = element.props.pressedStyle.isDefined || states.pressed != Style.Default
-      if hoverCue || element.props.pointerShape.isDefined then onMotionDemand()
+      // a pressed cue asks too: once the button comes back up the control returns to hovered or plain, and only
+      // motion reports say which
+      if hoverCue || pressCue || element.props.pointerShape.isDefined then onMotionDemand()
       // a hover or pressed cue is what makes a change of hovered/pressed target change the next frame
       if hoverCue || pressCue then onCueDemand()
       val current      =

@@ -62,7 +62,7 @@ private[dsl] final case class TrackedElement(inner: Element, index: Int, tracker
 
   def widget: Widget                                                             =
     (area, buffer) =>
-      tracker.record(index, area)
+      tracker.record(index, area, inner.props.focusKey)
       // every focusable tells the enclosing scroll views where it landed: the focused one so they keep it on screen,
       // the rest so that the frame after focus moves onto one of them can scroll to it before painting
       RevealProbe.tracked(index, area, inner.props.focused)
@@ -126,7 +126,7 @@ private[dsl] final case class PointerElement(inner: Element, pointerId: Int, tra
 
   def widget: Widget                                                             =
     (area, buffer) =>
-      tracker.recordPointer(pointerId, area, inner.passesPointerThrough)
+      tracker.recordPointer(pointerId, area, inner.passesPointerThrough, inner.props.focusKey)
       inner.widget.render(area, buffer)
   private[dsl] def withProps(props: ElementProps): PointerElement                = copy(inner = inner.withProps(props))
   private[dsl] override def withChildren(children: Seq[Element]): PointerElement =

@@ -260,6 +260,12 @@ The accessible variant announces `Field 1 of 3`, spells out checkbox state, and
 prefixes failures with `Error:`. Pair it with a straightforward `Tab`/`Enter` key
 flow and a high-contrast theme.
 
+A field can be disabled by name — `signup.disable("username")`, `enable`, or
+`setDisabled(name, condition)`; `signup.disabled` is the set as a signal. Both renderings
+draw a disabled field in the theme's disabled style and leave it out of the tab order, and
+`Form.accessible` announces it: `Field 1 of 3: username (disabled)`. Its value is kept and
+still submitted, since the case class needs every field.
+
 ## Build a manual form when needed
 
 A `FormFieldType` covers a field the user types into. A layout the derivation cannot
