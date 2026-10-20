@@ -39,12 +39,14 @@ How a sequence is dispatched:
   and is routed as if nothing had been typed — `g` then `x` runs the `x` binding.
   `Esc` drops the prefix and is consumed.
 - A prefix left waiting longer than `sequenceTimeout` (one second; override it on the
-  `TuiApp`) is dropped on the next tick. An app with no `config.tickRate` borrows
+  `TuiApp`) is dropped before the next key is routed, even if no tick has occurred.
+  Ticks also dismiss the popup while idle; an app with no `config.tickRate` borrows
   ticks for as long as a prefix is pending, exactly as it does for a toast.
 
 A key that starts a sequence cannot also be a binding of its own: `binding("g", …)`
 next to `binding("g g", …)` throws from `KeyBindings(…)`, naming both, because the
-shorter one could only ever fire by waiting out the longer one. A screen's
+shorter one could only ever fire by waiting out the longer one. Public `++` composition
+checks the combined bindings in every mode too. A screen's
 `Screen.bindings` combined over the app's are not checked against each other — the
 screen's keys shadow the app's while it is up.
 
@@ -127,24 +129,39 @@ mark      = \#       # the # key itself
 file's `Theme.parse` answers. Blank lines and lines starting with `#` are skipped, and a
 `#` that starts a word of the keys — at their start or after a space — begins a comment
 that runs to the end of the line. The `#` key itself is spelled `\#` there; inside a step,
-as in `ctrl+#`, it is the key already. Apply the map with `rebind`:
+as in `ctrl+#`, it is the key already. `none` unbinds an application or framework
+binding. Framework ids use the reserved `framework.` namespace: `quit = ctrl+q`
+changes only an application command, while `framework.quit = ctrl+q` changes the
+framework's Ctrl+C action. Explicit app ids may not start with `framework.`.
+
+For an end-user file, validate against the declarations and use the non-throwing
+`rebindEither` path, retaining the defaults on failure:
 
 ```scala
-private val userKeys: Map[BindingId, KeySequence] =
-  Keymap.parse(readKeymapFile()).getOrElse(Map.empty)
-
-override def bindings = KeyBindings(
+private lazy val defaults = KeyBindings(
   binding("ctrl+s", "save")(save()),
   binding("g g", "go to top")(scrollToTop()),
-).rebind(userKeys)
+)
+private lazy val userKeys: Map[BindingId, KeySequence] =
+  Keymap.validate(readKeymapFile(), defaults, FrameworkKeys.default).fold(
+    error => { System.err.println(error.toString); Map.empty },
+    identity,
+  )
 
-override def frameworkKeys = FrameworkKeys.default.rebind(userKeys)
+override def bindings = defaults.rebindEither(userKeys).getOrElse(defaults)
+
+override def frameworkKeys =
+  FrameworkKeys.default.rebindEither(userKeys).getOrElse(FrameworkKeys.default)
 ```
 
 `rebind` replaces a binding's keys with the user's and makes that spelling its label, so
 the status bar, `helpOverlay` and the palette all show the key the user actually has.
 The result is checked for collisions again; ids nothing declares are ignored, which is
-what lets one file feed both `KeyBindings.rebind` and `FrameworkKeys.rebind`.
+what lets one file feed both `KeyBindings.rebindEither` and `FrameworkKeys.rebindEither`.
+Those methods return `Either[RebindError, ...]`; `Keymap.validate` also maps such errors
+back to file line numbers. Plain `parse` checks syntax and single-key framework restrictions,
+not app-dependent prefix collisions. The throwing `rebind` remains for static declarations.
+Both application and framework rebinding resolve `<leader>` against the `KeyLeader` in scope.
 
 ### Framework keys
 
@@ -152,25 +169,25 @@ The keys the framework handles once nothing else claimed them are ids as well:
 
 | Id | Default | What it does |
 |---|---|---|
-| `focus-next` | `tab` | move focus to the next control |
-| `focus-previous` | `shift+tab` | move focus to the previous control |
-| `command-palette` | `ctrl+p` | open the command palette |
-| `quit` | `ctrl+c` | quit |
-| `close-modal` | `esc` | close a modal that asked to be closed by Esc |
-| `menu-bar` | `f10` | open the first menu of a `menuBar` |
-| `window-move` | `alt+m` | arrange mode: the arrows move the focused `window` |
-| `window-resize` | `alt+r` | arrange mode: the arrows resize the focused `window` |
-| `inspector` | `f12` | cycle the inspector overlay: node card, card and element tree, off — see [Seeing the layout](./troubleshooting#seeing-the-layout) |
-| `copy-selection` | `ctrl+shift+c` | copy the mouse text selection again (only while one shows) |
+| `framework.focus-next` | `tab` | move focus to the next control |
+| `framework.focus-previous` | `shift+tab` | move focus to the previous control |
+| `framework.command-palette` | `ctrl+p` | open the command palette |
+| `framework.quit` | `ctrl+c` | quit |
+| `framework.close-modal` | `esc` | close a modal that asked to be closed by Esc |
+| `framework.menu-bar` | `f10` | open the first menu of a `menuBar` |
+| `framework.window-move` | `alt+m` | arrange mode: the arrows move the focused `window` |
+| `framework.window-resize` | `alt+r` | arrange mode: the arrows resize the focused `window` |
+| `framework.inspector` | `f12` | cycle the inspector overlay: node card, card and element tree, off — see [Seeing the layout](./troubleshooting#seeing-the-layout) |
+| `framework.copy-selection` | `ctrl+shift+c` | copy the mouse selection again; consumed even with no selection |
 
 Override `frameworkKeys` to move them, and set `pageStep` — how many rows
 PageUp/PageDown move every list, table and scroll view, 10 by default — on the same
 value: `FrameworkKeys.default.copy(pageStep = 20)`. A framework key fires when its key is
-pressed with at least its modifiers held. Moving `quit` moves the Ctrl+C *key event*; a
+pressed with at least its modifiers held. Moving `framework.quit` moves the Ctrl+C *key event*; a
 terminal that delivers Ctrl+C as an interrupt still quits through `onInterrupt`.
 
-The keys `TuiApp` handles itself — `focus-next`, `focus-previous`, `command-palette`,
-`quit`, `close-modal`, `inspector` and `copy-selection` — may be sequences. They wait under
+The keys `TuiApp` handles itself — `framework.focus-next`, `framework.focus-previous`, `framework.command-palette`,
+`framework.quit`, `framework.close-modal`, `framework.inspector` and `framework.copy-selection` — may be sequences. They wait under
 the same pending prefix as the app's own sequences, and are tried after them, so an app
 binding that shares a prefix wins:
 
@@ -179,11 +196,19 @@ override def frameworkKeys =
   FrameworkKeys.default.rebind(Map(FrameworkKeys.Quit -> keyseq"ctrl+x ctrl+c"))
 ```
 
-`menu-bar`, `window-move` and `window-resize` are read by a `menuBar` or `window` while it
+`framework.menu-bar`, `framework.window-move` and `framework.window-resize` are read by a `menuBar` or `window` while it
 handles a single key, so each stays one key; `rebind` throws `IllegalArgumentException`
-when given a sequence for one of them. `unbind(ids*)` takes keys away altogether —
+when given a sequence for one of them; `parse` rejects it with a line error and
+`rebindEither` returns a `RebindError`. `unbind(ids*)` takes keys away altogether —
 `FrameworkKeys.default.unbind(FrameworkKeys.Inspector)` leaves F12 to nothing — by binding
-them to `KeySequence.unbound`, which never fires.
+them to `KeySequence.unbound`, which never fires. The file spelling is `none`, including
+for app bindings (`save = none`).
+
+Copy-on-release is the primary selection-copy path on legacy terminals. Many emulators
+reserve Ctrl+Shift+C for their own clipboard, and without enhanced keyboard reporting
+that chord may arrive as plain Ctrl+C, indistinguishable from quit. Rebind
+`framework.copy-selection` to a deliverable key such as `f6` when keyboard recopy is needed.
+A genuine Ctrl+C key event still quits; it is not guessed to be a copy chord.
 
 ### Exporting the keymap
 

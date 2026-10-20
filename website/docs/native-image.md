@@ -52,7 +52,7 @@ import mill.*, scalalib.*, javalib.NativeImageModule
 
 object app extends ScalaModule with NativeImageModule:
   def scalaVersion = "3.9.0"
-  def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.20.0")
+  def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.21.0")
   def mainClass = Some("example.Main")
   def jvmVersion = "graalvm-community:25.0.2"
   def nativeImageOptions = Seq(
@@ -146,13 +146,18 @@ encoder writes its PNG with `java.util.zip`, and `ImageLoader.readPng` / `decode
 PNG files the same way. A native image that shows pictures that way stays one
 self-contained file with no configuration.
 
-`ImageLoader.fromFile` and `fromBytes` go through `javax.imageio` for JPEG, GIF and the
-rest, and that is a different matter. Checked on GraalVM CE 25.0.2 (Linux x64) with this
+JPEG, GIF, BMP and interlaced PNG remain available through the explicitly imported
+`io.worxbend.tui.widgets.ImageIoLoader.fromFile` / `fromBytes`. These replace the former
+`ImageLoader.fromFile` / `fromBytes`; `Image.fromFile` moves to
+`ImageIoLoader.imageFromFile`. The native-safe `Image` and `ImageLoader` APIs have no
+ImageIO dependency, and the DSL does not re-export the JVM adapter. Its methods catch
+missing AWT linkage as a readable `Left`, but using ImageIO in a native image remains
+a different deployment choice. Checked on GraalVM CE 25.0.2 (Linux x64) with this
 repository's `--no-fallback` options: the build succeeds, but it ships `libawt.so`,
 `libawt_headless.so`, `libawt_xawt.so`, `libjavajpeg.so` and `liblcms.so` beside the
 binary, and the first decode aborts with
 `NoClassDefFoundError: java/awt/GraphicsEnvironment` raised from AWT's JNI start-up. To
-use them in a native image, collect AWT's metadata with the tracing agent
+use the JVM adapter in a native image, collect AWT's metadata with the tracing agent
 (`-agentlib:native-image-agent`) and ship the libraries with the binary — or convert the
 pictures to PNG and use `readPng`. (The showcase builds its picture with `RgbaImage.tabulate`
 and needs neither.)

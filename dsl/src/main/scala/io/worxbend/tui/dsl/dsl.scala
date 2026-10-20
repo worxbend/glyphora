@@ -1,5 +1,9 @@
 package io.worxbend.tui.dsl
 
+/** Caller-owned composer state; retained DSL spelling, implemented in the backend-independent widget tier. */
+type PromptComposerState = io.worxbend.tui.widgets.PromptComposerState
+val PromptComposerState: io.worxbend.tui.widgets.PromptComposerState.type = io.worxbend.tui.widgets.PromptComposerState
+
 import io.worxbend.tui.core.{Color, Constraint, Flex, KeyEvent, MouseEvent, Span, Style}
 
 // One import to rule them all: `import io.worxbend.tui.dsl.*` brings in TuiApp, Element, every factory,
@@ -127,7 +131,7 @@ export Element.{
 // mirrored type and the explicit form is only ever written beside a type definition.
 export io.worxbend.tui.macros.{Codec, DerivedField, FieldValidation, FormSpec}
 // `inspect(value)` takes a `Pretty[A]`, and an app redacting a field writes `given Pretty[Secret] = Pretty.atom(...)`.
-export io.worxbend.tui.macros.{Pretty, PrettyShape}
+export io.worxbend.tui.macros.{Pretty, PrettyEntry, PrettyField, PrettyShape}
 
 // Every core type the exported API's own signatures mention, so a view never needs a second import.
 //
@@ -185,9 +189,11 @@ export io.worxbend.tui.core.{
   ColorTarget,
   Position,
   Rect,
+  Rgb,
   Size,
   Span,
   Spring,
+  GridCell,
   StatefulWidget,
   Style,
   Text,
@@ -284,6 +290,7 @@ export io.worxbend.tui.runtime.{
   CompletedFrame,
   Computed,
   Derived,
+  Frame,
   FrameTiming,
   JulBridge,
   LatestFrameObserver,
@@ -312,7 +319,15 @@ export io.worxbend.tui.runtime.{
 // import. `JLine3Backend` and `HeadlessBackend` are deliberately left out: neither is named by a signature this
 // package exposes, and the code that constructs one (a `main` wiring a custom terminal, a test wiring `Pilot`) is
 // already reaching into `tui-terminal` or `tui-test` on purpose.
-export io.worxbend.tui.terminal.{Backend, BackendError, ColorDepth, MouseCaptureMode, PointerShape, TerminalGlyphs}
+export io.worxbend.tui.terminal.{
+  ImageProtocol,
+  Backend,
+  BackendError,
+  ColorDepth,
+  MouseCaptureMode,
+  PointerShape,
+  TerminalGlyphs,
+}
 export io.worxbend.tui.terminal.TaskbarState
 
 /** `light` on a light terminal, `dark` on a dark one — and on one that could not say, because dark is what every
@@ -399,6 +414,7 @@ export io.worxbend.tui.widgets.{
   ProgressColumn,
   ProgressTask,
   Lexer,
+  LexedLine,
   LexState,
   TableOverflow,
   TextAreaOptions,
@@ -444,6 +460,7 @@ export io.worxbend.tui.widgets.{
   TextAreaState,
   TextEffect,
   TextInputState,
+  TextRange,
   TimeField,
   TimePickerState,
   TitlePosition,

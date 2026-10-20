@@ -12,6 +12,18 @@ final class StatefulLexerSpec extends AnyFunSuite:
 
   private val theme = SyntaxTheme()
 
+  test("stateful lexer results expose named line and next fields"):
+    val result: LexedLine = Lexer.Scala.highlightLine("/* open", theme, LexState.Initial)
+    assert(result.line.plainText == "/* open")
+    assert(result.next.open == "*/")
+    val closed            = Lexer.Scala.highlightLine("end */ val x", theme, result.next)
+    assert(closed.next.isInitial)
+    assert(closed.line.plainText == "end */ val x")
+
+  test("the named lexer parameter selects the requested highlighter"):
+    assert(SyntaxHighlighter.highlight("val x", lexer = Language.Scala).lines.head.spans.head.style == theme.keyword)
+    assert(SyntaxHighlighter.highlightLine("val x", lexer = Language.Scala).spans.head.style == theme.keyword)
+
   private def spans(code: String, lexer: Lexer): Seq[Seq[(String, Style)]] =
     SyntaxHighlighter.highlight(code, lexer, theme).lines.map(_.spans.map(span => (span.content, span.style)))
 

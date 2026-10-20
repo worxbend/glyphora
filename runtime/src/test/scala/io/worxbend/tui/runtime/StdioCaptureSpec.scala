@@ -163,6 +163,8 @@ final class StdioCaptureSpec extends AnyFunSuite:
       )
       assert(result == Right(()))
       // the partial line is flushed to the real stream before the body runs, so it is not glued to a later line
-      assert(realOut.toString("UTF-8") == "partial from the editor" + System.lineSeparator())
+      assert(
+        realOut.toString("UTF-8") == "partial " + System.lineSeparator() + "from the editor" + System.lineSeparator()
+      )
       assert(backend.printedAbove == Seq("back"))
     }

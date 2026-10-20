@@ -472,17 +472,15 @@ trait Runner:
 /** Handed to `onStart` and to event handlers: request loop exit, ask for a frame, marshal work onto the render thread,
   * or reach the backend for out-of-band terminal operations like clipboard access.
   *
-  * Every method is called on the render thread. None of them has a default implementation, deliberately: a handle that
-  * silently did nothing for [[suspend]] or [[printAbove]] would let a backend forget to implement them and fail with no
-  * symptom other than a `$EDITOR` that never opens.
+  * Every method is called on the render thread. Core operations are abstract: a handle that silently did nothing for
+  * [[suspend]] or [[printAbove]] would hide a missing implementation behind an editor that never opens.
   *
-  * That policy has a cost worth stating, because it is paid by anyone outside this repository who implements the trait:
-  * **adding a method here is a source-breaking change.** An existing implementation stops compiling until it supplies
-  * the new method — which is the intended outcome, since the alternative is an implementation that compiles and then
-  * does nothing — but it means a release that adds one is not a drop-in replacement for the release before it.
+  * Adding an **abstract** method is source-breaking for hosts and test doubles implementing this trait.
   * [[insertBefore]] was added on those terms in 0.13.0, and [[setPointerShape]], [[notifyDesktop]] and
-  * [[setTaskbarProgress]] in 0.20.0. The trait is written to be *called*, not implemented, so the population this
-  * affects is test doubles; a double that wants the old behaviour can implement the new method as `()` in one line.
+  * [[setTaskbarProgress]] in 0.20.0. Two optional 0.20.0 additions deliberately preserve source compatibility:
+  * [[setTaskbarState]] degrades to fractional progress, and [[setMouseCaptureMode]] is a no-op for handles without
+  * dynamic mouse-mode support. Custom handles must override the latter to support hover/all-motion tracking; the
+  * production terminal handle implements both fully.
   */
 trait RunnerHandle:
   def quit(): Unit

@@ -68,7 +68,9 @@ final class KeymapSpec extends AnyFunSuite with PilotFixture:
     assertThrows[IllegalArgumentException](declared(()).rebind(Map(BindingId("save") -> keyseq"g")))
 
   test("framework keys are ids too: a keymap moves focus traversal and quit"):
-    val keys = FrameworkKeys.default.rebind(Keymap.parse("focus-next = ctrl+n\nquit = ctrl+q\n").toOption.get)
+    val keys = FrameworkKeys.default.rebind(
+      Keymap.parse("framework.focus-next = ctrl+n\nframework.quit = ctrl+q\n").toOption.get
+    )
     assert(keys.focusNext == keyseq"ctrl+n")
     assert(keys.quit == keyseq"ctrl+q")
     assert(keys.focusPrevious == FrameworkKeys.default.focusPrevious)

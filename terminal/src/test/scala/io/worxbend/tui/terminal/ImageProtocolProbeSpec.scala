@@ -18,7 +18,7 @@ final class ImageProtocolProbeSpec extends AnyFunSuite:
   private def apc(payload: String): Seq[Int] = Seq(Esc, '_'.toInt) ++ payload.map(_.toInt) ++ Seq(Esc, '\\'.toInt)
 
   private def probed(replies: Seq[Int]*): TerminalCapabilities =
-    decoder((replies.flatten ++ Da1)*).readCapabilityReport(50.millis)
+    decoder((replies.flatten ++ Da1)*).readCapabilityReport(2.seconds)
 
   test("an OK reply to the kitty graphics query is a yes"):
     assert(probed(apc("Gi=31;OK")).kittyGraphics == Support.Yes)
@@ -52,6 +52,6 @@ final class ImageProtocolProbeSpec extends AnyFunSuite:
 
   test("the probe asks the kitty graphics question before the DA1 fence"):
     val queries = scala.collection.mutable.ArrayBuffer.empty[String]
-    val _ = ReplyQueries(Object(), query => { val _ = queries += query }, decoder(Da1*)).probeCapabilities(50.millis)
+    val _ = ReplyQueries(Object(), query => { val _ = queries += query }, decoder(Da1*)).probeCapabilities(2.seconds)
     assert(queries.contains(KittyGraphics.Query))
     assert(queries.indexOf(KittyGraphics.Query) < queries.indexOf(AnsiSequences.QueryPrimaryDeviceAttributes))

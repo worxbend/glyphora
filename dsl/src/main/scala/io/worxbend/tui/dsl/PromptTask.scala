@@ -50,7 +50,8 @@ private[dsl] object PromptTask:
     * @param body
     *   what the terminal shape shows under the spinner line while the work runs — the log, or a progress row
     * @param work
-    *   the work, handed the log and a way to run a body on the render thread (immediate in the line shapes)
+    *   the work, handed the log, render-thread dispatch (immediate in the line shapes), and a thread-safe cancellation
+    *   predicate that remains true even when the work consumes its interrupt
     * @param detail
     *   the summary line's text after the label, from the result
     */
@@ -59,7 +60,7 @@ private[dsl] object PromptTask:
       label: String,
       rows: Int,
       body: LogRing => (ReactiveScope, Theme) ?=> Element,
-      work: (TaskLog, (() => Unit) => Unit) => A,
+      work: (TaskLog, (() => Unit) => Unit, () => Boolean) => A,
       detail: A => String,
   ): Option[A] =
     session.resolve() match
@@ -91,12 +92,12 @@ private[dsl] object PromptTask:
   private def inLine[A](
       session: PromptSession,
       label: String,
-      work: (TaskLog, (() => Unit) => Unit) => A,
+      work: (TaskLog, (() => Unit) => Unit, () => Boolean) => A,
       detail: A => String,
       plain: Option[PromptSession.Mode.Plain],
   ): Option[A] =
     val log: TaskLog = line => writeLine(plain, "  " + line)
-    report(session, label, detail, Try(work(log, body => body())), plain)
+    report(session, label, detail, Try(work(log, body => body(), () => false)), plain)
 
   private def writeLine(plain: Option[PromptSession.Mode.Plain], line: String): Unit =
     plain.fold(Console.write(line + "\n"))(_.write(line + "\n"))
@@ -130,12 +131,14 @@ private final class TaskApp[A](
     label: String,
     rows: Int,
     body: LogRing => (ReactiveScope, Theme) ?=> Element,
-    work: (TaskLog, (() => Unit) => Unit) => A,
+    work: (TaskLog, (() => Unit) => Unit, () => Boolean) => A,
     detail: A => String,
 ) extends TuiApp:
 
   private val ring                               = LogRing(256)
   private val finished                           = Signal(Option.empty[Option[Try[A]]])
+  // An item may consume its interrupt. Framework-owned loops must still stop at their next item boundary.
+  private val cancelled                          = new java.util.concurrent.atomic.AtomicBoolean(false)
   @volatile private var worker: Option[Thread]   = None
   // the worker's result as it left the work, for a run that ended before the render thread could hear it
   @volatile private var produced: Option[Try[A]] = None
@@ -149,9 +152,12 @@ private final class TaskApp[A](
       onFrame = Some(_ => if finished.peek.isDefined then quit()),
     ).withCaptureStdio(CaptureStdio.Console(ring))
 
-  override def theme: Theme          = appTheme
-  override def whichKey: Boolean     = false
-  override def bindings: KeyBindings = KeyBindings(binding("ctrl+c", "cancel")(cancel()))
+  override def theme: Theme                 = appTheme
+  override def whichKey: Boolean            = false
+  override def inspector: Boolean           = false
+  override val messages: Messages           = Messages.active
+  override def frameworkKeys: FrameworkKeys = FrameworkKeys.default.unbind(FrameworkKeys.CommandPalette)
+  override def bindings: KeyBindings        = KeyBindings(binding("ctrl+c", "cancel")(cancel()))
 
   /** For a run the backend ended early: `None` when the work never started, otherwise its result once it finishes —
     * waited for on the calling thread. Read after the run.
@@ -180,15 +186,18 @@ private final class TaskApp[A](
   override def onStart(): Unit =
     val loop         = RenderThread.capture()
     val log: TaskLog = line => ring.log(LogLevel.Info, label, line)
-    val post         = (body: () => Unit) => { val _ = loop.execute(body()) }
+    val post         = (body: () => Unit) =>
+      if !cancelled.get() then
+        val _ = loop.execute(if !cancelled.get() && finished.peek.isEmpty then body())
     val thread       = Thread
       .ofPlatform()
       .daemon()
       .name(s"glyphora-task-$label")
       .unstarted { () =>
-        val result = Try(work(log, post))
+        val result = Try(work(log, post, () => cancelled.get()))
         produced = Some(result)
-        val _      = loop.execute(complete(Some(result)))
+        if !cancelled.get() then
+          val _ = loop.execute(complete(Some(result)))
       }
     worker = Some(thread)
     thread.start()
@@ -208,10 +217,12 @@ private final class TaskApp[A](
     true
 
   override def onStop(): Unit =
+    if finished.peek.contains(None) then worker.foreach(_.interrupt())
     val _ = backend.keepInlineRows(1)
 
   private def cancel(): Unit =
     if finished.peek.isEmpty then
+      cancelled.set(true)
       worker.foreach(_.interrupt())
       complete(None)
 

@@ -4,7 +4,12 @@
 from pathlib import Path
 import re
 
-import yaml
+try:
+    import yaml
+except ModuleNotFoundError as error:
+    if error.name != "yaml":
+        raise
+    raise SystemExit("PyYAML is required: python3 -m pip install -r scripts/requirements-ci.txt") from None
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_GATES = {
@@ -91,6 +96,10 @@ def validate(workflows: dict[str, dict], actions: dict[str, dict]) -> None:
     require(aggregate.get("outputs", {}).get("sha") == "${{ steps.commit.outputs.sha }}", "ci: aggregate SHA must come from checkout")
     run = next(step["run"] for step in aggregate["steps"] if step.get("id") == "commit")
     require('test "$actual" = "$GITHUB_SHA"' in run and "git rev-parse HEAD" in run, "ci: checkout must equal event SHA")
+    quickstarts = [step for step in jobs["build"]["steps"]
+                   if "python3 scripts/verify-scala-cli.py --scala-cli-jar" in step.get("run", "")]
+    require(len(quickstarts) == 1 and "if" not in quickstarts[0],
+            "ci: current-checkout Scala CLI quickstart compilation missing or conditional")
     checks = jobs["workflow-checks"]["steps"]
     require(any(step.get("run") == "bash scripts/check-workflows.sh" for step in checks), "ci: workflow validation missing")
     require(any(step.get("run") == "python3 -m unittest discover -s scripts/tests -v" for step in checks), "ci: release tooling tests missing")

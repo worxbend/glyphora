@@ -53,6 +53,7 @@ final class TextAreaState(initial: String = "", killRing: KillRing = KillRing())
     if width != wrapCacheWidth then
       wrapCache = java.util.IdentityHashMap()
       wrapCacheWidth = width
+      rowIndex = None
     val line   = clusterLines(index)
     val cached = wrapCache.get(line)
     if cached != null then cached // scalafix:ok DisableSyntax; `IdentityHashMap.get` answers null for a missing key
@@ -62,15 +63,57 @@ final class TextAreaState(initial: String = "", killRing: KillRing = KillRing())
       val _     = wrapCache.put(line, spans)
       spans
 
-  /** Every line's wrap spans at `width`, keeping in the cache only the lines the text still holds. */
-  private[widgets] def wrapLayout(width: Int): Vector[Vector[(Int, Int)]] =
-    val spans = clusterLines.indices.map(spansOf(_, width)).toVector
-    // an edit leaves the replaced line's entry behind; sweep once the stale entries outnumber the live ones
-    if wrapCache.size > 2 * clusterLines.size then
+  private var rowIndex: Option[WrappedLineIndex] = None
+
+  /** Cached row-count prefix sums. Width changes and line-count changes rebuild once; an ordinary edit only updates its
+    * touched lines in logarithmic time. Looking up a visible row never constructs the invisible rows.
+    */
+  private[widgets] def rowsAt(width: Int): WrappedLineIndex =
+    if width != wrapCacheWidth then
+      wrapCache = java.util.IdentityHashMap()
+      wrapCacheWidth = width
+      rowIndex = None
+    if rowIndex.isEmpty then
+      rowIndex = Some(WrappedLineIndex(Array.tabulate(lineCount)(line => spansOf(line, width).size)))
+    if wrapCache.size > 2 * lineCount then
       val kept = java.util.IdentityHashMap[Vector[String], Vector[(Int, Int)]]()
-      clusterLines.indices.foreach(index => kept.put(clusterLines(index), spans(index)))
+      clusterLines.foreach { line =>
+        val spans = wrapCache.get(line)
+        if spans != null then kept.put(line, spans) // scalafix:ok DisableSyntax; Java identity map
+      }
       wrapCache = kept
-    spans
+    rowIndex.get
+
+  override protected def textChanged(fromLine: Int, removedLines: Int, insertedLines: Int): Unit =
+    if removedLines != insertedLines then rowIndex = None
+    else
+      rowIndex.foreach { index =>
+        (fromLine until fromLine + insertedLines).foreach(line =>
+          index.update(line, spansOf(line, wrapCacheWidth).size)
+        )
+      }
+
+  /** Whether the caret is on the first visual row, not merely the first logical line. */
+  def isFirstVisualRow: Boolean = caret.line == 0 && wrapWidth.forall(width => visualRow(width) == 0)
+
+  /** Whether the caret is on the final visual row of the document. */
+  def isLastVisualRow: Boolean = caret.line == lineCount - 1 && wrapWidth.forall { width =>
+    val spans = spansOf(caret.line, width)
+    visualRow(width) == spans.size - 1 + (if phantomRow(width) then 1 else 0)
+  }
+
+  private def visualRow(width: Int): Int =
+    val spans = spansOf(caret.line, width)
+    if phantomRow(width) then spans.size
+    else
+      spans.indexWhere((start, end) => caret.column >= start && caret.column < end) match
+        case -1    => spans.size - 1
+        case found => found
+
+  private def phantomRow(width: Int): Boolean =
+    val clusters     = clusterLines(caret.line)
+    val (start, end) = spansOf(caret.line, width).last
+    caret.column == clusters.size && end > start && ClusterRow.visibleWidth(clusters, start, end) >= width
 
   /** Up one row: under soft wrap the visual row above (the line's previous wrapped row, or the last row of the line
     * above), at the same display column; otherwise the line above. A no-op on the first row.
@@ -139,7 +182,7 @@ final class TextAreaState(initial: String = "", killRing: KillRing = KillRing())
     while lexedEnds.size < target do
       val index = lexedEnds.size
       val start = if index == 0 then LexState.Initial else lexedEnds(index - 1)
-      lexedEnds += lexer.highlightLine(lines(index).mkString, syntax, start)._2
+      lexedEnds += lexer.highlightLine(lines(index).mkString, syntax, start).next
       lexedLines += lines(index)
     if target == 0 then LexState.Initial else lexedEnds(target - 1)
 
@@ -209,6 +252,9 @@ final class TextAreaState(initial: String = "", killRing: KillRing = KillRing())
     * the query changed since the last call.
     */
   def matches: Vector[Match] =
+    if lastQuery.isEmpty then Vector.empty else cachedMatches
+
+  private def cachedMatches: Vector[Match] =
     val lines = clusterLines
     matchCache match
       case Some((seen, query, found)) if (seen eq lines) && query == lastQuery => found
@@ -341,11 +387,10 @@ final case class TextArea(
     val lines = state.clusterLines
     if !options.wrap then lines.size
     else
-      val digits                     = lines.size.toString.length
-      val gutterWidth                = if options.lineNumbers && digits + 1 < width then digits + 1 else 0
-      val textWidth                  = math.max(1, width - gutterWidth)
-      val (cursorLine, cursorColumn) = state.cursor
-      wrappedRows(lines, state.wrapLayout(textWidth), textWidth, cursorLine, cursorColumn).size
+      val digits      = lines.size.toString.length
+      val gutterWidth = if options.lineNumbers && digits + 1 < width then digits + 1 else 0
+      val textWidth   = math.max(1, width - gutterWidth)
+      state.rowsAt(textWidth).total + phantom(state, textWidth).size
 
   /** The buffer cell the caret occupies when this editor is drawn into `area` for `state` — the counterpart of
     * `TextInput.caretAt`, for a host that parks the terminal's own cursor on the insertion point. While a search is
@@ -403,10 +448,26 @@ final case class TextArea(
     val text                       =
       Rect(area.x + gutterWidth, area.y, area.width - gutterWidth, math.max(0, area.height - prompt.size))
     if options.wrap then
-      val rows      = wrappedRows(lines, state.wrapLayout(text.width), text.width, cursorLine, cursorColumn)
-      val cursorRow = math.max(0, rows.indexWhere(row => row.line == cursorLine && covers(row, cursorColumn)))
-      val scrollRow = ScrollWindow.offsetFor(state.scrollRow, Some(cursorRow), rows.size, text.height)
-      Layout(text, gutterWidth, prompt, rows.size, rows, cursorRow, scrollRow, 0)
+      val width     = math.max(1, text.width)
+      val index     = state.rowsAt(width)
+      val extra     = phantom(state, width)
+      val count     = index.total + extra.size
+      val spans     = state.spansOf(cursorLine, width)
+      val local     = spans.indexWhere((start, end) => cursorColumn >= start && cursorColumn < end) match
+        case -1    => spans.size - 1
+        case found => found
+      val cursorRow = extra.getOrElse(index.before(cursorLine) + local)
+      val row       = (position: Int) =>
+        if extra.contains(position) then VisualRow(cursorLine, cursorColumn, cursorColumn, last = true)
+        else
+          val base         = position - (if extra.exists(_ < position) then 1 else 0)
+          val line         = index.lineAt(base)
+          val rows         = state.spansOf(line, width)
+          val offset       = base - index.before(line)
+          val (start, end) = rows(offset)
+          VisualRow(line, start, end, offset == rows.size - 1 && !(line == cursorLine && extra.isDefined))
+      val scrollRow = ScrollWindow.offsetFor(state.scrollRow, Some(cursorRow), count, text.height)
+      Layout(text, gutterWidth, prompt, count, row, cursorRow, scrollRow, 0)
     else
       val scrollRow = ScrollWindow.offsetFor(state.scrollRow, Some(cursorLine), lines.size, text.height)
       val row       = (index: Int) => VisualRow(index, 0, lines(index).size, last = true)
@@ -415,32 +476,15 @@ final case class TextArea(
   private def covers(row: VisualRow, column: Int): Boolean =
     (column >= row.start && column < row.end) || (row.last && column == row.end)
 
-  /** Every line broken into rows of at most `width` columns. The caret's line gets one extra empty row when the caret
-    * sits past the end of a row that is already full, so the caret always has a cell to stand on.
-    */
-  private def wrappedRows(
-      lines: Vector[Vector[String]],
-      layout: Vector[Vector[(Int, Int)]],
-      width: Int,
-      cursorLine: Int,
-      cursorColumn: Int,
-  ) =
-    val rows = Vector.newBuilder[VisualRow]
-    lines.indices.foreach { line =>
-      val clusters = lines(line)
-      val spans    = layout(line)
-      spans.zipWithIndex.foreach { case ((start, end), index) =>
-        val last = index == spans.size - 1
-        // measured only for the one row it can matter to, so laying out the rows costs nothing per cluster
-        if last && line == cursorLine && cursorColumn == clusters.size &&
-          ClusterRow.visibleWidth(clusters, start, end) >= width
-        then
-          rows += VisualRow(line, start, end, last = false)
-          rows += VisualRow(line, end, end, last = true)
-        else rows += VisualRow(line, start, end, last)
-      }
-    }
-    rows.result()
+  /** Only the caret's full final row can need an extra empty row. */
+  private def phantom(state: TextAreaState, width: Int): Option[Int] =
+    val caret        = state.caret
+    val clusters     = state.clusterLines(caret.line)
+    val rows         = state.spansOf(caret.line, width)
+    val (start, end) = rows.last
+    Option.when(caret.column == clusters.size && end > start && ClusterRow.visibleWidth(clusters, start, end) >= width)(
+      state.rowsAt(width).before(caret.line) + rows.size
+    )
 
   /** Paints one row and its gutter cell. The blank one past the last cluster is left untouched unless the cursor sits
     * on it, so an editor does not paint its own background over whatever is behind the end of a short line — see
@@ -507,7 +551,7 @@ final case class TextArea(
       .map(hit => ClusterRow.Highlight(hit.start.column, hit.end.column, styleOf(hit)))
       .toList
     val selection                                = state.selection.toList.collect {
-      case (from, to) if from.line <= line && to.line >= line =>
+      case TextRange(from, to) if from.line <= line && to.line >= line =>
         val start = if from.line == line then from.column else 0
         val end   = if to.line == line then to.column else size
         ClusterRow.Highlight(start, end, options.selectionStyle)
@@ -519,7 +563,7 @@ final case class TextArea(
     */
   private def tokenStyles(clusters: Vector[String], lexer: Lexer, start: LexState): IndexedSeq[Style] =
     val graphemes =
-      lexer.highlightLine(clusters.mkString, options.syntax, start)._1.styledGraphemes(Style.Default).toVector
+      lexer.highlightLine(clusters.mkString, options.syntax, start).line.styledGraphemes(Style.Default).toVector
     if graphemes.map(_.cluster) == clusters then graphemes.map(_.style) else IndexedSeq.empty
 
   /** Scrolls all lines left just enough that the cursor's column, measured on the cursor's own line, stays visible. The
@@ -538,6 +582,46 @@ final case class TextArea(
     val (scrollFrom, _)            = ClusterRow.clusterAtColumn(clusters, state.scrollColumn)
     val scrolledTo                 = ClusterRow.scrolledTo(clusters, scrollFrom, cursorColumn, width)
     ClusterRow.columnOfCluster(clusters, scrolledTo)
+
+/** Fenwick prefix sums over logical-line row counts. Owned by TextAreaState, render-thread-only. */
+private[widgets] final class WrappedLineIndex(counts: Array[Int]):
+  private val tree = Array.fill(counts.length + 1)(0)
+  counts.indices.foreach { line =>
+    var index = line + 1
+    while index < tree.length do
+      tree(index) += counts(line)
+      index += index & -index
+  }
+
+  def before(line: Int): Int =
+    var index = line
+    var sum   = 0
+    while index > 0 do
+      sum += tree(index)
+      index -= index & -index
+    sum
+
+  def total: Int = before(counts.length)
+
+  def update(line: Int, count: Int): Unit =
+    val delta = count - counts(line)
+    counts(line) = count
+    var index = line + 1
+    while index < tree.length do
+      tree(index) += delta
+      index += index & -index
+
+  def lineAt(row: Int): Int =
+    var index     = 0
+    var remaining = row
+    var step      = Integer.highestOneBit(counts.length)
+    while step > 0 do
+      val next = index + step
+      if next < tree.length && tree(next) <= remaining then
+        index = next
+        remaining -= tree(next)
+      step = step >>> 1
+    math.min(index, counts.length - 1)
 
 object TextArea:
 

@@ -48,6 +48,7 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
         backend.keyEventTypesActive,
         backend.pointerShape,
         backend.taskbarState,
+        backend.inputActive,
       )
     val failures = Seq.newBuilder[BackendError]
 
@@ -58,14 +59,15 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
           failures += error
         }
 
+    undress(state.inputReading, backend.pauseInput())
     undress(state.mouse.isDefined, backend.disableMouseCapture())
     undress(state.cursorShape != CursorShape.Default, backend.setCursorShape(CursorShape.Default))
     undress(state.pointerShape != PointerShape.Default, backend.setPointerShape(PointerShape.Default))
     undress(state.taskbarState != TaskbarState.Cleared, backend.setTaskbarState(TaskbarState.Cleared))
     undress(state.cursorBlinkSuppressed, backend.setCursorBlink(true))
     undress(state.cursorHidden, backend.showCursor())
-    undress(state.alternateScreen, backend.leaveAlternateScreen())
     undress(state.raw, backend.disableRawMode())
+    undress(state.alternateScreen, backend.leaveAlternateScreen())
     // Raw-mode release restores the saved shell cursor. Inline parking must be later or that restore undoes it.
     undress(backend.inlineRows > 0, parkBelowInlineFrame())
     // Each output step flushes and checks the writer. An unconditional silent flush here would hide device failures
@@ -100,10 +102,10 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
     * answer established — which is also what keeps a `suspend` from paying a 100 ms round trip per call.
     */
   def reacquireTerminal(state: TerminalState): Unit = backend.screenOwnership.synchronized:
+    if state.alternateScreen then bestEffort(backend.enterAlternateScreen())
     if state.raw then
       bestEffort(backend.dressRawMode(probe = false))
       if state.keyEventTypes then bestEffort(backend.enableKeyEventTypes())
-    if state.alternateScreen then bestEffort(backend.enterAlternateScreen())
     if state.cursorHidden then bestEffort(backend.hideCursor())
     if state.cursorShape != CursorShape.Default then bestEffort(backend.setCursorShape(state.cursorShape))
     if state.pointerShape != PointerShape.Default then bestEffort(backend.setPointerShape(state.pointerShape))
@@ -111,6 +113,7 @@ private[terminal] final class TerminalDressing(backend: JLine3Backend):
     // DECSCUSR also selects blinking/steady: restore the app's explicit blink suppression after its shape.
     if state.cursorBlinkSuppressed then bestEffort(backend.setCursorBlink(false))
     state.mouse.foreach(mode => bestEffort(backend.enableMouseCapture(mode)))
+    if state.inputReading then bestEffort(backend.resumeInput())
     backend.requestFullRedraw() // whatever ran in between owned the screen: repaint everything
 
   /** Runs a re-dressing step, reporting a failure rather than propagating it.
@@ -136,6 +139,7 @@ private[terminal] object TerminalDressing:
       keyEventTypes: Boolean,
       pointerShape: PointerShape = PointerShape.Default,
       taskbarState: TaskbarState = TaskbarState.Cleared,
+      inputReading: Boolean = false,
   )
 
   object TerminalState:

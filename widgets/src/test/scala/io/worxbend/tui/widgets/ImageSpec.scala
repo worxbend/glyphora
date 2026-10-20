@@ -30,9 +30,9 @@ final class ImageSpec extends AnyFunSuite:
     awt.setRGB(0, 0, 0xff0000)
     awt.setRGB(1, 1, 0x0000ff)
     javax.imageio.ImageIO.write(awt, "png", file.toFile)
-    val image = Image.fromFile(file)
+    val image = ImageIoLoader.imageFromFile(file)
     assert(image.exists(_.pixels(0)(0) == red))
     assert(image.exists(_.pixels(1)(1) == blue))
 
   test("fromFile reports unreadable files as Left"):
-    assert(Image.fromFile(java.nio.file.Path.of("/no/such/file.png")).isLeft)
+    assert(ImageIoLoader.imageFromFile(java.nio.file.Path.of("/no/such/file.png")).isLeft)

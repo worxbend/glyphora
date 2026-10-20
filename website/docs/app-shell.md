@@ -1013,7 +1013,10 @@ whose first visible character is `#` is a comment.
 
 A setting the file leaves out keeps the base theme's value: the `extends` preset, or
 `Theme.Dark` *without* components when there is no `extends`. That is why a file
-`Theme.render` wrote reads back as exactly the theme it came from. Failures are values:
+`Theme.render` wrote reads back as exactly the theme it came from, including an empty
+name. Adaptive themes carry `adaptive = true` and complete `dark.` and `light.` prefixed
+settings (for example `light.accent`), preserving both variants and automatic resolution
+rather than freezing the current palette. Failures are values:
 
 ```scala
 private val loaded: Theme =
@@ -1175,7 +1178,16 @@ longer paints over the frame. Lines are batched per frame — everything printed
 two frames, from any thread, goes into the scrollback in one trip — so a chatty library
 costs one scrollback write per frame, not one per line. Whatever is still buffered without a newline is flushed to
 the real streams when the run ends, under the restored prompt, and `suspend` passes the
-streams straight through to the terminal for the duration of its body.
+streams straight through to the terminal for the duration of its body. Complete queued lines are printed first; a
+partial line is terminated before the suspended body starts. Carriage-return progress output retains the final update
+on each completed line rather than concatenating every intermediate percentage.
+
+Scala `println` is captured through `onStop`, and Glyphora's shared Async workers and timer threads forward to the
+current run even when reused across runs. A pre-existing **third-party** pool can retain its own Scala `Console`
+binding: wrap its task body in `scala.Console.withOut(System.out)(scala.Console.withErr(System.err)(...))`. Java writes
+to `System.out`/`System.err` are captured from any thread. Root JUL `ConsoleHandler`s are rebound while capturing; when
+a root `JulBridge` is already attached they are temporarily suppressed to avoid duplicate records/raw terminal output.
+Original root handlers are restored after the run.
 
 The policy is the `captureStdio` field of `RunnerConfig`, a `CaptureStdio`:
 

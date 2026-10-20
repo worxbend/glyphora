@@ -17,17 +17,19 @@ import java.util.concurrent.RejectedExecutionException
 private[runtime] final class PrintAboveBatch(
     loop: RenderThread.RenderLoop,
     print: Seq[String] => Unit,
-    fallback: String => Unit,
+    fallback: (String, Boolean) => Unit,
 ):
 
-  private val lock                    = Object()
-  private var pending: Vector[String] = Vector.empty // guarded by lock
-  private var flushScheduled: Boolean = false        // guarded by lock
+  private val lock = Object()
+  private final case class CapturedLine(text: String, stderr: Boolean)
+
+  private var pending: Vector[CapturedLine] = Vector.empty // guarded by lock
+  private var flushScheduled: Boolean       = false        // guarded by lock
 
   /** Adds one completed line to the batch, scheduling the batch's flush when it is the first line of it. */
-  def offer(line: String): Unit =
+  def offer(line: String, stderr: Boolean = false): Unit =
     val schedule = lock.synchronized {
-      pending = pending :+ line
+      pending = pending :+ CapturedLine(line, stderr)
       val first = !flushScheduled
       flushScheduled = true
       first
@@ -36,22 +38,17 @@ private[runtime] final class PrintAboveBatch(
       val accepted =
         try loop.later(() => flush())
         catch case _: RejectedExecutionException => false
-      if !accepted then drainTo(fallback)
+      if !accepted then drainToFallback()
 
   /** Prints every line collected so far in one call. Render thread. */
-  private def flush(): Unit =
+  def flush(): Unit =
     val lines = take()
-    if lines.nonEmpty then print(lines)
+    if lines.nonEmpty then print(lines.map(_.text))
 
-  /** Hands every line still waiting to `sink`, one at a time, in order — the teardown path, and the path for a batch
-    * the loop would not take.
-    */
-  def drainTo(sink: String => Unit): Unit = take().foreach(sink)
+  /** Flushes waiting lines to their original channels, in order, after the loop retires or refuses admission. */
+  def drainToFallback(): Unit = take().foreach(line => fallback(line.text, line.stderr))
 
-  /** [[drainTo]] the fallback — the teardown path. */
-  def drainToFallback(): Unit = drainTo(fallback)
-
-  private def take(): Vector[String] =
+  private def take(): Vector[CapturedLine] =
     lock.synchronized {
       val lines = pending
       pending = Vector.empty

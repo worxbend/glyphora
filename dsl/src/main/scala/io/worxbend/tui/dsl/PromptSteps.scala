@@ -147,7 +147,9 @@ private[dsl] final class TextStep[A](
 
   def view(error: Option[String], onKey: KeyEvent => Boolean)(using ReactiveScope, Theme): Element =
     val field  = Element.input(state, default).autofocus.onKeyEvent(onKey)
-    val shown  = if !masked then field else maskGlyph.fold(field.hidden)(field.masked(_))
+    val shown  =
+      if !masked then field
+      else maskGlyph.fold(field.hidden.caretStyle(CaretStyle.Painted))(field.masked(_))
     val second = if error.isEmpty && hint.nonEmpty then Element.text("  " + hint.mkString("  ")).dim.length(1)
     else PromptStep.errorRow(error)
     Element.column(Element.row(PromptStep.prompt(label), shown.fill).length(1), second)
@@ -173,7 +175,10 @@ private[dsl] final class TextStep[A](
 
   def current: Either[String, A] = fromAnswer(state.value)
 
-  def fromAnswer(raw: String): Either[String, A] = parse(if raw.isEmpty then default else raw)
+  def fromAnswer(raw: String): Either[String, A] =
+    parse(if raw.isEmpty then default else raw).left.map(message =>
+      if masked then Messages.active.promptSecretRejected else message
+    )
 
   def show(value: A): String = if masked then "*" * 8 else display(value)
 
@@ -230,7 +235,8 @@ private[dsl] final class ConfirmStep(val label: String, default: Boolean) extend
 
   def show(value: Boolean): String = if value then Messages.active.promptYes else Messages.active.promptNo
 
-  override def question: String = s"$label ${if default then "[Y/n]" else "[y/N]"}"
+  override def question: String =
+    s"$label ${if default then Messages.active.promptYesNoDefaultYes else Messages.active.promptYesNoDefaultNo}"
 
 /** The caller-owned cursor and ticks of a choice list. Render-thread-only; every move raises the version. */
 private[dsl] final class ChoiceState(size: Int, initial: Set[Int]) extends VersionedState:
@@ -306,14 +312,17 @@ private[dsl] final class ChoiceStep[O, A](
     else options.lift(state.cursor).fold(Left(Messages.active.promptNothingToChoose))(option => pick(Seq(option)))
 
   def fromAnswer(raw: String): Either[String, A] =
-    val wanted = if multi then raw.split(',').toSeq.map(_.trim).filter(_.nonEmpty) else Seq(raw.trim)
-    val found  = wanted.map(word => word -> indexOf(word))
-    found.collectFirst { case (word, None) => word } match
-      case Some(word) =>
-        Left(
-          Messages.active.filled(Messages.active.promptNotAnOption, "input" -> word, "options" -> labels.mkString(", "))
-        )
-      case None       => pick(found.flatMap(_._2).distinct.sorted.map(options))
+    if raw.trim.isEmpty then current
+    else
+      val wanted = if multi then raw.split(',').toSeq.map(_.trim).filter(_.nonEmpty) else Seq(raw.trim)
+      val found  = wanted.map(word => word -> indexOf(word))
+      found.collectFirst { case (word, None) => word } match
+        case Some(word) =>
+          Left(
+            Messages.active
+              .filled(Messages.active.promptNotAnOption, "input" -> word, "options" -> labels.mkString(", "))
+          )
+        case None       => pick(found.flatMap(_._2).distinct.sorted.map(options))
 
   /** An option by its label (case-insensitively) or by its 1-based number. */
   private def indexOf(word: String): Option[Int] =
@@ -325,7 +334,7 @@ private[dsl] final class ChoiceStep[O, A](
 
   override def question: String =
     val numbered = labels.zipWithIndex.map((text, i) => s"${i + 1}) $text").mkString(", ")
-    if multi then s"$label ($numbered; comma-separated)" else s"$label ($numbered)"
+    if multi then s"$label ($numbered; ${Messages.active.promptCommaSeparated})" else s"$label ($numbered)"
 
 /** The small widgets the steps draw with. */
 private[dsl] object PromptWidgets:

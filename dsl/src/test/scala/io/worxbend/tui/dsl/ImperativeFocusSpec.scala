@@ -52,6 +52,29 @@ final class ImperativeFocusSpec extends AnyFunSuite with PilotFixture:
     pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)
     assert(pilot.awaitTermination())
 
+  test("a test can focus by key without activating the control"):
+    var activations = 0
+    val app         = new TuiApp:
+      val field                                     = TextInputState()
+      override def bindings: KeyBindings            = KeyBindings(binding("ctrl+q", "quit")(quit()))
+      def view(using ReactiveScope, Theme): Element = column(
+        input(field).key("first"),
+        button("Save") { activations += 1 }.key("save"),
+        button("Disabled") { activations += 100 }.key("disabled").disabled(true),
+      )
+    val backend     = HeadlessBackend(Size(30, 8))
+    val pilot       = startPilot(backend) { app.runWith(backend) }.waitForIdle()
+    assert(!FormApp().focusKey("email")) // a stopped app is inert even while another app is running
+    assert(pilot.readOnRenderThread(app.focusKey("save")))
+    pilot.waitForIdle()
+    assert(activations == 0)
+    assert(!pilot.readOnRenderThread(app.focusKey("missing")))
+    assert(!pilot.readOnRenderThread(app.focusKey("disabled")))
+    pilot.press("enter").waitForIdle()
+    assert(activations == 1)
+    quitApp(pilot)
+    assert(!app.focusKey("save"))
+
   test("focusTo moves the cursor to the element carrying that key"):
     val app   = FormApp()
     val pilot = start(app)

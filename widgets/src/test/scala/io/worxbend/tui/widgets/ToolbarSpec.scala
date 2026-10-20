@@ -20,17 +20,20 @@ final class ToolbarSpec extends AnyFunSuite:
   test("items that do not fit are hidden behind » and the window follows the focused item"):
     val bar           = Toolbar(buttons)
     assert(line(rendered(bar, 20, 1), 0) == "[ New ] [ Open ]   »")
-    assert(bar.window(20) == (0, 2))
+    assert(bar.window(20) == Toolbar.Window(0, 2))
     val focusedLast   = Toolbar(buttons, focus = Some(3))
     assert(line(rendered(focusedLast, 20, 1), 0) == "« [ Save ] [ Quit ] ")
-    assert(focusedLast.window(20) == (2, 4))
+    assert(focusedLast.window(20) == Toolbar.Window(2, 4))
     val focusedMiddle = Toolbar(buttons, focus = Some(2))
     assert(line(rendered(focusedMiddle, 20, 1), 0) == "« [ Open ] [ Save ]»")
 
   test("placements report where each visible item went, for hit testing"):
     val bar = Toolbar(buttons, focus = Some(3))
     assert(
-      bar.placements(Rect(5, 2, 20, 1)).map((index, rect) => (index, rect.x, rect.width)) == Seq((2, 7, 8), (3, 16, 8))
+      bar.placements(Rect(5, 2, 20, 1)) == Seq(
+        Toolbar.Placement(2, Rect(7, 2, 8, 1)),
+        Toolbar.Placement(3, Rect(16, 2, 8, 1)),
+      )
     )
 
   test("an empty area draws nothing"):

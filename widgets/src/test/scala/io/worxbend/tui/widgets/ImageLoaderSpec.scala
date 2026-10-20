@@ -20,24 +20,33 @@ final class ImageLoaderSpec extends AnyFunSuite:
     out.toByteArray
 
   test("a PNG decodes to its pixels, alpha included"):
-    val image = ImageLoader.fromBytes(png(0xffff0000, 0x4000ff00)).toOption.get
+    val image = ImageIoLoader.fromBytes(png(0xffff0000, 0x4000ff00)).toOption.get
     assert(image.width == 2 && image.height == 1)
     assert(image.color(0, 0) == Color.Rgb(255, 0, 0) && image.alpha(0, 0) == 255)
     assert(image.color(1, 0) == Color.Rgb(0, 255, 0) && image.alpha(1, 0) == 0x40)
+
+  test("the explicit JVM adapter retains JPEG, GIF and BMP decoding"):
+    Seq("jpeg", "gif", "bmp").foreach { format =>
+      val picture = BufferedImage(3, 2, BufferedImage.TYPE_INT_RGB)
+      val out     = ByteArrayOutputStream()
+      assert(ImageIO.write(picture, format, out), s"fixture writer for $format")
+      val decoded = ImageIoLoader.fromBytes(out.toByteArray)
+      assert(decoded.exists(image => image.width == 3 && image.height == 2), s"$format: $decoded")
+    }
 
   test("a file decodes the same as its bytes"):
     val file = Files.createTempFile("glyphora-image", ".png")
     try
       Files.write(file, png(0xff0000ff))
-      assert(ImageLoader.fromFile(file).map(_.color(0, 0)) == Right(Color.Rgb(0, 0, 255)))
+      assert(ImageIoLoader.fromFile(file).map(_.color(0, 0)) == Right(Color.Rgb(0, 0, 255)))
     finally Files.deleteIfExists(file): Unit
 
   test("bytes that are no picture are a Left, not a throw"):
-    assert(ImageLoader.fromBytes("not a picture".getBytes).isLeft)
+    assert(ImageIoLoader.fromBytes("not a picture".getBytes).isLeft)
 
   test("a missing file is a Left naming it"):
     val missing = java.nio.file.Path.of("/nonexistent/glyphora.png")
-    assert(ImageLoader.fromFile(missing).left.exists(_.contains("glyphora.png")))
+    assert(ImageIoLoader.fromFile(missing).left.exists(_.contains("glyphora.png")))
 
   // ------------------------------------------------------------------ the built-in PNG decoder
 

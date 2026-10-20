@@ -20,6 +20,25 @@ final class PixelImageSpec extends AnyFunSuite:
       case (false, false) => 0x80ffffff
   }
 
+  test("fallback sampling visits only visible cells and retains box-relative coordinates"):
+    val widget    = PixelImage(quadrants, PixelImageOptions(fit = ImageFit.Stretch))
+    val box       = Rect(10, 5, 8, 8)
+    val full      = io.worxbend.tui.core.Buffer(box)
+    widget.renderFallback(box, full)
+    val clipped   = io.worxbend.tui.core.Buffer(Rect(13, 9, 3, 2))
+    widget.renderFallback(box, clipped)
+    clipped.area.foreachPosition((x, y) => assert(clipped.get(x, y) == full.get(x, y)))
+    val bean      = java.lang.management.ManagementFactory.getThreadMXBean match
+      case allocated: com.sun.management.ThreadMXBean => allocated
+      case _                                          => fail("allocation accounting requires a HotSpot ThreadMXBean")
+    val id        = Thread.currentThread().threadId()
+    val before    = bean.getThreadAllocatedBytes(id)
+    widget.renderFallback(Rect(-500, -500, 1000, 1000), clipped)
+    val allocated = bean.getThreadAllocatedBytes(id) - before
+    info(s"clipped PixelImage fallback allocated bytes: $allocated")
+    assert(allocated < 1024 * 1024)
+    widget.renderFallback(Rect(Int.MinValue, Int.MinValue, Int.MaxValue, Int.MaxValue), clipped)
+
   test("with no protocol the cells hold a half-block rendering, the alpha blended over the background"):
     val buffer = rendered(PixelImage(quadrants), 4, 2)
     assert(buffer.get(0, 0).symbol == "▀")

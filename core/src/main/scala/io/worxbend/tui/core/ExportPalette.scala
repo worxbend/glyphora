@@ -11,8 +11,8 @@ package io.worxbend.tui.core
   */
 trait ExportPalette:
 
-  /** The `(r, g, b)` channels, each in `0..255`, that `color` is painted with. */
-  def rgb(color: Color): (Int, Int, Int)
+  /** The named red, green and blue channels, each in `0..255`, that `color` is painted with. */
+  def rgb(color: Color): Rgb
 
 object ExportPalette:
 

@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, CharWidth, Position, Rect, StatefulWidget, Style}
+import io.worxbend.tui.core.{Buffer, CharWidth, Modifiers, Position, Rect, StatefulWidget, Style}
 
 /** Caller-owned single-line editing state: an [[EditBuffer]] holding one line.
   *
@@ -41,7 +41,9 @@ final class TextInputState(initial: String = "", killRing: KillRing = KillRing()
   *
   * `mask` draws every grapheme cluster of the value as that one glyph — `Some("•")` for a password field — so neither
   * the text nor its display width shows; scrolling, the cursor and [[caretAt]] all follow the masked row. The value in
-  * the state is untouched, and the placeholder of an empty field is drawn as is.
+  * the state is untouched, and the placeholder of an empty field is drawn as is. A `hidden` style instead paints a
+  * fixed blank row and reports no caret, so cells, exports and observers never receive the value or its length. The
+  * state remains sensitive caller-owned data.
   */
 final case class TextInput(
     placeholder: String = "",
@@ -53,12 +55,15 @@ final case class TextInput(
     mask: Option[String] = None,
 ) extends StatefulWidget[TextInputState]:
 
+  private def concealed: Boolean = style.modifiers.hasAny(Modifiers.Hidden)
+
   /** The clusters as drawn: the value's own, or one mask glyph per cluster. */
   private def shown(state: TextInputState): Vector[String] =
     mask.fold(state.clusterSeq)(glyph => Vector.fill(state.clusterSeq.size)(glyph))
 
   def render(area: Rect, buffer: Buffer, state: TextInputState): Unit =
-    if !area.isEmpty then
+    if !area.isEmpty && concealed then buffer.setString(area.x, area.y, " " * area.width, style)
+    else if !area.isEmpty then
       val clusters = shown(state)
       if clusters.isEmpty then renderEmpty(area, buffer)
       else
@@ -76,7 +81,7 @@ final case class TextInput(
     * painted cursor shows, and a host hiding the painted cell still needs the geometry.
     */
   def caretAt(area: Rect, state: TextInputState): Option[Position] =
-    if area.isEmpty then None
+    if area.isEmpty || concealed then None
     else
       val clusters = shown(state)
       val column   =
@@ -115,5 +120,5 @@ final case class TextInput(
       cursorStyle = cursorStyle,
       paintEndCell = true,
       highlights =
-        state.selection.toList.map((from, to) => ClusterRow.Highlight(from.column, to.column, selectionStyle)),
+        state.selection.toList.map(range => ClusterRow.Highlight(range.start.column, range.end.column, selectionStyle)),
     )

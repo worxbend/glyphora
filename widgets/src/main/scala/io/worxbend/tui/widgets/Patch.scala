@@ -59,8 +59,8 @@ final case class Patch(files: Seq[FilePatch], approximate: Boolean = false):
     def emit(line: String): Unit = out.append(line).append('\n')
     files.foreach { file =>
       if file.oldPath.isDefined || file.newPath.isDefined then
-        emit("--- " + file.oldPath.fold(Patch.DevNull)("a/" + _))
-        emit("+++ " + file.newPath.fold(Patch.DevNull)("b/" + _))
+        emit("--- " + file.oldPath.fold(Patch.DevNull)(path => Patch.quotePath("a/" + path)))
+        emit("+++ " + file.newPath.fold(Patch.DevNull)(path => Patch.quotePath("b/" + path)))
       file.hunks.foreach { hunk =>
         emit(Patch.header(hunk))
         hunk.lines.foreach {
@@ -163,9 +163,61 @@ object Patch:
     error.toLeft(Patch(files.result()))
 
   private def path(header: String): Option[String] =
-    val name = header.drop(4).takeWhile(_ != '\t')
+    val raw  = header.drop(4).takeWhile(_ != '\t')
+    val name = unquotePath(raw)
     if name == DevNull then None
     else Some(if name.startsWith("a/") || name.startsWith("b/") then name.drop(2) else name)
+
+  private def quotePath(name: String): String =
+    if !name.exists(c => Character.isISOControl(c) || c == '\\' || c == '"') then name
+    else
+      val out = StringBuilder("\"")
+      name.foreach {
+        case '\\'                       => out.append("\\\\")
+        case '"'                        => out.append("\\\"")
+        case c if c < 0x20 || c == 0x7f => out.append(f"\\${c.toInt}%03o")
+        case c                          => out.append(c)
+      }
+      out.append('"').result()
+
+  /** Git's quoted path spelling uses C escapes, with octal escapes representing UTF-8 bytes. */
+  private def unquotePath(raw: String): String =
+    if !raw.startsWith("\"") || !raw.endsWith("\"") then raw
+    else
+      val bytes = java.io.ByteArrayOutputStream()
+      val body  = raw.drop(1).dropRight(1)
+      var index = 0
+      while index < body.length do
+        if body.charAt(index) == '\\' && index + 1 < body.length then
+          index += 1
+          val c = body.charAt(index)
+          if c >= '0' && c <= '7' then
+            var value = 0
+            var count = 0
+            while index < body.length && count < 3 && body.charAt(index) >= '0' && body.charAt(index) <= '7' do
+              value = value * 8 + body.charAt(index) - '0'
+              index += 1
+              count += 1
+            bytes.write(value)
+          else
+            val decoded = c match
+              case 'a'   => '\u0007'
+              case 'b'   => '\b'
+              case 't'   => '\t'
+              case 'n'   => '\n'
+              case 'v'   => '\u000b'
+              case 'f'   => '\f'
+              case 'r'   => '\r'
+              case other => other
+            bytes.write(decoded.toString.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+            index += 1
+        else
+          val start = index
+          while index < body.length && body.charAt(index) != '\\' do index += 1
+          // A trailing backslash is malformed but remains literal, rather than stalling the parser.
+          if index == start then index += 1
+          bytes.write(body.slice(start, index).getBytes(java.nio.charset.StandardCharsets.UTF_8))
+      bytes.toString(java.nio.charset.StandardCharsets.UTF_8)
 
   /** The line-based difference between `before` and `after`, as one headerless [[FilePatch]], with `context` unchanged
     * lines kept around each change — 3, the `git diff` default. Changes whose context windows touch share a hunk.

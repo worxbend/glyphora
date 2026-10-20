@@ -158,6 +158,10 @@ the first frame that does not. Hiding a subtree and showing it again therefore s
 it fresh — which is what a collapsed panel wants, and is not what you want for state
 that must outlive its own disappearance. Put that in a `Signal` field on the app.
 
+A full-screen navigation entry preserves ordinary eager state in covered entries without
+building their views. Effects and tasks are cancelled while covered and recreated when
+uncovered; deferred responsive branches follow the usual disappearance lifetime.
+
 Each run has its own store, so running the same application object a second time starts
 every component-local value over.
 
@@ -277,5 +281,18 @@ container(children*)(
 ).auto
 ```
 
-With an answer, `.auto` and every container that measures its children size it to
-its content, as they do a built-in node.
+`measure` supplies the height for `.auto` in a column. For `.auto` in a row,
+provide `measureWidth`: it receives the available height and the same `ChildInfo`s,
+and answers the required columns (or `None` for an unmeasurable width):
+
+```scala
+container(text("label"))(
+  (area, _) => Seq(area),
+  measureWidth = (height, kids) => kids.head.intrinsicWidth(height),
+).auto
+```
+
+These content measurements follow the built-in nodes' contract. A `.length(n)`
+still takes precedence. Content styles cascade to placed children, not to the
+`chrome` widget: give chrome its own style. Children omitted by `place`, or placed
+in empty rectangles, cannot receive keyboard input or take Tab stops.

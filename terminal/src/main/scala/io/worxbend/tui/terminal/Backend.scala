@@ -429,11 +429,14 @@ trait Backend:
     * value it already holds stays unwritten. The corruption then survives until the app happens to change that exact
     * cell. Calling this says "assume nothing on screen survived", and the next frame repaints in full.
     *
-    * Safe to call from any thread, and idempotent: two calls before the next frame are one repaint, not two. It does
-    * not itself schedule a frame — a caller that is not already drawing every tick must ask for one. The default is a
-    * no-op for backends that keep no such baseline.
+    * Safe to call from any thread, and idempotent: two calls before the next frame are one repaint, not two. The
+    * request is observed by TerminalRunner through [[redrawOwed]]; a custom runner must also check that flag or ask for
+    * a frame. The default is a no-op for backends that keep no such baseline.
     */
   def requestFullRedraw(): Unit = ()
+
+  /** Whether the screen was disturbed and the runner owes a frame, without consuming the request. */
+  def redrawOwed: Boolean = false
 
   /** Scrolls the terminal up by `n` rows: the top `n` rows leave the screen into the terminal's scrollback and `n`
     * blank rows appear at the bottom.

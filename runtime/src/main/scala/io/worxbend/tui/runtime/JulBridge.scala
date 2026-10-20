@@ -23,6 +23,11 @@ object JulBridge:
     logger.addHandler(handler)
     () => logger.removeHandler(handler)
 
+  private[runtime] def attachedTo(logger: Logger): Boolean = logger.getHandlers.exists {
+    case _: RingHandler => true
+    case _              => false
+  }
+
   /** JUL's seven levels folded onto the five [[LogLevel]]s: `FINEST`/`FINER` are trace, `FINE`/`CONFIG` debug, and a
     * custom level is placed by its integer value against the standard ones.
     */

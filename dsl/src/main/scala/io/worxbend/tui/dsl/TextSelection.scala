@@ -229,19 +229,24 @@ private[dsl] final class TextSelection:
     * where the node now is on screen, snapshots its visible cells, resolves a pending word or row selection, layers
     * `highlight` over the selected cells and makes a copy the release asked for.
     */
-  def painted(key: String, area: Rect, buffer: Buffer, highlight: Style): Unit =
+  def painted(key: String, area: Rect, buffer: Buffer, highlight: Style, invalidateOnChange: Boolean = false): Unit =
     if regionKey.contains(key) then
       paintedThisFrame = true
-      val onFrame = FrameCoordinates.translate(area)
+      val onFrame  = FrameCoordinates.translate(area)
       origin = onFrame.position
       size = Rect(0, 0, area.width, area.height)
       shown = local(FrameCoordinates.visible(area))
       // a cell of the node at local (x, y) sits at (area.x + x, area.y + y) of the buffer it was painted into
-      grid = Vector.tabulate(shown.height, shown.width) { (row, column) =>
+      val nextGrid = Vector.tabulate(shown.height, shown.width) { (row, column) =>
         val x = area.x + shown.x + column
         val y = area.y + shown.y + row
         if !buffer.area.contains(x, y) || buffer.isContinuation(x, y) then "" else buffer.get(x, y).symbol
       }
+      // These widgets own internal row offsets/revisions which cannot be mapped from the outer layout rectangle.
+      // Retire the selection before replacing its snapshot, never reinterpret old cells as newly scrolled content.
+      if invalidateOnChange && grid.nonEmpty && nextGrid != grid then
+        val _ = clear()
+      else grid = nextGrid
       if pendingSnap then
         pendingSnap = false
         snapToGranularity()
@@ -336,6 +341,15 @@ private[dsl] object TextSelection:
         // the last character's continuation cells belong to it
         val tail  = Iterator.iterate(last + 1)(_ + 1).find(c => c >= row.length || row(c).nonEmpty).getOrElse(last + 1)
         Some((first, tail - 1))
+
+  /** Internally scrolling/revisable text has no stable content-coordinate seam. Changed visible cells retire its
+    * selection; ordinary scrollView movement keeps its existing node-relative anchoring.
+    */
+  def invalidatesOnContentChange(element: Element): Boolean =
+    element match
+      case wrapper: DecoratingElement => invalidatesOnContentChange(wrapper.inner)
+      case _: LogElement | _: LogConsoleElement | _: MarkdownStreamElement | _: DataTableElement[?] => true
+      case _                                                                                        => false
 
   /** Whether `element` takes the press for itself — a `dataTable` selects the row under it — yet still selects its text
     * once the pointer is dragged past [[DragThreshold]] cells: a press it consumed only arms the selection.

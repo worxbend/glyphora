@@ -14,7 +14,10 @@ final case class GridPlacement(row: Int, col: Int, rowSpan: Int = 1, colSpan: In
 
 /** One child's request to [[GridLayout.autoFlow]]: a fixed position, or none and let the flow choose, plus its spans.
   */
-final case class GridItem(position: Option[(Int, Int)], rowSpan: Int, colSpan: Int)
+final case class GridItem(position: Option[GridCell], rowSpan: Int, colSpan: Int)
+
+/** A zero-based row and column in a grid. Immutable geometry, safe to share between threads. */
+final case class GridCell(row: Int, col: Int)
 
 object GridItem:
 
@@ -26,7 +29,7 @@ object GridItem:
 
   /** Exactly at `(row, col)`, covering `rowSpan` x `colSpan` tracks. */
   def at(row: Int, col: Int, rowSpan: Int = 1, colSpan: Int = 1): GridItem =
-    GridItem(Some((row, col)), rowSpan, colSpan)
+    GridItem(Some(GridCell(row, col)), rowSpan, colSpan)
 
 /** The column and row tracks one [[GridLayout]] solved for one area — see [[GridLayout.tracks]]. */
 final case class GridTracks(columns: Seq[Rect], rows: Seq[Rect])
@@ -82,7 +85,7 @@ final class GridLayout private (
   /** The first and last of `count` tracks from `start`, clipped to the tracks there are. */
   private def covered(tracks: Seq[Rect], start: Int, count: Int): Option[(Rect, Rect)] =
     if start < 0 || start >= tracks.size then None
-    else Some((tracks(start), tracks(math.min(tracks.size, start + count) - 1)))
+    else Some((tracks(start), tracks(math.min(tracks.size.toLong, start.toLong + count).toInt - 1)))
 
   /** This grid with `columnGap` blank columns between column tracks and `rowGap` blank rows between row tracks. */
   def withGap(columnGap: Int, rowGap: Int): GridLayout = new GridLayout(columns, rows, columnGap, rowGap)
@@ -111,27 +114,43 @@ object GridLayout:
     * decides how many row tracks to solve.
     */
   def autoFlow(columns: Int, items: Seq[GridItem]): Seq[GridPlacement] =
-    val width                                              = math.max(1, columns)
-    val taken                                              = scala.collection.mutable.Set.empty[(Int, Int)]
-    def cellsOf(placement: GridPlacement): Seq[(Int, Int)] =
-      for
-        r <- placement.row until placement.row + placement.rows; c <- placement.col until placement.col + placement.cols
-      yield (r, c)
-    val explicit = items.map(item => item.position.map((r, c) => GridPlacement(r, c, item.rowSpan, item.colSpan)))
-    explicit.flatten.foreach(placement => taken ++= cellsOf(placement))
-    var cursor                                             = 0
+    val width    = math.max(1, columns)
+    val explicit =
+      items.map(item => item.position.map(cell => GridPlacement(cell.row, cell.col, item.rowSpan, item.colSpan)))
+    // Keep occupied rectangles, not one allocation per spanned cell. Searches advance between rectangle edges.
+    val taken    = scala.collection.mutable.ArrayBuffer.from(explicit.flatten)
+    var cursor   = 0L
     items.zip(explicit).map { (item, slot) =>
       slot.getOrElse {
-        val cols                                    = math.min(width, math.max(1, item.colSpan))
-        val rows                                    = math.max(1, item.rowSpan)
-        var index                                   = cursor
-        def fits(candidate: GridPlacement): Boolean =
-          candidate.col + cols <= width && cellsOf(candidate).forall(cell => !taken.contains(cell))
-        // terminates: rows below every taken cell are empty, so the search reaches a free run eventually
-        while !fits(GridPlacement(index / width, index % width, rows, cols)) do index += 1
-        val placement                               = GridPlacement(index / width, index % width, rows, cols)
-        taken ++= cellsOf(placement)
-        cursor = placement.row * width + placement.col + cols
+        val cols      = math.min(width, math.max(1, item.colSpan))
+        val rows      = math.max(1, item.rowSpan)
+        var row       = cursor / width
+        var from      = (cursor % width).toInt
+        var found     = false
+        var col       = 0
+        while !found && row <= Int.MaxValue do
+          val blockers                     = taken.filter(p => p.row.toLong < row + rows && p.row.toLong + p.rows > row)
+          def freeColumn(start: Int): Long =
+            var candidate = start.toLong
+            blockers.sortBy(_.col).foreach { p =>
+              if p.col.toLong < candidate + cols && p.col.toLong + p.cols > candidate then
+                candidate = p.col.toLong + p.cols
+            }
+            candidate
+          val candidate                    = freeColumn(from)
+          if candidate + cols <= width then
+            col = candidate.toInt
+            found = true
+          else
+            // A sparse cursor can leave a usable prefix behind; it is available again on the very next row.
+            val next = if from > 0 && freeColumn(0) + cols <= width then row + 1
+            else blockers.map(p => p.row.toLong + p.rows).filter(_ > row).minOption.getOrElse(row + 1)
+            row = next
+            from = 0
+        // Coordinates beyond the public Int domain are unpaintable, rather than wrapping into an earlier row.
+        val placement = GridPlacement(math.min(row, Int.MaxValue.toLong).toInt, col, rows, cols)
+        taken += placement
+        cursor = row * width + col + cols
         placement
       }
     }

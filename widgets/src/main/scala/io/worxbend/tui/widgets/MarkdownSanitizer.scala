@@ -40,10 +40,10 @@ object MarkdownSanitizer:
             if line.startsWith("**", index) then delimiter(line, index, "**")
             else
               line.charAt(index) match
-                case '*' => delimiter(line, index, "*")
-                case '`' => delimiter(line, index, "`")
-                case '[' => link(line, index)
-                case _   => None
+                case '*'                            => delimiter(line, index, "*")
+                case '`'                            => delimiter(line, index, "`")
+                case '[' if atBoundary(line, index) => link(line, index)
+                case _                              => None
           opened match
             case Some(closed) => result = Some(closed)
             case None         => index += 1
@@ -52,9 +52,21 @@ object MarkdownSanitizer:
   /** An unclosed `marker` at `index`: closed when text follows it directly, dropped when nothing follows it yet. */
   private def delimiter(line: String, index: Int, marker: String): Option[String] =
     val content = line.drop(index + marker.length)
-    if content.isEmpty || content.isBlank then Some(line.take(index).stripTrailing)
-    else if content.head.isWhitespace && marker != "`" then None
+    if marker != "`" && !atBoundary(line, index) then None
+    else if content.isEmpty || content.isBlank then Some(line.take(index).stripTrailing)
+    else if marker != "`" && (content.head.isWhitespace || isPunctuation(content.head)) then None
     else Some(line + marker)
+
+  private def atBoundary(line: String, index: Int): Boolean =
+    index == 0 || line.charAt(index - 1).isWhitespace || isPunctuation(line.charAt(index - 1))
+
+  private def isPunctuation(c: Char): Boolean =
+    Character.getType(c) match
+      case Character.CONNECTOR_PUNCTUATION | Character.DASH_PUNCTUATION | Character.START_PUNCTUATION |
+          Character.END_PUNCTUATION | Character.INITIAL_QUOTE_PUNCTUATION | Character.FINAL_QUOTE_PUNCTUATION |
+          Character.OTHER_PUNCTUATION =>
+        true
+      case _ => false
 
   /** `[label](partial` shows the label; `[label` (or `[label]` at the very end) drops the brackets. */
   private def link(line: String, index: Int): Option[String] =

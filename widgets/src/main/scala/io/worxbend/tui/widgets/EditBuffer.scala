@@ -32,6 +32,7 @@ abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRin
   private var anchor: Option[TextPosition] = None
   private var last: LastCommand            = LastCommand.Other
   private val history                      = UndoLog(EditBuffer.UndoLimit)
+  private val killOwner                    = new Object
 
   /** The whole text, lines joined with `\n`. */
   def value: String = Fragment.text(lines)
@@ -39,19 +40,22 @@ abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRin
   /** Where the caret is — the selection's moving end when there is one. */
   def caret: TextPosition = head
 
-  /** The selected range as `(start, end)`, start first whichever way it was dragged; `None` when nothing is selected.
+  /** The selected range with named `start` and `end`, start first whichever way it was dragged; `None` when nothing is
+    * selected.
     */
-  def selection: Option[(TextPosition, TextPosition)] =
-    anchor.filter(_ != head).map(a => if a < head then (a, head) else (head, a))
+  def selection: Option[TextRange] =
+    anchor.filter(_ != head).map(a => if a < head then TextRange(a, head) else TextRange(head, a))
 
   /** The selected text, lines joined with `\n`; empty when nothing is selected. */
-  def selectedText: String = selection.fold("")((from, to) => Fragment.text(Fragment.between(lines, from, to)))
+  def selectedText: String = selection.fold("")(range => Fragment.text(Fragment.between(lines, range.start, range.end)))
 
   /** The text of line `index` (zero-based), without its line break. */
   def lineText(index: Int): String = lines(index).mkString
 
   /** Whether the caret sits at the very end of the text. */
   def isAtEnd: Boolean = head == endOfText
+
+  private[tui] def breakKillChain(): Unit = killRing.breakChain()
 
   /** The kill ring this buffer kills into and yanks from. */
   def kills: KillRing = killRing
@@ -61,6 +65,9 @@ abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRin
   /** Clusters and line breaks the undo history retains — an instrumentation hook, see [[UndoLog.footprint]]. */
   private[widgets] def undoFootprint: Int = history.footprint
 
+  /** Invalidates derived layouts after a splice. Called after the text changed, before the caret settles. */
+  protected def textChanged(fromLine: Int, removedLines: Int, insertedLines: Int): Unit = ()
+
   // --- editing ---------------------------------------------------------------------------------------------------
 
   /** Inserts `text` at the caret, replacing the selection if there is one. A single grapheme typed after the previous
@@ -68,8 +75,8 @@ abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRin
     */
   def insert(text: String): Unit =
     selection match
-      case Some((from, to)) => replaceRange(from, to, text, EditKind.Other)
-      case None             =>
+      case Some(TextRange(from, to)) => replaceRange(from, to, text, EditKind.Other)
+      case None                      =>
         val typing = !text.contains('\n') && GraphemeEdit.clustersOf(text).size == 1
         replaceRange(head, head, text, if typing then EditKind.Typing else EditKind.Other)
 
@@ -89,13 +96,16 @@ abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRin
   def undo(): Unit =
     history.popUndo().foreach { diff =>
       lines = Fragment.replace(lines, diff.start, diff.inserted, diff.removed)
+      textChanged(diff.start.line, diff.inserted.size, diff.removed.size)
       settle(diff.caretBefore)
+      anchor = diff.anchorBefore
     }
 
   /** Re-applies the most recently undone step; a fresh edit clears the redo history. */
   def redo(): Unit =
     history.popRedo().foreach { diff =>
       lines = Fragment.replace(lines, diff.start, diff.removed, diff.inserted)
+      textChanged(diff.start.line, diff.removed.size, diff.inserted.size)
       settle(diff.caretAfter)
     }
 
@@ -104,7 +114,9 @@ abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRin
 
   /** Empties the text and forgets the undo history; the kill ring is kept. */
   def clear(): Unit =
+    val previousLines = lines.size
     lines = Fragment.Empty
+    textChanged(0, previousLines, 1)
     settle(TextPosition(0, 0))
     history.clear()
 
@@ -115,7 +127,9 @@ abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRin
   // --- clipboard -------------------------------------------------------------------------------------------------
 
   /** Copies the selection to `clipboard`; does nothing when nothing is selected. */
-  def copy(clipboard: Clipboard): Unit = selection.foreach(_ => clipboard.copy(selectedText))
+  def copy(clipboard: Clipboard): Unit =
+    killRing.breakChain()
+    selection.foreach(_ => clipboard.copy(selectedText))
 
   /** Copies the selection to `clipboard` and deletes it. */
   def cut(clipboard: Clipboard): Unit =
@@ -145,15 +159,15 @@ abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRin
   /** `Ctrl+W`: kills the selection, or else back to the start of the word before the caret. */
   def deleteWordBackward(): Unit =
     selection match
-      case Some((from, to)) => kill(from, to, backward = true)
-      case None             => kill(wordLeftOf(head), head, backward = true)
+      case Some(TextRange(from, to)) => kill(from, to, backward = true)
+      case None                      => kill(wordLeftOf(head), head, backward = true)
 
   /** `Alt+D`: kills forward to the end of the word after the caret. */
   def deleteWordForward(): Unit = kill(head, wordRightOf(head), backward = false)
 
   /** `Ctrl+Y`: inserts the newest kill at the caret. */
   def yank(): Unit = killRing.newest.foreach { text =>
-    val start = selection.fold(head)(_._1)
+    val start = selection.fold(head)(_.start)
     history.breakGroup()
     insert(text)
     last = LastCommand.Yanked(start, 0)
@@ -173,11 +187,11 @@ abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRin
 
   /** One grapheme left; with `select` the selection grows, without it a selection collapses to its start. */
   def moveLeft(select: Boolean = false): Unit =
-    moveTo(if select then stepLeft(head) else selection.fold(stepLeft(head))(_._1), select)
+    moveTo(if select then stepLeft(head) else selection.fold(stepLeft(head))(_.start), select)
 
   /** One grapheme right; with `select` the selection grows, without it a selection collapses to its end. */
   def moveRight(select: Boolean = false): Unit =
-    moveTo(if select then stepRight(head) else selection.fold(stepRight(head))(_._2), select)
+    moveTo(if select then stepRight(head) else selection.fold(stepRight(head))(_.end), select)
 
   def moveUp(select: Boolean = false): Unit =
     if head.line > 0 then moveTo(TextPosition(head.line - 1, math.min(head.column, lines(head.line - 1).size)), select)
@@ -223,6 +237,8 @@ abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRin
 
   /** Drops the selection, leaving the caret where it is. */
   def clearSelection(): Unit =
+    killRing.breakChain()
+    history.breakGroup()
     anchor = None
     touch()
 
@@ -233,6 +249,7 @@ abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRin
     if select then { if anchor.isEmpty then anchor = Some(head) }
     else anchor = None
     history.breakGroup()
+    killRing.breakChain()
     last = LastCommand.Other
     head = clamp(position)
     touch()
@@ -244,6 +261,7 @@ abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRin
   private def isBlank(line: Int): Boolean = lines(line).forall(_.codePoints().allMatch(Character.isWhitespace))
 
   private def settle(position: TextPosition): Unit =
+    killRing.breakChain()
     anchor = None
     last = LastCommand.Other
     head = clamp(position)
@@ -251,16 +269,17 @@ abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRin
 
   private def deleteSelection(): Boolean =
     selection match
-      case Some((from, to)) =>
+      case Some(TextRange(from, to)) =>
         replaceRange(from, to, "", EditKind.Other)
         true
-      case None             => false
+      case None                      => false
 
   private def kill(from: TextPosition, to: TextPosition, backward: Boolean): Unit =
     if from != to then
-      val text = Fragment.text(Fragment.between(lines, from, to))
-      if last == LastCommand.Killed then killRing.accumulate(text, backward) else killRing.push(text)
+      val text     = Fragment.text(Fragment.between(lines, from, to))
+      val continue = last == LastCommand.Killed && killRing.continues(killOwner)
       replaceRange(from, to, "", EditKind.Other)
+      killRing.record(killOwner, text, backward, continue)
       last = LastCommand.Killed
 
   private def wordLeftOf(at: TextPosition): TextPosition =
@@ -310,9 +329,13 @@ abstract class EditBuffer(initial: String, multiline: Boolean, killRing: KillRin
         ((first +: segments.slice(1, segments.size - 1)) :+ last, column)
     val old                     = lines.slice(from.line, to.line + 1)
     val caretBefore             = head
-    lines = lines.take(from.line) ++ affected ++ lines.drop(to.line + 1)
+    val anchorBefore            = anchor
+    lines =
+      if from.line == to.line && affected.size == 1 then lines.updated(from.line, affected.head)
+      else lines.take(from.line) ++ affected ++ lines.drop(to.line + 1)
+    textChanged(from.line, to.line - from.line + 1, affected.size)
     settle(TextPosition(from.line + affected.size - 1, caretColumn))
-    val diff                    = trimmed(from, old, affected, after.size, caretBefore, kind)
+    val diff = trimmed(from, old, affected, after.size, caretBefore, kind).copy(anchorBefore = anchorBefore)
     if diff.removed != diff.inserted then history.record(diff)
 
   /** The diff between the `old` and `fresh` runs of whole lines starting at `from.line`, trimmed to the clusters that

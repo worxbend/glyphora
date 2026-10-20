@@ -52,7 +52,7 @@ final class EscapeSanitizingSpec extends AnyFunSuite:
     assert(!row.contains(Esc))
     assert(row.startsWith("a[31mb"))
 
-  test("the emergency restore sequence resets every mode the backend can set"):
+  test("the blind emergency restore sequence resets idempotent modes without consuming a keyboard push"):
     val restore = AnsiSequences.RestoreAll
     Seq(
       "[?2026l",
@@ -65,9 +65,9 @@ final class EscapeSanitizingSpec extends AnyFunSuite:
       "[?1003l",
       "[?1002l",
       "[?1000l",
-      "[<u",
     )
       .foreach(sequence => assert(restore.contains(s"$Esc$sequence"), s"restore is missing $sequence"))
+    assert(!restore.contains(AnsiSequences.PopKittyKeyboard))
 
   test("the emergency restore closes a synchronized update before anything else it writes"):
     // a frame killed between `?2026h` and `?2026l` leaves the terminal buffering: anything the restore writes after

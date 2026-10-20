@@ -57,6 +57,10 @@ final class ElementHost:
     */
   private val targetPaths = scala.collection.mutable.HashMap.empty[InputTarget, List[Int]]
 
+  /** Original node identities, never the freshly copied focus/style wrappers. */
+  private val targetNodes    = scala.collection.mutable.HashMap.empty[InputTarget, Element]
+  private var targetTopology = Map.empty[InputTarget, CaptureSlot]
+
   /** The child positions leading to the focused element in [[lastTree]], recorded while it was decorated. */
   private var lastFocusPath: Option[Vector[Int]] = None
 
@@ -94,7 +98,8 @@ final class ElementHost:
   def enableBoundsRecording(): Unit = recordBounds = true
 
   /** Pointer capture and click counting between mouse events — see [[PointerCapture]]. */
-  private var pointer = PointerCapture()
+  private var pointer              = PointerCapture()
+  private var pointerLayerRevision = 0L
 
   /** Mouse text selection and the other pointer gestures run over ordinary routing — see [[PointerGestures]]. */
   private[dsl] val gestures: PointerGestures = PointerGestures(bounds)
@@ -158,14 +163,19 @@ final class ElementHost:
     * loop owns its ReactiveScope and must dispose it separately.
     */
   def reset(): Unit =
-    session.dispose()
+    val previous = session
     tracker = FocusTracker(bounds)
     pointer = PointerCapture()
-    val _ = gestures.selection.clear()
+    pointerLayerRevision = tracker.layerRevision
+    val _        = gestures.selection.clear()
     session = ViewSession(key => boundsOf(key))
     lastTree = None
+    targetPaths.clear()
+    targetNodes.clear()
+    targetTopology = Map.empty
     lastFocusPath = None
     lastFocus = (-1, None)
+    previous.dispose()
 
   /** Resolves `view` for an area of this size, reconciles focus, decorates the tree with `theme`'s focus cue and paints
     * it into `buffer`.
@@ -234,9 +244,13 @@ final class ElementHost:
   ): Unit =
     val raw      = frame.tree
     val analysis = frame.analysis
+    if pointerLayerRevision != tracker.layerRevision then
+      val _ = cancelPointerGestures()
+      pointerLayerRevision = tracker.layerRevision
     tracker.reconcile(analysis.focusKeys, analysis.autofocus, analysis.scopes)
     recordFocusChange()
     targetPaths.clear()
+    targetNodes.clear()
     val recorder = Option.when(recordBounds)(bounds)
     motionDemanded = false
     cuesDemanded = false
@@ -256,7 +270,11 @@ final class ElementHost:
       gestures = Some(gestures),
       fullBounds = recordAllBounds,
       onTargetPath = (target, trail) => targetPaths(target) = trail,
+      onTargetNode = (target, node) => targetNodes(target) = node,
     )
+    targetTopology = targetNodes.iterator.map { (target, node) =>
+      target -> CaptureSlot(targetPaths(target), node.debugName, node.props.focusKey)
+    }.toMap
     lastTree = Some(tree)
     // always opened and closed: with full recording off, the nodes that carry a pointer role still record into it
     bounds.begin()
@@ -267,6 +285,8 @@ final class ElementHost:
     finally
       context.pictures = outer
       bounds.publish()
+    tracker.afterPaint()
+    pointer.reconcile(targetNodes, bounds, targetTopology)
     gestures.afterPaint()
     session.afterPaint(frame)
 
@@ -329,14 +349,20 @@ final class ElementHost:
   /** Delivers a key to the focused element and the ancestors it bubbles through — after the capture phase, which offers
     * it to the few nodes that take keys whatever holds focus (see [[Element.captureKeyHandler]]).
     *
-    * `false` means nothing on screen consumed it and the decision is the host's. This method deliberately does not move
-    * focus and does not quit: Tab traversal and Ctrl+C are policy, and policy belongs to whoever owns the loop — call
+    * `false` means nothing on screen consumed it and the decision is the host's. Unclaimed arrows rove within a focus
+    * group and Shift+arrows select text. It does not traverse Tab stops or quit: those belong to the loop — call
     * [[focusNext]] or [[focusPrevious]] from your own key handling if you want the usual meaning.
     */
-  def dispatchKey(key: KeyEvent): Boolean =
+  def dispatchKey(key: KeyEvent): Boolean = dispatchTreeKey(key) || dispatchNavigationKey(key)
+
+  /** Tree delivery without host navigation policy, so TuiApp can offer app bindings before that policy. */
+  private[dsl] def dispatchTreeKey(key: KeyEvent): Boolean =
     cancelDrag(key) || lastTree.exists(EventRouter.dispatchCapture(_, key, lastFocusPath)) ||
-      lastTree.exists(EventRouter.dispatchKey(_, key, lastFocusPath)) || keyboardSelect(key) ||
-      (lastTree.isDefined && groupArrow(key))
+      (tracker.acceptsFocusedInput && lastTree.exists(EventRouter.dispatchKey(_, key, lastFocusPath)))
+
+  /** Unclaimed Shift+arrow selection and focus-group roving, after application bindings in TuiApp. */
+  private[dsl] def dispatchNavigationKey(key: KeyEvent): Boolean =
+    tracker.acceptsFocusedInput && (keyboardSelect(key) || (lastTree.isDefined && groupArrow(key)))
 
   /** Shift+arrow that nothing on the focus path consumed, while the focused node is selectable text and selection is on
     * (a mouse-capturing app): extends a selection over that node one cell or row at a time — see
@@ -368,11 +394,30 @@ final class ElementHost:
     * release that follows drops nothing — and is spent on that, ahead of every element.
     */
   private def cancelDrag(key: KeyEvent): Boolean =
-    val keys = FrameworkKeys.current.value
-    gestures.drag.isActive && keys.fires(keys.closeModal, key) && {
+    val keys   = FrameworkKeys.current.value
+    val escape = key.code == KeyCode.Escape && key.modifiers.isEmpty
+    (escape || keys.fires(keys.closeModal, key)) && cancelDrag()
+
+  /** Cancels a drag when a complete close-modal framework sequence fires. */
+  private[dsl] def cancelDrag(): Boolean =
+    val active = gestures.drag.isActive
+    if active then
       gestures.drag.end()
-      true
-    }
+      pointer.reset()
+    active
+
+  /** Abandons pointer gestures and capture after terminal focus loss. Embedding loops call this on focus loss too.
+    * Returns whether a gesture or interaction cue was visible. Render-thread only.
+    */
+  def cancelPointerGestures(): Boolean =
+    val changed = gestures.drag.isActive || tracker.pressedTarget.isDefined || tracker.hoveredTarget.isDefined
+    gestures.drag.end()
+    pointer.reset()
+    tracker.pressedTarget = None
+    tracker.pressedKey = None
+    tracker.hoveredTarget = None
+    tracker.hoveredKey = None
+    gestures.selection.clear() || changed
 
   /** An unmodified arrow nobody on the focus path consumed moves focus inside the focused element's focus group. That
     * is the group's own behaviour rather than app policy, so it belongs here and an embedding host gets it too.
@@ -400,9 +445,16 @@ final class ElementHost:
     * selection, and while one is being dragged out its drags and release go to it, not to the elements.
     */
   def dispatchMouse(mouse: MouseEvent): Boolean =
-    val event = pointer.counted(mouse, clock())
-    val under = tracker.mouseHit(event.position)
-    val _     = autoScroll(event)
+    pointer.reconcile(targetNodes, bounds, targetTopology)
+    val recovering = mouse.kind == MouseEventKind.Down && gestures.drag.isActive
+    val event      = pointer.counted(mouse, clock())
+    val wheel      = event.kind match
+      case MouseEventKind.ScrollUp | MouseEventKind.ScrollDown | MouseEventKind.ScrollLeft |
+          MouseEventKind.ScrollRight =>
+        true
+      case _ => false
+    val under      = tracker.mouseHit(event.position, wheel)
+    val _          = autoScroll(event)
     gestures.intercept(event) match
       case Some(redraw) =>
         // a gesture in progress took the event: no element sees it, but a release still lets the pointer go
@@ -429,11 +481,28 @@ final class ElementHost:
               case _                                            => false
           else false
 
-        val consumed = lastTree.exists(EventRouter.dispatchMouse(_, event, target, targetPaths.get))
-        pointer.delivered(event, target, consumed)
+        val consumed = pointer.continue(event).getOrElse {
+          lastTree.exists(EventRouter.dispatchMouse(_, event, target, targetPaths.get))
+        }
+        val delivery = Option.when(event.kind == MouseEventKind.Down) {
+          val pressedTree  = lastTree
+          val pressedPaths = targetPaths.toMap
+          val pressedHit   = target
+          (next: MouseEvent) => pressedTree.exists(EventRouter.dispatchMouse(_, next, pressedHit, pressedPaths.get))
+        }
+        pointer.delivered(
+          event,
+          target,
+          consumed,
+          target.flatMap(hit => targetNodes.get(hit.target)),
+          targetTopology,
+          delivery,
+        )
         val restyled = trackPointerStates(event, under) && cuesDemanded
-        val gestured = lastTree.isDefined && gestures.afterDelivery(event, consumed)
-        consumed || focusMoved || restyled || gestured || heard
+        val ownDrag  = event.kind == MouseEventKind.Down && consumed &&
+          target.exists(hit => lastTree.exists(EventRouter.targetDraggable(_, hit.target, targetPaths.get)))
+        val gestured = lastTree.isDefined && gestures.afterDelivery(event, consumed, ownDrag)
+        consumed || focusMoved || restyled || gestured || heard || recovering
 
   /** A drag that is selecting text and has run past the top or bottom of the selected node's rows on screen scrolls the
     * nearest scrollable around that edge one step — a wheel event at the edge cell, routed the way a real wheel there
@@ -475,10 +544,11 @@ final class ElementHost:
 
   /** Offers a key release to the focused element and its ancestors — see [[EventRouter.dispatchKeyRelease]]. */
   def dispatchKeyRelease(key: KeyEvent): Boolean =
-    lastTree.exists(EventRouter.dispatchKeyRelease(_, key, lastFocusPath))
+    tracker.acceptsFocusedInput && lastTree.exists(EventRouter.dispatchKeyRelease(_, key, lastFocusPath))
 
   /** Delivers a bracketed-paste payload to the focused element. `false` when nothing took it. */
-  def dispatchPaste(text: String): Boolean = lastTree.exists(EventRouter.dispatchPaste(_, text, lastFocusPath))
+  def dispatchPaste(text: String): Boolean =
+    tracker.acceptsFocusedInput && lastTree.exists(EventRouter.dispatchPaste(_, text, lastFocusPath))
 
   /** Moves focus to the next focusable in tab order, wrapping at the end. `true` when it moved. */
   def focusNext(): Boolean = tracker.focusNext()

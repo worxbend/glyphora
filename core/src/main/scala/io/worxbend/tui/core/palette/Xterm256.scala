@@ -1,6 +1,6 @@
 package io.worxbend.tui.core.palette
 
-import io.worxbend.tui.core.{Color, ExportPalette}
+import io.worxbend.tui.core.{Color, ExportPalette, Rgb}
 
 /** The xterm 256-colour table as an [[ExportPalette]]: the sixteen ANSI colours at the values most emulators ship, the
   * 6x6x6 cube and the 24-step grey ramp — the same decoding [[Color.approximateRgb]] performs, published under the name
@@ -17,4 +17,6 @@ object Xterm256 extends ExportPalette:
     val (r, g, b) = Color.approximateRgb(Color.Indexed(index))
     Color.Rgb(r, g, b)
 
-  def rgb(color: Color): (Int, Int, Int) = Color.approximateRgb(color)
+  def rgb(color: Color): Rgb =
+    val (r, g, b) = Color.approximateRgb(color)
+    Rgb(r, g, b)

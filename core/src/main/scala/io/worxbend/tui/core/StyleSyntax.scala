@@ -32,11 +32,55 @@ private[core] object StyleSyntax:
   private val ColourPrefixes: Set[String] = Set("bright", "light", "dark")
 
   def parse(text: String): Either[String, Style] =
-    val words = text.trim.split("\\s+").iterator.filter(_.nonEmpty).toList
-    words match
+    tokens(text).flatMap {
       case Nil                                                           => Right(Style.Default)
       case single :: Nil if single.toLowerCase(Locale.ROOT) == "default" => Right(Style.Default)
-      case _                                                             => read(words, Style.Default, fgSet = false)
+      case words                                                         => read(words, Style.Default, fgSet = false)
+    }
+
+  private def tokens(text: String): Either[String, List[String]] =
+    val words   = List.newBuilder[String]
+    val word    = StringBuilder()
+    var quoted  = false
+    var escaped = false
+    var started = false
+    var error   = Option.empty[String]
+    text.foreach { char =>
+      if escaped then
+        char match
+          case 'n'        => word += '\n'
+          case 'r'        => word += '\r'
+          case 't'        => word += '\t'
+          case '\\' | '"' => word += char
+          case _          => error = Some("invalid quoted style escape")
+        escaped = false
+      else if quoted && char == '\\' then escaped = true
+      else if char == '"' && (quoted || !started) then
+        quoted = !quoted
+        started = true
+      else if !quoted && char.isWhitespace then
+        if started then
+          words += word.result()
+          word.clear()
+          started = false
+      else
+        word += char
+        started = true
+    }
+    if quoted || escaped then Left("unterminated quoted style word")
+    else
+      if started then words += word.result()
+      error.toLeft(words.result())
+
+  private def quote(text: String): String =
+    "\"" + text.flatMap {
+      case '\\' => "\\\\"
+      case '"'  => "\\\""
+      case '\n' => "\\n"
+      case '\r' => "\\r"
+      case '\t' => "\\t"
+      case char => char.toString
+    } + "\""
 
   @scala.annotation.tailrec
   private def read(words: List[String], style: Style, fgSet: Boolean): Either[String, Style] =
@@ -93,5 +137,5 @@ private[core] object StyleSyntax:
         style.fg.map(_.render).toSeq ++
         style.bg.map(color => s"on ${color.render}").toSeq ++
         style.underlineColor.map(color => s"underline-color ${color.render}").toSeq ++
-        style.link.map(url => s"link $url").toSeq
+        style.link.map(url => s"link ${quote(url)}").toSeq
     if words.isEmpty then "default" else words.mkString(" ")

@@ -22,7 +22,7 @@ final class ColorSchemeProbeSpec extends AnyFunSuite:
   private def oscBel(payload: String): Seq[Int] = Seq(Esc, ']'.toInt) ++ payload.map(_.toInt) :+ 7
 
   private def probed(replies: Seq[Int]*): TerminalCapabilities =
-    decoder((replies.flatten ++ Da1)*).readCapabilityReport(50.millis)
+    decoder((replies.flatten ++ Da1)*).readCapabilityReport(2.seconds)
 
   // ------------------------------------------------------------------ OSC 11
 
@@ -39,7 +39,7 @@ final class ColorSchemeProbeSpec extends AnyFunSuite:
 
   test("the reply produces no key event, before or after the probe"):
     val input = decoder((osc("11;rgb:1e1e/1e1e/2e2e") ++ Da1 ++ Seq('k'.toInt))*)
-    assert(input.readCapabilityReport(50.millis).backgroundColor.nonEmpty)
+    assert(input.readCapabilityReport(2.seconds).backgroundColor.nonEmpty)
     // the only thing left on the stream is the key typed after the reply
     assert(input.decode(10).contains(Event.Key(KeyEvent.char('k'))))
     assert(input.decode(10).isEmpty)

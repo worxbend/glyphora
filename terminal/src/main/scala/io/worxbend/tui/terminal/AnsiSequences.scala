@@ -178,6 +178,9 @@ private[terminal] object AnsiSequences:
     * [[ResetCursorShape]] is here on the same terms: it is DECSCUSR rather than a private-mode reset, but asking for
     * the user's configured cursor shape when nothing ever changed it leaves the shape exactly where it was.
     *
+    * Kitty keyboard popping is deliberately absent: it consumes a stack entry rather than resetting a mode, so the
+    * backend emits it separately only while it still owns a push on the current screen.
+    *
     * [[EndSynchronized]] leads. A frame is written as one `?2026h` … `?2026l` pair (see `JLine3Backend.draw`), which
     * asks the terminal to hold everything back until the closing half arrives so a half-drawn frame is never shown. A
     * process killed between the two halves leaves that update open: until the emulator's own timeout expires the screen
@@ -185,9 +188,9 @@ private[terminal] object AnsiSequences:
     * at once, and closing one that was never opened does nothing.
     */
   val RestoreAll: String =
-    s"$EndSynchronized$DisableMouseCapture$ResetCursorShape$ShowCursor$LeaveAlternateScreen$ResetScrollRegion$PopKittyKeyboard" +
+    s"$EndSynchronized$DisableMouseCapture$ResetCursorShape$ShowCursor$ResetPointerShape$LeaveAlternateScreen$ResetScrollRegion" +
       s"$DisableFocusReporting$DisableBracketedPaste$DisableColorSchemeUpdates$DisableInBandResize$DisableUnicodeWidth" +
-      s"$ResetPointerShape$ResetStyle"
+      s"$ResetStyle"
 
   /** OSC 8 hyperlink opener; pair every open with [[LinkClose]].
     *
@@ -340,7 +343,9 @@ private[terminal] object AnsiSequences:
     * The names are the CSS cursor keywords kitty, foot, WezTerm and Ghostty accept (xterm also takes its own X11 cursor
     * font names, which this library does not emit). A terminal without OSC 22 ignores the string.
     */
-  def pointerShape(shape: PointerShape): String = s"$Esc]22;${PointerShape.name(shape)}$Esc\\"
+  def pointerShape(shape: PointerShape): String =
+    val name = if shape == PointerShape.Default then "" else PointerShape.name(shape)
+    s"$Esc]22;$name$Esc\\"
 
   /** A desktop notification in the dialect `protocol` names — see [[DesktopNotificationProtocol]] for which terminal
     * speaks which.

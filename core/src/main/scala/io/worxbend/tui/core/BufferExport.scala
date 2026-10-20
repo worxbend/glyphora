@@ -77,17 +77,20 @@ object BufferExport:
     out ++= "  <g>\n"
     runs.foreach { run =>
       val painted = Painted(run.style, options)
-      if run.text.nonEmpty && !painted.hidden then
+      val shown   = if painted.decoration.nonEmpty then padded(run) else run.text
+      if shown.nonEmpty && !painted.hidden then
         val x          = (run.x - buffer.area.x) * options.cellWidth
         val y          = (run.y - buffer.area.y) * options.cellHeight + baseline
         val attributes = StringBuilder()
-        attributes ++= s""" x="$x" y="$y" textLength="${run.columns * options.cellWidth}" lengthAdjust="spacingAndGlyphs""""
+        attributes ++= s""" x="$x" y="$y" textLength="${CharWidth.of(
+            shown
+          ) * options.cellWidth}" lengthAdjust="spacingAndGlyphs""""
         attributes ++= s""" fill="${hex(painted.foreground)}" xml:space="preserve""""
         if painted.bold then attributes ++= """ font-weight="bold""""
         if painted.italic then attributes ++= """ font-style="italic""""
         if painted.dim then attributes ++= """ opacity="0.6""""
         painted.decoration.foreach(decoration => attributes ++= s""" text-decoration="$decoration"""")
-        val text       = s"<text${attributes.result()}>${escapeXml(run.text)}</text>"
+        val text       = s"<text${attributes.result()}>${escapeXml(shown)}</text>"
         out ++= "    "
         out ++= run.style.link.fold(text)(url => s"""<a href="${escapeXml(url)}">$text</a>""")
         out += '\n'
@@ -113,8 +116,8 @@ object BufferExport:
         out += '\n'
         y = run.y
       val painted = Painted(run.style, options)
-      // blanks at the end of a run are padding the browser lays out on its own, unless a background has to cover them
-      val text    = if painted.background.isDefined then padded(run) else run.text
+      // Every cell occupies its column, including gaps between differently styled runs.
+      val text    = padded(run)
       if text.nonEmpty then
         val css  = StringBuilder()
         css ++= s"color:${hex(painted.foreground)}"
@@ -264,12 +267,12 @@ object BufferExport:
           val isWide = buffer.isContinuation(x + 1, y)
           if x == start then
             // a wide grapheme is a run of its own: its one <text> spans both columns and nothing joins it
-            text ++= cell.symbol
+            text ++= printable(cell.symbol)
             x += (if isWide then 2 else 1)
             open = !isWide
           else if cell.style != style || isWide then open = false
           else
-            text ++= cell.symbol
+            text ++= printable(cell.symbol)
             x += 1
         runs += Segment(start, y, x - start, trimTrailingBlanks(text.result()), style)
       y += 1
@@ -290,8 +293,8 @@ object BufferExport:
     * the SVG and HTML forms spell out.
     */
   private final case class Painted(
-      foreground: (Int, Int, Int),
-      background: Option[(Int, Int, Int)],
+      foreground: Rgb,
+      background: Option[Rgb],
       bold: Boolean,
       italic: Boolean,
       dim: Boolean,
@@ -324,12 +327,11 @@ object BufferExport:
       )
 
   /** `Color.Reset` stands for the export's own default, which the palette never sees. */
-  private def resolve(options: ExportOptions, color: Color): (Int, Int, Int) =
+  private def resolve(options: ExportOptions, color: Color): Rgb =
     if color == Color.Reset then options.palette.rgb(options.foreground) else options.palette.rgb(color)
 
-  private def hex(rgb: (Int, Int, Int)): String =
-    val (r, g, b) = rgb
-    f"#$r%02x$g%02x$b%02x"
+  private def hex(rgb: Rgb): String =
+    f"#${rgb.r}%02x${rgb.g}%02x${rgb.b}%02x"
 
   private def escapeXml(text: String): String =
     val out = StringBuilder()

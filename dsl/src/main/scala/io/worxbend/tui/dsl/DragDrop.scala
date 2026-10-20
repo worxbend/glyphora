@@ -21,25 +21,26 @@ import io.worxbend.tui.core.{Buffer, MouseEvent, MouseEventKind, Position, Rect,
   * — which is also how to keep two unrelated drags of the same type apart.
   *
   * How the value crosses without a cast: a payload packed by this key carries a closure that writes the value into this
-  * key's own typed slot, and only this key can unpack it. The slot is written and read within one call on the render
-  * thread, where every drag is handled.
+  * key's typed, thread-local receiver, and only this key can unpack it. Keys (including the built-in givens) may be
+  * shared by concurrent runners; receiver state is restored after each call, including a failed or nested load.
   */
 final class DragKey[A] private (val name: String):
 
-  private var slot: Option[A] = None
+  private val slot: ThreadLocal[Option[A]] = ThreadLocal.withInitial(() => None)
 
   /** `value` as a payload this key, and only this key, can unpack. */
-  def pack(value: A): DragPayload = new DragPayload(this, value.toString, () => slot = Some(value))
+  def pack(value: A): DragPayload = new DragPayload(this, value.toString, () => slot.set(Some(value)))
 
   /** The value `payload` carries when this key packed it, else `None`. */
   private[dsl] def unpack(payload: DragPayload): Option[A] =
     if payload.key ne this then None
     else
-      slot = None
-      payload.load()
-      val value = slot
-      slot = None
-      value
+      val previous = slot.get()
+      slot.set(None)
+      try
+        payload.load()
+        slot.get()
+      finally if previous.isEmpty then slot.remove() else slot.set(previous)
 
   override def toString: String = s"DragKey($name)"
 
@@ -142,7 +143,7 @@ private[dsl] final class DragGesture:
         Some(true)
       case MouseEventKind.Down                        =>
         end()
-        Some(true)
+        None
       case _                                          => Some(false)
 
   /** Abandons the drag without dropping. */

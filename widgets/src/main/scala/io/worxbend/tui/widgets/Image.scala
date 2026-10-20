@@ -2,8 +2,6 @@ package io.worxbend.tui.widgets
 
 import io.worxbend.tui.core.{Buffer, Cell, Color, Rect, Style, Widget}
 
-import scala.util.control.NonFatal
-
 /** A raster image rendered with half-block cells: every terminal cell shows two vertical pixels (`▀` with the upper
   * pixel as foreground and the lower as background), the universally supported protocol from the reference ecosystems.
   * For a picture the terminal draws in real pixels where it can (kitty graphics, iTerm2), use [[PixelImage]].
@@ -44,23 +42,9 @@ final case class Image(pixels: Vector[Vector[Color.Rgb]]) extends Widget:
 
 object Image:
 
-  /** Decodes an image file (PNG/JPEG/GIF via `javax.imageio`) into pixels.
-    *
-    * Kept out of the `Image` constructor path so apps that never load files (and native-image builds) do not link AWT;
-    * native-image users of `fromFile` should verify their platform's `libawt` support.
+  /** Builds a half-block RGB image from decoded pixels, dropping alpha as the original file loader did. Use
+    * `ImageLoader.readPng(path).map(Image.fromRgba)` for native-safe PNG loading, or explicitly import
+    * `ImageIoLoader.imageFromFile(path)` for the JVM-only formats formerly loaded by `Image.fromFile`.
     */
-  def fromFile(path: java.nio.file.Path): Either[String, Image] =
-    try
-      // `ImageIO.read` reports an unsupported format by returning null rather than throwing
-      Option(javax.imageio.ImageIO.read(path.toFile))
-        .toRight(s"unsupported image format: $path")
-        .map: decoded =>
-          Image(Vector.tabulate(decoded.getHeight) { y =>
-            Vector.tabulate(decoded.getWidth) { x =>
-              val argb = decoded.getRGB(x, y)
-              Color.Rgb((argb >> 16) & 0xff, (argb >> 8) & 0xff, argb & 0xff): Color.Rgb
-            }
-          })
-    catch
-      case NonFatal(error) =>
-        Left(s"failed to read $path: ${Option(error.getMessage).getOrElse(error.getClass.getName)}")
+  def fromRgba(image: io.worxbend.tui.core.RgbaImage): Image =
+    Image(Vector.tabulate(image.height)(y => Vector.tabulate(image.width)(x => image.color(x, y))))

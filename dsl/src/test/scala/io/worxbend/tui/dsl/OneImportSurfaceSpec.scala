@@ -23,10 +23,11 @@ import scala.util.Using
   * behind its own module import is listed in [[BehindModuleImportByDesign]] with the reason, and that list is checked
   * too, so an entry cannot outlive the parameter that justified it.
   *
-  * Scope, stated so the limits are known: constructor parameters of classes, not method signatures and not the
-  * parameter lists of enum cases (`RunnerError.Backend(error: BackendError, …)` is covered by `OneImportSpec` as
-  * compiled code). DSL node types (`*Element`) and `ElementProps` are excluded on purpose: their constructors are not
-  * part of the compatibility contract — the factories and fluent builders are (see [[Element]]).
+  * Scope, stated so the limits are known: constructor parameters of classes plus public method signatures on
+  * ElementHost (the embedding boundary), not arbitrary other method signatures and not the parameter lists of enum
+  * cases (`RunnerError.Backend(error: BackendError, …)` is covered by `OneImportSpec` as compiled code). DSL node types
+  * (`*Element`) and `ElementProps` are excluded on purpose: their constructors are not part of the compatibility
+  * contract — the factories and fluent builders are (see [[Element]]).
   *
   * The source is *parsed*, not reflected over: no `java.lang.reflect` anywhere, and this is a test source in any case.
   */
@@ -168,6 +169,31 @@ final class OneImportSurfaceSpec extends AnyFunSuite:
       }
     }
 
+  /** Public method signatures on the embedding host, including arguments and result types. Unlike constructor coverage
+    * this sees ImageProtocol's getter/setter and render(Frame, ...). Restrict indentation to direct members; private
+    * helpers and method bodies are not API. The compiled external-package OneImportSpec backs this parser.
+    */
+  private def hostMembers(source: String): Seq[Parameter] =
+    val clean = stripComments(source)
+    "(?m)^  def (\\w+)".r
+      .findAllMatchIn(clean)
+      .map { method =>
+        var index     = method.end
+        var depth     = 0
+        var done      = false
+        while index < clean.length && !done do
+          val char = clean.charAt(index)
+          char match
+            case '(' | '[' | '{'                                         => depth += 1
+            case ')' | ']' | '}'                                         => depth -= 1
+            case '=' if depth == 0 && clean.lift(index + 1) != Some('>') => done = true
+            case _                                                       => ()
+          if !done then index += 1
+        val signature = clean.slice(method.end, index)
+        Parameter(s"ElementHost.${method.group(1)}", "dsl", signature.trim, typeNames(signature))
+      }
+      .toVector
+
   private def audit: (Set[String], Seq[Parameter]) =
     val root       = DocumentationSources.repoRoot
       .getOrElse(cancel("not running from a checkout: no build.mill above the working directory"))
@@ -189,7 +215,15 @@ final class OneImportSurfaceSpec extends AnyFunSuite:
     val dslCtors      = declaredTypes(sources("dsl")).toSeq.sorted
       .filterNot(name => name.endsWith("Element") || name == "ElementProps")
       .flatMap(name => constructorParameters(sources("dsl"), "dsl", name).toSeq.flatten)
-    val parameters    = (exportedCtors ++ dslCtors).map(parameter =>
+    val members       = hostMembers(
+      Files.readString(
+        root.resolve(
+          "dsl/src/main/scala/io/worxbend/tui/dsl/ElementHost.scala"
+        )
+      )
+    )
+    assert(members.sizeIs > 20, "ElementHost public-member parser stopped recognising the source")
+    val parameters    = (exportedCtors ++ dslCtors ++ members).map(parameter =>
       parameter.copy(glyphoraTypes = parameter.glyphoraTypes.filter(glyphora.contains))
     )
     assert(
@@ -257,6 +291,17 @@ final class OneImportSurfaceSpec extends AnyFunSuite:
     )
     assert(constructorParameters(source, "test", "Plain").exists(_.sizeIs == 2))
     assert(constructorParameters(source, "test", "NotAClass").isEmpty)
+
+  test("the host-member parser sees arguments and result types but ignores private helpers"):
+    val methods = hostMembers("""final class ElementHost:
+      |  def imageProtocol: Option[ImageProtocol] = None
+      |  def imageProtocol_=(protocol: Option[ImageProtocol]): Unit = ()
+      |  def render(frame: Frame, view: View)(using scope: ReactiveScope): Unit = ()
+      |  private def ignored(secret: Hidden): Unit = ()
+      |""".stripMargin)
+    assert(methods.map(_.owner) == Seq("ElementHost.imageProtocol", "ElementHost.imageProtocol_", "ElementHost.render"))
+    assert(methods.head.glyphoraTypes == Set("Option", "ImageProtocol"))
+    assert(methods.last.glyphoraTypes == Set("Frame", "View", "ReactiveScope", "Unit"))
 
   test("the published prose never pattern-matches a DSL node type"):
     // R1-03: node constructors, `copy` and extractors are not part of the compatibility contract — the factories and

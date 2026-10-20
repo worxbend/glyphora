@@ -35,8 +35,9 @@ enum Loadable[+A]:
   *   text(now.get.toString)
   * }}}
   *
-  * A panel that polls while it is on screen stops polling the frame it disappears, with nothing for the app to track.
-  * No deps means "start once". `start` runs on the render thread, after the paint, so it may write signals (the write
+  * A panel that polls while it is on screen stops polling the frame it disappears, including when a full-screen page
+  * covers it. Uncovering starts it again; ordinary eager `useSignal`/`useState` values in covered entries survive. No
+  * deps means "start once". `start` runs on the render thread, after the paint, so it may write signals (the write
   * schedules a frame as usual) and read where things landed. A start that has nothing to release returns `() => ()`.
   *
   * Same ordering rule as every hook — see [[ViewState]] — and, like them, only callable while a view is evaluated: an
@@ -90,7 +91,7 @@ def useTask[A](deps: Any*)(work: => A): Loadable[A] =
     created = true
     TaskCell[A](deps)
   }
-  if created || cell.deps != deps then
+  if store.startResources && (created || cell.deps != deps) then
     cell.deps = deps
     cell.launch(() => work, store.requestFrame)
   cell.value

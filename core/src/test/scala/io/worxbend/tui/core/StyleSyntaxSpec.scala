@@ -39,3 +39,12 @@ final class StyleSyntaxSpec extends AnyFunSuite:
       Style.Default.withFg(Color.BrightBlack).withBg(Color.White),
     )
     styles.foreach(style => assert(Style.parse(Style.render(style)) == Right(style), Style.render(style)))
+
+  test("RTP-14 quoted link targets preserve whitespace and quoting characters"):
+    Seq("", "file:///a b", "quote\"and\\slash", "line\nbreak\tand\rreturn").foreach { target =>
+      val style = Style.Default.bold.withLink(target)
+      assert(Style.parse(Style.render(style)) == Right(style))
+    }
+    assert(Style.parse("link file:///a\"b") == Right(Style.Default.withLink("file:///a\"b")))
+    assert(Style.parse("link \"unterminated").isLeft)
+    assert(Style.parse("link \"bad\\escape\"").isLeft)

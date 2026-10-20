@@ -72,7 +72,12 @@ object PromptSession:
         plain: () => Plain,
         remember: Backend => Unit,
     )
-    case Plain(read: () => Option[String], write: String => Unit, echoInput: Boolean)
+    case Plain(
+        read: () => Option[String],
+        write: String => Unit,
+        echoInput: Boolean,
+        readSecret: Option[() => Option[String]] = None,
+    )
     case Scripted(answers: Iterator[String])
 
   /** A resolved [[Mode]]: what one prompt actually runs in. A terminal shape keeps its plain fallback, for a backend
@@ -158,7 +163,24 @@ object PromptSession:
   private[dsl] lazy val standardPlain: Mode.Plain =
     // one reader for the process: a reader per prompt would buffer ahead and swallow the next prompt's piped answer
     val reader = BufferedReader(InputStreamReader(System.in, UTF_8))
-    Mode.Plain(() => Option(reader.readLine()), Console.write, echoInput = !StandardOutput.isInputTerminal)
+    val secret = () =>
+      if !StandardOutput.isInputTerminal then Option(reader.readLine())
+      else
+        val console = Option(System.console()).getOrElse {
+          throw IllegalStateException(
+            "cannot securely read a password from this terminal; supply a scripted or piped answer"
+          )
+        }
+        Option(console.readPassword()).map { chars =>
+          try new String(chars)
+          finally java.util.Arrays.fill(chars, '\u0000')
+        }
+    Mode.Plain(
+      () => Option(reader.readLine()),
+      Console.write,
+      echoInput = !StandardOutput.isInputTerminal,
+      Some(secret),
+    )
 
 /** Opens backends on one terminal and probes it once: the first backend probes as usual; once a run on a backend this
   * opened has ended, [[remember]] keeps what it reported, and every later [[open]] hands that to `create`.

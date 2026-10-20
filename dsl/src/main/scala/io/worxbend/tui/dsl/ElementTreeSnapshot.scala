@@ -67,7 +67,8 @@ object ElementTreeSnapshot:
   private[dsl] object Unwrapped:
     def of(node: Element): Unwrapped =
       node match
-        case tracked: TrackedElement => of(tracked.inner).copy(focusIndex = Some(tracked.index))
-        case pointer: PointerElement => of(pointer.inner)
-        case bounded: BoundsElement  => of(bounded.inner).copy(boundsId = Some(bounded.id))
-        case other                   => Unwrapped(other, None, None)
+        case tracked: TrackedElement      => of(tracked.inner).copy(focusIndex = Some(tracked.index))
+        case pointer: PointerElement      => of(pointer.inner)
+        case caret: CaretOcclusionElement => of(caret.inner)
+        case bounded: BoundsElement       => of(bounded.inner).copy(boundsId = Some(bounded.id))
+        case other                        => Unwrapped(other, None, None)

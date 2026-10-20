@@ -75,3 +75,44 @@ final class StoreSpec extends AnyFunSuite:
     assert(invalidated == 1)
     assert(store.peek == "xy")
     assert(store.state.peek == "xy")
+
+  test("rejected off-thread dispatch, undo and redo leave the history unchanged"):
+    val loop                          = RenderThread.register(Thread.currentThread(), () => ())
+    val store                         = Store(0, history = 5)
+    def rejected(body: => Unit): Unit =
+      val failure = new java.util.concurrent.atomic.AtomicReference[Throwable]()
+      val worker  = Thread(() =>
+        try body
+        catch case error: IllegalStateException => failure.set(error)
+      )
+      worker.start()
+      worker.join(10000)
+      assert(!worker.isAlive)
+      assert(failure.get() match
+        case _: IllegalStateException => true
+        case _                        => false)
+    try
+      store.dispatch(_ + 1)
+      val nested = RenderThread.register(Thread.currentThread(), () => ())
+      try
+        intercept[IllegalStateException](store.dispatch(_ + 1))
+        intercept[IllegalStateException](store.undo())
+        assert(store.peek == 1 && store.canUndo && !store.canRedo)
+      finally
+        nested.close()
+        RenderThread.unregister()
+      rejected(store.dispatch(_ + 1))
+      assert(store.peek == 1)
+      assert(store.undo())
+      assert(store.peek == 0)
+      assert(!store.canUndo)
+      rejected { val _ = store.redo() }
+      assert(!store.canUndo && store.canRedo)
+      assert(store.redo())
+      rejected { val _ = store.undo() }
+      assert(store.peek == 1 && store.canUndo && !store.canRedo)
+      assert(store.undo())
+      assert(store.peek == 0 && !store.canUndo && store.canRedo)
+    finally
+      loop.close()
+      RenderThread.unregister()

@@ -163,9 +163,9 @@ private[widgets] object MarkdownParser:
       else
         fence match
           case Some(Some(lexer)) =>
-            val (highlighted, next) = lexer.highlightLine(line, theme.syntax, lexed)
-            lexed = next
-            out += MarkdownBlock.Prose(highlighted)
+            val result = lexer.highlightLine(line, theme.syntax, lexed)
+            lexed = result.next
+            out += MarkdownBlock.Prose(result.line)
             index += 1
           case Some(None)        =>
             out += MarkdownBlock.Prose(Line.styled(line, theme.code))

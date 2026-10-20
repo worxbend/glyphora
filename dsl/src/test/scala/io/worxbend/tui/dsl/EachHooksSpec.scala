@@ -77,6 +77,91 @@ final class EachHooksSpec extends AnyFunSuite with PilotFixture:
     assert(seen.map(_.peek) == Seq(7, 7))
     assert(store.slotCount == 2)
 
+  test("nested each rows with colliding parent keys retain state without shifting later outer hooks"):
+    val store                                     = ViewState()
+    def frame(ids: Seq[String]): Seq[Signal[Int]] =
+      store.beginGeneration()
+      val seen = scala.collection.mutable.ArrayBuffer.empty[Signal[Int]]
+      val _    = ViewState.during(store) {
+        each(Seq("1"))(identity) { _ =>
+          val children = each(ids)(identity) { id =>
+            seen += useSignal(0)
+            val second = useSignal(0)
+            text(s"$id=${second.peek}")
+          }
+          val outer    = useSignal(false)
+          assert(!outer.peek)
+          column(children*)
+        }
+      }
+      store.sweep()
+      seen.toSeq
+    frame(Seq("1", "2")).foreach(_.set(7))
+    assert(frame(Seq("2", "1")).map(_.peek) == Seq(7, 7))
+    assert(frame(Seq("0")).map(_.peek) == Seq(0))
+
+  test("BUGS-1 replacing a colliding nested key never aliases a later Boolean hook with an Int hook"):
+    val store                              = ViewState()
+    def frame(id: String): Signal[Boolean] =
+      store.beginGeneration()
+      var result = Option.empty[Signal[Boolean]]
+      val _      = ViewState.during(store) {
+        each(Seq("1"))(identity) { _ =>
+          val children = each(Seq(id))(identity) { child =>
+            val first  = useSignal(0)
+            val second = useSignal(0)
+            text(s"$child=${first.peek + second.peek}")
+          }
+          val outer    = useSignal(false)
+          result = Some(outer)
+          column(children*)
+        }
+      }
+      store.sweep()
+      result.getOrElse(fail("no outer hook"))
+    val original                           = frame("1")
+    original.set(true)
+    val after                              = frame("0")
+    assert(after.peek)
+    assert(after eq original)
+
+  test("BUGS-1 adding and removing nested keyed rows preserves the later outer hook"):
+    val store                                    = ViewState()
+    def frame(ids: Seq[String]): Signal[Boolean] =
+      store.beginGeneration()
+      var result = Option.empty[Signal[Boolean]]
+      val _      = ViewState.during(store) {
+        each(Seq("1"))(identity) { _ =>
+          val children = each(ids)(identity)(id => { val _ = useSignal(0); text(id) })
+          result = Some(useSignal(false))
+          column(children*)
+        }
+      }
+      store.sweep()
+      result.getOrElse(fail("no outer hook"))
+    val original                                 = frame(Seq("1"))
+    original.set(true)
+    assert(frame(Seq("0", "1")).peek)
+    assert(frame(Seq.empty).peek)
+
+  for delayed <- Seq(false, true) do
+    test(s"BUGS-4 focus follows controls beneath nonfocusable each roots, responsive=$delayed"):
+      val backend = HeadlessBackend(Size(30, 5))
+      val items   = Signal(Vector("a", "b", "c"))
+      val app     = new TuiApp:
+        override def bindings: KeyBindings            =
+          KeyBindings(binding("ctrl+r", "rotate")(items.update(v => v.last +: v.init)))
+        def view(using ReactiveScope, Theme): Element =
+          column(each(items.get)(identity) { id =>
+            val state = useState(TextInputState())
+            if delayed then responsive(_ => Element.row(text(id).length(2), input(state)))
+            else Element.row(text(id).length(2), input(state))
+          }*)
+      val pilot   = startPilot(backend)(app.runWith(backend))
+      pilot.waitForIdle().press("tab").typeText("X").waitForIdle()
+      pilot.press("ctrl+r").waitForIdle().typeText("Y").waitForIdle()
+      assert(pilot.screenLines.map(_.trim).filter(_.nonEmpty) == Seq("c", "a", "b XY"))
+
   test("each still builds plain elements with no view being evaluated"):
     val rows = each(Seq(1, 2))(_.toString)(n => text(n.toString))
     assert(rows.flatMap(_.props.focusKey) == Seq("1", "2"))

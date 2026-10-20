@@ -148,15 +148,16 @@ private[dsl] trait ElementFactories:
 
   /** A container with a layout of your own: `place` answers one `Rect` per child from the container's area and a
     * [[ChildInfo]] per child (key, constraint, measured size), and `chrome` is painted under the children first.
-    * `measure` answers the rows the layout needs at a width (`None`, the default, fills). Focus order, click
-    * hit-testing and `boundsOf` keep working for the children. See [[ContainerElement]].
+    * `measure` answers rows needed at a width; `measureWidth` answers columns needed at a height (`None` fills). Focus
+    * order, click hit-testing and `boundsOf` keep working for the children. See [[ContainerElement]].
     */
   def container(children: Element*)(
       place: (Rect, Seq[ChildInfo]) => Seq[Rect],
       chrome: Option[Widget] = None,
       measure: (Int, Seq[ChildInfo]) => Option[Int] = (_, _) => None,
+      measureWidth: (Int, Seq[ChildInfo]) => Option[Int] = (_, _) => None,
   ): ContainerElement =
-    ContainerElement(children, place, chrome, measure = measure)
+    ContainerElement(children, place, chrome, measure = measure, measureWidth = measureWidth)
 
   /** One element per item, each stamped with a `.key` derived from the item itself, so focus follows the *item* across
     * insertions and reorders rather than the screen position it happened to occupy.
@@ -177,12 +178,14 @@ private[dsl] trait ElementFactories:
     *
     * Keys must be unique within one frame — use something that identifies the item (a database id, a process id, a file
     * path), not its index, which is the positional identity this exists to replace. Two children sharing a key
-    * re-anchor focus to the first of them.
+    * re-anchor focus to the first of them and share hook state.
     */
   def each[A](items: Seq[A])(keyOf: A => String)(render: A => Element): Seq[Element] =
-    items.map { item =>
-      val itemKey: String = keyOf(item)
-      ViewState.scopeIfActive(itemKey)(render(item)).key(itemKey)
+    ViewState.collectionIfActive {
+      items.map { item =>
+        val itemKey: String = keyOf(item)
+        ViewState.scopeIfActive(itemKey)(render(item)).key(itemKey)
+      }
     }
 
   /** [[each]] with a `prefix` on every key, for two keyed lists in one view whose key functions would otherwise collide
@@ -190,9 +193,11 @@ private[dsl] trait ElementFactories:
     * the hook scope alike.
     */
   def each[A](items: Seq[A], prefix: String)(keyOf: A => String)(render: A => Element): Seq[Element] =
-    items.map { item =>
-      val itemKey: String = s"$prefix:${keyOf(item)}"
-      ViewState.scopeIfActive(itemKey)(render(item)).key(itemKey)
+    ViewState.collectionIfActive {
+      items.map { item =>
+        val itemKey: String = s"$prefix:${keyOf(item)}"
+        ViewState.scopeIfActive(itemKey)(render(item)).key(itemKey)
+      }
     }
 
   /** A subtree built once and handed back unchanged on every later frame whose `deps` are `==` to the ones it was built
@@ -811,7 +816,7 @@ private[dsl] trait ElementFactories:
   def slider(value: Signal[Int], range: w.SliderRange = w.SliderRange.Percent)(using
       ReactiveScope
   ): SliderElement =
-    SliderElement(value.get, value.set, range)
+    SliderElement(value.get, value.set, range, ElementProps(focusable = true, captureOwner = Some(value)))
 
   /** A multi-select list: `selected` holds the chosen row indices. */
   def selectionList(
@@ -1083,7 +1088,14 @@ private[dsl] trait ElementFactories:
       splitPercent: Signal[Int],
       axis: Direction = Direction.Horizontal,
   )(using ReactiveScope): SplitPaneElement =
-    SplitPaneElement(first, second, splitPercent.get, splitPercent.set, axis)
+    SplitPaneElement(
+      first,
+      second,
+      splitPercent.get,
+      splitPercent.set,
+      axis,
+      ElementProps(focusable = true, captureOwner = Some(splitPercent)),
+    )
 
   /** An append-only scrolling panel for build output, chat, or a live log, over caller-owned [[w.LogState]].
     *
@@ -1395,7 +1407,10 @@ private[dsl] trait ElementFactories:
     * `.fg(...)`/`.styled(...)` the content, as on a panel.
     */
   def window(title: String, state: w.WindowState)(content: Element)(using theme: Theme): WindowElement =
-    LateBinding.themed(theme)(theme => WindowElement.of(title, state, content, theme.border))
+    LateBinding.themed(theme)(theme =>
+      val window = WindowElement.of(title, state, content, theme.border)
+      window.copy(props = window.props.copy(glyphs = theme.glyphs))
+    )
 
   /** Draws `windows` at their states' rectangles in stacking order — the window raised last on top — over the area it
     * is given; usually the overlay of `layers(base, windowStack(...))`. Paints nothing between the windows.

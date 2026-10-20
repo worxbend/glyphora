@@ -132,6 +132,10 @@ object ListState:
   * sequence up front would put the cost of the entire list — 50 000 items is 3 MiB of `Line`s — on every repaint to
   * draw at most a screenful.
   *
+  * `itemPrefix` supplies an optional per-item marker, evaluated only for painted rows. It does not change row heights
+  * or the source identity used by the layout cache: rebuilding a multi-select list must not project every item merely
+  * to add a check mark. Prefixes repeat on each visible line of a multi-row item and clip inside the list's area.
+  *
   * A [[Text]] item occupies one row per line it holds, which is how a row says a title on one line and a dimmed
   * subtitle under it. Selection, the keyboard moves and the scroll offset all still count *items*, not rows, so one
   * press of Down moves past the whole block; the offset arithmetic that keeps the selection on screen is
@@ -159,6 +163,8 @@ final case class ListView(
     style: Style = Style.Default,
     highlightStyle: Style = Style.Default.reverse,
     highlightSymbol: String = "> ",
+    // Trailing for source compatibility with positional constructor and copy style arguments.
+    itemPrefix: Int => String = _ => "",
 ) extends StatefulWidget[ListState]
     with Measured:
 
@@ -275,7 +281,14 @@ final case class ListView(
               buffer.setString(area.x, y, CharWidth.substringByWidth(prefix, area.width), rowStyle)
             else if prefix.nonEmpty && (marks || rowStyle != Style.Default) then
               buffer.setString(area.x, y, prefix, rowStyle)
-            val _ = LineRenderer.render(buffer, area.x + gutterWidth, y, line, area.width - gutterWidth, rowStyle)
+            val label       = itemPrefix(index)
+            val labelWidth  = CharWidth.of(label)
+            if label.nonEmpty && gutterWidth < area.width then
+              buffer.setString(area.x + gutterWidth, y, label, rowStyle, area.width - gutterWidth)
+            val contentX    = gutterWidth.toLong + labelWidth
+            if contentX < area.width then
+              val _ =
+                LineRenderer.render(buffer, area.x + contentX.toInt, y, line, area.width - contentX.toInt, rowStyle)
           }
         // the rows this block took from the viewport: all of it when it fits, whatever was left when it did not
         row += math.min(lines.size, area.height - row)

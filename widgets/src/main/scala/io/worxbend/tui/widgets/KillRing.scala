@@ -15,7 +15,16 @@ import scala.collection.mutable
 final class KillRing(capacity: Int = 32):
   require(capacity > 0, "a kill ring holds at least one entry")
 
-  private val entries = mutable.ArrayDeque.empty[String]
+  private val entries               = mutable.ArrayDeque.empty[String]
+  private var owner: Option[AnyRef] = None
+
+  private[widgets] def breakChain(): Unit = owner = None
+
+  private[widgets] def continues(buffer: AnyRef): Boolean = owner.contains(buffer)
+
+  private[widgets] def record(buffer: AnyRef, text: String, backward: Boolean, continue: Boolean): Unit =
+    if continue then accumulate(text, backward) else push(text)
+    owner = Some(buffer)
 
   /** How many entries the ring holds. */
   def size: Int = entries.size
@@ -29,6 +38,7 @@ final class KillRing(capacity: Int = 32):
 
   /** Adds `text` as the newest entry. */
   def push(text: String): Unit =
+    breakChain()
     if text.nonEmpty then
       entries.prepend(text)
       while entries.size > capacity do

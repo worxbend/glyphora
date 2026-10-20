@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Effect, Rect, Widget}
+import io.worxbend.tui.core.{Effect, Rect}
 import io.worxbend.tui.runtime.Frame
 
 import scala.concurrent.duration.{DurationLong, FiniteDuration}
@@ -78,45 +78,6 @@ private[dsl] object EffectStack:
     * element key it is confined to, if any.
     */
   final case class Running(effect: Effect, started: Long, key: Option[String], scope: Option[String] = None)
-
-/** `inner` with `effect` applied, at `elapsed`, over exactly the cells `inner` was painted into — what
-  * `element.withEffect(...)` builds. The layout extensions the wrapped node carried are lifted onto this node, as every
-  * decorator does, and everything else (focus, handlers, measurement) reads through to `inner`.
-  *
-  * The effect runs inside the paint, straight after `inner` painted, so it sees the element's own cells and nothing a
-  * later sibling or a portal draws on top. Immutable; render-thread-only like every widget paint.
-  */
-final case class EffectedElement(
-    inner: Element,
-    effect: Effect,
-    elapsed: FiniteDuration,
-    override val props: ElementProps = ElementProps(),
-) extends DecoratingElement:
-  type Self = EffectedElement
-
-  override def debugName: String = "effect"
-
-  def widget: Widget =
-    (area, buffer) =>
-      inner.widget.render(area, buffer)
-      val visible = area.intersection(buffer.area)
-      if !visible.isEmpty then effect.process(elapsed, buffer, visible)
-
-  private[dsl] def withProps(props: ElementProps): EffectedElement                = copy(props = props)
-  private[dsl] override def withChildren(children: Seq[Element]): EffectedElement =
-    copy(inner = children.headOption.getOrElse(inner))
-
-private[dsl] object EffectedElement:
-
-  /** `element` under `effect`, with the layout extensions it carried moved onto the wrapper. */
-  def around(element: Element, effect: Effect, elapsed: FiniteDuration): EffectedElement =
-    val props = element.props
-    EffectedElement(
-      element.withProps(props.copy(constraint = None, alignSelf = None, gridSpot = GridSpot.Flowed)),
-      effect,
-      elapsed,
-      ElementProps(constraint = props.constraint, alignSelf = props.alignSelf, gridSpot = props.gridSpot),
-    )
 
 /** Element-scoped effects — an [[Effect]] confined to one element's painted cells. */
 extension [E <: Element](element: E)

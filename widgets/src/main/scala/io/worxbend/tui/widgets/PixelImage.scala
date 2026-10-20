@@ -98,23 +98,26 @@ final case class PixelImage(image: RgbaImage, options: PixelImageOptions = Pixel
           Rect(area.x + (area.width - columns) / 2, area.y + (area.height - rows) / 2, columns, rows)
 
   private def drawFallback(box: Rect, buffer: Buffer): Unit =
-    val pixelRows = box.height * 2
-    var y         = 0
-    while y < box.height do
-      var x = 0
-      while x < box.width do
-        val upper = sample(x, y * 2, box.width, pixelRows)
-        val lower = sample(x, y * 2 + 1, box.width, pixelRows)
-        buffer.set(box.x + x, box.y + y, Cell("▀", Style(fg = Some(upper), bg = Some(lower))))
+    val visible   = box.intersection(buffer.area)
+    val pixelRows = box.height.toLong * 2
+    var y         = visible.y
+    while y < visible.bottom do
+      var x = visible.x
+      while x < visible.right do
+        val column = x.toLong - box.x
+        val row    = (y.toLong - box.y) * 2
+        val upper  = sample(column, row, box.width, pixelRows)
+        val lower  = sample(column, row + 1, box.width, pixelRows)
+        buffer.set(x, y, Cell("▀", Style(fg = Some(upper), bg = Some(lower))))
         x += 1
       y += 1
 
   /** The nearest pixel to target position `(column, row)` of a `targetWidth` x `targetHeight` grid, blended over the
     * background by its alpha.
     */
-  private def sample(column: Int, row: Int, targetWidth: Int, targetHeight: Int): Color.Rgb =
-    val sourceX                              = column * image.width / targetWidth
-    val sourceY                              = row * image.height / targetHeight
+  private def sample(column: Long, row: Long, targetWidth: Int, targetHeight: Long): Color.Rgb =
+    val sourceX                              = (column * image.width / targetWidth).toInt
+    val sourceY                              = (row * image.height / targetHeight).toInt
     val Color.Rgb(red, green, blue)          = image.color(sourceX, sourceY)
     val alpha                                = image.alpha(sourceX, sourceY)
     val Color.Rgb(br, bg, bb)                = options.background

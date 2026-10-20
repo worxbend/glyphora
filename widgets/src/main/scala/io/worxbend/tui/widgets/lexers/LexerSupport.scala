@@ -3,7 +3,7 @@ package io.worxbend.tui.widgets.lexers
 import java.util.Locale
 
 import io.worxbend.tui.core.{Line, Span, Style}
-import io.worxbend.tui.widgets.{LexState, SyntaxTheme}
+import io.worxbend.tui.widgets.{LexedLine, LexState, SyntaxTheme}
 
 /** Scanning helpers shared by the built-in lexers. Pure functions over the line passed in. */
 private[widgets] object LexerSupport:
@@ -81,9 +81,9 @@ private[widgets] final class KeywordLexer(val name: String, val aliases: Set[Str
     extends io.worxbend.tui.widgets.Lexer:
   import LexerSupport.*
 
-  def highlightLine(line: String, theme: SyntaxTheme): Line = highlightLine(line, theme, LexState.Initial)._1
+  def highlightLine(line: String, theme: SyntaxTheme): Line = highlightLine(line, theme, LexState.Initial).line
 
-  override def highlightLine(line: String, theme: SyntaxTheme, state: LexState): (Line, LexState) =
+  override def highlightLine(line: String, theme: SyntaxTheme, state: LexState): LexedLine =
     val sink = SpanSink(theme)
     var i    = 0
     val n    = line.length
@@ -136,7 +136,7 @@ private[widgets] final class KeywordLexer(val name: String, val aliases: Set[Str
       else
         sink.plainChar(c)
         i += 1
-    (sink.result(), next)
+    LexedLine(sink.result(), next)
 
   private def isKeyword(word: String): Boolean =
     if spec.caseInsensitive then spec.keywords.contains(word.toLowerCase(Locale.ROOT))

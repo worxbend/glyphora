@@ -59,6 +59,9 @@ trait Element:
     */
   private[dsl] def builtinKeyHandler: Option[BuiltinKeyHandler] = None
 
+  /** Navigation explicitly delegated by a descendant that declined a key; never used by the no-focus tree walk. */
+  private[dsl] def bubbledKeyHandler: Option[BuiltinKeyHandler] = None
+
   /** Framework mouse behavior (click-to-activate, wheel scrolling, drags), given the event and the element's rendered
     * area. Runs after the user's `onMouseEvent` declined; only ever called on the hit element.
     */
@@ -102,11 +105,26 @@ trait Element:
     */
   private[dsl] def layoutOnly: Boolean = false
 
+  /** The painted portion of an allocation, used for outside dismissal and pointer eligibility. */
+  private[dsl] def paintedRect(area: Rect): Rect = area
+
   /** The caller-owned widget states this node paints — what the host watches for mutations made between frames (see
     * [[ElementHost.pollStates]]). Every node that is handed a [[io.worxbend.tui.core.Versioned]] state answers it here;
     * the walk reaches children by itself, so a node lists only its own.
     */
   private[dsl] def watchedStates: Seq[io.worxbend.tui.core.Versioned] = Nil
+
+  /** Stable caller-owned references that establish an unkeyed built-in's gesture lifetime across rebuilding. Factories
+    * bind signal-backed controls through props; stateful controls already declare their caller-owned watched states.
+    * Props copies and decorators preserve both. Empty identity is unknown, never evidence of the same owner; neither
+    * value equality nor a callback's reference establishes ownership.
+    */
+  private def captureOwners: Seq[AnyRef] = props.captureOwner.toSeq ++ watchedStates
+
+  private[dsl] final def hasSameCaptureOwner(other: Element): Boolean =
+    val original = captureOwners
+    val current  = other.captureOwners
+    original.nonEmpty && original.size == current.size && original.zip(current).forall((a, b) => a eq b)
 
   /** The factory-style name of this node — `panel`, `button`, `scrollView` — for the element-tree snapshot and any
     * other diagnostic that has to say what a node *is* without reflecting over its class. Every node type declares its
@@ -137,6 +155,9 @@ trait Element:
     * `.passThroughOutside` dropdown's scrim is one. Default `false`.
     */
   private[dsl] def passesPointerThrough: Boolean = false
+
+  /** An invisible press scrim can leave wheel targeting to the content underneath without forwarding presses. */
+  private[dsl] def passesWheelThrough: Boolean = false
 
   /** The space this element claims inside a container when the user set nothing explicit — one-row widgets claim one
     * row vertically but their natural width (or a fill) horizontally.

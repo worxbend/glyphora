@@ -6,6 +6,12 @@ import scala.annotation.implicitNotFound
 import scala.compiletime.{constValue, constValueTuple, erasedValue, summonInline}
 import scala.deriving.Mirror
 
+/** One described map entry. Immutable and thread-agnostic; owned by the description builder. */
+final case class PrettyEntry[R](key: R, value: R)
+
+/** One labelled product field. Immutable and thread-agnostic; owned by the description builder. */
+final case class PrettyField[R](name: String, value: R)
+
 /** What a [[Pretty]] describes a value *to*: four ways to build a description of type `R`.
   *
   * The description is built through this interface rather than returned as a data type of this module's own because
@@ -25,10 +31,10 @@ trait PrettyShape[R]:
   def sequence(name: String, items: Seq[R]): R
 
   /** A key-value collection named `name`. */
-  def map(name: String, entries: Seq[(R, R)]): R
+  def map(name: String, entries: Seq[PrettyEntry[R]]): R
 
   /** A record — a case class, an enum case, a case object (with no fields) — named `name`, with labelled fields. */
-  def product(name: String, fields: Seq[(String, R)]): R
+  def product(name: String, fields: Seq[PrettyField[R]]): R
 
 /** How a value of type `A` is described for display — the typeclass behind the DSL's `inspect(value)`.
   *
@@ -90,7 +96,7 @@ object Pretty:
   given map[K, V](using key: Pretty[K], entry: Pretty[V]): Pretty[Map[K, V]] =
     new Pretty[Map[K, V]]:
       def describe[R](value: Map[K, V], shape: PrettyShape[R]): R =
-        shape.map("Map", value.toSeq.map((k, v) => key.describe(k, shape) -> entry.describe(v, shape)))
+        shape.map("Map", value.toSeq.map((k, v) => PrettyEntry(key.describe(k, shape), entry.describe(v, shape))))
 
   /** [[derivePretty]] as a given, so a case class, enum or sealed hierarchy needs no declaration and nested types are
     * reached through the ordinary search. The hand-written instances above are more specific and keep precedence.
@@ -109,7 +115,7 @@ object Pretty:
           // each instance was summoned for exactly the field type at this position, which `Pretty[?]` has erased
           pretty.asInstanceOf[Pretty[Any]].describe(field, shape) // scalafix:ok DisableSyntax; erased per-field type
         }
-        shape.product(name, labels.zip(described.toSeq))
+        shape.product(name, labels.zip(described.toSeq).map((label, value) => PrettyField(label, value)))
 
   /** The instance of a sum type: the case's own instance, chosen by the mirror's `ordinal`. */
   def sum[A](cases: List[Pretty[?]], ordinal: A => Int): Pretty[A] =

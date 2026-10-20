@@ -25,6 +25,16 @@ final class CodecSpec extends AnyFunSuite:
 
   private val layout = deriveCodec[Layout]
 
+  test("RTP-7 oversized atoms cannot rewind the reader or amplify collection input"):
+    val reader = Codec.Reader("2147483647:x")
+    assert(reader.atom().isLeft)
+    assert(reader.position == 0)
+    assert(summon[Codec[Vector[String]]].decode("10:20000000002147483647:x").isLeft)
+    final case class Empty()
+    val empty  = summon[Codec[Vector[Empty]]]
+    assert(empty.decode("10:2000000000").isLeft)
+    assert(empty.decode(empty.encode(Vector.fill(8)(Empty()))) == Right(Vector.fill(8)(Empty())))
+
   test("a nested case class with Option, Seq, List, enum, Double and Boolean fields round-trips"):
     val value =
       Layout(

@@ -111,21 +111,22 @@ final class LazyListElementSpec extends AnyFunSuite:
     assert(trimmedLines(buffer).last == "item 50")
 
   test("inside a scroll view it measures as every item and builds only what the window shows"):
-    val counting   = Counting()
-    val state      = LazyListState()
-    val scrolling  = ScrollViewState()
-    val host       = ElementHost()
-    val buffer     = Buffer(Rect(0, 0, 20, 5))
-    val view: View = scrollView(lazyList(10000, 1, state)(counting.item), scrolling)
+    val counting        = Counting()
+    val state           = LazyListState()
+    val scrolling       = ScrollViewState()
+    val host            = ElementHost()
+    val buffer          = Buffer(Rect(0, 0, 20, 5))
+    val view: View      = scrollView(lazyList(10000, 1, state)(counting.item), scrolling)
     draw(host, buffer, view)
     scrolling.offset = 300
-    // the first frame after a jump the window has not caught up: the items it lacks are built while painting, so the
-    // frame shows them rather than blanks, and the miss still asks for the frame that builds them properly
-    draw(host, buffer, view)
+    // A miss owes resolution: do not construct a paint-only component lifetime (hooks must retain their identities).
+    // The missed rows are blank for this paint, and the next frame builds them with normal focus/hook decoration.
+    val (_, firstBuilt) = counting.frame(draw(host, buffer, view))
     assert(scrolling.offset == 300, "the scroll view measured the list as every item, or it would have clamped")
-    assert(trimmedLines(buffer).head.startsWith("item 300"), "no blank frame after the jump")
+    assert(firstBuilt <= 5 + 2, "painting must not build additional missed items")
+    assert(!trimmedLines(buffer).head.startsWith("item 300"), "missed items wait for the owed resolution")
     assert(host.pollStates())
-    val (_, built) = counting.frame(draw(host, buffer, view))
+    val (_, built)      = counting.frame(draw(host, buffer, view))
     assert(built <= 5 + 2)
     assert(trimmedLines(buffer).head.startsWith("item 300"))
     // a one-row scroll of the enclosing view is covered by the overscan, so it needs no second frame

@@ -91,77 +91,82 @@ final class TerminalRunner(
       cleanup.attempt(body)
       cleanup.collected.foreach(recordCleanup)
 
-    try
-      // The recording file is opened before the terminal is dressed: a path that cannot be written fails the run here,
-      // with the terminal untouched, instead of a frame later from inside the loop.
-      openRecorder() match
-        case Failure(error)  =>
-          result = Left(RunnerError.Handler(error))
-        case Success(opened) =>
-          recorder = opened
-          setup() match
+    def execute(): Unit =
+      try
+        // The recording file is opened before the terminal is dressed: a path that cannot be written fails the run here,
+        // with the terminal untouched, instead of a frame later from inside the loop.
+        openRecorder() match
+          case Failure(error)  =>
+            result = Left(RunnerError.Handler(error))
+          case Success(opened) =>
+            recorder = opened
+            setup() match
+              case Left(error) =>
+                result = Left(RunnerError.Backend(error))
+              case Right(())   =>
+                setupIncomplete = false
+                val outcome =
+                  runLoop(
+                    onStart,
+                    handleEvent,
+                    render,
+                    loop,
+                    configWith(opened),
+                    capture,
+                    () => { opened.foreach(_.flush()); printAboveBatch.foreach(_.flush()) },
+                  )
+                result = report(outcome, failures.collected)
+                // One final bounded batch per queue, not a drain-until-empty: self-requeueing producers cannot postpone
+                // onStop and backend restoration forever. Remaining owned work is discarded by close after onStop.
+                RenderThread.drainPending(loop, RenderThread.FinalDrainBudget)
+                result = report(outcome, failures.collected)
+      catch
+        // What reaches here is a throwing `onTaskError` (non-fatal: `runLoop` guards the app's own callbacks and the
+        // loop's handler absorbs a `NonFatal` from a queued body) or a fatal from a body run in the final drain. The
+        // former is filed under an earlier `Left` as a cleanup failure; the latter must leave `run` whatever the loop
+        // had already reported — the same distinction `recordCleanup` makes for a fatal teardown throwable — carrying
+        // the earlier primary's throwable as a suppressed exception so its provenance survives.
+        case error: Throwable if NonFatal(error) =>
+          result match
+            case Left(primary) => primary.addCleanupFailure(error)
+            case Right(())     => thrown = Some(error)
+        case error: Throwable                    =>
+          result.left.foreach(primary => primary.primaryThrowable.foreach(Cleanup.suppress(error, _)))
+          thrown = Some(error)
+      finally
+        // Confined resources are disposed while their owner remains registered. Each release is attempted independently.
+        // The recording is closed first, so the last frame is on disk whatever `onStop` does.
+        recorder.foreach(opened => release(opened.close()))
+        release(onStop())
+        release(loop.close())
+        release(RenderThread.unregister())
+        release {
+          backend.close() match
             case Left(error) =>
-              result = Left(RunnerError.Backend(error))
-            case Right(())   =>
-              setupIncomplete = false
-              val outcome =
-                runLoop(
-                  onStart,
-                  handleEvent,
-                  render,
-                  loop,
-                  configWith(opened),
-                  capture,
-                  () => opened.foreach(_.flush()),
-                )
-              result = report(outcome, failures.collected)
-              // One final bounded batch per queue, not a drain-until-empty: self-requeueing producers cannot postpone
-              // onStop and backend restoration forever. Remaining owned work is discarded by close after onStop.
-              RenderThread.drainPending(loop, RenderThread.FinalDrainBudget)
-              result = report(outcome, failures.collected)
-    catch
-      // What reaches here is a throwing `onTaskError` (non-fatal: `runLoop` guards the app's own callbacks and the
-      // loop's handler absorbs a `NonFatal` from a queued body) or a fatal from a body run in the final drain. The
-      // former is filed under an earlier `Left` as a cleanup failure; the latter must leave `run` whatever the loop
-      // had already reported — the same distinction `recordCleanup` makes for a fatal teardown throwable — carrying
-      // the earlier primary's throwable as a suppressed exception so its provenance survives.
-      case error: Throwable if NonFatal(error) =>
-        result match
-          case Left(primary) => primary.addCleanupFailure(error)
-          case Right(())     => thrown = Some(error)
-      case error: Throwable                    =>
-        result.left.foreach(primary => primary.primaryThrowable.foreach(Cleanup.suppress(error, _)))
-        thrown = Some(error)
-    finally
-      // Confined resources are disposed while their owner remains registered. Each release is attempted independently.
-      // The recording is closed first, so the last frame is on disk whatever `onStop` does.
-      recorder.foreach(opened => release(opened.close()))
-      release(onStop())
-      release(loop.close())
-      release(RenderThread.unregister())
-      release {
-        backend.close() match
-          case Left(error) =>
-            if result.isRight && thrown.isEmpty then
-              val primary = RunnerError.Backend(error)
-              error match
-                case BackendError.Io(cause) => cause.getSuppressed.foreach(primary.addCleanupFailure)
-                case _                      => ()
-              result = Left(primary)
-            else
-              val cause = error match
-                case BackendError.Io(primary) => primary
-                case _                        => IllegalStateException(error.message)
-              recordCleanup(cause)
-          case Right(())   => ()
-      }
-      if setupIncomplete then release(backend.emergencyRestore())
-      // last, once the terminal is the shell's again: the partial line this flushes belongs under the restored prompt,
-      // not on an alternate screen that is about to be discarded
-      // a batch whose flush the closed loop discarded: its lines belong under the prompt too, before the partial line
-      release(printAboveBatch.foreach(_.drainToFallback()))
-      printAboveBatch = None
-      release(capture.foreach(_.restore()))
+              if result.isRight && thrown.isEmpty then
+                val primary = RunnerError.Backend(error)
+                error match
+                  case BackendError.Io(cause) => cause.getSuppressed.foreach(primary.addCleanupFailure)
+                  case _                      => ()
+                result = Left(primary)
+              else
+                val cause = error match
+                  case BackendError.Io(primary) => primary
+                  case _                        => IllegalStateException(error.message)
+                recordCleanup(cause)
+            case Right(())   => ()
+        }
+        if setupIncomplete then release(backend.emergencyRestore())
+        // last, once the terminal is the shell's again: the partial line this flushes belongs under the restored prompt,
+        // not on an alternate screen that is about to be discarded
+        // a batch whose flush the closed loop discarded: its lines belong under the prompt too, before the partial line
+        release(printAboveBatch.foreach(_.drainToFallback()))
+        printAboveBatch = None
+        release(capture.foreach(_.restore()))
+
+    capture match
+      case Some(active) => Console.withOut(active.outStream)(Console.withErr(active.errStream)(execute()))
+      case None         => execute()
     thrown.foreach(error => throw error)
     result
 
@@ -222,10 +227,10 @@ final class TerminalRunner(
     */
   private def setup(): Either[BackendError, Unit] =
     for
-      _ <- backend.enableRawMode()
       _ <- config.viewport match
-        case Viewport.Fullscreen     => backend.enterAlternateScreen()
-        case inline: Viewport.Inline => backend.reserveInlineRows(inline.reservedRows)
+        case Viewport.Fullscreen     => backend.enterAlternateScreen().flatMap(_ => backend.enableRawMode())
+        case inline: Viewport.Inline =>
+          backend.enableRawMode().flatMap(_ => backend.reserveInlineRows(inline.reservedRows))
       _ <- backend.hideCursor()
       _ <- if config.mouseCapture then backend.enableMouseCapture(config.mouse) else Right(())
       _ <- if config.keyEventTypes then backend.enableKeyEventTypes() else Right(())
@@ -257,9 +262,7 @@ final class TerminalRunner(
         capture,
         beforeSuspend,
       )
-    capture match
-      case Some(active) => Console.withOut(active.outStream)(Console.withErr(active.errStream)(body.run()))
-      case None         => body.run()
+    body.run()
 
   /** Opens the asciicast recorder the configuration — or, failing that, `-Dglyphora.record` — asks for. `Success(None)`
     * when neither names a file; `Failure` when the file cannot be opened.
@@ -291,9 +294,14 @@ final class TerminalRunner(
       case CaptureStdio.PrintAbove    =>
         // one batch for both streams, so stdout and stderr lines keep their relative order in the scrollback; the
         // fallback is the *original* stream: writing to the capturing one from inside its own sink would loop
-        lazy val capture: StdioCapture  = StdioCapture(batch.offer, batch.offer)
+        lazy val capture: StdioCapture  =
+          StdioCapture(line => batch.offer(line), line => batch.offer(line, stderr = true))
         lazy val batch: PrintAboveBatch =
-          PrintAboveBatch(loop, lines => { val _ = backend.printAbove(lines) }, line => capture.priorOut.println(line))
+          PrintAboveBatch(
+            loop,
+            lines => { val _ = backend.printAbove(lines) },
+            (line, stderr) => (if stderr then capture.priorErr else capture.priorOut).println(line),
+          )
         capture.install()
         printAboveBatch = Some(batch)
         Some(capture)
@@ -416,7 +424,7 @@ private final class LoopBody(
   private def frameOwed(): Boolean =
     val byHandle = state.takeRedrawRequest()
     val byHost   = redrawRequested()
-    byHandle || byHost
+    byHandle || byHost || backend.redrawOwed
 
   /** Runs the loop until the app quits or something fails; what to report, or `None` on a clean exit. */
   def run(): Option[LoopFailure] =

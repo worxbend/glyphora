@@ -187,8 +187,8 @@ final class JLineContractSpec extends AnyFunSuite:
       assert(harness.backend.disableRawMode() == Left(BackendError.NotInRawMode))
     }
 
-  /** Undressing has to happen in this order or the user pays for it: the frame has to stop being on the alternate
-    * screen before cooked mode comes back, and the cursor has to be visible again before the app lets go. The order is
+  /** Undressing releases screen-local keyboard flags before leaving alternate, and makes the cursor visible before
+    * returning to the shell. Cooked attributes are restored even when an ANSI write fails. The order is
     * `releaseTerminal`'s and is reachable from nowhere else.
     *
     * Nothing is asked of the terminal after `close()`, because a closed JLine terminal throws on every accessor — which
@@ -212,7 +212,8 @@ final class JLineContractSpec extends AnyFunSuite:
       assert(mouse >= 0, undressed)
       assert(cursor > mouse, undressed)
       assert(screen > cursor, undressed)
-      assert(prompt > screen, undressed)
+      assert(prompt > cursor && prompt < screen, undressed)
+      assert(undressed.indexOf(AnsiSequences.PopKittyKeyboard) < screen, undressed)
     }
 
   test("close restores owned cursor shape and blink before making the cursor visible"):
@@ -269,7 +270,6 @@ final class JLineContractSpec extends AnyFunSuite:
           AnsiSequences.ResetCursorShape,
           AnsiSequences.EnableCursorBlink,
           AnsiSequences.ShowCursor,
-          AnsiSequences.LeaveAlternateScreen,
           AnsiSequences.PopKittyKeyboard,
           AnsiSequences.DisableFocusReporting,
           AnsiSequences.DisableBracketedPaste,
@@ -277,6 +277,7 @@ final class JLineContractSpec extends AnyFunSuite:
           AnsiSequences.DisableUnicodeWidth,
           AnsiSequences.DisableInBandResize,
           AnsiSequences.RestoreCursor,
+          AnsiSequences.LeaveAlternateScreen,
         )
       )
       assert(sink.toString(UTF_8).contains(AnsiSequences.ShowCursor))

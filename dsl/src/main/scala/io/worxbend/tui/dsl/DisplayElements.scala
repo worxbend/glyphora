@@ -19,7 +19,7 @@ import io.worxbend.tui.core.{
   Versioned,
   Widget,
 }
-import io.worxbend.tui.macros.PrettyShape
+import io.worxbend.tui.macros.{PrettyEntry, PrettyField, PrettyShape}
 import io.worxbend.tui.runtime.{LogLevel, LogRecord, LogRing}
 import io.worxbend.tui.widgets.{TableCell, TableRow}
 import io.worxbend.tui.widgets as w
@@ -410,6 +410,9 @@ final case class WidgetElement(
     search: Option[w.SearchState] = None,
 ) extends Element:
   type Self = WidgetElement
+  private[dsl] override def paintedRect(area: Rect): Rect = wrapped match
+    case dialog: w.Dialog => dialog.boxIn(area)
+    case _                => area
   override def debugName: String                          = "widget"
   override private[dsl] def watchedStates: Seq[Versioned] = search.toSeq
   def widget: Widget                                      = styledUnder(search.fold(wrapped)(searchedWith))
@@ -920,10 +923,12 @@ final case class InspectElement(
   * and the widget, neither of which can name the other.
   */
 private[dsl] object PrettyValueShape extends PrettyShape[w.PrettyValue]:
-  def atom(text: String): w.PrettyValue                                              = w.PrettyValue.Atom(text)
-  def sequence(name: String, items: Seq[w.PrettyValue]): w.PrettyValue               = w.PrettyValue.Seq(name, items)
-  def map(name: String, entries: Seq[(w.PrettyValue, w.PrettyValue)]): w.PrettyValue = w.PrettyValue.Map(name, entries)
-  def product(name: String, fields: Seq[(String, w.PrettyValue)]): w.PrettyValue = w.PrettyValue.Product(name, fields)
+  def atom(text: String): w.PrettyValue                                             = w.PrettyValue.Atom(text)
+  def sequence(name: String, items: Seq[w.PrettyValue]): w.PrettyValue              = w.PrettyValue.Seq(name, items)
+  def map(name: String, entries: Seq[PrettyEntry[w.PrettyValue]]): w.PrettyValue    =
+    w.PrettyValue.Map(name, entries.map(entry => entry.key -> entry.value))
+  def product(name: String, fields: Seq[PrettyField[w.PrettyValue]]): w.PrettyValue =
+    w.PrettyValue.Product(name, fields.map(field => field.name -> field.value))
 
 /** A scannable QR code for `text` — see [[w.QrCode]]. Claims exactly the box the symbol and its quiet zone measure, so
   * it sits beside text in a `row` without being stretched; the code is only readable whole, so give it that room.

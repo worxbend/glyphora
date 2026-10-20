@@ -46,6 +46,7 @@ final class JLine3Backend private (
 
   /** Successfully requested enhanced keyboard mode, included in terminal handover snapshots. */
   @volatile private[terminal] var keyEventTypesActive   = false
+  @volatile private var keyboardOwned                   = false
   // whether *this* backend turned the caret's blink off. Only what an app suppressed is restored on the way out: a
   // user whose emulator is configured for a steady caret would otherwise have that preference overwritten by every
   // glyphora app that exits, including the ones that never touched blink at all.
@@ -117,9 +118,13 @@ final class JLine3Backend private (
   // raised by any thread that disturbed the screen (alternate-screen entry, SIGCONT's reacquire), consumed by `draw`
   private val fullRedrawRequested = RedrawRequest()
 
+  private val inputReader                     = TerminalInput.readerFor(terminal)
+  @volatile private[terminal] var inputActive = true
+  private var terminalPausedByUs              = false
+
   private val frameEncoder  = FrameEncoder(colorDepth)
   private val decoder       = InputDecoder(
-    timeoutMillis => terminal.reader().read(timeoutMillis),
+    timeoutMillis => inputReader.read(timeoutMillis),
     escapeTimeoutMillis = EnvironmentOverrides.escapeDelayMillis(env),
   )
   private val pump          = EventPump(decoder)
@@ -259,6 +264,8 @@ final class JLine3Backend private (
     */
   override def requestFullRedraw(): Unit = fullRedrawRequested.raise()
 
+  override def redrawOwed: Boolean = fullRedrawRequested.isPending
+
   def enableRawMode(): Either[BackendError, Unit] = dressRawMode(probe = true)
 
   /** Enters raw mode and applies the input-mode dressing, probing capabilities first when `probe`.
@@ -290,7 +297,7 @@ final class JLine3Backend private (
       // almost everywhere. Only an explicit denial skips one.
       if probed.bracketedPaste.usable then write(AnsiSequences.EnableBracketedPaste)
       if probed.focusReporting.usable then write(AnsiSequences.EnableFocusReporting)
-      if probed.kittyKeyboard.usable then write(AnsiSequences.PushKittyKeyboard)
+      acquireKeyboard()
       if probed.colorSchemeUpdates.usable then write(AnsiSequences.EnableColorSchemeUpdates)
       if probed.unicodeWidth.usable then write(AnsiSequences.EnableUnicodeWidth)
       // the one mode gated on an explicit yes: the signal-driven resize it supplements already works everywhere, so
@@ -309,10 +316,23 @@ final class JLine3Backend private (
     */
   override def enableKeyEventTypes(): Either[BackendError, Unit] =
     Backend.attempt {
-      write(AnsiSequences.PopKittyKeyboard)
-      write(AnsiSequences.PushKittyKeyboardEvents)
-      keyEventTypesActive = true
+      if probed.kittyKeyboard.usable then
+        releaseKeyboard()
+        write(AnsiSequences.PushKittyKeyboardEvents)
+        keyboardOwned = true
+        keyEventTypesActive = true
     }
+
+  /** Keyboard flags belong to the currently active screen, never to a screen we just left. */
+  private def acquireKeyboard(): Unit =
+    if !keyboardOwned && probed.kittyKeyboard.usable then
+      write(if keyEventTypesActive then AnsiSequences.PushKittyKeyboardEvents else AnsiSequences.PushKittyKeyboard)
+      keyboardOwned = true
+
+  private def releaseKeyboard(): Unit =
+    if keyboardOwned then
+      write(AnsiSequences.PopKittyKeyboard)
+      keyboardOwned = false
 
   def disableRawMode(): Either[BackendError, Unit] =
     cookedAttributes match
@@ -323,7 +343,7 @@ final class JLine3Backend private (
         var failure                      = Option.empty[BackendError]
         def release(step: => Unit): Unit =
           Backend.attempt(step).left.foreach(error => if failure.isEmpty then failure = Some(error))
-        release(write(AnsiSequences.PopKittyKeyboard))
+        release(releaseKeyboard())
         release(write(AnsiSequences.DisableFocusReporting))
         release(write(AnsiSequences.DisableBracketedPaste))
         release(write(AnsiSequences.DisableColorSchemeUpdates))
@@ -347,9 +367,11 @@ final class JLine3Backend private (
       Left(BackendError.UnsupportedTerminal(s"${terminal.getType} has no alternate screen (no smcup capability)"))
     else
       Backend.attempt {
+        releaseKeyboard()
         write(AnsiSequences.EnterAlternateScreen)
-        write(AnsiSequences.clear(ClearType.All))
         alternateScreenActive = true
+        if isRawMode then acquireKeyboard()
+        write(AnsiSequences.clear(ClearType.All))
         requestFullRedraw() // the alternate screen starts blank; the next draw must repaint everything
       }
 
@@ -377,8 +399,10 @@ final class JLine3Backend private (
 
   def leaveAlternateScreen(): Either[BackendError, Unit] =
     Backend.attempt {
+      releaseKeyboard()
       write(AnsiSequences.LeaveAlternateScreen)
       alternateScreenActive = false
+      if isRawMode then acquireKeyboard()
     }
 
   def enableMouseCapture(): Either[BackendError, Unit] = enableMouseCapture(MouseCaptureMode.Buttons)
@@ -541,12 +565,29 @@ final class JLine3Backend private (
 
   override def setTitle(title: String): Either[BackendError, Unit] = titleStack.set(title)
 
+  private[terminal] def pauseInput(): Either[BackendError, Unit] = Backend.attempt {
+    pump.pause()
+    if terminal.canPauseResume() && !terminal.paused() then
+      terminal.pause(true)
+      terminalPausedByUs = true
+    inputActive = false
+  }
+
+  private[terminal] def resumeInput(): Either[BackendError, Unit] = Backend.attempt {
+    if terminalPausedByUs then
+      terminal.resume()
+      terminalPausedByUs = false
+    inputActive = true
+    pump.resume()
+  }
+
   override def suspend[A](body: => A): Either[BackendError, A] =
-    Backend.attempt {
-      val released = dressing.releaseTerminal()
-      try body
-      finally dressing.reacquireTerminal(released.state)
-    }
+    val released = dressing.releaseTerminal()
+    try
+      released.failure match
+        case Some(error) => Left(error) // never launch a competing reader after a failed handover
+        case None        => Backend.attempt(body)
+    finally dressing.reacquireTerminal(released.state)
 
   /** Writes the sequence through the same writer every frame goes out on, so it lands in order with them.
     *
@@ -631,8 +672,9 @@ final class JLine3Backend private (
     *
     * Writes straight to the process's stdout descriptor rather than through the JLine writer: once JLine's
     * `ShutdownHooks` closer has run, `terminal.writer()` throws `IllegalStateException: Terminal has been closed` and
-    * every teardown write is silently discarded. Every sequence emitted is an idempotent mode *reset*, so this is safe
-    * to call even when nothing was enabled, and safe to call twice.
+    * every teardown write is silently discarded. Blind mode resets remain safe after normal close; the non-idempotent
+    * kitty pop is included only if this backend still owns its current screen's keyboard push, before screen exit. A
+    * successful fallback retires that ownership too, so a later fallback cannot pop an enclosing shell's mode.
     *
     * Deliberately takes no monitor either — unlike [[TerminalDressing.releaseTerminal]], this is the path that must
     * still work when the render thread is wedged mid-frame, and a last-resort restore that can block is not one.
@@ -641,15 +683,20 @@ final class JLine3Backend private (
     try
       // deliberately never closed: this wraps the process's own stdout descriptor, and closing the wrapper would close
       // stdout for everything that runs after this hook. The wrapper itself holds no resource beyond that descriptor.
-      val out     = FileOutputStream(FileDescriptor.out)
-      // RestoreAll is mode resets only, which are idempotent and therefore safe to send blind. Re-enabling the caret's
-      // blink is not in that class — it would overwrite the preference of a user who runs a steady caret — so it is
-      // appended only when this backend is the one that turned it off.
-      val restore =
-        if cursorBlinkSuppressed then AnsiSequences.RestoreAll + AnsiSequences.EnableCursorBlink
-        else AnsiSequences.RestoreAll
+      val out      = FileOutputStream(FileDescriptor.out)
+      // A pop must precede RestoreAll's screen exit, and must never be sent after normal close released it already.
+      // End a possibly interrupted synchronized frame before touching either screen's keyboard stack.
+      val keyboard =
+        if keyboardOwned then AnsiSequences.EndSynchronized + AnsiSequences.PopKittyKeyboard else ""
+      // Blink enable is conditional too: do not overwrite a user's configured steady-caret preference.
+      val restore  = keyboard + AnsiSequences.RestoreAll +
+        (if cursorBlinkSuppressed then AnsiSequences.EnableCursorBlink else "")
       out.write(restore.getBytes(UTF_8))
       out.flush()
+      keyboardOwned = false
+      keyEventTypesActive = false
+      alternateScreenActive = false
+      cursorBlinkSuppressed = false
     catch case NonFatal(_) => ()
 
   /** Whether raw mode is currently on, which is exactly "we are holding someone's cooked attributes to put back". */

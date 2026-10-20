@@ -50,18 +50,23 @@ trait Lexer:
   /** Highlights one line that begins in `state` — what the line before it ended in — and answers the line with the
     * state it ends in. The default keeps no state: it lexes the line alone and always answers [[LexState.Initial]].
     */
-  def highlightLine(line: String, theme: SyntaxTheme, state: LexState): (Line, LexState) =
+  def highlightLine(line: String, theme: SyntaxTheme, state: LexState): LexedLine =
     val _ = state // a stateless lexer starts every line afresh, whatever the line above ended in
-    (highlightLine(line, theme), LexState.Initial)
+    LexedLine(highlightLine(line, theme), LexState.Initial)
 
   /** Highlights multi-line `code`, one [[Line]] per source line, carrying the [[LexState]] from line to line. */
   def highlight(code: String, theme: SyntaxTheme): Text =
     var state = LexState.Initial
     Text(Text.splitLines(code).toIndexedSeq.map { line =>
-      val (highlighted, next) = highlightLine(line, theme, state)
-      state = next
-      highlighted
+      val lexed = highlightLine(line, theme, state)
+      state = lexed.next
+      lexed.line
     })
+
+/** The highlighted line and the state passed to the following line by a [[Lexer]]. Immutable and safe to share; the
+  * line's spans must concatenate to the original source exactly.
+  */
+final case class LexedLine(line: Line, next: LexState)
 
 /** Where a [[Lexer]] stands at the end of a line: inside nothing ([[LexState.Initial]]) or inside a construct that
   * continues onto the next line. An immutable value the lexer that produced it reads back; nothing else interprets it.

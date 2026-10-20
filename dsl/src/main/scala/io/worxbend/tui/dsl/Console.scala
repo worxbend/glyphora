@@ -37,9 +37,9 @@ import java.nio.charset.StandardCharsets.UTF_8
   * to write `scala.Console.err` (or plain `println`). The name is kept because it is the one every terminal toolkit
   * uses for exactly this object.
   *
-  * Callable from any thread: it registers no render loop and writes no signal. The `print` variants write to
-  * `System.out` as UTF-8 regardless of the platform charset — every border and glyph is non-ASCII, and a POSIX locale
-  * would otherwise print them as `?` — and flush after each call.
+  * Callable from any thread: it registers no render loop and writes no signal. The `print` variants write to the
+  * standard-output descriptor as UTF-8 regardless of the platform charset — every border and glyph is non-ASCII, and a
+  * POSIX locale would otherwise print them as `?` — and flush after each call.
   */
 object Console:
 
@@ -141,10 +141,13 @@ object Console:
     * may have redirected `System.out` into its stdio capture, and a frame printed into the capture would never reach
     * the file or pipe it was meant for.
     */
-  def write(text: String): Unit =
-    val out = PrintStream(FileOutputStream(FileDescriptor.out), false, UTF_8)
-    out.print(text)
-    out.flush()
+  // One process-lifetime descriptor wrapper: closing it would close stdout; allocating one per frame leaks parents.
+  private lazy val descriptorOut: PrintStream = PrintStream(FileOutputStream(FileDescriptor.out), false, UTF_8)
+
+  def write(text: String): Unit = descriptorOut.synchronized {
+    descriptorOut.print(text)
+    descriptorOut.flush()
+  }
 
   private def positive(env: Map[String, String], name: String): Option[Int] =
     env.get(name).flatMap(_.trim.toIntOption).filter(_ > 0)

@@ -32,6 +32,7 @@ private[dsl] final case class PaintedArea(
     sequence: Int,
     passThrough: Boolean = false,
     key: Option[String] = None,
+    wheelPassThrough: Boolean = false,
 )
 
 /** An element in the tree about to render asking to be given focus: where it sits in the tab order, and what identifies
@@ -105,12 +106,37 @@ private[dsl] final class FocusTracker(private[dsl] val bounds: NodeBounds = Node
   private var lastAutofocus = Option.empty[AutofocusRequest]
 
   /** Records where focusable `index` rendered — see [[NodeBounds.recordTarget]]. */
-  def record(index: Int, area: Rect, key: Option[String] = None): Unit =
-    bounds.recordTarget(InputTarget.Focus(index), area, key = key)
+  def record(index: Int, area: Rect, key: Option[String] = None, painted: Option[Rect] = None): Unit =
+    if !area.isEmpty then rendered += index
+    bounds.recordTarget(InputTarget.Focus(index), area, key = key, painted = painted)
+
+  // Render invocation, not clipped hit area: offscreen scroll content remains reachable so Tab can reveal it.
+  private val rendered         = mutable.Set.empty[Int]
+  private val renderedPointers = mutable.Set.empty[Int]
+  private var placementsKnown  = false
+
+  private def eligibleIndex(index: Int): Boolean = !placementsKnown || rendered.contains(index)
+
+  def isPlaced(target: InputTarget): Boolean = target match
+    case InputTarget.Focus(index) => eligibleIndex(index)
+    case InputTarget.Pointer(id)  => !placementsKnown || renderedPointers.contains(id)
+
+  /** Enables placement filtering, while still admitting portals an embedding caller paints after renderTree returns. */
+  def afterPaint(): Unit = placementsKnown = true
+
+  def acceptsFocusedInput: Boolean = focusableCount == 0 || focusedIndex < 0 || eligibleIndex(focusedIndex)
 
   /** Records where the non-focusable node with mouse behaviour numbered `id` rendered. */
-  def recordPointer(id: Int, area: Rect, passThrough: Boolean = false, key: Option[String] = None): Unit =
-    bounds.recordTarget(InputTarget.Pointer(id), area, passThrough, key)
+  def recordPointer(
+      id: Int,
+      area: Rect,
+      passThrough: Boolean = false,
+      key: Option[String] = None,
+      painted: Option[Rect] = None,
+      wheelPassThrough: Boolean = false,
+  ): Unit =
+    if !area.isEmpty then renderedPointers += id
+    bounds.recordTarget(InputTarget.Pointer(id), area, passThrough, key, painted, wheelPassThrough)
 
   /** Published by a scroll view for exactly the duration of its content render, and paired with [[popViewport]] in a
     * `finally` so an exception mid-render cannot leak a translation into a sibling subtree.
@@ -120,19 +146,22 @@ private[dsl] final class FocusTracker(private[dsl] val bounds: NodeBounds = Node
   def popViewport(): Unit = FrameCoordinates.pop()
 
   /** Drops the input targets the previous frame recorded — see [[NodeBounds.clearTargets]]. */
-  def clearAreas(): Unit = bounds.clearTargets()
+  def clearAreas(): Unit =
+    bounds.clearTargets()
+    rendered.clear()
+    renderedPointers.clear()
+    placementsKnown = false
 
   /** Re-anchors focus against the focus keys of the tree that is about to render (depth-first order, `None` for unkeyed
     * focusables): a keyed element keeps focus even when its position moved, and the index is clamped into the new
     * range. Areas recorded for the previous frame are dropped — this frame's render re-records them.
     *
-    * A remembered key outlives frames its element is missing from. While it is gone the clamped index decides which
-    * element renders focused — some element has to — but the key is not overwritten from that index, so the element
-    * reclaims focus on the first frame it is back in.
+    * A remembered key outlives frames its element is missing from. While it is gone no element receives focus or keys;
+    * the key is not overwritten from a neighbouring index, so its element reclaims focus when it returns.
     *
-    * The "nothing is focused" state survives this. A tracker at `-1` — which is where [[clearFocus]] leaves it — stays
-    * at `-1` however the tree changed shape, because the clamp is what an *existing* focus needs and re-anchoring a
-    * deliberately dropped one would put the cursor back where the app asked it not to be.
+    * The deliberately cleared state survives this. A tracker at `-1` with no remembered key — where [[clearFocus]]
+    * leaves it — stays at `-1` however the tree changed shape, because the clamp is what an *existing* focus needs and
+    * re-anchoring a deliberately dropped one would put the cursor back where the app asked it not to be.
     *
     * `autofocus` is the element asking to be focused, if the tree contains one. It is honoured only when it differs
     * from the request the previous frame carried — that is, when the asking element has just appeared. Honouring it on
@@ -147,10 +176,10 @@ private[dsl] final class FocusTracker(private[dsl] val bounds: NodeBounds = Node
     focusKeysSeen = keys.toVector
     scopes = focusScopes.toVector
     focusableCount = keys.size
-    if anchor.index < 0 then anchor = FocusAnchor.Cleared
+    if anchor.index < 0 && anchor.key.isEmpty then anchor = FocusAnchor.Cleared
     else
-      val reanchored = anchor.key.map(key => keys.indexOf(Some(key))).filter(_ >= 0)
-      val index      = clampedIndex(reanchored.getOrElse(anchor.index))
+      val reanchored = anchor.key.map(key => keys.indexOf(Some(key)))
+      val index      = reanchored.getOrElse(clampedIndex(anchor.index))
       // A remembered key is *kept* while its element is missing, and only an anchor that never had one adopts the key
       // of whatever now sits at the index. A collapsed section or an untaken `if` branch takes its element out of the
       // tree for a frame; rewriting the key from the index there would hand the memory to a neighbouring element, and
@@ -180,7 +209,7 @@ private[dsl] final class FocusTracker(private[dsl] val bounds: NodeBounds = Node
     */
   def focusToKey(key: String): Boolean =
     val index = focusKeysSeen.indexOf(Some(key))
-    if index < 0 then false
+    if index < 0 || !eligibleIndex(index) then false
     else
       anchor = FocusAnchor(index, Some(key))
       true
@@ -193,6 +222,9 @@ private[dsl] final class FocusTracker(private[dsl] val bounds: NodeBounds = Node
   /** Focus and autofocus history as each covering layer found them; innermost layer first. */
   private var covered = List.empty[CoveredFocus]
 
+  /** Every layer transition retires pointer ownership, even when both layers declare the same public key. */
+  private[dsl] var layerRevision: Long = 0L
+
   /** Called when a layer goes over the current tree — a modal or full screen is pushed, the command palette opens.
     *
     * Remembers where focus was and anchors it at the top of the tab order, so the incoming layer starts on its *first*
@@ -201,6 +233,7 @@ private[dsl] final class FocusTracker(private[dsl] val bounds: NodeBounds = Node
     * Autofocus starts fresh too: equal keys and indices on distinct layers are distinct requests.
     */
   def pushLayer(): Unit =
+    layerRevision += 1
     covered = CoveredFocus(anchor, lastAutofocus) :: covered
     anchor = FocusAnchor(0, scala.None)
     lastAutofocus = None
@@ -215,6 +248,7 @@ private[dsl] final class FocusTracker(private[dsl] val bounds: NodeBounds = Node
     * in the render pass.
     */
   def popLayer(): Unit =
+    layerRevision += 1
     covered match
       case frame :: rest =>
         anchor = frame.anchor
@@ -238,8 +272,8 @@ private[dsl] final class FocusTracker(private[dsl] val bounds: NodeBounds = Node
     val trapped = Option.when(focusedIndex >= 0)(current.traps.headOption).flatten
     (0 until focusableCount).filter { index =>
       val scope = scopeOf(index)
-      trapped.forall(scope.traps.contains) && scope.group.forall { group =>
-        val members = membersOf(group)
+      eligibleIndex(index) && trapped.forall(scope.traps.contains) && scope.group.forall { group =>
+        val members = membersOf(group).filter(eligibleIndex)
         val entry   =
           if members.contains(focusedIndex) then focusedIndex
           else groupEntry.get(group).filter(members.contains).getOrElse(members.head)
@@ -296,29 +330,13 @@ private[dsl] final class FocusTracker(private[dsl] val bounds: NodeBounds = Node
     * counts once, and a `.trapFocus` subtree holding focus keeps it — see [[tabStops]].
     */
   def focusNext(): Boolean =
-    if focusableCount == 0 then false
-    else if scopes.nonEmpty then stepStops(forward = true)
-    else if focusedIndex < 0 then
-      focusTo(0)
-      true
-    else if focusableCount > 1 then
-      focusTo((focusedIndex + 1) % focusableCount)
-      true
-    else false
+    stepStops(forward = true)
 
   /** `Shift+Tab`. From the no-focus state this lands on the *last* focusable — stepping backwards out of "nothing"
     * arrives at the end of the tab order, the same way it wraps from the first element.
     */
   def focusPrevious(): Boolean =
-    if focusableCount == 0 then false
-    else if scopes.nonEmpty then stepStops(forward = false)
-    else if focusedIndex < 0 then
-      focusTo(focusableCount - 1)
-      true
-    else if focusableCount > 1 then
-      focusTo((focusedIndex - 1 + focusableCount) % focusableCount)
-      true
-    else false
+    stepStops(forward = false)
 
   /** Moves focus to `index` deliberately (Tab, a click), forgetting the remembered [[focusedKey]].
     *
@@ -372,7 +390,7 @@ private[dsl] final class FocusTracker(private[dsl] val bounds: NodeBounds = Node
   def hitTest(pos: Position): Option[Int] = mouseHit(pos).flatMap(_.target.focusIndex)
 
   /** One resolution shared by mouse routing and click-to-focus. */
-  def mouseHit(pos: Position): Option[MouseHit] = bounds.targetAt(pos)
+  def mouseHit(pos: Position, wheel: Boolean = false): Option[MouseHit] = bounds.targetAt(pos, wheel)
 
 private[dsl] object FocusPass:
 
@@ -391,10 +409,13 @@ private[dsl] object FocusPass:
     * [[FocusTracker.focusedIndex]], and what lets focus follow an element across renders when the tree changes shape.
     */
   def focusKeys(element: Element): Vector[Option[String]] =
-    if element.props.inert || element.props.disabled then Vector.empty
-    else
-      val own = if element.props.focusable then Vector(element.props.focusKey) else Vector.empty
-      own ++ element.children.flatMap(focusKeys)
+    def walk(node: Element, identity: FocusIdentity): Vector[Option[String]] =
+      if node.props.inert || node.props.disabled then Vector.empty
+      else
+        val own   = if node.props.focusable then Vector(identity.identify(node).props.focusKey) else Vector.empty
+        val below = identity.beneath(node)
+        own ++ node.children.zipWithIndex.flatMap((child, index) => walk(child, below.child(index)))
+    walk(element, FocusIdentity())
 
   /** The first focusable in the tab order that asked for focus with `.autofocus`, if any.
     *
@@ -405,19 +426,19 @@ private[dsl] object FocusPass:
     * and cannot win.)
     */
   def autofocusRequest(root: Element): Option[AutofocusRequest] =
-    def search(element: Element, index: Int): (Option[AutofocusRequest], Int) =
-      if element.props.inert || element.props.disabled then (None, index)
+    def search(node: Element, index: Int, identity: FocusIdentity): (Option[AutofocusRequest], Int) =
+      if node.props.inert || node.props.disabled then (None, index)
       else
-        val own  =
-          if element.props.focusable && element.props.autofocus then
-            Some(AutofocusRequest(index, element.props.focusKey))
-          else None
-        val next = if element.props.focusable then index + 1 else index
-        element.children.foldLeft((own, next)) { case ((found, position), child) =>
-          val (childFound, after) = search(child, position)
+        val own   = Option.when(node.props.focusable && node.props.autofocus)(
+          AutofocusRequest(index, identity.identify(node).props.focusKey)
+        )
+        val next  = if node.props.focusable then index + 1 else index
+        val below = identity.beneath(node)
+        node.children.zipWithIndex.foldLeft((own, next)) { case ((found, position), (child, childIndex)) =>
+          val (childFound, after) = search(child, position, below.child(childIndex))
           (found.orElse(childFound), after)
         }
-    search(root, 0)._1
+    search(root, 0, FocusIdentity())._1
 
   /** Rebuilds the tree with the theme's focus cue stamped on every node, the focused element marked (`props.focused =
     * true`), and every focusable wrapped in a [[TrackedElement]] that records its rendered area; a non-focusable
@@ -445,6 +466,8 @@ private[dsl] object FocusPass:
     * (`None` when nothing is focused) — the path key routing would otherwise search the whole tree for on every event.
     * `onTargetPath` is handed the same for every input target, innermost first (the trail as kept, not reversed, so a
     * frame allocates nothing for it): what mouse routing follows instead of searching for the target hit.
+    * `onTargetNode` receives the original description before theming copies it, so capture can distinguish unkeyed
+    * owners by reference and keyed owners by logical identity rather than by frame-local numbering.
     *
     * `gestures` is the host's [[PointerGestures]]. A node the gestures have a role for — selectable text — is wrapped
     * in a [[BoundsElement]] carrying its [[PointerRoles]] even when `bounds` is `None`, recording into the same
@@ -464,6 +487,7 @@ private[dsl] object FocusPass:
       gestures: Option[PointerGestures] = None,
       fullBounds: Boolean = true,
       onTargetPath: (InputTarget, List[Int]) => Unit = (_, _) => (),
+      onTargetNode: (InputTarget, Element) => Unit = (_, _) => (),
   ): Element =
     var counter        = 0
     var pointerCounter = 0
@@ -515,8 +539,8 @@ private[dsl] object FocusPass:
         case scope: StyleScopeElement => scope.copy(applied = true)
         case other                    => other
       val cascade      = element match
-        case scope: StyleScopeElement => inherited.patch(scope.cascade)
-        case _                        => inherited
+        case scope: StyleScopeElement => inherited.patch(element.props.style).patch(scope.cascade)
+        case _                        => inherited.patch(element.props.style)
       val inert        = ancestorInert || element.props.inert
       // a node that reads where its subtree painted — the click-outside backdrop — needs every node under it recorded
       val aware        = ancestorAware || (element match
@@ -551,6 +575,7 @@ private[dsl] object FocusPass:
             focusedTrail = Some(trail.reverse.toVector)
             revealing.foreach(_.focus(RevealProbe.focusId(index)))
           onTargetPath(InputTarget.Focus(index), trail)
+          onTargetNode(InputTarget.Focus(index), built)
           TrackedElement(
             themed(element, focused = index == tracker.focusedIndex, disabled, target, states, inherited),
             index,
@@ -565,6 +590,7 @@ private[dsl] object FocusPass:
           val id = pointerCounter
           pointerCounter += 1
           onTargetPath(InputTarget.Pointer(id), trail)
+          if !disabled then onTargetNode(InputTarget.Pointer(id), built)
           PointerElement(
             themed(element, focused = false, disabled, Some(InputTarget.Pointer(id)), states, inherited),
             id,
@@ -628,8 +654,8 @@ private[dsl] object FocusPass:
         case None           => current
       val revealed     =
         if element.props.ensureVisible && !inert then
-          revealWrapped(recorded, element.props.focusKey.getOrElse(nodeId.toString))
-        else recorded
+          revealWrapped(CaretOcclusionElement.around(recorded), element.props.focusKey.getOrElse(nodeId.toString))
+        else CaretOcclusionElement.around(recorded)
       revealed.withChildren(children)
 
     val decorated = transform(root, ancestorInert = false, ancestorDisabled = false, inherited = Style.Default)

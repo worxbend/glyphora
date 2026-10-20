@@ -26,7 +26,9 @@ enum DiffLayout:
   * `contextLines = Some(n)` keeps `n` unchanged lines next to each change and folds every longer run of context into a
   * single `… 12 unchanged lines` row — the way to show a [[Patch.of]] computed with a large context without the reader
   * scrolling past the whole file; `None` shows every context line the patch holds. `wordHighlight` marks, on a removed
-  * line and the added line that replaced it, the words that actually changed, in the `*Emphasis` styles. `lexer`
+  * line and the added line that replaced it, the words that actually changed, in the `*Emphasis` styles. This optional
+  * emphasis is skipped above 16384 UTF-16 units per line, 2048 tokens per line or 256 word edits; the ordinary line
+  * tint remains, and a generated one-line replacement cannot exhaust the render thread's word-diff budget. `lexer`
   * highlights the text of every line through a [[Lexer]] in `syntaxTheme`, with the line's inserted or deleted style
   * underneath, so a theme whose `insertedStyle` is a background keeps the syntax colours on top of it. With no `lexer`,
   * `lexerFromPath` picks one per file from the extension of the path in its header (`.scala`, `.ts`, `.py`, `.yaml`, …,
@@ -493,13 +495,21 @@ private[widgets] object DiffRow:
     * by a word-level Myers diff — on the removed side and on the added side.
     */
   private def changedWords(before: String, after: String): (Set[Int], Set[Int]) =
-    val oldTokens                            = tokens(before)
-    val newTokens                            = tokens(after)
-    val edits                                = MyersDiff.diff(oldTokens.map(_._1), newTokens.map(_._1))
-    def offsets(token: (String, Int)): Range = token._2 until token._2 + token._1.length
-    val deleted  = edits.filter(_.op == MyersDiff.Op.Delete).flatMap(edit => offsets(oldTokens(edit.oldIndex)))
-    val inserted = edits.filter(_.op == MyersDiff.Op.Insert).flatMap(edit => offsets(newTokens(edit.newIndex)))
-    (deleted.toSet, inserted.toSet)
+    // Tokenization and offset sets are bounded too, not just Myers' quadratic trace. Minified/generated
+    // one-line replacements retain their ordinary inserted/deleted tint without word-level emphasis.
+    if before.length > 16384 || after.length > 16384 then (Set.empty, Set.empty)
+    else
+      val oldTokens = tokens(before)
+      val newTokens = tokens(after)
+      if oldTokens.size > 2048 || newTokens.size > 2048 then (Set.empty, Set.empty)
+      else
+        val (edits, exact) = MyersDiff.diffBounded(oldTokens.map(_._1), newTokens.map(_._1), 256)
+        if !exact then (Set.empty, Set.empty)
+        else
+          def offsets(token: (String, Int)): Range = token._2 until token._2 + token._1.length
+          val deleted  = edits.filter(_.op == MyersDiff.Op.Delete).flatMap(edit => offsets(oldTokens(edit.oldIndex)))
+          val inserted = edits.filter(_.op == MyersDiff.Op.Insert).flatMap(edit => offsets(newTokens(edit.newIndex)))
+          (deleted.toSet, inserted.toSet)
 
   /** `text` as spans: the lexer's styles (or none) over `tint`, with `emphasis` laid over the characters in `marked`.
     * Neighbouring characters that end up in the same style share a span.

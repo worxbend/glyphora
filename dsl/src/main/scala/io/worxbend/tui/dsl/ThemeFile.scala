@@ -22,8 +22,8 @@ import java.util.Locale
   * }}}
   *
   * One setting per line; blank lines and lines whose first visible character is `#` are ignored (a `#` later on a line
-  * is part of the value, because colours are written `#rrggbb`). Every value except `name`, `extends` and `glyphs` is a
-  * style in [[io.worxbend.tui.core.Style.parse]]'s spelling.
+  * is part of the value, because colours are written `#rrggbb`). Every palette or component value is a style in
+  * [[io.worxbend.tui.core.Style.parse]]'s spelling.
   *
   *   - The semantic roles: `primary`, `accent`, `muted`, `error`, `warning`, `success`, `surface`, `border`, `focus`,
   *     and `disabled` — written back only when the theme set it, since left out it follows `muted`.
@@ -32,7 +32,9 @@ import java.util.Locale
   *     `SyntaxTheme`, with camel case written in dashes (`markdown.table-header`).
   *   - Components: `component.<style name>` sets a component's `base`, and `component.<style name>:<state>` one of its
   *     `focused`, `hovered`, `pressed` or `disabled` styles — see [[StateStyles]] and [[StyleName]].
-  *   - `glyphs` is `full`, `box-drawing` or `ascii`.
+  *   - `name` may be empty; `glyphs` is `full`, `box-drawing` or `ascii`.
+  *   - `adaptive = true` retains automatic scheme resolution. `dark.` and `light.` prefix complete settings for the two
+  *     variants, including their own names and components; rendering an adaptive theme writes both.
   *   - `loading.fill-ramp` is the loading `fillRamp`: its colour stops separated by commas, in
   *     [[io.worxbend.tui.core.Color.parse]]'s spelling (`green, yellow, red`, `#a3be8c, #bf616a`), or `none`.
   *
@@ -167,7 +169,27 @@ private[dsl] object ThemeFile:
   def parse(text: String): Either[LineError, Theme] =
     KeyValueLines.read(text, "key = value").flatMap { lines =>
       val settings = lines.map(line => (line.number, line.key, line.value))
-      base(settings).flatMap(start => settings.foldLeft[Either[LineError, Theme]](Right(start))(apply))
+      val adaptive = settings.find(_._2 == "adaptive")
+      val plain    = settings
+        .filterNot(entry => entry._2 == "adaptive" || entry._2.startsWith("dark.") || entry._2.startsWith("light."))
+      def read(entries: Seq[(Int, String, String)]): Either[LineError, Theme] =
+        base(entries).flatMap(start => entries.foldLeft[Either[LineError, Theme]](Right(start))(apply))
+      def variant(prefix: String): Either[LineError, Theme]                   =
+        read(settings.collect {
+          case (line, key, value) if key.startsWith(prefix) => (line, key.drop(prefix.length), value)
+        })
+      for
+        theme  <- read(plain)
+        result <- adaptive match
+          case Some((_, _, "true"))                                                        =>
+            for
+              dark  <- variant("dark.")
+              light <- variant("light.")
+            yield theme.withVariants(Some(Theme.Variants(dark, light)))
+          case Some((_, _, "false")) | None if settings.size == plain.size + adaptive.size => Right(theme)
+          case Some((line, _, _)) => Left(LineError(line, "adaptive: expected true or false; variants require true"))
+          case None               => Left(LineError(1, "dark/light variants require adaptive = true"))
+      yield result
     }
 
   /** The theme a file starts from: the `extends` preset, or `Dark` without its components. */
@@ -187,7 +209,7 @@ private[dsl] object ThemeFile:
       key match
         case "extends"   => Right(theme)
         case "name"      =>
-          if value.isEmpty then Left(LineError(number, "name: a theme needs a name")) else Right(theme.withName(value))
+          Right(theme.withName(value))
         case DisabledKey =>
           style.map(theme.withDisabled)
         case FillRampKey =>
@@ -228,6 +250,15 @@ private[dsl] object ThemeFile:
       theme.withComponent(name, update(current, value))
 
   def render(theme: Theme): String =
+    val plain = renderPlain(theme)
+    if !theme.isAuto then plain
+    else
+      def variant(prefix: String, value: Theme): String =
+        renderPlain(value).linesIterator.filterNot(_.startsWith("#")).map(prefix + _).mkString("", "\n", "\n")
+      plain + "adaptive = true\n" + variant("dark.", theme.resolve(ColorScheme.Dark)) +
+        variant("light.", theme.resolve(ColorScheme.Light))
+
+  private def renderPlain(theme: Theme): String =
     val header   = Seq(s"name = ${theme.name}", s"glyphs = ${GlyphNames.find(_._2 == theme.glyphs).fold("full")(_._1)}")
     val disabled = Option.when(theme.disabledIsSet)(s"$DisabledKey = ${Style.render(theme.disabled)}").toSeq
     val settings = Settings.map(setting => s"${setting.key} = ${Style.render(setting.read(theme))}") ++ disabled :+

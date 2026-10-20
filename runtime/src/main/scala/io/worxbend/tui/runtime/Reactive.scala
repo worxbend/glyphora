@@ -70,8 +70,11 @@ final class Signal[A] private (initial: A, equality: SignalEquality[A]) extends 
     if scope ne ReactiveScope.untracked then ownership.check()
     currentValue
 
+  /** Validate before a compound owner (Store) changes its own bookkeeping. */
+  private[runtime] def checkMutation(): Unit = ownership.check()
+
   def set(value: A): Unit =
-    ownership.check()
+    checkMutation()
     if !equality.unchanged(value, currentValue) then
       currentValue = value
       notifySubscribers()

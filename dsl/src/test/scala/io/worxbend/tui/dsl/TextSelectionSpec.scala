@@ -17,7 +17,7 @@ final class TextSelectionSpec extends AnyFunSuite with PilotFixture:
 
   private def driving(app: TuiApp, size: Size = Size(16, 3))(body: (Pilot, HeadlessBackend) => Unit): Unit =
     val backend = HeadlessBackend(size)
-    val pilot   = startPilot(backend)(app.runWith(backend)).waitForIdle()
+    val pilot   = startPilot(backend)(app.runWith(backend, () => 0L)).waitForIdle()
     body(pilot, backend)
     pilot.interrupt()
     val _       = pilot.awaitTermination()

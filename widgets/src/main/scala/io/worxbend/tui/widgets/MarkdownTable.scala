@@ -69,14 +69,17 @@ private[widgets] object MarkdownTable:
     }
 
   private def padded(line: Line, columnWidth: Int, alignment: Alignment): Line =
-    val extra  = math.max(0, columnWidth - line.width)
+    // A two-column cluster cannot occupy a one-column allocation. Leave that cell blank rather
+    // than shifting every later separator; Paragraph intentionally preserves oversized clusters.
+    val fitted = truncated(line, columnWidth, ellipsis = false)
+    val extra  = math.max(0, columnWidth - fitted.width)
     val before = alignment match
       case Alignment.Left   => 0
       case Alignment.Center => extra / 2
       case Alignment.Right  => extra
     val after  = extra - before
     Line(
-      (Option.when(before > 0)(Span.raw(" " * before)) ++ line.spans ++ Option.when(after > 0)(
+      (Option.when(before > 0)(Span.raw(" " * before)) ++ fitted.spans ++ Option.when(after > 0)(
         Span.raw(" " * after)
       )).toSeq
     )

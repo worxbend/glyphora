@@ -218,10 +218,11 @@ final class KeyBindings private (
     val modal                     = modes.map(id => HelpSection(Some(id), rows(bindings.filter(_.mode.contains(id)))))
     (if global.nonEmpty || modes.isEmpty then Seq(HelpSection(None, global)) else Seq.empty) ++ modal
 
-  /** These bindings followed by `other`'s. The left side shadows the right for a key both declare; the combination is
-    * not re-checked for collisions, so a screen's `"g"` may shadow an app's `"g g"` while the screen is up.
-    */
-  def ++(other: KeyBindings): KeyBindings =
+  /** These bindings followed by `other`'s, checked for prefix collisions across their combined modes. */
+  def ++(other: KeyBindings): KeyBindings = KeyBindings.checked(concat(other))
+
+  /** Screen-over-app composition deliberately permits a screen's single key to shadow an app sequence. */
+  private[dsl] def concat(other: KeyBindings): KeyBindings =
     new KeyBindings(
       bindings ++ other.bindings,
       (modes ++ other.modes).distinct,
@@ -234,12 +235,16 @@ final class KeyBindings private (
     * is re-checked for collisions. A `<leader>` in a new sequence is resolved against the [[KeyLeader]] in scope.
     */
   def rebind(keymap: Map[BindingId, KeySequence])(using leader: KeyLeader): KeyBindings =
+    rebindEither(keymap).fold(error => throw IllegalArgumentException(error.message), identity)
+
+  /** Rebinds user-supplied keys without throwing for a prefix collision. */
+  def rebindEither(keymap: Map[BindingId, KeySequence])(using leader: KeyLeader): Either[RebindError, KeyBindings] =
     val rebound = bindings.map(bound =>
       keymap
         .get(bound.id)
         .fold(bound)(sequence => bound.copy(triggers = Seq(sequence.withLeader(leader.key)), label = sequence.spelling))
     )
-    KeyBindings.checked(new KeyBindings(rebound, modes, currentMode, pending))
+    KeyBindings.validate(new KeyBindings(rebound, modes, currentMode, pending))
 
   /** The bindings with `keep` true, everything else about this value unchanged. */
   private[dsl] def filter(keep: KeyBinding => Boolean): KeyBindings =
@@ -278,24 +283,35 @@ object KeyBindings:
     * sequences is a strict prefix of the other's.
     */
   private def checked(bindings: KeyBindings): KeyBindings =
-    val scopes = if bindings.modes.isEmpty then Seq(None) else bindings.modes.map(Some(_))
-    for
-      scope <- scopes
+    validate(bindings).fold(error => throw IllegalArgumentException(error.message), identity)
+
+  private def validate(bindings: KeyBindings): Either[RebindError, KeyBindings] =
+    val scopes   = if bindings.modes.isEmpty then Seq(None) else bindings.modes.map(Some(_))
+    val problems = for
+      scope <- scopes.iterator
       live = bindings.bindings.filter(bound => bound.mode.isEmpty || bound.mode == scope)
-      short    <- live
-      shortSeq <- short.triggers
-      long     <- live
-      longSeq  <- long.triggers
+      short    <- live.iterator
+      shortSeq <- short.triggers.iterator
+      long     <- live.iterator
+      longSeq  <- long.triggers.iterator
       a = shortSeq.keys
       b = longSeq.keys
-      if b.sizeIs > a.size && b.startsWith(a)
-    do
+      if a.nonEmpty && b.sizeIs > a.size && b.startsWith(a)
+    yield
       val where = scope.fold("")(mode => s" in mode '$mode'")
-      throw IllegalArgumentException(
+      RebindError(
+        Seq(short.id, long.id),
         s"key binding collision$where: \"${shortSeq.spelling}\" (${short.description}) is a prefix of " +
-          s"\"${longSeq.spelling}\" (${long.description}); a key that starts a sequence cannot also be a binding"
+          s"\"${longSeq.spelling}\" (${long.description}); a key that starts a sequence cannot also be a binding",
       )
-    bindings
+    val reserved = bindings.bindings.find(_.id.value.startsWith("framework.")).map { bound =>
+      RebindError(Seq(bound.id), s"application binding '${bound.id}' uses the reserved framework. id namespace")
+    }
+    reserved.orElse(problems.nextOption()).toLeft(bindings)
+
+/** A recoverable keymap collision or unsupported framework sequence, naming the affected binding ids. */
+final case class RebindError(ids: Seq[BindingId], message: String):
+  override def toString: String = message
 
 /** One row of key help: the keys as the user types them — `"ctrl+s"`, or the rest of a sequence after a typed prefix —
   * and what they do. Rows of the which-key popup and the help overlay.

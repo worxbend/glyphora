@@ -4,6 +4,23 @@ All seven `com.worxbend::tui-*` artifacts share one version. Before 1.0, a minor
 source compatibility; every break is listed under **Breaking** with a pointer to its migration
 note in [Versioning & releases](website/docs/versioning.md).
 
+## 0.21.0
+
+### Fixed
+
+- Correct keyed and deferred hook lifetimes, focus placement, dialog/dropdown hit geometry, caret occlusion, pointer capture and deterministic key-sequence/click timing.
+- Protect secret input across editing, clipboard/kill rings, frame exports, hardware carets and prompt diagnostics; bound malformed PNG, ANSI, codec and diff processing.
+- Repair terminal input handover, per-screen keyboard restoration, stdio/JUL capture, redraw scheduling and owner-checked store mutations.
+- Correct layout allocation and style inheritance, window/picker geometry, Unicode/export/recording fidelity, persistence recovery and prompt cancellation; retain viewport-bounded editor and collection work.
+
+### Added
+
+- Reusable composer state and painting now live in `tui-widgets`; the existing DSL state aliases remain available. Added `TuiApp.focusKey`, safe keymap validation and complete one-import embedding vocabulary.
+
+### Breaking
+
+- Source migrations include reserved `framework.*` keymap ids, named grid/RGB/lexer/selection/Pretty/menu/toolbar/accordion records, explicit `ImageIoLoader` opt-in, and `SyntaxHighlighter`'s `lexer =` named argument. See [Migrating to 0.21.0](website/docs/versioning.md#migrating-to-0210) for exact replacements and custom runner/backend compatibility.
+
 ## 0.20.0
 
 ### Added

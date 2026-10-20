@@ -248,7 +248,10 @@ object Async:
     new ThreadFactory:
       private val counter                       = new java.util.concurrent.atomic.AtomicInteger(0)
       def newThread(runnable: Runnable): Thread =
-        val thread = new Thread(runnable, s"$prefix-${counter.getAndIncrement()}")
+        val thread = new Thread(
+          () => StdioCapture.withCurrentSystemStreams(runnable.run()),
+          s"$prefix-${counter.getAndIncrement()}",
+        )
         thread.setDaemon(true)
         thread
 

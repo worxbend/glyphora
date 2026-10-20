@@ -8,6 +8,15 @@ import org.scalatest.funsuite.AnyFunSuite
   */
 final class MarkupLiteralSpec extends AnyFunSuite:
 
+  test("holes render null as text and newlines as styled rows, not markup"):
+    val absent: String = null // scalafix:ok DisableSyntax; null is the interpolation boundary under test
+    assert(markup"x=$absent".plainText == "x=null")
+    val value          = "one\n[red]two\n"
+    val text           = markup"before[bold]$value tail[/]after"
+    assert(text.plainText == "beforeone\n[red]two\n tailafter")
+    assert(text.lines(1).spans.head.style == Style.Default.bold)
+    assert(text.lines(2).spans.last.style == Style.Default)
+
   test("a tag styles the run it encloses and [/] returns to the style outside it"):
     val text = markup"[bold red]error[/] in plain"
     assert(text == Text(Seq(Line(Seq(Span("error", Style.fg(Color.Red).bold), Span.raw(" in plain"))))))

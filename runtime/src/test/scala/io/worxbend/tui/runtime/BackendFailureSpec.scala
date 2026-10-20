@@ -74,28 +74,32 @@ final class BackendFailureSpec extends AnyFunSuite:
     handle.quit()
     EventOutcome.Ignored
 
-  test("a successful setup dresses the terminal in one order: raw mode, alternate screen, hidden cursor"):
-    // the order is the contract rather than an accident. Raw mode first, because a terminal that never entered it
-    // cannot be asked for anything else; the cursor is hidden last, because hiding it and *then* failing to switch
-    // screens would leave the user's own shell without a cursor.
+  test("fullscreen setup selects its screen before acquiring raw-mode keyboard flags and hiding the cursor"):
+    // Kitty keyboard stacks are per screen: acquire input modes only after choosing the screen they will dress.
+    // Hiding remains last, and any partial setup is still closed and emergency-restored.
     val backend = RecordingBackend()
     val result  = TerminalRunner(backend).run(_ => (), quitOnAnything, _ => ())
     assert(result.isRight, s"a backend that fails nothing should run cleanly: $result")
-    assert(backend.calls.take(3) == List(BackendStep.RawMode, BackendStep.AlternateScreen, BackendStep.HideCursor))
+    assert(backend.calls.take(3) == List(BackendStep.AlternateScreen, BackendStep.RawMode, BackendStep.HideCursor))
     assert(backend.calls.last == BackendStep.Close, s"the terminal was not handed back last: ${backend.calls}")
     assert(
       !backend.calls.contains(BackendStep.EmergencyRestore),
       "a run that ended cleanly used the last-resort restore path anyway",
     )
 
-  test("a setup that cannot enter raw mode never attempts the alternate screen"):
-    // the short-circuit matters in the direction nobody tests: if `setup` kept going after raw mode failed, it would
-    // switch a perfectly ordinary cooked-mode shell onto the alternate screen and then abort, blanking it.
+  test("a fullscreen setup that cannot enter raw mode releases its already-selected alternate screen"):
     val boom    = BackendError.Io(IOException("not a tty"))
     val backend = RecordingBackend(failAt = Some(BackendStep.RawMode), error = boom)
     val result  = TerminalRunner(backend).run(_ => (), quitOnAnything, _ => ())
     assert(result == Left(RunnerError.Backend(boom)))
-    assert(backend.calls == List(BackendStep.RawMode, BackendStep.Close, BackendStep.EmergencyRestore))
+    assert(
+      backend.calls == List(
+        BackendStep.AlternateScreen,
+        BackendStep.RawMode,
+        BackendStep.Close,
+        BackendStep.EmergencyRestore,
+      )
+    )
 
   test("a setup that fails at the alternate screen closes the backend and then restores it in the emergency"):
     // both teardowns, in this order: `close` is the tidy path and may itself fail on a terminal that just did, and
@@ -112,7 +116,6 @@ final class BackendFailureSpec extends AnyFunSuite:
     assert(result == Left(RunnerError.Backend(boom)))
     assert(
       backend.calls == List(
-        BackendStep.RawMode,
         BackendStep.AlternateScreen,
         BackendStep.Close,
         BackendStep.EmergencyRestore,

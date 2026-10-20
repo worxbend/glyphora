@@ -24,11 +24,9 @@ final class KeyReleaseSpec extends AnyFunSuite:
     assert((AnsiSequences.KittyDisambiguate | AnsiSequences.KittyReportEventTypes) == 3)
     assert(AnsiSequences.pushKittyKeyboard(AnsiSequences.KittyDisambiguate) == AnsiSequences.PushKittyKeyboard)
 
-  /** Whatever was pushed, one pop takes it off, which is why the teardown string never had to know what was asked for —
-    * and why `enableKeyEventTypes` pops before it pushes rather than stacking a second entry.
-    */
-  test("the teardown string still pops the keyboard mode"):
-    assert(AnsiSequences.RestoreAll.contains(AnsiSequences.PopKittyKeyboard))
+  /** One owned push needs one pop, not a blind reset: after normal close an extra pop belongs to the shell. */
+  test("the unconditional teardown string never pops an unowned keyboard mode"):
+    assert(!AnsiSequences.RestoreAll.contains(AnsiSequences.PopKittyKeyboard))
 
   // ------------------------------------------------------------------ the reply
 

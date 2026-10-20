@@ -39,6 +39,14 @@ final class ToolbarState extends VersionedState:
     */
   private[tui] def recordHidden(indices: Seq[Int]): Unit = hiddenValue = indices
 
+object Toolbar:
+
+  /** The half-open range of drawn item indices. */
+  final case class Window(start: Int, end: Int)
+
+  /** An item index and its drawn rectangle in the caller's coordinate space. */
+  final case class Placement(index: Int, rect: Rect)
+
 /** A one-row strip of controls, drawn on the first row of its area — a toolbar, a segmented button group — laid left to
   * right at each item's natural width ([[Measured.widthAt]]; an item that cannot say takes one column), `gap` blank
   * columns apart, with `divider` drawn in the middle of every gap when given (`gap = 0, divider = Some("│")` joins the
@@ -77,9 +85,9 @@ final case class Toolbar(
     Some(1)
 
   /** The half-open range of items drawn at `width` columns. */
-  def window(width: Int): (Int, Int) =
+  def window(width: Int): Toolbar.Window =
     val sizes = widths
-    if span(sizes) <= width then (0, sizes.size)
+    if span(sizes) <= width then Toolbar.Window(0, sizes.size)
     else
       val fromStart = fitForward(sizes, 0, width - CharWidth.of(overflowAfter))
       focus.filter(index => index >= fromStart && index < sizes.size) match
@@ -89,34 +97,34 @@ final case class Toolbar(
             width - CharWidth.of(overflowBefore) - (if end < sizes.size then CharWidth.of(overflowAfter) else 0)
           var start = index
           while start > 0 && span(sizes.slice(start - 1, end)) <= room do start -= 1
-          (start, end)
-        case None        => (0, math.max(1, fromStart).min(sizes.size))
+          Toolbar.Window(start, end)
+        case None        => Toolbar.Window(0, math.max(1, fromStart).min(sizes.size))
 
   /** The items [[window]] leaves out at `width` columns, in order — those before the window, then those after it. */
   def hidden(width: Int): Seq[Int] =
-    val (start, end) = window(width)
+    val Toolbar.Window(start, end) = window(width)
     (0 until start) ++ (end until items.size)
 
   /** Each drawn item with the rectangle it is drawn into, inside `area`. */
-  def placements(area: Rect): Seq[(Int, Rect)] =
+  def placements(area: Rect): Seq[Toolbar.Placement] =
     if area.isEmpty then Seq.empty
     else
-      val sizes        = widths
-      val (start, end) = window(area.width)
-      var x            = area.x + (if start > 0 then CharWidth.of(overflowBefore) else 0)
+      val sizes                      = widths
+      val Toolbar.Window(start, end) = window(area.width)
+      var x                          = area.x + (if start > 0 then CharWidth.of(overflowBefore) else 0)
       (start until end).map { index =>
         if index > start then x += between
         val placed = Rect(x, area.y, math.max(0, math.min(sizes(index), area.right - x)), 1)
         x += sizes(index)
-        index -> placed
+        Toolbar.Placement(index, placed)
       }
 
   def render(area: Rect, buffer: Buffer): Unit =
     if !area.isEmpty then
-      val (start, end) = window(area.width)
+      val Toolbar.Window(start, end) = window(area.width)
       if start > 0 then buffer.setString(area.x, area.y, overflowBefore, style.patch(dividerStyle), area.width)
-      val placed       = placements(area)
-      placed.foreach { (index, rect) =>
+      val placed                     = placements(area)
+      placed.foreach { case Toolbar.Placement(index, rect) =>
         divider.filter(_ => index > start).foreach { glyph =>
           buffer.setString(
             rect.x - math.max(0, gap) - CharWidth.of(glyph),

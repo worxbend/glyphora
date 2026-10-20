@@ -87,7 +87,7 @@ object Prompt:
         options,
         render,
         multi = false,
-        picked => picked.headOption.toRight("there is nothing to choose from"),
+        picked => picked.headOption.toRight(Messages.active.promptNothingToChoose),
         render,
       ),
     )
@@ -172,7 +172,14 @@ object Prompt:
       field.spec.input match
         case FieldInput.BoolField            => ConfirmStep(name, default = false)
         case FieldInput.SelectField(options) =>
-          ChoiceStep[String, String](name, options, identity, false, _.headOption.toRight("no option"), identity)
+          ChoiceStep[String, String](
+            name,
+            options,
+            identity,
+            false,
+            _.headOption.toRight(Messages.active.promptNothingToChoose),
+            identity,
+          )
         case _                               =>
           TextStep[String](name, "", raw => field.parse(raw).map(_ => raw), identity)
     }
@@ -210,12 +217,14 @@ object Prompt:
       label,
       PromptTask.LogRows,
       ring => logTail(ring),
-      (log, _) => work(log),
+      (log, _, _) => work(log),
       _ => "",
     )
 
   /** Runs `f` over every item under a one-row progress bar — label, bar, percentage, ETA — and answers the results in
     * order, or `None` when the user pressed `Ctrl-C`. The `tqdm` of this toolkit: wrap a loop and see it move.
+    * Cancellation interrupts the active call cooperatively; once it returns, no later item is started, even if that
+    * call caught or cleared the interrupt.
     */
   def loader[A, B](label: String, items: Iterable[A])(f: A => B)(using session: PromptSession): Option[Seq[B]] =
     val all      = items.toVector
@@ -226,11 +235,27 @@ object Prompt:
       1,
       _ =>
         Element.multiProgress(Seq(progress), Seq(ProgressColumn.Bar(), ProgressColumn.Percentage, ProgressColumn.Eta)),
-      (_, onUi) =>
+      (_, onUi, isCancelled) =>
+        val completed              = new java.util.concurrent.atomic.AtomicLong(0L)
+        val queued                 = new java.util.concurrent.atomic.AtomicBoolean(false)
+        def sync(): Unit           =
+          if !isCancelled() && queued.compareAndSet(false, true) then
+            onUi { () =>
+              val seen = completed.get()
+              progress.update(seen)
+              queued.set(false)
+              if completed.get() != seen then sync()
+            }
+        def checkCancelled(): Unit =
+          if isCancelled() || Thread.currentThread().isInterrupted then
+            throw new java.util.concurrent.CancellationException()
         onUi(() => progress.start())
         all.map { item =>
+          checkCancelled()
           val result = f(item)
-          onUi(() => progress.advance())
+          checkCancelled()
+          val _      = completed.incrementAndGet()
+          sync()
           result
         }
       ,

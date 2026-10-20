@@ -41,7 +41,8 @@ private[dsl] object EventRouter:
     */
   def dispatchKey(root: Element, event: KeyEvent, focusPath: Option[Vector[Int]] = None): Boolean =
     focusedPath(root, focusPath) match
-      case Some(leafToRoot)           => leafToRoot.exists(handlesKey(_, event))
+      case Some(leafToRoot)           =>
+        leafToRoot.zipWithIndex.exists((element, index) => handlesKey(element, event, bubbling = index > 0))
       case None if hasFocusable(root) => false
       case None                       => dispatchKeyDepthFirst(root, event)
 
@@ -89,6 +90,10 @@ private[dsl] object EventRouter:
       // a press on a disabled control lands on it and stops there: nothing under it, and nothing around it, hears it
       case target :: _ if target.props.isDisabled => false
       case path                                   => path.exists(handlesMouse(_, event, hit))
+
+  /** Whether the captured input node itself is draggable, rather than only one of its ancestors. */
+  def targetDraggable(root: Element, target: InputTarget, paths: InputTarget => Option[List[Int]]): Boolean =
+    targetPath(root, target, paths).flatMap(_.headOption).exists(_.props.dragPayload.isDefined)
 
   /** The mouse pointer to show at `position`, given the input target under it.
     *
@@ -243,11 +248,13 @@ private[dsl] object EventRouter:
     * the ancestors an unconsumed key bubbles through, and every node of the depth-first walk when nothing is focusable
     * at all — and a built-in firing there would mean typing into an unfocused text input, or one arrow key moving two
     * nested lists. The user's own handler is deliberately not gated: `onKeyEvent` on a container is how an app takes
-    * keys that no focused descendant wanted.
+    * keys that no focused descendant wanted. A container can explicitly opt its navigation into the same bubbling phase
+    * through `bubbledKeyHandler`; ordinary editing built-ins remain focused-only.
     */
-  private def handlesKey(element: Element, event: KeyEvent): Boolean =
+  private def handlesKey(element: Element, event: KeyEvent, bubbling: Boolean = false): Boolean =
     !element.props.isDisabled &&
-      (element.props.onKey.exists(_(event)) || (element.props.focused && element.builtinKeyHandler.exists(_(event))))
+      (element.props.onKey.exists(_(event)) || (element.props.focused && element.builtinKeyHandler.exists(_(event))) ||
+        (bubbling && !element.props.focused && element.bubbledKeyHandler.exists(_(event))))
 
   private def dispatchKeyDepthFirst(element: Element, event: KeyEvent): Boolean =
     !element.props.inert &&

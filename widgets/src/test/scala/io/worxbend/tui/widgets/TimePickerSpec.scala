@@ -9,6 +9,25 @@ import java.time.LocalTime
 
 final class TimePickerSpec extends AnyFunSuite:
 
+  test("a hidden seconds field normalizes to minutes and edits only the displayed precision"):
+    val state    = TimePickerState(LocalTime.of(9, 30), withSeconds = false)
+    state.field = TimeField.Second
+    assert(state.field == TimeField.Minute)
+    state.typeDigit(4)
+    state.time = LocalTime.of(12, 25, 42, 123)
+    state.typeDigit(3)
+    assert(state.time == LocalTime.of(12, 3))
+    state.increment()
+    assert(state.time == LocalTime.of(12, 4))
+    val area     = Rect(3, 1, 5, 1)
+    val buffer   = io.worxbend.tui.core.Buffer(Rect(0, 0, 12, 3))
+    val sentinel = io.worxbend.tui.core.Cell("#", io.worxbend.tui.core.Style.Default)
+    buffer.area.foreachPosition((x, y) => buffer.set(x, y, sentinel))
+    TimePicker().render(area, buffer, state)
+    buffer.area.foreachPosition { (x, y) =>
+      if !area.contains(x, y) then assert(buffer.get(x, y) == sentinel)
+    }
+
   test("the time is drawn as hh:mm:ss with the focused field highlighted"):
     val state  = TimePickerState(LocalTime.of(9, 5, 7))
     val buffer = rendered(TimePicker(), state, 10, 1)

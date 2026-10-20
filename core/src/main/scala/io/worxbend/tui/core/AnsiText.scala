@@ -30,7 +30,9 @@ import scala.collection.mutable.ArrayBuffer
   * Every other escape sequence — cursor movement, screen clearing, other OSC strings, DCS and APC payloads, two-byte
   * escapes — is recognised far enough to be skipped whole and then dropped, with one exception: '''erase in line'''
   * (`ESC [ K`, `ESC [ 1 K`, `ESC [ 2 K`), which a progress bar sends after its `\r` and which is applied to the line
-  * being built.
+  * being built. Control strings and CSI parameter text are limited to 4096 UTF-16 units: reaching the limit abandons
+  * the malformed sequence and resumes ordinary text, rather than swallowing an unlimited remainder. CAN/SUB cancel
+  * pending sequences; newline, carriage return and tab execute even inside CSI.
   *
   * Three controls move within the line the way a terminal's cursor would:
   *
@@ -76,6 +78,9 @@ final class AnsiParser:
   private var state: State  = State.Ground
   private val sequence      = StringBuilder()
   private var intermediates = 0
+  private var stringLength  = 0
+  private var columns       = 0
+  private var tail          = ""
 
   /** Reads `chunk` and answers the lines it completed, in order. A line is complete when its `\n` has been read; text
     * after the last `\n` stays in the parser until the next chunk completes it or [[finish]] is called.
@@ -85,25 +90,29 @@ final class AnsiParser:
     var index     = 0
     while index < chunk.length do
       val c = chunk.charAt(index)
-      state match
-        case State.Ground          => ground(c, completed)
-        case State.Escape          => escape(c, completed)
-        case State.EscIntermediate =>
-          if c >= 0x20 && c <= 0x2f then ()
-          else if c >= 0x30 && c <= 0x7e then state = State.Ground
-          else
-            state = State.Ground
-            ground(c, completed)
-        case State.Csi             => csi(c, completed)
-        case State.Osc             => controlString(c, keep = true)
-        case State.ControlString   => controlString(c, keep = false)
-        case State.StringEsc       =>
-          if c == '\\' then endControlString()
-          else
-            // ESC inside an OSC that is not the ST terminator abandons the string and starts a fresh escape
-            sequence.clear()
-            state = State.Escape
-            escape(c, completed)
+      if c == '\u0018' || c == '\u001a' then
+        sequence.clear()
+        state = State.Ground
+      else
+        state match
+          case State.Ground          => ground(c, completed)
+          case State.Escape          => escape(c, completed)
+          case State.EscIntermediate =>
+            if c >= 0x20 && c <= 0x2f then ()
+            else if c >= 0x30 && c <= 0x7e then state = State.Ground
+            else
+              state = State.Ground
+              ground(c, completed)
+          case State.Csi             => csi(c, completed)
+          case State.Osc             => controlString(c, keep = true)
+          case State.ControlString   => controlString(c, keep = false)
+          case State.StringEsc       =>
+            if c == '\\' then endControlString()
+            else
+              // ESC inside an OSC that is not the ST terminator abandons the string and starts a fresh escape
+              sequence.clear()
+              state = State.Escape
+              escape(c, completed)
       index += 1
     completed.toSeq
 
@@ -130,8 +139,12 @@ final class AnsiParser:
       case '['                         =>
         intermediates = 0
         state = State.Csi
-      case ']'                         => state = State.Osc
-      case 'P' | '_' | '^' | 'X'       => state = State.ControlString
+      case ']'                         =>
+        stringLength = 0
+        state = State.Osc
+      case 'P' | '_' | '^' | 'X'       =>
+        stringLength = 0
+        state = State.ControlString
       case _ if c >= 0x20 && c <= 0x2f => state = State.EscIntermediate
       case _ if c >= 0x30 && c <= 0x7e => state = State.Ground
       case _                           =>
@@ -143,6 +156,9 @@ final class AnsiParser:
     if c >= 0x30 && c <= 0x3f then
       // a parameter byte after an intermediate is malformed; the sequence is still consumed up to its final byte
       sequence.append(c)
+      if sequence.length >= MaxSequence then
+        sequence.clear()
+        state = State.Ground
     else if c >= 0x20 && c <= 0x2f then intermediates += 1
     else if c >= 0x40 && c <= 0x7e then
       if c == 'm' && intermediates == 0 then applySgr(sequence.result())
@@ -156,12 +172,17 @@ final class AnsiParser:
       sequence.clear()
       state = State.Ground
       ground(c, completed)
-    // a C0 control inside a CSI sequence is dropped, as the sequence itself will be if it never completes
+    else if c == '\n' || c == '\r' || c == '\t' then ground(c, completed)
 
   private def controlString(c: Char, keep: Boolean): Unit =
     if c == Bel then endControlString()
     else if c == Esc then state = State.StringEsc
-    else if keep then sequence.append(c)
+    else
+      stringLength += 1
+      if stringLength >= MaxSequence then
+        sequence.clear()
+        state = State.Ground
+      else if keep then sequence.append(c)
 
   private def endControlString(): Unit =
     // only an OSC keeps its payload, so a non-empty buffer is one; a DCS/APC/PM/SOS string leaves nothing to apply
@@ -310,9 +331,13 @@ final class AnsiParser:
       val text = run.result()
       run.clear()
       if cursor < 0 then
-        if spans.nonEmpty && spans.last.style == current then
-          spans(spans.size - 1) = Span(spans.last.content + text, current)
-        else spans += Span(text, current)
+        spans += Span(text, current)
+        // Only the final cluster can join the next run (even across SGR or a split surrogate).
+        columns -= CharWidth.of(tail)
+        CharWidth.graphemeClusters(Iterator(tail, text)).foreach { cluster =>
+          columns += CharWidth.of(cluster)
+          tail = cluster
+        }
       else
         val cells = LineCells.of(spans)
         cursor = cells.write(cursor, text, current)
@@ -322,9 +347,11 @@ final class AnsiParser:
   private def replaceSpans(cells: LineCells): Unit =
     spans.clear()
     spans ++= cells.spans
+    columns = cells.width
+    tail = Line(spans.toVector).styledGraphemes(Style.Default).foldLeft("")((_, grapheme) => grapheme.cluster)
 
-  /** The display width of the line so far, the unflushed run included. */
-  private def lineWidth: Int = spans.iterator.map(span => CharWidth.of(span.content)).sum + CharWidth.of(run.result())
+  /** Width of flushed text. Callers flush first; tab expansion never rescans the growing line. */
+  private def lineWidth: Int = columns
 
   /** `\r`: back to the first column. An empty line has nothing to overwrite, so it stays in append mode. */
   private def carriageReturn(): Unit =
@@ -368,14 +395,29 @@ final class AnsiParser:
   private def endLine(): Line =
     flushRun()
     cursor = -1
-    val line = if spans.isEmpty then Line(Seq(Span("", current))) else Line(spans.toSeq)
+    val merged  = ArrayBuffer.empty[Span]
+    val content = StringBuilder()
+    var style   = spans.headOption.map(_.style).getOrElse(current)
+    spans.foreach { span =>
+      if span.style != style then
+        merged += Span(content.result(), style)
+        content.clear()
+        style = span.style
+      content.append(span.content)
+    }
+    merged += Span(content.result(), style)
     spans.clear()
-    line
+    columns = 0
+    tail = ""
+    Line(merged.toVector)
 
 object AnsiParser:
 
   /** Columns between tab stops, the terminal default. */
   private val TabStop = 8
+
+  /** Malformed control sequences cannot retain arbitrary subprocess output indefinitely. */
+  private val MaxSequence = 4096
 
   private val Esc: Char = '\u001b'
   private val Bel: Char = '\u0007'
@@ -433,8 +475,16 @@ private final class LineCells private (columns: ArrayBuffer[(String, Style)]):
 
   /** Writes `text` from `column` on, cluster by cluster, and answers the column after the last one written. */
   def write(column: Int, text: String, style: Style): Int =
-    var at = column
-    CharWidth.graphemeClusters(text).foreach { cluster =>
+    var at         = column
+    val previous   = leadBefore(column).filter { lead =>
+      val prior = columns(lead)._1
+      CharWidth.graphemeClusters(prior + text).nextOption().exists(_ != prior)
+    }
+    val input      = previous.fold(text)(lead => columns(lead)._1 + text)
+    val firstStyle = previous.fold(style)(lead => columns(lead)._2)
+    previous.foreach(lead => at = lead)
+    var first      = true
+    CharWidth.graphemeClusters(input).foreach { cluster =>
       val w = CharWidth.of(cluster)
       if w == 0 then
         // a zero-width cluster joins the cluster before it, as it would have had the two arrived together
@@ -443,10 +493,11 @@ private final class LineCells private (columns: ArrayBuffer[(String, Style)]):
         padTo(at)
         (at until math.min(at + w, width)).foreach(clearClusterAt)
         (at until at + w).foreach { index =>
-          val entry = (if index == at then cluster else "", style)
+          val entry = (if index == at then cluster else "", if first then firstStyle else style)
           if index < width then columns(index) = entry else columns += entry
         }
         at += w
+      first = false
     }
     at
 
@@ -507,16 +558,8 @@ private object LineCells:
 
   def of(spans: Iterable[Span]): LineCells =
     val columns = ArrayBuffer.empty[(String, Style)]
-    spans.foreach { span =>
-      CharWidth.graphemeClusters(span.content).foreach { cluster =>
-        val w = CharWidth.of(cluster)
-        if w == 0 then
-          val lead = columns.lastIndexWhere(_._1.nonEmpty)
-          if lead >= 0 then columns(lead) = (columns(lead)._1 + cluster, columns(lead)._2)
-          else columns += ((cluster, span.style))
-        else
-          columns += ((cluster, span.style))
-          (1 until w).foreach(_ => columns += (("", span.style)))
-      }
+    Line(spans.toVector).styledGraphemes(Style.Default).foreach { grapheme =>
+      columns += ((grapheme.cluster, grapheme.style))
+      (1 until grapheme.width).foreach(_ => columns += (("", grapheme.style)))
     }
     new LineCells(columns)

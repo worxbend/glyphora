@@ -7,11 +7,11 @@
   <g>
     <text x="36" y="14" textLength="108" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve" font-weight="bold">October 2026</text>
     <text x="0" y="32" textLength="180" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve" font-weight="bold">Mo Tu We Th Fr Sa Su</text>
-    <text x="0" y="50" textLength="720" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve">          1  2  3  4</text>
-    <text x="0" y="68" textLength="720" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve"> 5  6  7  8  9 10 11</text>
-    <text x="0" y="86" textLength="720" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve">12 13 14 15 16 17 18</text>
+    <text x="0" y="50" textLength="180" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve">          1  2  3  4</text>
+    <text x="0" y="68" textLength="180" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve"> 5  6  7  8  9 10 11</text>
+    <text x="0" y="86" textLength="180" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve">12 13 14 15 16 17 18</text>
     <text x="0" y="104" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#1e1e1e" xml:space="preserve">19</text>
-    <text x="18" y="104" textLength="702" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve"> 20 21 22 23 24 25</text>
-    <text x="0" y="122" textLength="720" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve">26 27 28 29 30 31</text>
+    <text x="18" y="104" textLength="162" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve"> 20 21 22 23 24 25</text>
+    <text x="0" y="122" textLength="153" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve">26 27 28 29 30 31</text>
   </g>
 </svg>

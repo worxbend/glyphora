@@ -8,6 +8,23 @@ import org.scalatest.funsuite.AnyFunSuite
 
 final class DiffViewSpec extends AnyFunSuite:
 
+  test("large single-line replacements skip word emphasis instead of exhausting the render thread"):
+    val before = (0 until 15000).map(i => s"old$i").mkString(" ")
+    val after  = (0 until 15000).map(i => s"new$i").mkString(" ")
+    val patch  = Patch.parse(s"@@ -1 +1 @@\n-$before\n+$after\n").toOption.get
+    val buffer = draw(patch, DiffViewOptions(), 80, 3, DiffViewState())
+    assert(trimmedLines(buffer)(1).contains("old0"))
+    assert(!buffer.get(5, 1).style.modifiers.hasAny(Modifiers.Reverse))
+
+  test("word emphasis respects both token and edit-distance budgets"):
+    for count <- Seq(400, 1100) do
+      val before = (0 until count).map(i => s"old$i").mkString(" ")
+      val after  = (0 until count).map(i => s"new$i").mkString(" ")
+      val patch  = Patch.parse(s"@@ -1 +1 @@\n-$before\n+$after\n").toOption.get
+      val buffer = draw(patch, DiffViewOptions(), 80, 3, DiffViewState())
+      assert(!buffer.get(5, 1).style.modifiers.hasAny(Modifiers.Reverse))
+      assert(trimmedLines(buffer)(1).contains("old0"))
+
   private val small = Patch.of("a\nb\nc", "a\nc\nd")
 
   private def draw(patch: Patch, options: DiffViewOptions, width: Int, height: Int, state: DiffViewState) =

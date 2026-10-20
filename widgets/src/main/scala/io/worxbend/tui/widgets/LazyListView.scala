@@ -85,6 +85,15 @@ final class LazyListState private (initialSelected: Option[Int], initialOffset: 
     */
   private[tui] def noteMissed(): Unit = missed = true
 
+  /** Repairs a retained selection before either building or painting a changed collection. */
+  private[widgets] def repair(count: Int): Unit =
+    val selected = if count <= 0 then None else selectedValue.map(i => math.min(i, count - 1))
+    val offset   = if count <= 0 then 0 else offsetValue
+    if selected != selectedValue || offset != offsetValue then
+      selectedValue = selected
+      offsetValue = offset
+      touch()
+
   /** The offset clamped to the last page of `count` items and moved just far enough to show the selection. */
   private def settled(count: Int, page: Int): Int =
     val maxOffset = math.max(0, count - page)
@@ -104,6 +113,7 @@ final class LazyListState private (initialSelected: Option[Int], initialOffset: 
     * the enclosing view from showing a blank.
     */
   def buildWindow(count: Int, fallbackRows: Int, itemHeight: Int): Range =
+    repair(count)
     if count <= 0 then 0 until 0
     else
       val height  = math.max(1, itemHeight)
@@ -170,6 +180,7 @@ final case class LazyListView(
     Some(math.min(Int.MaxValue.toLong, math.max(0, count).toLong * rows).toInt)
 
   def render(area: Rect, buffer: Buffer, state: LazyListState): Unit =
+    state.repair(count)
     val clip = area.intersection(buffer.area)
     if count > 0 && !area.isEmpty && !clip.isEmpty then
       val page    = math.max(1, area.height / rows)

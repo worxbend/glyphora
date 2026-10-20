@@ -33,12 +33,12 @@ final case class Credentials(user: String, secret: Secret)
 final class PrettySpec extends AnyFunSuite:
 
   private object Spelled extends PrettyShape[String]:
-    def atom(text: String): String                                   = text
-    def sequence(name: String, items: Seq[String]): String           = items.mkString(s"$name[", ",", "]")
-    def map(name: String, entries: Seq[(String, String)]): String    =
-      entries.map((k, v) => s"$k=>$v").mkString(s"$name{", ",", "}")
-    def product(name: String, fields: Seq[(String, String)]): String =
-      fields.map((k, v) => s"$k:$v").mkString(s"$name(", ",", ")")
+    def atom(text: String): String                                      = text
+    def sequence(name: String, items: Seq[String]): String              = items.mkString(s"$name[", ",", "]")
+    def map(name: String, entries: Seq[PrettyEntry[String]]): String    =
+      entries.map(entry => s"${entry.key}=>${entry.value}").mkString(s"$name{", ",", "}")
+    def product(name: String, fields: Seq[PrettyField[String]]): String =
+      fields.map(field => s"${field.name}:${field.value}").mkString(s"$name(", ",", ")")
 
   private def spell[A](value: A)(using pretty: Pretty[A]): String = pretty.describe(value, Spelled)
 

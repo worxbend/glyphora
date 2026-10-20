@@ -9,6 +9,7 @@ import io.worxbend.tui.core.{
   Direction,
   Flex,
   GridAreas,
+  GridCell,
   GridItem,
   GridLayout,
   GridPlacement,
@@ -450,12 +451,12 @@ final case class GridElement(
       spot.area.flatMap(template.get) match
         case Some(area) => GridItem.at(area.row, area.col, area.rowSpan, area.colSpan)
         case None       =>
-          spot.position.fold(GridItem.span(spot.rowSpan, spot.colSpan))((r, c) =>
-            GridItem.at(r, c, spot.rowSpan, spot.colSpan)
+          spot.position.fold(GridItem.span(spot.rowSpan, spot.colSpan))(cell =>
+            GridItem.at(cell.row, cell.col, spot.rowSpan, spot.colSpan)
           )
     }
     val placements = GridLayout.autoFlow(math.max(1, columns.size), items)
-    w.Grid(core, children.zip(placements).map((child, at) => w.GridCell(at, GridChildWidget(child))))
+    w.Grid(core, children.zip(placements).map((child, at) => w.GridEntry(at, GridChildWidget(child))))
 
   def widget: Widget = layout
 
@@ -494,7 +495,7 @@ extension [E <: Element](element: E)
 
   /** Puts this child's top-left corner at track `row`, `col` of the enclosing `grid` (both from zero). */
   def at(row: Int, col: Int): element.Self =
-    element.withProps(element.props.copy(gridSpot = element.props.gridSpot.copy(position = Some((row, col)))))
+    element.withProps(element.props.copy(gridSpot = element.props.gridSpot.copy(position = Some(GridCell(row, col)))))
 
   /** Makes this child cover `rows` row tracks and `cols` column tracks of the enclosing `grid`, gaps included. */
   def span(rows: Int = 1, cols: Int = 1): element.Self =
@@ -683,9 +684,11 @@ final class ChildInfo private[dsl] (val index: Int, element: Element):
   * `place` runs on the render thread during the paint and must be a pure function of its arguments: it is called again
   * on every frame, and nothing it returns is kept between them. The container cannot measure itself — its size depends
   * on a function it cannot invert — so it answers through `measure`: the rows the layout needs at a width, from the
-  * same [[ChildInfo]]s, or `None` for "cannot say" (the default, which fills). With an answer, `.auto` and every
-  * container that measures its children size it to its content; `.length(n)` still fixes it. `measure` follows the same
-  * rules as `place`: render thread, pure.
+  * same [[ChildInfo]]s, or `None` for "cannot say" (the default, which fills). With an answer, `.auto` and every column
+  * that measures its children sizes its height to its content. `measureWidth` is the horizontal counterpart: columns
+  * needed at a height, for `.auto` in a row. `.length(n)` still fixes the allocation. Both measurements follow the same
+  * rules as `place`: render thread, pure. Content style cascades to the children, never to `chrome`. Unplaced children
+  * are excluded from keyboard input and Tab traversal for the painted frame.
   */
 final case class ContainerElement(
     override val children: Seq[Element],
@@ -693,6 +696,7 @@ final case class ContainerElement(
     chrome: Option[Widget] = None,
     props: ElementProps = ElementProps(),
     measure: (Int, Seq[ChildInfo]) => Option[Int] = (_, _) => None,
+    measureWidth: (Int, Seq[ChildInfo]) => Option[Int] = (_, _) => None,
 ) extends Element:
   type Self = ContainerElement
   override def debugName: String = "container"
@@ -708,11 +712,10 @@ final case class ContainerElement(
         val target = rect.intersection(area)
         if !target.isEmpty then child.widget.render(target, buffer)
       }
-      // the content style goes under whatever the children drew, as on every other container
-      if props.style != Style.Default then buffer.mapStyle(area)(props.style.patch)
 
   private[dsl] def withProps(props: ElementProps): ContainerElement                = copy(props = props)
   private[dsl] override def withChildren(children: Seq[Element]): ContainerElement = copy(children = children)
   private[dsl] override def intrinsicHeight(width: Int): Option[Int]               =
     constrainedHeight(measure(width, children.zipWithIndex.map((child, index) => ChildInfo(index, child))))
-  private[dsl] override def intrinsicWidth(height: Int): Option[Int]               = constrainedWidth(None)
+  private[dsl] override def intrinsicWidth(height: Int): Option[Int]               =
+    constrainedWidth(measureWidth(height, children.zipWithIndex.map((child, index) => ChildInfo(index, child))))

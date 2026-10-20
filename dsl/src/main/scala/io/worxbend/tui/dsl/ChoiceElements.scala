@@ -162,7 +162,7 @@ final case class DropdownElement(
     val roomAbove  = screen.y - frame.y
     val opensBelow = roomBelow >= popupRows || roomBelow >= roomAbove
     val height     = math.min(popupRows, if opensBelow then roomBelow else roomAbove)
-    if height > 0 then
+    if height > 0 && !FrameCoordinates.visible(Rect(area.x, area.y, area.width, 1)).isEmpty then
       val top    = if opensBelow then screen.y + 1 else screen.y - height
       val shiftX = screen.x - area.x
       val shiftY = screen.y - area.y
@@ -292,6 +292,8 @@ private[dsl] final case class DropdownScrimElement(
     props: ElementProps = ElementProps(),
 ) extends Element:
   type Self = DropdownScrimElement
+  private[dsl] override def layoutOnly: Boolean                              = true
+  private[dsl] override def passesWheelThrough: Boolean                      = true
   override def debugName: String                                             = "dropdownScrim"
   private[dsl] override def passesPointerThrough: Boolean                    = passThrough
   def widget: Widget                                                         = (_, _) => ()
@@ -443,9 +445,12 @@ final case class ConfirmDialogElement(
     * and the node's own style over both; the selected button in `"dialog.selected"` or, when the theme has none, the
     * picker cursor cue.
     */
-  def widget: Widget =
+  private def dialogWidget: w.Dialog =
     val body = dialogBodyStyle(props, bodyStyle)
     w.Dialog(title, Text.raw(message), buttons, selected, body, dialogSelectedStyle(props, cursorCue(props)))
+
+  def widget: Widget                                      = dialogWidget
+  private[dsl] override def paintedRect(area: Rect): Rect = dialogWidget.boxIn(area)
 
   private[dsl] def withProps(props: ElementProps): ConfirmDialogElement = copy(props = props)
 
@@ -465,12 +470,17 @@ final case class ConfirmDialogElement(
         .orElse(stepsWrapping(buttons.size, selected, onSelect))
     )
 
-  /** A click presses the selected button rather than the button under the pointer: the widget centres its labels and
-    * reports no per-button geometry, so there is nothing to hit-test against. Keyboard selection then a click is the
-    * gesture this supports; clicking a specific button needs geometry the widget does not publish.
-    */
+  /** Only a press on a painted button activates it. Borders, messages and the surrounding page are not buttons. */
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
-    Some(clickActivates(() => onPress(selected)))
+    Some { (event, area) =>
+      if event.kind != MouseEventKind.Down then false
+      else
+        dialogWidget.buttonAt(event.position, area).exists { index =>
+          onSelect(index)
+          onPress(index)
+          true
+        }
+    }
 
   private def nextIndex: Int = if buttons.isEmpty then 0 else (selected + 1) % buttons.size
 
@@ -495,7 +505,7 @@ final case class DialogElement(
   override def debugName: String                                 = "dialog"
   private[dsl] override def componentRole: Option[ComponentRole] = Some(DialogRole)
 
-  def widget: Widget =
+  private def dialogWidget: w.Dialog =
     w.Dialog(
       title,
       Text.raw(message),
@@ -504,6 +514,9 @@ final case class DialogElement(
       dialogBodyStyle(props, bodyStyle),
       dialogSelectedStyle(props, selectedStyle),
     )
+
+  def widget: Widget                                      = dialogWidget
+  private[dsl] override def paintedRect(area: Rect): Rect = dialogWidget.boxIn(area)
 
   private[dsl] def withProps(props: ElementProps): DialogElement = copy(props = props)
 

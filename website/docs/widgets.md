@@ -781,10 +781,22 @@ with it, so no frame waits for an encode. The payloads of the 16 pictures used l
 kept. An app that drives its own loop around an `ElementHost` sets
 `host.imageProtocol = ImageProtocol.select(backend.capabilities)` to get the same.
 
-Load pictures with `ImageLoader`. `ImageLoader.readPng(path)` and `decodePng(bytes)` use a
-built-in PNG decoder and work in a native image; `fromFile`/`fromBytes` read any format
-`javax.imageio` does but need AWT metadata in a native image — see
-[Native images](./native-image#pictures-and-javaximageio). `RgbaImage.tabulate(w, h)(argb)`
+Load PNG pictures with `ImageLoader.readPng(path)` or `decodePng(bytes)`. This built-in
+decoder works in native images without AWT. It accepts non-interlaced PNG up to **4 Mi
+pixels**, **32 MiB encoded input**, and **32 MiB inflated scanlines**; oversized,
+unsupported and malformed inputs return a readable `Left`. Storage grows with actual
+inflated data rather than a header's claim. These budgets bound decoder work, not the
+application's remaining heap; VM resource failures are not intercepted.
+
+For JPEG, GIF, BMP, interlaced PNG and other ImageIO formats, explicitly import
+`io.worxbend.tui.widgets.ImageIoLoader` and call `fromFile` / `fromBytes` (up to 4 Mi
+pixels). These replace `ImageLoader.fromFile` / `fromBytes`; formats have not been
+removed. The half-block loader formerly called `Image.fromFile` is now
+`ImageIoLoader.imageFromFile`. Native-safe half blocks use
+`ImageLoader.readPng(path).map(Image.fromRgba)`. The JVM adapter is deliberately not
+part of `import io.worxbend.tui.dsl.*`; it needs AWT metadata and shared libraries in
+native images — see [Native images](./native-image#pictures-and-javaximageio).
+`RgbaImage.tabulate(w, h)(argb)`
 builds one from code. Without the DSL, `PixelImage(image, options)` is a `Widget` that also
 implements `Measured`; it draws its fallback and calls `Buffer.placeGraphic`, which any
 widget can use to reserve a box for a picture of its own.
@@ -897,7 +909,9 @@ A `Lexer` turns one line into styled spans. The built-in ones are `Lexer.Scala`,
 and `Diff`; `Lexer.builtIn` lists them all and `Lexer.Generic` is the strings-and-numbers
 fallback. `Diff` paints `+` lines in `SyntaxTheme.inserted` and `-` lines in `deleted`. The
 0.19 `Language` names still work: `Language` is now a type alias for `Lexer`, and
-`Language.Scala`, `Json`, `Bash` and `Generic` are those same lexers.
+`Language.Scala`, `Json`, `Bash` and `Generic` are those same lexers. Positional calls are
+unchanged. Named calls to `SyntaxHighlighter.highlight` and `highlightLine` use
+`lexer = Language.Scala` (the 0.19 parameter name was `language`).
 
 `Lexer` is an open trait, so you can add a language with a `name`, its info-string
 `aliases` and a `highlightLine(line, theme)`. A Markdown fence resolves its info string
@@ -906,8 +920,8 @@ teaches every fence your language. A fence that no lexer claims renders verbatim
 `code` style.
 
 Highlighting is line-oriented and dependency-free, with a `LexState` carried from the end
-of one line to the start of the next: `highlightLine(line, theme, state)` answers the line
-and the state it ends in. So a `/* … */` block comment (Scala, TypeScript, SQL), a
+of one line to the start of the next: `highlightLine(line, theme, state)` answers a
+`LexedLine(line, next)`, with named fields for the styled line and the state it ends in. So a `/* … */` block comment (Scala, TypeScript, SQL), a
 triple-quoted string (Scala `"""`, Python `"""` and `'''`, a TypeScript template literal)
 and, in YAML, a block scalar (`key: |`), a quoted scalar closed on a later line and a flow
 collection (`{a: 1, b: [x, y]}`) that spans lines are highlighted on every line they cover.
@@ -1152,12 +1166,16 @@ write made outside an event handler is drawn on the next loop iteration.
 Items are ordinary elements: a button in one takes a Tab stop, a focused input in
 one drives the terminal caret. Give anything focusable a `.key(...)`, because an
 unkeyed focusable is identified by its tab position and that shifts as items
-scroll in and out. Hooks inside an item are scoped by its index.
+scroll in and out. A keyed item outside the built window retains its focus anchor,
+but no other item receives its keys; it regains focus when it returns. Navigation
+keys declined by a focused item bubble to the list's selection handling. Hooks
+inside an item are scoped by its index.
 
 Inside a `scrollView` the list measures as `count * itemHeight` rows and builds
-only the items the window shows. After a jump of more than a row the newly shown
-items are blank for one frame while the next frame builds them; a one-row scroll
-is covered by the overscan.
+only the items the window shows. After a jump beyond the resolved window, a hosted
+miss waits for the owed resolution frame: that frame builds, styles and registers
+the newly visible items once, without creating a second paint-only hook lifetime.
+A one-row scroll is covered by the overscan; standalone widgets still build directly.
 
 ### Tab bars
 
@@ -2802,7 +2820,9 @@ The open body fills the rows the headers leave, and a folded body leaves the tab
 just as a lone `collapsible`'s does. The policy lives in `AccordionState.toggle`, so the
 app can open a section itself (`settings.open = Some(2)`) and the next frame shows it.
 Outside the DSL the same picture is the `Accordion(sections, style, openStyle,
-collapsedSymbol, expandedSymbol)` widget over the same state.
+collapsedSymbol, expandedSymbol)` widget over the same state. Its `sections` are named
+`Accordion.Section(title, body: Widget)` records, not `(String, Widget)` tuples; the
+DSL's `AccordionSection(title, content: Element)` remains unchanged.
 
 ### A wizard
 
@@ -2850,7 +2870,9 @@ and slides to keep the focused control on screen, so the arrows still reach ever
 `buttonGroup(buttons*)` is the same strip drawn as one segmented control,
 `[ Bold ]│[ Italic ]│[ Underline ]`. The strip alone is the `Toolbar(items, focus, gap,
 divider)` widget; a `Button` now measures its own width (`[ label ]`), which is what the
-strip — and a `flow` — lays it out by.
+strip — and a `flow` — lays it out by. Hit-testing helpers return named geometry:
+`Toolbar.window(width)` returns `Toolbar.Window(start, end)` (a half-open item range),
+and `placements(area)` returns `Seq[Toolbar.Placement]` with `index` and `rect` fields.
 
 Give the toolbar a caller-owned `ToolbarState` and its overflow marker becomes a menu:
 
@@ -2921,8 +2943,10 @@ layers(
 )
 ```
 
-Each window is drawn at its state's rectangle — nudged back inside the stack when it has
-been dragged past an edge — in stacking order, so the window raised last draws on top
+Each window is drawn at its state's rectangle, clamped inside the stack. The state records
+the actual painted position and size: moving back from an edge takes effect immediately,
+without first consuming hidden overshoot. Placement records the stack's bounds, so even
+several moves or resizes before a repaint stay clamped. In stacking order, the window raised last draws on top
 and takes the pointer where windows overlap. Windows are opaque; the stack paints
 nothing between them, so a press there reaches whatever is underneath.
 
@@ -2945,7 +2969,9 @@ while focus is inside the window) and `.frameStyle(…)` recolours it, while `.f
 ### Menu bars and context menus
 
 `menuBar(menus, state)(onSelect)` is a one-row bar of titles whose menus drop down over
-everything else, drawn by the same `Menu` widget a `menu` uses:
+everything else, drawn by the same `Menu` widget a `menu` uses. Outside the DSL,
+`MenuBar.titleSpan(index)` returns `MenuBar.TitleSpan(x, width)` in bar-relative terminal
+columns, so geometry consumers use named fields rather than tuple positions:
 
 ```scala
 private val bar = MenuBarState()

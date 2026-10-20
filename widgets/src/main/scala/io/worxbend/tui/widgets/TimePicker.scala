@@ -29,16 +29,20 @@ final class TimePickerState(initial: LocalTime, val withSeconds: Boolean = true)
   def time: LocalTime = timeValue
 
   def time_=(value: LocalTime): Unit =
-    timeValue = value
+    timeValue = normalize(value)
+    pendingDigit = None
     touch()
 
-  private var timeValue: LocalTime = if withSeconds then initial.withNano(0) else initial.withSecond(0).withNano(0)
+  private def normalize(value: LocalTime): LocalTime =
+    if withSeconds then value.withNano(0) else value.withSecond(0).withNano(0)
 
-  /** The field the arrows change. */
+  private var timeValue: LocalTime = normalize(initial)
+
+  /** The field the arrows change. A hidden `Second` is normalized to the last visible field, `Minute`. */
   def field: TimeField = fieldValue
 
   def field_=(value: TimeField): Unit =
-    fieldValue = value
+    fieldValue = if !withSeconds && value == TimeField.Second then TimeField.Minute else value
     pendingDigit = None
     touch()
 
@@ -119,7 +123,7 @@ final case class TimePicker(
 
   def render(area: Rect, buffer: Buffer, state: TimePickerState): Unit =
     if !area.isEmpty then
-      val text   = state.fields
+      val text  = state.fields
         .map {
           case TimeField.Hour   => state.time.getHour
           case TimeField.Minute => state.time.getMinute
@@ -129,9 +133,12 @@ final case class TimePicker(
         .mkString(":")
       buffer.setString(area.x, area.y, CharWidth.substringByWidth(text, area.width), style)
       // every glyph here is one column wide, so field `i` occupies columns `3i` and `3i + 1`
-      val fieldX = area.x + state.fields.indexOf(state.field) * FieldStride
-      val width  = math.min(FieldWidth, area.right - fieldX)
-      if width > 0 then buffer.setStyle(Rect(fieldX, area.y, width, 1), style.patch(highlightStyle))
+      val index = state.fields.indexOf(state.field)
+      if index >= 0 then
+        val fieldX = area.x.toLong + index * FieldStride
+        if fieldX < area.right then
+          val highlight = Rect(fieldX.toInt, area.y, FieldWidth, 1).intersection(area)
+          buffer.setStyle(highlight, style.patch(highlightStyle))
 
   private val FieldWidth  = 2
   private val FieldStride = FieldWidth + 1

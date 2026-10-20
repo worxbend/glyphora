@@ -67,3 +67,25 @@ final class PersistedSpec extends AnyFunSuite:
       val signal = Persisted.signal(path, "fresh" -> 0)(encode, decode)
       assert(signal.peek == ("fresh", 0))
     }
+
+  test("RTP-3 a failed write releases the writer and later changes recover"):
+    withTempDir { dir =>
+      val parent      = dir.resolve("blocked")
+      Files.writeString(parent, "not a directory")
+      val path        = parent.resolve("state.txt")
+      val signal      = Persisted.signal(path, "fresh" -> 0)(encode, decode)
+      signal.set("failed"    -> 1)
+      var reported    = false
+      val deadline    = System.nanoTime() + 3_000_000_000L
+      while !reported && System.nanoTime() < deadline do
+        try RenderThread.drainPending()
+        catch case _: java.nio.file.FileAlreadyExistsException => reported = true
+        Thread.sleep(2)
+      assert(reported, "the write failure must be reported, not swallowed")
+      Files.delete(parent)
+      Files.createDirectory(parent)
+      signal.set("recovered" -> 2)
+      pumpUntil(3000)(Files.isRegularFile(path))
+      assert(Files.isRegularFile(path))
+      assert(Files.readString(path) == "recovered|2")
+    }

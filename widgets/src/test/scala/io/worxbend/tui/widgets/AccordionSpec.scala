@@ -9,7 +9,11 @@ final class AccordionSpec extends AnyFunSuite:
 
   private def body(text: String): Widget = Paragraph(Text.raw(text))
 
-  private val sections = Seq("General" -> body("name, email"), "Network" -> body("proxy"), "About" -> body("v1"))
+  private val sections = Seq(
+    Accordion.Section("General", body("name, email")),
+    Accordion.Section("Network", body("proxy")),
+    Accordion.Section("About", body("v1")),
+  )
 
   test("toggling one section closes whichever other section was open"):
     val state = AccordionState()

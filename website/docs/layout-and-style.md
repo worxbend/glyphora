@@ -140,7 +140,16 @@ grid(cols, rows, gap = 1)(
 A template whose rows differ in length, or where a name does not cover one filled
 rectangle, throws where it is written. A `Constraint.Auto` track is as big as the
 children sitting in that track alone; `.gaps(columnGap, rowGap)` sets the two gaps
-separately.
+separately. Width measurement uses the height of the rows a cell actually spans;
+height measurement uses its solved column width. Measurements with mutually
+dependent axes are refined in bounded passes.
+
+At the lower-level geometry API, `GridItem.position` is an `Option[GridCell]`:
+`GridCell(row = 1, col = 2)` names coordinates rather than an anonymous pair.
+The widget content record is `widgets.GridEntry(placement, widget)`. Spans beyond
+the tracks are clipped; a child starting outside them is neither painted nor a
+keyboard target. Auto-placement stores occupied rectangles, so even a very tall
+span does not allocate one entry per covered cell.
 
 ## Wrap chips and tags with `flow`
 
@@ -1237,7 +1246,9 @@ The words come in any order: attributes (`bold`, `dim`, `italic`, `underline`,
 the underline variants (`double-underline`, `curly-underline`, …), a colour on its own
 for the foreground, `on <colour>` for the background, `underline-color <colour>`, and
 `link <url>`. `default` or an empty string is `Style.Default`. Every style `render`
-writes parses back to an equal style.
+writes parses back to an equal style. Link targets may be double-quoted, as in
+`link "file:///a b"`; quoted words support `\"`, `\\`, `\n`, `\r` and `\t` escapes.
+Rendering quotes and escapes targets so whitespace survives theme files too.
 
 ## Colors from text, and back again
 

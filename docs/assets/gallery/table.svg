@@ -2,10 +2,10 @@
   <title>table</title>
   <rect width="100%" height="100%" fill="#1e1e1e"/>
   <g>
-    <text x="0" y="14" textLength="720" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve">service                             state                               latency</text>
-    <text x="0" y="32" textLength="720" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve">api                                 running                             12 ms</text>
-    <text x="0" y="50" textLength="720" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve">worker                              running                             40 ms</text>
-    <text x="0" y="68" textLength="720" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve">cron                                stopped                             -</text>
-    <text x="0" y="86" textLength="720" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve">mailer                              degraded                            310 ms</text>
+    <text x="0" y="14" textLength="711" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve">service                             state                               latency</text>
+    <text x="0" y="32" textLength="693" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve">api                                 running                             12 ms</text>
+    <text x="0" y="50" textLength="693" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve">worker                              running                             40 ms</text>
+    <text x="0" y="68" textLength="657" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve">cron                                stopped                             -</text>
+    <text x="0" y="86" textLength="702" lengthAdjust="spacingAndGlyphs" fill="#d4d4d4" xml:space="preserve">mailer                              degraded                            310 ms</text>
   </g>
 </svg>

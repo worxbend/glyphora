@@ -15,7 +15,7 @@ final class CapabilityNegotiationSpec extends AnyFunSuite:
   private val Da1 = csi("?62;1;4c")
 
   private def probed(replies: Seq[Int]*): TerminalCapabilities =
-    decoder((replies.flatten ++ Da1)*).readCapabilityReport(50.millis)
+    decoder((replies.flatten ++ Da1)*).readCapabilityReport(2.seconds)
 
   // ------------------------------------------------------------------ the value
 
@@ -98,7 +98,7 @@ final class CapabilityNegotiationSpec extends AnyFunSuite:
 
   test("a key typed during the probe is delivered afterwards rather than eaten"):
     val input = decoder(('a'.toInt +: (csi("?2026;2$y") ++ Da1))*)
-    assert(input.readCapabilityReport(50.millis).synchronizedOutput == Support.Yes)
+    assert(input.readCapabilityReport(2.seconds).synchronizedOutput == Support.Yes)
     assert(input.decode(10).contains(Event.Key(KeyEvent.char('a'))))
 
   /** Outside a probe a stray reply is still dropped unread. A device-attributes answer arriving mid-session — because

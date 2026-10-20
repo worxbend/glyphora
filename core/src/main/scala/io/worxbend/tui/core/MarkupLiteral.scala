@@ -20,7 +20,7 @@ import scala.quoted.{Expr, Quotes, Varargs}
   * it too, and is checked: it must name the innermost open tag (its words as written, ignoring case and spacing, or the
   * key of a single `key=value` word), so `[bold][red]x[/bold]` is a compile error rather than a silent mis-nesting.
   * `[[` is a literal `[`; a `]` outside a tag is already literal and needs no escaping. The usual string escapes work,
-  * and a `\n` in the literal starts a new row of the resulting [[Text]].
+  * and a `\n` in a literal or interpolated value starts a new row of the resulting [[Text]].
   *
   * An interpolated `$value` is '''text, never markup''': whatever it contains — `[red]` included — is rendered as the
   * characters it is, in the style in force where it appears. That is what makes it safe to write
@@ -273,11 +273,27 @@ object MarkupLiteral:
             case Piece.Literal(content, steps) => '{ Span(${ Expr(content) }, ${ encodeStyle(steps, holes) }) }
             case Piece.Hole(index, steps)      =>
               val value = holes(index)
-              '{ Span($value.toString, ${ encodeStyle(steps, holes) }) }
+              '{ Span(String.valueOf($value), ${ encodeStyle(steps, holes) }) }
           }
       '{ Line(${ Expr.ofSeq(spans) }) }
     }
-    '{ Text(${ Expr.ofSeq(encodedLines) }) }
+    '{ MarkupLiteral.splitInterpolatedRows(Text(${ Expr.ofSeq(encodedLines) })) }
+
+  /** Runtime implementation detail of expanded markup: split interpolated newlines without interpreting tags. Pure,
+    * with no shared state; public because expansions can live in any caller package.
+    */
+  def splitInterpolatedRows(text: Text): Text =
+    Text(text.lines.flatMap { line =>
+      val rows = ArrayBuffer(ArrayBuffer.empty[Span])
+      line.spans.foreach { span =>
+        val parts = Text.splitLines(span.content)
+        rows.last += span.copy(content = parts.head)
+        parts.tail.foreach { part =>
+          rows += ArrayBuffer(span.copy(content = part))
+        }
+      }
+      rows.map(spans => line.copy(spans = spans.toVector)).toVector
+    })
 
   /** The style of a run: the open tags' attributes in order, literal ones folded together at compile time and the holes
     * applied as builder calls on the result, so a run with no hole in its tags is one constant.

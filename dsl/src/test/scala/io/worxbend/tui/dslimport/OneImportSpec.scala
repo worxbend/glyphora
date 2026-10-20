@@ -82,6 +82,18 @@ final class OneImportSpec extends AnyFunSuite with PilotFixture:
       case RunnerError.QueuedTask(failures: QueuedTaskFailures) => assert(failures.count == 3)
       case other                                                => fail(s"expected a QueuedTask error, got $other")
 
+  test("an embedding host names its member-signature types through the one import"):
+    val host                            = ElementHost()
+    val protocol: Option[ImageProtocol] = ImageProtocol.select(HeadlessBackend(Size(8, 2)).capabilities)
+    host.imageProtocol = protocol
+    assert(host.imageProtocol == protocol)
+    val range: TextRange                = TextRange(TextPosition(0, 0), TextPosition(1, 2))
+    assert(range.start.line == 0 && range.end.column == 2)
+    // Both overload selection and Frame's name must compile without a runtime import.
+    val render: (Frame, Theme, View, ReactiveScope) => Unit =
+      (frame, theme, view, scope) => host.render(frame, theme, view)(using scope)
+    assert(render != null) // scalafix:ok DisableSyntax; compile-time method-value proof
+
   /** Two names no exported signature forces the block to carry, and which were therefore missing from it.
     *
     * `Spring` is the fourth member of the core motion group — `Easing`, `Effect` and `Tween` were already exported, and

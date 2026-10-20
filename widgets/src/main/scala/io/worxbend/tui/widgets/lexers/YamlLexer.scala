@@ -3,7 +3,7 @@ package io.worxbend.tui.widgets.lexers
 import java.util.Locale
 
 import io.worxbend.tui.core.Line
-import io.worxbend.tui.widgets.{LexState, Lexer, SyntaxTheme}
+import io.worxbend.tui.widgets.{LexedLine, LexState, Lexer, SyntaxTheme}
 
 /** YAML, line by line: `key:` mapping keys as `variable`, quoted scalars as `string`, numbers, the literal words
   * (`true`, `null`, `~`, …) as `keyword`, `&anchor`/`*alias` as `function`, document markers and block-scalar
@@ -26,9 +26,9 @@ private[widgets] object YamlLexer extends Lexer:
   private val Block = "yaml-block"
   private val Flow  = "yaml-flow"
 
-  def highlightLine(line: String, theme: SyntaxTheme): Line = highlightLine(line, theme, LexState.Initial)._1
+  def highlightLine(line: String, theme: SyntaxTheme): Line = highlightLine(line, theme, LexState.Initial).line
 
-  override def highlightLine(line: String, theme: SyntaxTheme, state: LexState): (Line, LexState) =
+  override def highlightLine(line: String, theme: SyntaxTheme, state: LexState): LexedLine =
     val sink   = SpanSink(theme)
     val indent = scanWhile(line, 0, _ == ' ')
     val next   = state.open match
@@ -47,7 +47,7 @@ private[widgets] object YamlLexer extends Lexer:
           value(line, close + 1, indent, state.depth, sink, theme)
       case Flow                                           => value(line, 0, indent, state.depth, sink, theme)
       case _                                              => plainLine(line, indent, sink, theme)
-    (sink.result(), next)
+    LexedLine(sink.result(), next)
 
   /** A line that starts outside every multi-line construct. */
   private def plainLine(line: String, indent: Int, sink: SpanSink, theme: SyntaxTheme): LexState =

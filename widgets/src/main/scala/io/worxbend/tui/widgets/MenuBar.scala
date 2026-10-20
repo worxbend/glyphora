@@ -48,6 +48,11 @@ object MenuBarState:
   /** A closed menu bar, or one with menu `open` dropped down. */
   def apply(open: Option[Int] = None): MenuBarState = new MenuBarState(open)
 
+object MenuBar:
+
+  /** A title's first column relative to the bar and its width in terminal cells. */
+  final case class TitleSpan(x: Int, width: Int)
+
 /** A one-row menu bar: each title padded by a space either side, ` File  Edit  View `, its mnemonic letter in
   * `mnemonicStyle` and the open menu's title in `activeStyle`. The drop-down itself is a [[Menu]] over the open menu's
   * entries; [[dropdown]] builds it with this bar's styles, and [[titleSpan]] says where it hangs from.
@@ -72,13 +77,16 @@ final case class MenuBar(
     Some(1)
 
   /** The first column (relative to the bar) and the width of title `index`. */
-  def titleSpan(index: Int): (Int, Int) =
-    (menus.take(index).map(menu => labelWidth(menu.title)).sum, menus.lift(index).fold(0)(m => labelWidth(m.title)))
+  def titleSpan(index: Int): MenuBar.TitleSpan =
+    MenuBar.TitleSpan(
+      menus.take(index).map(menu => labelWidth(menu.title)).sum,
+      menus.lift(index).fold(0)(m => labelWidth(m.title)),
+    )
 
   /** The menu whose title covers column `x` (relative to the bar). */
   def titleAt(x: Int): Option[Int] =
     menus.indices.find { index =>
-      val (start, width) = titleSpan(index)
+      val MenuBar.TitleSpan(start, width) = titleSpan(index)
       x >= start && x < start + width
     }
 
@@ -93,8 +101,8 @@ final case class MenuBar(
     if !area.isEmpty then
       buffer.setString(area.x, area.y, " ".repeat(area.width), style)
       menus.zipWithIndex.foreach { case (menu, index) =>
-        val (start, _) = titleSpan(index)
-        val x          = area.x + start
+        val start = titleSpan(index).x
+        val x     = area.x + start
         if x < area.right then
           val own = if state.open.contains(index) then style.patch(activeStyle) else style
           buffer.setString(x, area.y, s" ${menu.title} ", own, area.right - x)

@@ -55,7 +55,8 @@ object KeySequence:
     */
   def parse(spec: String): Either[String, KeySequence] =
     val tokens = spec.trim.split("\\s+").toVector.filter(_.nonEmpty)
-    if tokens.sizeIs <= 1 then
+    if spec.trim == "none" then Right(unbound)
+    else if tokens.sizeIs <= 1 then
       if tokens.headOption.contains(LeaderToken) then Right(KeySequence(Vector(KeyStep.Leader))(LeaderToken))
       else KeyEvent.parse(spec).map(event => KeySequence(Vector(KeyStep.Key(event)))(spec.trim.nonEmptyOr(spec)))
     else

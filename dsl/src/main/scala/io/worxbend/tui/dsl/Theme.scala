@@ -130,7 +130,7 @@ final class Theme private (
         change(this).withVariants(Some(Theme.Variants(change(dark), change(light))))
 
   /** This theme's fields with `variants` as its adaptive pair. */
-  private def withVariants(variants: Option[Theme.Variants]): Theme =
+  private[dsl] def withVariants(variants: Option[Theme.Variants]): Theme =
     new Theme(
       name,
       primary,

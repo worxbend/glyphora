@@ -12,6 +12,12 @@ final class MarkdownStreamSpec extends AnyFunSuite:
     stream.append(text)
     stream
 
+  test("ordinary suffixes do not become unfinished inline syntax"):
+    Seq("Compute 5*3 now", "glob *.scala files", "x = arr[0]", "use `a` then `b`", "done **bold**").foreach { text =>
+      assert(MarkdownSanitizer.sanitize(text) == text)
+      assert(rendered(streamed(text).markdown(), 40, 2) == rendered(Markdown(text), 40, 2))
+    }
+
   test("an unclosed ** renders its text bold, not the literal markers"):
     val buffer = rendered(streamed("some **bold").markdown(), 20, 1)
     assert(trimmedLines(buffer) == Seq("some bold"))

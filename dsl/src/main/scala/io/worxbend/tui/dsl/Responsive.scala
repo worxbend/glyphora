@@ -59,11 +59,12 @@ private[dsl] object FrameAnalysis:
 
   /** The analysis of a tree that needs no resolving — one walk, collecting only. */
   def of(tree: Element): FrameAnalysis =
-    val collector                                            = FrameCollector()
-    def walk(node: Element, scope: Option[FocusScope]): Unit =
-      val inside = collector.visit(node, scope)
-      node.children.foreach(walk(_, inside))
-    walk(tree, Some(FocusScope.Unscoped))
+    val collector                                                                     = FrameCollector()
+    def walk(node: Element, scope: Option[FocusScope], identity: FocusIdentity): Unit =
+      val inside = collector.visit(identity.identify(node), scope)
+      val below  = identity.beneath(node)
+      node.children.zipWithIndex.foreach((child, index) => walk(child, inside, below.child(index)))
+    walk(tree, Some(FocusScope.Unscoped), FocusIdentity())
     collector.result
 
 /** A resolved tree with its [[FrameAnalysis]] — what [[ResponsivePass.resolveFrame]] hands the focus pass. */
@@ -183,27 +184,46 @@ private[dsl] object ResponsivePass:
     *
     * `scope` is what the collection needs from the ancestors: see [[FrameCollector.visit]].
     */
-  private def resolveAt(element: Element, size: Size, fuel: Int, round: Round, scope: Option[FocusScope]): Element =
-    val inside = round.collector.visit(element, scope)
-    element match
+  private def resolveAt(
+      element: Element,
+      size: Size,
+      fuel: Int,
+      round: Round,
+      scope: Option[FocusScope],
+      identity: FocusIdentity = FocusIdentity(),
+  ): Element =
+    val identified = identity.identify(element)
+    val below      = identity.beneath(element)
+    val inside     = round.collector.visit(identified, scope)
+    identified match
       case responsive: ResponsiveElement =>
         responsive.resolved match
           // a later round: what an earlier one built stays, and only local nodes inside it can still need work
           case Some(branch) if !round.first =>
-            responsive.resolvedAt(resolveAt(branch, size, fuel - 1, round, inside))
+            responsive.resolvedAt(resolveAt(branch, size, fuel - 1, round, inside, below.child(0)))
           case _ if fuel <= 0               => responsive
           case _ if responsive.local        =>
             round.areas.get(responsive.probe).filter(_ => !round.first) match
-              case Some(area)                                  => branchOf(responsive, area, size, fuel, round, inside)
+              case Some(area) => branchOf(responsive, area, size, fuel, round, inside, below.child(0))
               case None if responsive.probe < 0 || round.first => round.probe(responsive)
               // probed, but the dry paint never reached it: leave it to its render-time fallback
               case None                                        => responsive
-          case _                            => branchOf(responsive, size, size, fuel, round, inside)
+          case _                            => branchOf(responsive, size, size, fuel, round, inside, below.child(0))
       case lazyList: LazyListElement     =>
         val built = if round.first || lazyList.window.isEmpty then lazyList.builtFor(size.height) else lazyList
-        withResolved(built, built.children.map(resolveAt(_, size, NestingLimit, round, inside)))
+        withResolved(
+          built,
+          built.children.zipWithIndex.map((child, index) =>
+            resolveAt(child, size, NestingLimit, round, inside, below.child(index))
+          ),
+        )
       case other                         =>
-        withResolved(other, other.children.map(resolveAt(_, size, NestingLimit, round, inside)))
+        withResolved(
+          other,
+          other.children.zipWithIndex.map((child, index) =>
+            resolveAt(child, size, NestingLimit, round, inside, below.child(index))
+          ),
+        )
 
   /** `node` with `resolved` as its children — or `node` itself when resolving changed none of them, which for a tree
     * with no responsive node or lazy list in a subtree is every node of that subtree: rebuilding a container around the
@@ -224,8 +244,9 @@ private[dsl] object ResponsivePass:
       fuel: Int,
       round: Round,
       scope: Option[FocusScope],
+      identity: FocusIdentity,
   ): Element =
-    val branch = resolveAt(responsive.build(at), size, fuel - 1, round, scope)
+    val branch = resolveAt(responsive.build(at), size, fuel - 1, round, scope, identity)
     // suppression runs in TuiApp.effectiveView, before this pass, so a branch that did not exist yet when the modal
     // was composed has to inherit its node's suppression here or it rejoins the tab order and the router. The branch
     // was collected unsuppressed, which is the same answer: an inert node already cut the focus walks off below it,

@@ -49,6 +49,7 @@ final class Store[S] private (initial: S, limit: Int)(using SignalEquality[S]):
     * no notification, no history entry, no redo branch discarded.
     */
   def dispatch(action: S => S): Unit =
+    signal.checkMutation()
     val before = signal.peek
     val after  = action(before)
     if !summon[SignalEquality[S]].unchanged(after, before) then
@@ -64,6 +65,7 @@ final class Store[S] private (initial: S, limit: Int)(using SignalEquality[S]):
 
   /** Steps back one state; `false` when there is none (no history configured, or all of it already undone). */
   def undo(): Boolean =
+    signal.checkMutation()
     past match
       case Nil               => false
       case previous :: older =>
@@ -74,6 +76,7 @@ final class Store[S] private (initial: S, limit: Int)(using SignalEquality[S]):
 
   /** Steps forward one state undone by [[undo]]; `false` when there is none. */
   def redo(): Boolean =
+    signal.checkMutation()
     future match
       case Nil           => false
       case next :: newer =>

@@ -56,7 +56,8 @@ private[dsl] object PromptRun:
         answers.next()
       }
       step.answer(raw).foreach { message =>
-        throw IllegalArgumentException(s"the scripted answer '$raw' for '${step.label}' was rejected: $message")
+        val answer = if step.masked then "[redacted]" else raw
+        throw IllegalArgumentException(s"the scripted answer '$answer' for '${step.label}' was rejected: $message")
       }
     }
     check().foreach { (index, message) =>
@@ -76,7 +77,7 @@ private[dsl] object PromptRun:
     while !cancelled && index < steps.size do
       val step = steps(index)
       plain.write(s"? ${step.question}: ")
-      plain.read() match
+      (if step.masked then plain.readSecret.fold(plain.read())(_()) else plain.read()) match
         case None      =>
           plain.write("\n")
           session.record(PromptStep.summaryText(step.label, PromptStep.Cancelled))
@@ -129,8 +130,11 @@ private final class PromptApp(
     RunnerConfig(viewport = Viewport.Inline(height), onFrame = Some(_ => if finished.peek.isDefined then quit()))
       .withCaptureStdio(CaptureStdio.Off)
 
-  override def theme: Theme      = appTheme
-  override def whichKey: Boolean = false
+  override def theme: Theme                 = appTheme
+  override def whichKey: Boolean            = false
+  override def inspector: Boolean           = false
+  override val messages: Messages           = Messages.active
+  override def frameworkKeys: FrameworkKeys = FrameworkKeys.default.unbind(FrameworkKeys.CommandPalette)
 
   /** How the run ended — [[PromptOutcome.Cancelled]] when it ended without an answer. Read after the run. */
   def outcome: PromptOutcome = finished.peek.getOrElse(PromptOutcome.Cancelled)

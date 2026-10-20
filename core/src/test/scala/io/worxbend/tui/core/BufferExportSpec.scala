@@ -55,6 +55,43 @@ final class BufferExportSpec extends AnyFunSuite:
     val (r, g, b) = Color.approximateRgb(Color.Indexed(196))
     assert(elements(document, "text").head.getAttribute("fill") == f"#$r%02x$g%02x$b%02x")
 
+  test("exports retain cell geometry without stretching text into padding"):
+    val buffer = Buffer(Rect(3, 2, 20, 1))
+    buffer.setString(3, 2, "ab", Style.Default)
+    buffer.setString(13, 2, "cd", Style.Default.bold)
+    val texts  = elements(parse(BufferExport.svg(buffer, ExportOptions(cellWidth = 10))), "text")
+    assert(texts.find(_.getTextContent == "ab").get.getAttribute("textLength") == "20")
+    val html   = BufferExport.html(buffer)
+    val pre    = html.slice(html.indexOf("<pre"), html.indexOf("</pre>") + 6)
+    assert(parse(pre).getDocumentElement.getTextContent == "ab        cd        ")
+
+  test("all exports replace control-bearing symbols with blanks"):
+    val buffer = Buffer(Rect(0, 0, 4, 1))
+    buffer.set(0, 0, Cell("\u0007", Style.Default))
+    buffer.set(1, 0, Cell("\u001b[31m", Style.Default))
+    buffer.setString(2, 0, "ok", Style.Default)
+    assert(parse(BufferExport.svg(buffer)).getDocumentElement.getTextContent.contains("ok"))
+    assert(!BufferExport.html(buffer).contains('\u001b'))
+    assert(!BufferExport.html(buffer).contains('\u0007'))
+    assert(Text.fromAnsi(BufferExport.ansi(buffer)).plainText == "  ok")
+
+  test("svg retains decoration across blank cells"):
+    val buffer = Buffer(Rect(0, 0, 8, 1))
+    buffer.setStyle(buffer.area, Style.Default.underline.crossedOut)
+    val texts  = elements(parse(BufferExport.svg(buffer)), "text")
+    assert(texts.exists(_.getAttribute("text-decoration") == "underline line-through"))
+    assert(texts.head.getAttribute("textLength") == "72")
+
+  test("palettes return named RGB channels"):
+    val rgb: Rgb = ExportPalette.Default.rgb(Color.Rgb(1, 2, 3))
+    assert(rgb.r == 1 && rgb.g == 2 && rgb.b == 3)
+    val custom   = new ExportPalette:
+      def rgb(color: Color): Rgb =
+        val _ = color
+        Rgb(12, 34, 56)
+    val document = parse(BufferExport.svg(frame(), ExportOptions(palette = custom)))
+    assert(elements(document, "text").head.getAttribute("fill") == "#0c2238")
+
   private val Esc = "\u001b"
 
   test("ansi writes each colour in its own SGR spelling, the link as OSC 8, and resets at the end of every row"):

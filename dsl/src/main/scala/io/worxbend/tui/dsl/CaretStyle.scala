@@ -58,10 +58,13 @@ private[dsl] object CaretRegister:
       pending.caret
     }
 
-  /** Called by a focused text node from inside its render, with the caret cell in its own area's coordinates. The cell
-    * is mapped through every enclosing viewport onto the screen; a cell that no viewport lets through — the field is
-    * scrolled out of view — leaves the caret hidden rather than parked on a stale screen cell.
-    */
+  /** A later painted node covers any earlier reported caret in its visible footprint, even if the glyph is equal. */
+  def occlude(area: Rect): Unit =
+    current.armed.foreach { pending =>
+      if pending.caret.exists(cell => FrameCoordinates.visible(area).contains(cell)) then pending.caret = None
+    }
+
+  /** Reports the focused node's local caret, translated and clipped through all enclosing viewports. */
   def report(cell: Position): Unit =
     current.armed.foreach { pending =>
       val onScreen = FrameCoordinates.visible(Rect(cell.x, cell.y, 1, 1))

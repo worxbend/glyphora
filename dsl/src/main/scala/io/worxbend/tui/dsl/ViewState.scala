@@ -1,7 +1,7 @@
 package io.worxbend.tui.dsl
 
 import io.worxbend.tui.core.Rect
-import io.worxbend.tui.runtime.Signal
+import io.worxbend.tui.runtime.{Cleanup, Signal}
 
 import scala.collection.mutable
 
@@ -29,8 +29,8 @@ import scala.collection.mutable
   * Lifetime: a slot is created on the first frame that reaches it and dropped at the end of the first frame that does
   * not. Hiding a subtree and showing it again therefore starts it fresh, which is the behaviour a collapsed panel
   * wants; state that must outlive its own disappearance belongs in a `Signal` field on the app. Full-screen navigation
-  * retains eager slots in covered entries without evaluating their builders; discarded responsive slots are still
-  * swept.
+  * retains ordinary eager state in covered entries without evaluating their builders; resources and discarded
+  * responsive slots are still swept. Uncovering restarts the resources with the retained ordinary state.
   *
   * Lifetime hooks. A slot whose value is a [[ViewState.HookResource]] — the cells behind `useEffect` and `useTask` — is
   * disposed when it is swept, when the host is reset, and when the run ends, which is what cancels an effect or a task
@@ -41,16 +41,27 @@ import scala.collection.mutable
   * Ownership and threads: one store belongs to one `ElementHost` mount (one `TuiApp` run) and is touched only while
   * that run's render thread is evaluating or painting the view. Nothing here is synchronised, and nothing needs to be.
   */
-final class ViewState private[dsl] ():
+final class ViewState private[dsl] (private[dsl] val startResources: Boolean = true):
 
   private val slots: mutable.LinkedHashMap[String, ViewState.Slot] = mutable.LinkedHashMap.empty
   private val occurrences: mutable.Map[List[String], Int]          = mutable.Map.empty
+  private var resolvedOccurrences: Map[List[String], Int]          = Map.empty
+
+  private[dsl] def resolved(): Unit = resolvedOccurrences = occurrences.toMap
+
+  /** Repainting an unresolved fallback revisits its identity, rather than allocating another occurrence each tick. */
+  private[dsl] def beforePaint(): Unit =
+    occurrences.clear()
+    occurrences ++= resolvedOccurrences
 
   /** The chain of user-key and deferred-position segments, innermost first. Segment kinds have distinct prefixes. */
   private var path: List[String] = Nil
 
   /** How many hook calls have already been made inside the innermost scope. */
   private var ordinal: Int = 0
+
+  /** Only an each row admits the legacy, directly nested keyed(rowKey) spelling. */
+  private var eachKey: Option[String] = None
 
   /** Which frame is being evaluated. A slot reached during this frame is stamped with it; anything left holding an
     * older stamp when the frame ends was not reached and is swept.
@@ -79,11 +90,13 @@ final class ViewState private[dsl] ():
     reachedAreas.clear()
     path = Nil
     ordinal = 0
+    eachKey = None
 
   /** Drops every slot the generation that just ended did not reach, disposing the hook resources among them. */
   private[dsl] def sweep(): Unit =
-    val stale = slots.collect { case (id, slot) if slot.generation != generation => id }.toList
-    stale.foreach(id => slots.remove(id).foreach(slot => ViewState.dispose(slot.value)))
+    val stale   = slots.collect { case (id, slot) if slot.generation != generation => id }.toList
+    val retired = stale.flatMap(slots.remove).map(_.value)
+    Cleanup.all(retired.map(value => () => ViewState.dispose(value))*)
 
   /** Runs once the frame this generation built has been painted and its bounds published: queued effects start, and a
     * `useArea` cell whose node landed somewhere other than what it answered asks for the frame that corrects it.
@@ -102,7 +115,7 @@ final class ViewState private[dsl] ():
     slots.clear()
     paintQueue.clear()
     reachedAreas.clear()
-    values.foreach(ViewState.dispose)
+    Cleanup.all(values.map(value => () => ViewState.dispose(value))*)
 
   /** Queues `action` for [[afterPaint]]. */
   private[dsl] def onAfterPaint(action: () => Unit): Unit = paintQueue += action
@@ -114,13 +127,14 @@ final class ViewState private[dsl] ():
   private[dsl] def innermostKey: Option[String] =
     path.collectFirst { case segment if segment.startsWith("key:") => segment.stripPrefix("key:") }
 
-  /** Keeps eager hooks in navigation entries covered by a full-screen page without evaluating their builders. Deferred
-    * responsive hooks remain unvisited and are swept, matching the existing disappearance contract.
+  /** Keeps ordinary eager state in covered navigation entries without evaluating their builders. Resource hooks and
+    * deferred responsive hooks remain unvisited and are swept, matching the disappearance contract.
     */
   private[dsl] def retainCoveredScreens(ids: Set[Long]): Unit =
     val keys = ids.map(id => s"screen:$id")
     slots.valuesIterator.foreach { slot =>
-      if !slot.deferred && slot.screen.exists(keys.contains) then slot.generation = generation
+      if !slot.deferred && !ViewState.isResource(slot.value) && slot.screen.exists(keys.contains) then
+        slot.generation = generation
     }
 
   /** How many slots are alive — for tests that want to prove a hidden subtree's state was actually released. */
@@ -129,20 +143,31 @@ final class ViewState private[dsl] ():
   /** Runs `body` with `key` pushed onto the scope path, so hooks inside it belong to this key rather than to the
     * position the body happens to occupy among its siblings.
     *
-    * A scope opened as the very first thing inside a scope of the same key is that scope, not a second one under it:
+    * A keyed scope opened first inside an each row of the same key is that scope, not a second one under it:
     * `each(items)(_.id)(item => keyed(item.id)(row(item)))` — code written for 0.19, where `each` opened no hook scope
     * and the `keyed` was needed — keeps the one path `keyed(item.id)` alone had, rather than nesting it as `id/id`.
     */
   private[dsl] def scoped[A](key: String)(body: => A): A =
     val segment = s"key:$key"
-    if ordinal == 0 && path.headOption.contains(segment) then body
+    if ordinal == 0 && eachKey.contains(key) then
+      eachKey = None
+      // Keep the body's hook numbering: restoring it to one would alias a second body hook with a later row hook.
+      body
     else nested(segment)(body)
+
+  private[dsl] def each[A](key: String)(body: => A): A =
+    nested(s"key:$key") {
+      eachKey = Some(key)
+      body
+    }
 
   private[dsl] def screen[A](id: Long)(body: => A): A = nested(s"screen:$id")(body)
 
   private def nested[A](key: String)(body: => A): A =
     val savedPath    = path
     val savedOrdinal = ordinal
+    val savedEachKey = eachKey
+    eachKey = None
     path = key :: savedPath
     ordinal = 0
     try body
@@ -150,6 +175,7 @@ final class ViewState private[dsl] ():
       path = savedPath
       // a whole keyed scope counts as one step of its parent's numbering, so siblings after it stay put
       ordinal = savedOrdinal + 1
+      eachKey = savedEachKey
 
   /** Reserve one positional child at declaration time; its builder may run after keyed scopes have unwound. */
   private def capture(): List[String] =
@@ -163,6 +189,8 @@ final class ViewState private[dsl] ():
   private def resume[A](captured: List[String])(body: => A): A =
     val savedPath    = path
     val savedOrdinal = ordinal
+    val savedEachKey = eachKey
+    eachKey = None
     val occurrence   = occurrences.getOrElse(captured, 0)
     occurrences.update(captured, occurrence + 1)
     path = s"occurrence:$occurrence" :: captured
@@ -171,6 +199,7 @@ final class ViewState private[dsl] ():
     finally
       path = savedPath
       ordinal = savedOrdinal
+      eachKey = savedEachKey
 
   /** The value this call site owns, creating it the first time the site is reached.
     *
@@ -230,6 +259,11 @@ object ViewState:
   private[dsl] trait HookResource:
     def dispose(): Unit
 
+  private def isResource(value: Any): Boolean =
+    value match
+      case _: HookResource => true
+      case _               => false
+
   private def dispose(value: Any): Unit =
     value match
       case resource: HookResource => resource.dispose()
@@ -269,6 +303,15 @@ object ViewState:
             case Some(currentStore) => currentStore.resume(captured)(build(input))
             case None               => build(input)
 
+  /** A keyed collection is one declaration, regardless of how many rows it builds this frame. */
+  private[dsl] def collectionIfActive[A](body: => A): A =
+    active match
+      case None        => body
+      case Some(store) =>
+        val savedOrdinal = store.ordinal
+        try body
+        finally store.ordinal = savedOrdinal + 1
+
   /** The hook-identity half of `each`: a keyed scope when a view is being evaluated, and a plain call otherwise.
     *
     * Unlike [[keyed]] this does not insist on a view, because `each` is also a plain element builder — construction
@@ -277,7 +320,7 @@ object ViewState:
     */
   private[dsl] def scopeIfActive[A](key: String)(body: => A): A =
     active match
-      case Some(store) => store.scoped(key)(body)
+      case Some(store) => store.each(key)(body)
       case None        => body
 
   /** The slot behind `memo`: the value built last time with its deps, rebuilt only when the deps differ. Generic rather

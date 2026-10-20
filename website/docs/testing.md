@@ -18,6 +18,25 @@ Everything on this page ships in the **`tui-test`** artifact
 `tui-runtime`, `tui-macros` and `tui-dsl`. Add it as a test-only dependency; the Scala
 package is `io.worxbend.tui.testsupport`.
 
+## Focus a control without clicking it
+
+After the first frame, move focus on the app's render thread by the element's
+`.key("search")`, without invoking its pointer or activation handler:
+
+```scala
+pilot.waitForIdle()
+assert(pilot.readOnRenderThread(app.focusKey("search")))
+pilot.waitForIdle().typeText("needle").waitForIdle()
+```
+
+`focusKey` returns `false` for an absent, disabled or inert focusable and when the
+app is not running. Wait for the requested frame before sending input; dispatch
+uses the tree last painted. A host that owns its own loop already has
+`ElementHost.focusToKey(key)` and must likewise render before dispatching again.
+
+For repository workflow checks, install the declared Python dependencies once:
+`python3 -m pip install -r scripts/requirements-ci.txt`.
+
 ## Test a widget buffer
 
 `BufferAssertions` turns buffers into readable strings:
@@ -290,6 +309,11 @@ how named and indexed colours are painted (`ExportPalette.Default` is the xterm 
 table, `palette.Xterm256`; supply your own to render a screenshot in a specific terminal
 theme), the `foreground`/`background` a cell with no colour of its own is painted in, and
 a `title`. Every field defaults, so `ExportOptions()` is a sensible dark screenshot.
+A custom `ExportPalette` implements `rgb(color: Color): Rgb`, returning the core record
+`Rgb(r, g, b)` with each channel in `0..255`, rather than a tuple. Its named fields
+`r`, `g` and `b` are the concrete channels. Every export blanks control-bearing cell
+symbols; HTML retains interior spaces and SVG lengths cover the drawn text, not its
+undecorated trailing padding.
 
 The ANSI forms go through the same SGR codec and colour policy the terminal writes with.
 `ExportOptions(ansiColors = ColorDepth.Ansi256.ansiColors)` exports a frame with exactly
@@ -425,6 +449,12 @@ assert(app.enabled.peek)
 pilot.resize(80, 24).waitForIdle()
 assert(pilot.screenLines.size == 24)
 ```
+
+Click counting reads the `nanoTime` function handed to `app.runWith(backend, clock.reading)`,
+just like sequence timeouts. Use a `ManualClock` for double/triple-click tests rather than
+racing a 400 ms wall-clock window. With the clock unchanged, repeated clicks on the same
+cell/button count up; advancing it by more than 400 ms starts a new count. Advancing the
+clock directly (without posting a tick) also tests sequence expiry at event arrival.
 
 Scroll and drag have their own methods, so no test has to hand-build a `MouseEvent`:
 

@@ -27,7 +27,7 @@ import mill.*, scalalib.*
 
 object app extends ScalaModule:
   def scalaVersion = "3.9.0"
-  def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.20.0")
+  def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.21.0")
 ```
 
 Put application sources under `app/src/`, then run them with `mill app.run` (or
@@ -37,12 +37,22 @@ Put application sources under `app/src/`, then run them with `mill app.run` (or
 
 ```scala title="build.sbt"
 scalaVersion := "3.9.0"
-libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.20.0"
+libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.21.0"
 ```
 
 Put application sources under `src/main/scala/`, then use `sbt run`.
 
 ### scala-cli: one file, no build
+
+The supported single-file quickstart is Scala CLI. A separate JBang launcher is
+**not shipped**: it would duplicate `scala run` while adding another dependency
+resolver and launcher to maintain for the same Scala program. This is an explicit
+scope exclusion, not an alternative we have built or tested.
+
+CI checks the example's release pin against `publishVersion`, then runs
+`scripts/verify-scala-cli.py` to compile its unchanged application body against
+artifacts compiled from the current checkout. An older published jar cannot mask
+source incompatibilities in the quickstart.
 
 The `scala` command (scala-cli, since Scala 3.5) runs a single file that names its own
 dependencies, which is the quickest way to see glyphora in a terminal:
@@ -50,7 +60,7 @@ dependencies, which is the quickest way to see glyphora in a terminal:
 ```scala title="hello.scala"
 //> using scala 3.9.0
 //> using jvm 25
-//> using dep com.worxbend::tui-dsl:0.20.0
+//> using dep com.worxbend::tui-dsl:0.21.0
 //> using javaOpt --enable-native-access=ALL-UNNAMED
 //> using mainClass io.worxbend.tui.examples.scalacli.Main
 
@@ -88,8 +98,9 @@ scala run hello.scala
 
 The repository keeps a complete copy at
 [`examples/scala-cli/hello.scala`](https://github.com/worxbend/glyphora/blob/main/examples/scala-cli/hello.scala).
-That copy pins the newest release already on Maven Central, so it runs before this
-version is published; move its `using dep` line to the version above once it is.
+That copy pins this checkout's synchronized release version. The tag-triggered Publish
+workflow validates the release before uploading it to Central; use local installation
+below if you are testing a tag before publication completes.
 
 ### Optional GitHub Packages resolver
 
@@ -124,7 +135,7 @@ cd glyphora
 ./mill __.publishLocal
 ```
 
-This installs all seven libraries at `0.20.0` into `~/.ivy2/local`. Mill reads that
+This installs all seven libraries at `0.21.0` into `~/.ivy2/local`. Mill reads that
 cache by default. An sbt build also needs `resolvers += Resolver.defaultLocal`.
 
 <details>

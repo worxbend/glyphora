@@ -39,18 +39,24 @@ object Snapshot:
     * actually given.
     */
   def renderInto(buffer: Buffer, area: Rect, theme: Theme, focusedKey: Option[String])(view: View): Unit =
-    // Untracked: a snapshot is evaluated once and thrown away, so a subscription taken here would outlive everything
-    // that could ever act on it.
-    given scope: ReactiveScope = ReactiveScope.untracked
-    val size                   = Size(area.width, area.height)
-    val frame                  =
-      ResponsivePass.resolveFrame(view(using scope, theme), size, _.widget.render(area, Buffer(area)))
-    val resolved               = frame.tree
-    val tracker                = FocusTracker()
-    tracker.focusedKey = focusedKey
-    tracker.reconcile(frame.analysis.focusKeys, frame.analysis.autofocus)
-    // no bounds recorder: a snapshot is a picture, and nothing is left behind to ask where a node landed in it
-    FocusPass
-      .decorate(resolved, tracker, theme.focus, bounds = None, disabledStyle = theme.disabled)
-      .widget
-      .render(area, buffer)
+    val state = ViewState(startResources = false)
+    state.beginGeneration()
+    try
+      ViewState.during(state) {
+        // Untracked: a snapshot is evaluated once and thrown away, so a subscription taken here would outlive everything
+        // that could ever act on it.
+        given scope: ReactiveScope = ReactiveScope.untracked
+        val size                   = Size(area.width, area.height)
+        val frame                  =
+          ResponsivePass.resolveFrame(view(using scope, theme), size, _.widget.render(area, Buffer(area)))
+        val resolved               = frame.tree
+        val tracker                = FocusTracker()
+        tracker.focusedKey = focusedKey.filter(key => frame.analysis.focusKeys.contains(Some(key)))
+        tracker.reconcile(frame.analysis.focusKeys, frame.analysis.autofocus)
+        // no bounds recorder: a snapshot is a picture, and nothing is left behind to ask where a node landed in it
+        FocusPass
+          .decorate(resolved, tracker, theme.focus, bounds = None, disabledStyle = theme.disabled)
+          .widget
+          .render(area, buffer)
+      }
+    finally state.disposeAll()

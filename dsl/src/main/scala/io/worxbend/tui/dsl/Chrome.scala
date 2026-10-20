@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{CharWidth, Constraint, MouseEvent, MouseEventKind, Text, Widget}
+import io.worxbend.tui.core.{CharWidth, Constraint, Text}
 import io.worxbend.tui.widgets as w
 
 /** The app-chrome presets: top bar, status bar, sidebar, scaffold, help overlay, and layout helpers. All of them are
@@ -164,55 +164,6 @@ def masterDetail(master: Element, detail: Element, masterWidth: Int = 30): Eleme
   */
 def dismissibleOverlay(content: Element)(onOutsidePress: () => Unit): Element =
   DismissibleOverlayElement(content, onOutsidePress)
-
-/** The node [[dismissibleOverlay]] builds: `content` painted over the whole area, with the outside-press behaviour as
-  * the node's own built-in rather than a sibling backdrop's, so it can read where its subtree was painted. Transparent
-  * to layout and measurement — it claims and measures as `content` does.
-  *
-  * Owned by the view that built it, like every node; the recorded bounds it reads belong to the host and are resolved
-  * when a press arrives, on the render thread.
-  */
-final case class DismissibleOverlayElement(
-    content: Element,
-    onOutsidePress: () => Unit,
-    props: ElementProps = ElementProps(),
-) extends Element
-    with BoundsAwareElement:
-  type Self = DismissibleOverlayElement
-  override def debugName: String = "dismissibleOverlay"
-
-  override def children: Seq[Element] = Seq(content)
-
-  def widget: Widget = (area, buffer) => content.widget.render(area, buffer)
-
-  private[dsl] def withProps(props: ElementProps): DismissibleOverlayElement = copy(props = props)
-
-  private[dsl] override def withChildren(children: Seq[Element]): DismissibleOverlayElement =
-    copy(content = children.headOption.getOrElse(content))
-
-  private[dsl] override def claim: SizeClaim = content.claim
-
-  private[dsl] override def intrinsicHeight(width: Int): Option[Int] =
-    constrainedHeight(content.intrinsicHeight(width))
-
-  private[dsl] override def intrinsicWidth(height: Int): Option[Int] =
-    constrainedWidth(content.intrinsicWidth(height))
-
-  /** With no bounds recorded there is nothing to compare the press against, so every press that reached this node —
-    * which only happens when no control of the dialog took it — is treated as outside, the pre-recording behaviour.
-    */
-  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
-    Some((event, _) => press(event, inside = false))
-
-  private[dsl] def builtinMouseHandlerWithBounds(subtree: NodeSubtreeBounds): BuiltinMouseHandler =
-    (event, _) => press(event, inside = subtree.paintedAt(event.position))
-
-  /** A press is consumed either way — the dialog took it, or it closed the dialog — and anything else bubbles on. */
-  private def press(event: MouseEvent, inside: => Boolean): Boolean =
-    event.kind == MouseEventKind.Down && {
-      if !inside then onOutsidePress()
-      true
-    }
 
 /** `content` at a fixed size, centered both ways in whatever space is available. */
 def centered(width: Int, height: Int)(content: Element): Element =

@@ -133,9 +133,17 @@ private[dsl] final class NodeBounds:
     * paint sequence. A target scrolled entirely out of view is not recorded, so neither hit testing nor wheel bubbling
     * can reach it. Render thread only.
     */
-  def recordTarget(target: InputTarget, area: Rect, passThrough: Boolean = false, key: Option[String] = None): Unit =
-    placed(area).foreach { (layout, visible) =>
-      targets(target) = PaintedArea(layout, visible, targetSequence, passThrough, key)
+  def recordTarget(
+      target: InputTarget,
+      area: Rect,
+      passThrough: Boolean = false,
+      key: Option[String] = None,
+      painted: Option[Rect] = None,
+      wheelPassThrough: Boolean = false,
+  ): Unit =
+    placed(painted.getOrElse(area)).foreach { (_, visible) =>
+      val layout = FrameCoordinates.translate(area)
+      targets(target) = PaintedArea(layout, visible, targetSequence, passThrough, key, wheelPassThrough)
       targetSequence += 1
     }
 
@@ -150,9 +158,9 @@ private[dsl] final class NodeBounds:
   /** The input target painted last at screen position `pos` — the one the user sees there — with its unclipped layout
     * rect. Render thread only.
     */
-  def targetAt(pos: Position): Option[MouseHit] =
+  def targetAt(pos: Position, wheel: Boolean = false): Option[MouseHit] =
     targets
-      .filter((_, area) => !area.passThrough && area.hitArea.contains(pos))
+      .filter((_, area) => !area.passThrough && !(wheel && area.wheelPassThrough) && area.hitArea.contains(pos))
       .maxByOption((_, area) => area.sequence)
       .map((target, area) => MouseHit(target, area.layoutArea))
 
@@ -195,7 +203,16 @@ private[dsl] final case class BoundsElement(
 
   def widget: Widget =
     (area, buffer) =>
-      recorder.record(id, lastDescendantId, inner.props.focusKey, inner.layoutOnly, area, roles, anchor)
+      if !inner.layoutOnly then CaretRegister.occlude(inner.paintedRect(area))
+      recorder.record(
+        id,
+        lastDescendantId,
+        inner.props.focusKey,
+        inner.layoutOnly,
+        inner.paintedRect(area),
+        roles,
+        anchor,
+      )
       inner.widget.render(area, buffer)
       if !roles.isEmpty then gestures.foreach(_.painted(id, roles, inner, area, buffer, anchor))
 

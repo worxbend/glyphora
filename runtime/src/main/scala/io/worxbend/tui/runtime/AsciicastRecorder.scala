@@ -122,12 +122,14 @@ final class AsciicastRecorder(out: Writer, nanoTime: () => Long, epochSeconds: (
         s"""{"version":2,"width":${frame.area.width},"height":${frame.area.height},"timestamp":${epochSeconds()},""" +
           s""""env":{"TERM":"xterm-256color","SHELL":"/bin/sh"}}\n"""
       )
-    val data = previous match
+    val elapsed = String.format(Locale.ROOT, "%.6f", Double.box((now - startedAt) / 1e9))
+    previous.filter(_.area.size != frame.area.size).foreach { _ =>
+      out.write(s"""[$elapsed,"r","${frame.area.width}x${frame.area.height}"]\n""")
+    }
+    val data    = previous match
       case Some(shown) if shown.area == frame.area => encoder.encode(shown, frame.buffer)
       case _                                       => AsciicastRecorder.Preamble + encoder.encodeAll(frame.buffer)
-    if data.nonEmpty then
-      val elapsed = String.format(Locale.ROOT, "%.6f", Double.box((now - startedAt) / 1e9))
-      out.write(s"""[$elapsed,"o",${AsciicastRecorder.jsonString(data)}]\n""")
+    if data.nonEmpty then out.write(s"""[$elapsed,"o",${AsciicastRecorder.jsonString(data)}]\n""")
     previous = Some(frame.buffer)
 
 object AsciicastRecorder:

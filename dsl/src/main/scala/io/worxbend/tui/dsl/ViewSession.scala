@@ -27,7 +27,7 @@ private[dsl] final class ViewSession(areaOf: String => Option[Rect] = _ => None)
   def resolve(view: View, size: Size, theme: Theme)(using scope: ReactiveScope): ResolvedFrame =
     state.beginGeneration()
     val frame = ViewState.during(state)(ResponsivePass.resolveFrame(view(using scope, theme), size, dryPaint(size)))
-    state.sweep()
+    state.resolved()
     val _     = changes.get
     frame
 
@@ -36,6 +36,7 @@ private[dsl] final class ViewSession(areaOf: String => Option[Rect] = _ => None)
     */
   def afterPaint(frame: ResolvedFrame): Unit =
     painted = StateWatch.versions(frame.analysis.states)
+    state.sweep()
     state.afterPaint()
 
   /** Whether a versioned state painted on the last frame has been mutated since; when one has, the view is invalidated
@@ -63,6 +64,10 @@ private[dsl] final class ViewSession(areaOf: String => Option[Rect] = _ => None)
 
   /** A host boundary clips both paint and input, including portals, without changing layout origins. */
   def paint(tree: Element, area: Rect, buffer: Buffer): Unit =
+    if !FrameContext.current.viewState.contains(state) then state.beforePaint()
+    ViewState.during(state)(paintInside(tree, area, buffer))
+
+  private def paintInside(tree: Element, area: Rect, buffer: Buffer): Unit =
     val boundary = area.intersection(buffer.area)
     val local    = if boundary == buffer.area then buffer else Buffer(boundary)
     if local ne buffer then local.blit(buffer, Position(boundary.x, boundary.y), boundary)

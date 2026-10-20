@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{CrossAlign, Constraint, GlyphSupport, KeyEvent, MouseEvent, Style}
+import io.worxbend.tui.core.{CrossAlign, Constraint, GlyphSupport, GridCell, KeyEvent, MouseEvent, Style}
 import io.worxbend.tui.terminal.PointerShape
 
 /** The focus bookkeeping the framework writes and an application only reads.
@@ -92,7 +92,9 @@ final case class FocusState private[dsl] (
   * `selectable` is what `.selectable(enabled)` set: `Some(false)` opts this node and its subtree out of mouse text
   * selection, `Some(true)` opts a node in that is not selectable by default, `None` keeps the node type's default — see
   * [[TextSelection]]. `dragPayload` and `dropTarget` are what `.draggable(payload)` and
-  * `.dropTarget[A](accept)(onDrop)` install — see [[DragKey]].
+  * `.dropTarget[A](accept)(onDrop)` install — see [[DragKey]]. The internal `captureOwner` reference binds a
+  * signal-backed built-in to its caller-owned state across rebuilding; fluent props copies retain it. It is not a
+  * public capture-identity API.
   */
 final case class ElementProps(
     style: Style = Style.Default,
@@ -121,6 +123,7 @@ final case class ElementProps(
     selectable: Option[Boolean] = None,
     dragPayload: Option[DragPayload] = None,
     dropTarget: Option[DropTarget] = None,
+    private[dsl] val captureOwner: Option[AnyRef] = None,
 ):
 
   /** Whether this element is the one the focus pass marked — where keystrokes go this frame. */
@@ -147,7 +150,7 @@ final case class ElementProps(
   * `position` fixes the top-left cell; `area` names a cell of the grid's `.areas(...)` template and wins over
   * `position`; with neither, the grid's auto-flow picks the next free run of cells that fits the spans.
   */
-final case class GridSpot(position: Option[(Int, Int)], rowSpan: Int, colSpan: Int, area: Option[String])
+final case class GridSpot(position: Option[GridCell], rowSpan: Int, colSpan: Int, area: Option[String])
 
 object GridSpot:
 

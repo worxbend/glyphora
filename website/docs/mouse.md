@@ -139,8 +139,13 @@ For the focused path, routing order is:
 1. focused element's user handler;
 2. focused element's built-in behavior;
 3. each ancestor's user handler, inner to outer;
-4. the app's `KeyBindings`;
-5. built-ins such as `Tab`, `Ctrl+P`, and unconsumed `Ctrl+C`.
+4. the top screen's bindings over the app's `KeyBindings`;
+5. unclaimed Shift+arrow text selection and focus-group arrow navigation;
+6. framework keys such as `Tab`, `Ctrl+P`, and unconsumed `Ctrl+C`.
+
+Before that focused path, capture handlers (for example a menu bar) get an offer.
+An active drag also consumes Escape as cancellation before the tree. App bindings
+otherwise take priority over the host's selection and focus-group navigation.
 
 This lets an input consume normal text and editing keys while a parent still handles
 `Escape` and the app still handles global commands.
@@ -246,7 +251,19 @@ comes back up, every drag and the release go to that element, with the area it h
 it was pressed, even once the pointer has left it — which is how a `slider` drag or a
 `splitPane` divider keeps following the mouse past the control's edge. `ctx.local` can
 then be negative or larger than the area, so clamp it. A press nobody consumed captures
-nothing.
+nothing. Across redraws, capture follows a unique `.key(...)` with its original press
+area. Without a key, the same immutable description can retain capture; a rebuilt
+built-in-only control retains its original handlers only when its caller-owned signal
+or widget-state references and the entire input topology are unchanged. This keeps an
+ordinary unkeyed `slider` draggable through its pressed-cue redraw, but replacing its
+signal (even at the same position) cancels the gesture. Unknown ownership, rebuilt user
+handlers, structural removal, clipping out, disabling, or covering the owner with a
+focus layer cancels capture and discards the drag/release tail until a fresh press.
+Use unique keys when controls must keep capture through insertion or reorder; use a new
+key for a new keyed lifetime. Terminal focus loss releases capture, clears pressed/hover cues and cancels
+gestures. If a release was lost, the next press abandons the old drag and is delivered
+normally; it is not swallowed. A custom embedding loop calls `host.cancelPointerGestures()`
+on focus loss.
 
 `.onMouseEvent` and the absolute-coordinate helpers (`onClickAt`, `onHover`, `onDrag`)
 stay, and run before `.onMouse` on the same element.
@@ -487,7 +504,7 @@ column(
 
 `Tab` from the input lands on `New`; `Right`/`Down` and `Left`/`Up` cycle through the
 three, wrapping; the next `Tab` goes to the list; `Shift+Tab` comes back to whichever
-member the group was left on. A member that consumes an arrow itself keeps it. Pass a
+member the group was left on. A member or app binding that consumes an arrow keeps it. Pass a
 single `column(...)` for a vertical group.
 
 ### Keep Tab inside a popover
@@ -522,7 +539,10 @@ immediately. A `TuiApp` running with `RunnerConfig(mouse = MouseCaptureMode.Butt
   `java.text.BreakIterator`), a triple click the whole row;
 - the release copies the selection through the app clipboard — OSC 52 to the terminal,
   plus the in-app buffer `Ctrl+V` reads — and `Ctrl+Shift+C` (the rebindable
-  `copy-selection` framework key) copies it again;
+  `framework.copy-selection` key) copies it again; an empty selection consumes that
+  chord without quitting. Copy-on-release is the primary path on legacy terminals:
+  Ctrl+Shift+C may be intercepted by the emulator or arrive as plain Ctrl+C (quit).
+  Rebind keyboard recopy to a deliverable key such as F6 if needed;
 - the next press anywhere clears it.
 
 A selection starts only from a press no element consumed, so a button inside a
@@ -537,16 +557,19 @@ selection can reach rows that were not on screen when it began. Selection works 
 graphemes: a wide character is copied once, never half of it.
 
 The keyboard selects too. On a focused selectable node — `text(…).focusable`, a `log`, a
-`dataTable` — Shift+Left/Right/Up/Down, when the node itself does not use them, starts a
+`dataTable` — Shift+Left/Right/Up/Down, when neither the node nor an app binding uses them, starts a
 selection on the node's first visible cell and moves its far end a cell or a row per
 press; `Ctrl+Shift+C` copies it.
 
-A selection belongs to its node and to a place in that node's text, not to the screen.
+A selection is anchored in its node's layout cells, not in screen coordinates.
 Content added elsewhere in the view leaves it where it is, and inside a `scrollView` the
 highlight moves with the content as the view scrolls. Give the node a `.key(…)` and the
 selection follows it even when nodes are inserted before it; without one it is held by
 the node's position in the tree. Copying takes only the rows on screen, since those are
-the rows a scroll view draws.
+the rows a scroll view draws. Internally scrolling or revisable nodes (`log`, `logConsole`,
+`markdownStream`, `dataTable`) conservatively clear a selection when their visible text
+changes, including follow-tail append and internal scrolling, rather than recopying new
+text that moved underneath an old highlight. This does not change the clipboard's last copy.
 
 Opt an element out — with everything inside it — with `.selectable(false)`; opt any other
 node in with `.selectable(true)`:
@@ -580,12 +603,16 @@ row(
 ```
 
 A press on a draggable element arms the drag and the first motion starts it; a press and
-release without motion is still an ordinary click. While the drag runs, a dimmed ghost of
+release without motion is still an ordinary click. A child control that consumes and
+captures the press (a slider inside a draggable card, for example) takes priority: the
+parent does not arm its drag. A draggable control's own consumed press can still arm it. While the drag runs, a dimmed ghost of
 the element follows the pointer — drawn through a portal, over everything — and the
 innermost drop target under the pointer that takes the payload draws the theme's focus
-cue. The release over it calls `onDrop` with the value. `Esc` (the `close-modal`
-framework key) while a drag runs cancels it: the ghost goes, and the release drops
-nothing.
+cue. The release over it calls `onDrop` with the value. Plain `Esc` always cancels an
+active drag. The rebound `framework.close-modal` key or completed sequence cancels it
+too (after tree and app bindings for sequences): the ghost goes, and the release drops
+nothing. Focus loss cancels without a drop; a new press after a missing release both
+abandons the stale drag and reaches its normal target.
 
 The type is carried by a `DragKey[A]`: a draggable and a target meet only when they were
 built against the same key, which is how a drop hands the target an `A` without a

@@ -58,7 +58,8 @@ final class AsciicastRecorderSpec extends AnyFunSuite:
     recorder.close()
     val lines    = out.toString.split("\n").toSeq
     assert(lines(1).contains("""a\"b\\c"""))
-    assert(lines(2).contains("\\u001b[2J"), "a changed area is a full repaint")
+    assert(lines(2) == """[0.000000,"r","8x2"]""")
+    assert(lines(3).contains("\\u001b[2J"), "resize precedes the full repaint")
 
   /** A writer that records which thread wrote to it and can be made to fail. */
   private final class ThreadNoting(failing: Boolean = false) extends java.io.Writer:

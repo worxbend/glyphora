@@ -307,7 +307,7 @@ trait TuiApp:
       // every one of its keys" and was dropped for as long as any screen was on the stack. A binding with no trigger
       // cannot be shadowed by anything, because there is nothing to shadow.
       val shadowed = (app: KeyBinding) => app.triggers.nonEmpty && app.triggers.forall(claimed.contains)
-      screen.bindings ++ bindings.filter(!shadowed(_))
+      screen.bindings.concat(bindings.filter(!shadowed(_)))
     }
 
   /** An intro screen shown before the first `view` render — see [[SplashScreen]]. Any key skips it. */
@@ -496,6 +496,17 @@ trait TuiApp:
     */
   protected final def requestRedraw(): Unit =
     activeHandle.get().foreach(_.requestRedraw())
+
+  /** Public focus-by-key seam for embeddings and tests, without a pointer press or activation. Call on this app's
+    * render thread (`pilot.readOnRenderThread(app.focusKey("search"))` in a test). Returns false for absent, disabled
+    * or inert targets and when the app is stopped; a successful move requests the next frame before subsequent input is
+    * delivered. The caller owns ordering with that frame.
+    */
+  final def focusKey(key: String): Boolean =
+    if activeFocus.get().isEmpty then false
+    else
+      RenderThread.checkRenderThread()
+      focusTo(key)
 
   /** Moves keyboard focus to the focusable declared with `.key(name)`, and asks for the frame that shows it.
     *
@@ -719,6 +730,7 @@ trait TuiApp:
         val run       = RunState(SplashPlayer(intro, nanoTime), runConfig)
         // the toast and effect stacks outlive a single run and reach this clock through RunClock
         runClock.use(nanoTime)
+        run.host.clock = nanoTime
         val scope     = ReactiveScope.generational(() => run.invalidated = true)
         run.runnerTicks = runConfig.tickRate.isDefined
         (runConfig, run, scope)
@@ -916,8 +928,9 @@ trait TuiApp:
         run.invalidated
       case Event.FocusLost                  =>
         terminalFocused = false
+        val cancelled = run.host.cancelPointerGestures()
         onTerminalFocus(false)
-        run.invalidated
+        cancelled || run.invalidated
       // a mode 2031 report: the terminal flipped between light and dark under the app. The signal write is what owes
       // the frame — a `Theme.auto` view read it and recomputes; a view that never looked is left alone.
       case Event.ColorSchemeChanged(scheme) =>
@@ -958,13 +971,19 @@ trait TuiApp:
       true
     else routeKey(key, run, handle)
 
-  /** Focused element first, then its ancestors, then the top screen's bindings merged over the app's, then the
-    * framework's own keys.
+  /** Focused element first, then its ancestors, then the top screen's bindings merged over the app's, then the host
+    * selection/group navigation, then the framework's own keys. Capture handlers run before the focused path; an active
+    * drag's Escape cancellation is also offered before that path.
     */
   private def routeKey(key: KeyEvent, run: RunState, handle: RunnerHandle): Boolean =
-    pendingKeys.current match
-      case Some(prefix) => continueSequence(prefix, key, run, handle)
-      case None         => routeFresh(key, run, handle)
+    val _ = pendingKeys.expire(sequenceTimeout)
+    if key.code == KeyCode.Escape && key.modifiers.isEmpty && run.host.cancelDrag() then
+      pendingKeys.clear()
+      true
+    else
+      pendingKeys.current match
+        case Some(prefix) => continueSequence(prefix, key, run, handle)
+        case None         => routeFresh(key, run, handle)
 
   /** A key arriving while a sequence is pending goes to the sequence first — the user has started typing a binding, so
     * the focused element does not get to swallow the rest of it. The app's bindings are tried first, then the framework
@@ -993,9 +1012,9 @@ trait TuiApp:
 
   private def routeFresh(key: KeyEvent, run: RunState, handle: RunnerHandle): Boolean =
     val keys     = frameworkKeys
-    val consumed = FrameworkKeys.current.withValue(keys)(run.host.dispatchKey(key))
+    val consumed = FrameworkKeys.current.withValue(keys)(run.host.dispatchTreeKey(key))
     val bound    = !consumed && !palette.isOpenNow && dispatchBinding(key)
-    if consumed || bound then true else handleFrameworkKey(key, run, handle)
+    if consumed || bound || run.host.dispatchNavigationKey(key) then true else handleFrameworkKey(key, run, handle)
 
   /** A key no element consumed, offered to the bindings: it fires one, or starts a sequence and waits. */
   private def dispatchBinding(key: KeyEvent): Boolean =
@@ -1029,13 +1048,15 @@ trait TuiApp:
     }
 
   /** The framework action whose key `fired` says was typed — one key through `fires`, a whole sequence through
-    * `completes` — with whether the frame changed, or `None` when no framework key matched. `copy-selection` is tried
-    * first and only while a mouse selection shows, because `Ctrl+C` — quit — also matches a chord that adds Shift.
+    * `completes` — with whether the frame changed, or `None` when no framework key matched. `copy-selection` is always
+    * consumed before quit, including when no selection shows: a copy chord must never fall through to Ctrl+C.
     */
   private def frameworkAction(fired: KeySequence => Boolean, run: RunState, handle: RunnerHandle): Option[Boolean] =
     val keys    = frameworkKeys
     val tracker = run.tracker
-    if run.host.selectedText.isDefined && fired(keys.copySelection) && run.host.copySelection() then Some(true)
+    if fired(keys.copySelection) then
+      val _ = run.host.copySelection()
+      Some(true)
     else if fired(keys.focusPrevious) then Some(tracker.focusPrevious())
     else if fired(keys.focusNext) then Some(tracker.focusNext())
     else if fired(keys.commandPalette) && activeBindingsNow.bindings.nonEmpty && !palette.isOpenNow then
@@ -1044,6 +1065,7 @@ trait TuiApp:
     else if fired(keys.quit) then
       handle.quit()
       Some(false)
+    else if fired(keys.closeModal) && run.host.cancelDrag() then Some(true)
     else if fired(keys.closeModal) && topScreenClosesOnEscape then
       popScreen()
       Some(false)

@@ -9,6 +9,56 @@ final class AnsiTextSpec extends AnyFunSuite:
 
   private val Esc = "\u001b"
 
+  test("control strings and CSI recover with bounded storage across chunks"):
+    for opener <- Seq(s"$Esc]", s"${Esc}P", s"${Esc}_", s"$Esc[") do
+      val parser = AnsiParser()
+      parser.feed(opener + "1" * 4096)
+      assert(parser.feed("ok\n").map(_.plainText) == Seq("ok"))
+    assert(Text.fromAnsi(s"a$Esc[31\nmX").plainText == "a\nX")
+    for cancel <- Seq('\u0018', '\u001a') do
+      assert(Text.fromAnsi(s"$Esc[31${cancel}mX").lines.head == Line.raw("mX"))
+      assert(Text.fromAnsi(s"$Esc]title${cancel}X").plainText == "X")
+
+  test("tabs and overwrites measure graphemes across SGR and chunk boundaries"):
+    for
+      cluster  <- Seq("👩‍💻", "👍🏽", "e\u0301")
+      boundary <- 0 to cluster.length
+      if boundary == cluster.length || !Character.isLowSurrogate(cluster.charAt(boundary))
+    do
+      val first    = cluster.take(boundary)
+      val rest     = cluster.drop(boundary)
+      val split    = s"$first$Esc[31m$rest"
+      val width    = CharWidth.of(cluster)
+      assert(Text.fromAnsi(split + "\tq").plainText == cluster + " " * (8 - width) + "q")
+      val input    = "XXXXXX\r" + split + "z"
+      val expected = cluster + "z" + "X" * (5 - width)
+      assert(Text.fromAnsi(input).plainText == expected)
+      for cut <- 0 to input.length do
+        val parser = AnsiParser()
+        assert(
+          Text(parser.feed(input.take(cut)) ++ parser.feed(input.drop(cut)) :+ parser.finish()).plainText == expected
+        )
+
+  test("long tab-separated output stays at eight-column stops"):
+    val input = "a\t" * 32000 + "q"
+    val line  = Text.fromAnsi(input).lines.head
+    assert(line.width == 256001)
+    assert(line.plainText == "a       " * 32000 + "q")
+
+  test("tab expansion scales with the added text, not the accumulated line"):
+    val clock                     = java.lang.management.ManagementFactory.getThreadMXBean
+    if !clock.isCurrentThreadCpuTimeSupported then cancel("thread CPU clock unavailable")
+    def elapsed(count: Int): Long =
+      val input = "a\t" * count
+      val start = clock.getCurrentThreadCpuTime
+      assert(Text.fromAnsi(input).lines.head.width == count * 8)
+      clock.getCurrentThreadCpuTime - start
+    (0 until 4).foreach(_ => elapsed(2000))
+    val short                     = (0 until 3).map(_ => elapsed(2000)).min
+    val long                      = (0 until 3).map(_ => elapsed(32000)).min
+    info(s"tab CPU nanos: 2000=$short, 32000=$long")
+    assert(long < short * 40L + 100000000L, "16x the input must not perform quadratic prefix scans")
+
   test("a bold red run followed by a reset becomes two spans, the second in the default style"):
     val text = Text.fromAnsi(s"$Esc[1;31mred$Esc[0m plain")
     assert(text.lines == Seq(Line(Seq(Span("red", Style.fg(Color.Red).bold), Span.raw(" plain")))))

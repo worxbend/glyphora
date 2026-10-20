@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{Modifiers, Size}
+import io.worxbend.tui.core.{Buffer, Modifiers, Position, Rect, Size, Style}
 import io.worxbend.tui.terminal.HeadlessBackend
 import io.worxbend.tui.testsupport.Pilot
 import io.worxbend.tui.widgets.{ScrollViewState, TextAreaState, TextInputState}
@@ -125,6 +125,106 @@ final class HardwareCaretSpec extends AnyFunSuite with PilotFixture:
     pilot.pressKey(KeyCode.Escape).waitForIdle()
     pilot.assertNoCursor()
     quitApp(pilot)
+
+  test("BUGS-10 later layers hide a covered caret and uncovering restores it"):
+    final class Covered extends TuiApp:
+      val name                                      = TextInputState("abc")
+      val covered                                   = Signal(true)
+      override def bindings: KeyBindings            = KeyBindings(binding("ctrl+o", "uncover")(covered.set(false)))
+      def view(using ReactiveScope, Theme): Element =
+        layers(input(name).autofocus, if covered.get then positioned(0, 0, 10, 1)(text("COVERING..")) else spacer)
+    val pilot = run(Covered())
+    assert(pilot.screenLines.head.startsWith("COVERING.."))
+    pilot.assertNoCursor()
+    pilot.press("ctrl+o").waitForIdle()
+    pilot.assertCursorAt(3, 0)
+    quitApp(pilot)
+
+  test("BUGS-10 deferred portal paint hides the caret but earlier layers do not"):
+    final class Covered extends TuiApp:
+      val name                                      = TextInputState("abc")
+      val covered                                   = Signal(false)
+      override def bindings: KeyBindings            = KeyBindings(binding("ctrl+o", "cover")(covered.set(true)))
+      def view(using ReactiveScope, Theme): Element =
+        layers(
+          positioned(0, 0, 10, 1)(text("BEHIND")),
+          input(name).autofocus,
+          if covered.get then portal(0, 0, 10, 1)(text("COVERING..")) else spacer,
+        )
+    val pilot = run(Covered())
+    pilot.assertCursorAt(3, 0)
+    pilot.press("ctrl+o").waitForIdle()
+    assert(pilot.screenLines.head.startsWith("COVERING.."))
+    pilot.assertNoCursor()
+    quitApp(pilot)
+
+  test("filled spacer overlays hide the hardware caret and uncovering restores it"):
+    final class Covered extends TuiApp:
+      val name                                      = TextInputState("abc")
+      val covered                                   = Signal(true)
+      override def bindings: KeyBindings            = KeyBindings(binding("ctrl+o", "uncover")(covered.set(false)))
+      def view(using ReactiveScope, Theme): Element =
+        layers(input(name).autofocus, if covered.get then FilledElement(spacer, Style.Default) else spacer)
+    val pilot = run(Covered())
+    assert(pilot.screenLines.head.trim.isEmpty)
+    pilot.assertNoCursor()
+    pilot.press("ctrl+o").waitForIdle()
+    pilot.assertCursorAt(3, 0)
+    quitApp(pilot)
+
+  private def hostCaret(host: ElementHost, raw: Element): (Option[Position], Buffer) =
+    val buffer = Buffer(Rect(0, 0, 24, 6))
+    val caret  = CaretRegister.collect {
+      PortalQueue.during {
+        host.renderTree(raw, Style.Default, _.widget.render(buffer.area, buffer))
+        PortalQueue.drain().foreach((area, content) => content.widget.render(area, buffer))
+      }
+    }
+    (caret, buffer)
+
+  Seq(false, true).foreach { recording =>
+    test(s"filled footprint respects paint order, portals and transparent layout, bounds=$recording"):
+      val host  = ElementHost()
+      if recording then host.enableFullBoundsRecording()
+      val field = input(TextInputState("abc")).autofocus
+      val fill  = FilledElement(spacer, Style.Default)
+      assert(hostCaret(host, layers(fill, field))._1.contains(Position(3, 0)))
+      assert(hostCaret(host, layers(field, positioned(0, 0, 12, 1)(spacer)))._1.contains(Position(3, 0)))
+      assert(hostCaret(host, layers(field, fill))._1.isEmpty)
+      assert(hostCaret(host, layers(field, portal(0, 0, 12, 1)(fill)))._1.isEmpty)
+      assert(hostCaret(host, layers(field, spacer))._1.contains(Position(3, 0)))
+
+    test(s"filled footprints clip through nested scroll windows without hiding uncovered carets, bounds=$recording"):
+      val host                          = ElementHost()
+      if recording then host.enableFullBoundsRecording()
+      val outer                         = ScrollViewState()
+      val inner                         = ScrollViewState()
+      val field                         = input(TextInputState("abc")).autofocus
+      def nested(fillRow: Int): Element = positioned(0, 0, 12, 1)(
+        scrollView(
+          positioned(0, 1, 12, 1)(
+            scrollView(
+              layers(
+                positioned(0, 1, 10, 1)(field),
+                positioned(0, fillRow, 10, 1)(FilledElement(spacer, Style.Default)),
+              ),
+              3,
+              inner,
+            )
+          ),
+          2,
+          outer,
+        )
+      )
+      // Both scroll containers paint before the field. Only a later fill admitted by both windows hides it.
+      outer.offset = 1
+      inner.offset = 1
+      assert(hostCaret(host, nested(0))._1.contains(Position(3, 0)))
+      assert(hostCaret(host, nested(1))._1.isEmpty)
+      assert(hostCaret(host, nested(2))._1.contains(Position(3, 0)))
+      outer.offset = 0
+      assert(hostCaret(host, nested(2))._1.isEmpty)
+  }
 
   private final class Styled(style: CaretStyle) extends TuiApp:
     val name: TextInputState                      = TextInputState("ab")

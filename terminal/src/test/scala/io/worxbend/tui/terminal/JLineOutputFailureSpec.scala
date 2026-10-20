@@ -170,3 +170,32 @@ final class JLineOutputFailureSpec extends AnyFunSuite:
       assert(backend.inlineRows == 2, "failed parking must not be accounted as successful")
       intercept[IllegalStateException](terminal.writer())
     finally terminal.close()
+
+  test("a failed real-writer handover never starts a competing reader body"):
+    val device   = Device()
+    val terminal =
+      LineDisciplineTerminal("handover-device-failure", "xterm-256color", device, UTF_8, Terminal.SignalHandler.SIG_IGN)
+    val backend  =
+      JLine3Backend.wrapping(terminal, ColorDepth.TrueColor, knownCapabilities = Some(TerminalCapabilities.unknown))
+    var launched = false
+    try
+      assert(backend.enableRawMode().isRight)
+      assert(backend.enterAlternateScreen().isRight)
+      device.failing = true
+      assert(backend.suspend { launched = true }.isLeft)
+      assert(!launched)
+      assert(backend.alternateScreenActive, "failed screen release must retain its restoration obligation")
+    finally terminal.close()
+
+  test("failed keyboard and pointer writes below PrintWriter acquire no new mode ownership"):
+    val device   = Device()
+    val terminal =
+      LineDisciplineTerminal("mode-device-failure", "xterm-256color", device, UTF_8, Terminal.SignalHandler.SIG_IGN)
+    val backend  = JLine3Backend.wrapping(terminal, ColorDepth.TrueColor)
+    try
+      device.failing = true
+      assert(backend.enableKeyEventTypes().isLeft)
+      assert(!backend.keyEventTypesActive)
+      assert(backend.setPointerShape(PointerShape.Text).isLeft)
+      assert(backend.pointerShape == PointerShape.Default)
+    finally terminal.close()

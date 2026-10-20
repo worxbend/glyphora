@@ -269,6 +269,24 @@ final class ChromeElementsPilotSpec extends AnyFunSuite with PilotFixture:
     assert(notes.rect == Rect(7, 1, 19, 7))
     quitApp(pilot)
 
+  test("window: dragging and keyboard movement beyond an edge leave no hidden overshoot"):
+    val state = WindowStack().window(2, 1, 16, 5)
+    val pilot = startApp(Size(40, 12))(desk(window("Notes", state)(text("alpha"))))
+    pilot.drag(5, 1, 39, 1).waitForIdle()
+    assert(state.rect == Rect(24, 1, 16, 5))
+    pilot.drag(27, 1, 22, 1).waitForIdle()
+    assert(state.rect == Rect(19, 1, 16, 5))
+    assert(pilot.screenLines(1).drop(19).startsWith("┌ Notes "))
+    pilot.press("alt+m").waitForIdle()
+    (0 until 30).foreach(_ => pilot.press("right"))
+    pilot.press("left").waitForIdle()
+    assert(state.rect.x == 23)
+    pilot.press("escape", "alt+r").waitForIdle()
+    (0 until 50).foreach(_ => pilot.press("right"))
+    pilot.press("left").waitForIdle()
+    assert(state.rect.right <= 40 && state.rect.width == 39)
+    quitApp(pilot)
+
   test("window: two windows overlap; a click on the one beneath brings it to the front"):
     val back  = WindowStack().window(2, 1, 18, 6)
     val front = WindowStack().window(10, 3, 18, 6)

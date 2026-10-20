@@ -43,7 +43,8 @@ private[widgets] object Fragment:
     val middle =
       if inserted.size == 1 then Vector(prefix ++ inserted.head ++ suffix)
       else ((prefix ++ inserted.head) +: inserted.slice(1, inserted.size - 1)) :+ (inserted.last ++ suffix)
-    lines.take(start.line) ++ middle ++ lines.drop(stop.line + 1)
+    if start.line == stop.line && middle.size == 1 then lines.updated(start.line, middle.head)
+    else lines.take(start.line) ++ middle ++ lines.drop(stop.line + 1)
 
 /** What kind of keystroke produced a [[TextDiff]] — the only thing coalescing needs to know about intent. */
 private[widgets] enum EditKind:
@@ -59,6 +60,7 @@ private[widgets] final case class TextDiff(
     caretBefore: TextPosition,
     caretAfter: TextPosition,
     kind: EditKind,
+    anchorBefore: Option[TextPosition] = None,
 )
 
 /** The undo and redo history of one [[EditBuffer]], as diffs.

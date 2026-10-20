@@ -12,7 +12,9 @@ import scala.deriving.Mirror
   * followed by the value when present, a collection is its size followed by its elements, and an enum or sealed trait
   * is the case name followed by that case's fields. Any string can therefore be carried verbatim, decoding is one left
   * to right pass with no backtracking, and a file truncated or edited by hand fails with a message rather than an
-  * exception or a half-read value. It is a storage format, not a wire or interchange format.
+  * exception or a half-read value. Collection decoding has an input-sized expansion budget plus 1024 elements (shared
+  * by nested collections), including for custom codecs or empty products that consume no text. It is a storage format,
+  * not a wire or interchange format.
   *
   * The text [[encode]] produces starts with a version tag, `@<version>;`, and [[decode]] reads it back: a codec's
   * [[version]] is 1 unless it was built with [[versioned]], whose migration hook reads an older version's text into
@@ -91,7 +93,16 @@ object Codec:
 
   /** A cursor over the text being decoded. One reader belongs to one `decode` call and is used on that thread only. */
   final class Reader(text: String):
-    private var offset: Int = 0
+    private var offset: Int      = 0
+    // Bound expansion even for a user codec/product that consumes no atoms per element. The small allowance keeps
+    // ordinary collections of singleton/empty products readable without allowing a tiny header to allocate billions.
+    private var itemBudget: Long = text.length.toLong + 1024L
+
+    private[macros] def admitItems(size: Int): Either[String, Unit] =
+      if size.toLong > itemBudget then Left("collection size exceeds the input's decoding budget")
+      else
+        itemBudget -= size.toLong
+        Right(())
 
     def position: Int  = offset
     def atEnd: Boolean = offset >= text.length
@@ -117,7 +128,7 @@ object Codec:
       if colon < 0 then Left(s"expected a length-prefixed value at offset $offset, found end of input")
       else
         text.slice(offset, colon).toIntOption match
-          case Some(length) if length >= 0 && colon + 1 + length <= text.length =>
+          case Some(length) if length >= 0 && length <= text.length - colon - 1 =>
             val payload = text.slice(colon + 1, colon + 1 + length)
             offset = colon + 1 + length
             Right(payload)
@@ -177,15 +188,17 @@ object Codec:
         value.foreach(inner.write(_, out))
       def read(in: Codec.Reader): Either[String, C] =
         in.atom().flatMap(_.toIntOption.filter(_ >= 0).toRight("expected a collection size")).flatMap { size =>
-          val items = Vector.newBuilder[A]
-          var error = Option.empty[String]
-          var index = 0
-          while error.isEmpty && index < size do
-            inner.read(in) match
-              case Right(item) => items += item
-              case Left(why)   => error = Some(why)
-            index += 1
-          error.toLeft(build(items.result()))
+          in.admitItems(size).flatMap { _ =>
+            val items = Vector.newBuilder[A]
+            var error = Option.empty[String]
+            var index = 0
+            while error.isEmpty && index < size do
+              inner.read(in) match
+                case Right(item) => items += item
+                case Left(why)   => error = Some(why)
+              index += 1
+            error.toLeft(build(items.result()))
+          }
         }
 
   given seq[A](using inner: Codec[A]): Codec[Seq[A]]       = collection(inner, identity)

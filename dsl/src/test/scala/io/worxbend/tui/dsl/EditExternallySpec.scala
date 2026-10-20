@@ -73,6 +73,34 @@ final class EditExternallySpec extends AnyFunSuite with PilotFixture:
     assert(ExternalEditor.command(Map("EDITOR" -> "   ")) == Seq("vi"))
     assert(ExternalEditor.command(Map.empty) == Seq("vi"))
 
+  test("quoted editor paths and arguments retain their literal argv boundaries"):
+    assert(
+      ExternalEditor.command(Map("EDITOR" -> "\"/Applications/My Editor\" --wait 'two words' escaped\\ space")) ==
+        Seq("/Applications/My Editor", "--wait", "two words", "escaped space")
+    )
+    assert(ExternalEditor.command(Map("EDITOR" -> "editor '' \"\"")) == Seq("editor", "", ""))
+    assert(
+      ExternalEditor
+        .command(Map("EDITOR" -> "vim; rm -rf /not-a-command")) == Seq("vim;", "rm", "-rf", "/not-a-command")
+    )
+
+  test("editor launch failures do not escape into a backend's suspended-body error boundary"):
+    var caughtByBackend                = false
+    def suspended(body: => Unit): Unit =
+      try body
+      catch case _: java.io.IOException => caughtByBackend = true
+    assert(ExternalEditor.edit(Seq("/nonexistent/glyphora-editor"), "draft", ".txt", suspended).isEmpty)
+    ExternalEditor.open(Seq("/nonexistent/glyphora-editor"), Path.of("notes"), None, suspended)
+    assert(!caughtByBackend)
+
+  test("a quoted executable path with spaces launches without a shell"):
+    val directory = Files.createTempDirectory("glyphora editor path")
+    val file      = script(directory, """printf 'changed' > "$1"""")
+    val spaced    = directory.resolve("my editor.sh")
+    Files.move(file, spaced)
+    val argv      = ExternalEditor.command(Map("EDITOR" -> s"\"$spaced\""))
+    assert(ExternalEditor.edit(argv, "draft", ".txt", body => body).contains("changed"))
+
   test("the no-op services edit nothing and open nothing"):
     assert(AppServices.NoOp.editExternally("x").isEmpty)
     AppServices.NoOp.openInEditor(Path.of("nowhere"))

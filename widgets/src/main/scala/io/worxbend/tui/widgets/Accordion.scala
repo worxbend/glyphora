@@ -29,6 +29,11 @@ object AccordionState:
   /** An accordion with `open` unfolded, or none. */
   def apply(open: Option[Int] = None): AccordionState = new AccordionState(open)
 
+object Accordion:
+
+  /** A titled widget body, unfolded when this section is selected in [[AccordionState]]. */
+  final case class Section(title: String, body: Widget)
+
 /** A stack of titled sections of which at most one is unfolded: every header takes one row (`▸ title` folded, `▾ title`
   * open) and the open section's body takes every row the headers leave, between its own header and the next. With
   * nothing open the headers sit at the top. An area shorter than the headers keeps as many as fit, from the top.
@@ -37,7 +42,7 @@ object AccordionState:
   * caller-owned [[AccordionState]]; render-thread use only.
   */
 final case class Accordion(
-    sections: Seq[(String, Widget)],
+    sections: Seq[Accordion.Section],
     style: Style = Style.Default,
     openStyle: Style = Style.Default.bold,
     collapsedSymbol: String = "▸ ",
@@ -49,7 +54,7 @@ final case class Accordion(
       val open     = state.open.filter(sections.indices.contains)
       val bodyRows = math.max(0, area.height - sections.size)
       var y        = area.y
-      sections.zipWithIndex.foreach { case ((title, body), index) =>
+      sections.zipWithIndex.foreach { case (Accordion.Section(title, body), index) =>
         if y < area.bottom then
           val isOpen = open.contains(index)
           val marker = if isOpen then expandedSymbol else collapsedSymbol

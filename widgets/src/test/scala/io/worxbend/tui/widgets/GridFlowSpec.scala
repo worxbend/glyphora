@@ -26,9 +26,9 @@ final class GridFlowSpec extends AnyFunSuite:
     val grid = Grid(
       twoByTwo,
       Seq(
-        GridCell(GridPlacement(0, 0, colSpan = 2), fill("T")),
-        GridCell(GridPlacement(1, 0), fill("a")),
-        GridCell(GridPlacement(1, 1), fill("b")),
+        GridEntry(GridPlacement(0, 0, colSpan = 2), fill("T")),
+        GridEntry(GridPlacement(1, 0), fill("a")),
+        GridEntry(GridPlacement(1, 1), fill("b")),
       ),
     )
     assert(lines(rendered(grid, 7, 3)) == Seq("TTTTTTT", "aaa bbb", "aaa bbb"))
@@ -38,16 +38,16 @@ final class GridFlowSpec extends AnyFunSuite:
     val grid   = Grid(
       layout,
       Seq(
-        GridCell(GridPlacement(0, 0), chip("ab")),
-        GridCell(GridPlacement(0, 1), fill("x")),
-        GridCell(GridPlacement(1, 0, colSpan = 2), fill("y")),
+        GridEntry(GridPlacement(0, 0), chip("ab")),
+        GridEntry(GridPlacement(0, 1), fill("x")),
+        GridEntry(GridPlacement(1, 0, colSpan = 2), fill("y")),
       ),
     )
     assert(lines(rendered(grid, 5, 3)) == Seq("abxxx", "yyyyy", "yyyyy"))
 
   test("a grid measures the rows it can: lengths, Auto rows from their cells, gaps between"):
     val layout = GridLayout(Seq(Constraint.fill), Seq(Constraint.Length(2), Constraint.Auto)).withGap(0, 1)
-    val grid   = Grid(layout, Seq(GridCell(GridPlacement(1, 0), chip("a\nb\nc"))))
+    val grid   = Grid(layout, Seq(GridEntry(GridPlacement(1, 0), chip("a\nb\nc"))))
     assert(heightOf(grid, 10).contains(2 + 1 + 3))
     assert(heightOf(Grid(twoByTwo, Seq.empty), 10).isEmpty) // a fill row cannot say
     assert(heightOf(Grid(GridLayout(Seq(Constraint.fill), Seq(Constraint.Auto)), Seq.empty), 10).isEmpty)

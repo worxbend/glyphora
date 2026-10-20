@@ -95,6 +95,10 @@ import scala.util.DynamicVariable
   * @param promptAnswerYesNo
   *   a typed confirm answer that is neither yes nor no; `{yes}`/`{no}` are [[promptYes]]/[[promptNo]], `{input}` the
   *   answer.
+  * @param promptCommaSeparated
+  *   the plain multi-select hint describing its answer separator.
+  * @param promptSecretRejected
+  *   a rejected password's diagnostic, replacing validator text that may contain the secret.
   * @param promptNothingToChoose
   *   a choice prompt answered with no options to choose from.
   * @param promptNotAnOption
@@ -152,6 +156,8 @@ final case class Messages(
     tagInfo: String = "INFO",
     tagWarning: String = "WARN",
     tagError: String = "FAIL",
+    promptCommaSeparated: String = "comma-separated",
+    promptSecretRejected: String = "the secret was rejected",
 ):
 
   def withDialogOk(label: String): Messages              = copy(dialogOk = label)
@@ -191,6 +197,8 @@ final case class Messages(
   def withPromptAnswerYesNo(template: String): Messages   = copy(promptAnswerYesNo = template)
   def withPromptNothingToChoose(label: String): Messages  = copy(promptNothingToChoose = label)
   def withPromptNotAnOption(template: String): Messages   = copy(promptNotAnOption = template)
+  def withPromptCommaSeparated(label: String): Messages   = copy(promptCommaSeparated = label)
+  def withPromptSecretRejected(label: String): Messages   = copy(promptSecretRejected = label)
 
   /** This table with framework key `id` described as `description`. */
   def withFrameworkKeyDescription(id: BindingId, description: String): Messages =

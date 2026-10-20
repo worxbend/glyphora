@@ -188,11 +188,12 @@ final case class SelectionListElement(
   private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] =
     Some(wheelScrolls(() => state.selectPrevious(items.size), () => state.selectNext(items.size)))
   def widget: Widget                                                         =
-    val rendered = items.zipWithIndex.map { (item, index) =>
-      val marker = if selected.contains(index) then "[x] " else "[ ] "
-      Line.raw(marker + item)
-    }
-    val view     = w.ListView(rendered, style = componentStyled(props), highlightStyle = selectedRowStyle(props))
+    val view = w.ListView(
+      items,
+      itemPrefix = index => if selected.contains(index) then "[x] " else "[ ] ",
+      style = componentStyled(props),
+      highlightStyle = selectedRowStyle(props),
+    )
     (area, buffer) => view.render(area, buffer, state)
   private[dsl] def withProps(props: ElementProps): SelectionListElement      = copy(props = props)
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     =
@@ -382,8 +383,9 @@ private[dsl] final case class LazyWindow(from: Int, items: Vector[Element]):
   * frame's viewport, re-anchored on the current offset and selection; the frame's height before the first render) and
   * calls `build` for exactly those indices. What it builds is then an ordinary part of the tree: focusables in it take
   * Tab stops, keys bubble out of it, the bounds recorder sees it, a focused text field in it drives the caret. An item
-  * that falls outside the window between frames — the enclosing scroll view jumped a page — is built while painting, so
-  * the frame shows it (inert, for that one frame), and the miss asks the host for the frame that builds it properly.
+  * that falls outside the window between frames — the enclosing scroll view jumped a page — is left blank for that
+  * paint. The miss asks the host for the frame that builds and decorates it with its normal hook identity; painting
+  * never invents a second, inert component lifetime.
   *
   * While focused, Up/Down move the selection, Home/End jump to the ends and PageUp/PageDown move a page; the wheel
   * moves the selection on hover, and a press selects the item under the pointer. The selected item is drawn in the same
@@ -429,22 +431,36 @@ final case class LazyListElement(
   private def view(item: Int => Option[Widget]): w.LazyListView =
     w.LazyListView(count, itemHeight, item, highlightStyle = selectedRowStyle(props))
 
+  /** Late content still takes the frame's theme and inherited content style, but never registers input targets. */
+  private def lateWidget(element: Element): Widget =
+    FocusPass
+      .decorate(
+        FocusPass.suppressFocus(StyleScopeElement(element, props.style)),
+        FocusTracker(),
+        props.focusStyle,
+        theme = props.focusState.theme,
+        disabledStyle = props.focusState.disabledStyle,
+      )
+      .widget
+
   def widget: Widget =
-    // an item outside the built window — the enclosing scroll view jumped since the window was chosen — is built while
-    // painting, as with no host behind the node, so the frame shows it instead of a blank; it is undecorated (inert)
-    // for that one frame, and the miss is still noted so the host draws the frame that builds it properly
+    // A hosted miss owes resolution, not a second paint-only component lifetime. Standalone widgets still build
+    // directly, since no host exists to resolve their items on a later frame.
     var builtLate                        = false
     def late(index: Int): Option[Widget] =
       builtLate = true
-      build(index until index + 1).headOption.map(_.widget)
+      val _ = index
+      None
     val items: Int => Option[Widget]     = window match
       case Some(built) => index => built.item(index).map(_.widget).orElse(late(index))
-      case None        => index => build(index until index + 1).headOption.map(_.widget)
+      case None        => index => build(index until index + 1).headOption.map(lateWidget)
     val list                             = view(items)
     (area, buffer) =>
       builtLate = false
       list.render(area, buffer, state)
       if builtLate && window.isDefined then state.noteMissed()
+
+  private[dsl] override def bubbledKeyHandler: Option[BuiltinKeyHandler] = builtinKeyHandler
 
   private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler] =
     Some(

@@ -31,6 +31,21 @@ private[terminal] final class EventPump(decoder: InputDecoder):
     */
   private var lastDelivered: Option[Size] = None
 
+  private val readerOwnership  = Object()
+  @volatile private var paused = false
+
+  /** Stop admitting reads, interrupt the current decoder read, and wait for that reader to relinquish ownership.
+    * Decoder state and posted signals deliberately survive the handover, including an interrupted paste.
+    */
+  def pause(): Unit =
+    paused = true
+    wake()
+    readerOwnership.synchronized(())
+
+  def resume(): Unit =
+    paused = false
+    wake()
+
   /** Queues the coalesced resize the next [[poll]] reports, and wakes an in-flight poll so it is seen promptly. Safe
     * from any thread.
     */
@@ -60,7 +75,8 @@ private[terminal] final class EventPump(decoder: InputDecoder):
     */
   def poll(timeout: Duration): Either[BackendError, Option[Event]] =
     Backend.requirePositiveTimeout(timeout)
-    if pendingInterrupt.getAndSet(false) then Right(Some(Event.Interrupt))
+    if paused then Right(None)
+    else if pendingInterrupt.getAndSet(false) then Right(Some(Event.Interrupt))
     else
       pendingResize.getAndSet(None) match
         case Some(EventPump.PendingResize(resized, forced)) =>
@@ -79,13 +95,15 @@ private[terminal] final class EventPump(decoder: InputDecoder):
     lastDelivered = Some(size)
     Right(Some(Event.Resize(size)))
 
-  private def blockingRead(timeout: Duration): Either[BackendError, Option[Event]] =
+  private def blockingRead(timeout: Duration): Either[BackendError, Option[Event]] = readerOwnership.synchronized {
     pollingThread.set(Some(Thread.currentThread()))
     // Re-checked *after* registering, closing the window this registration opens: a wake that landed between `poll`'s
     // check and this registration found nobody to interrupt, so without this second look the render thread parks for
     // the whole timeout — up to a tick interval, or 100 ms with no tick rate — before draining the work that wake was
     // announcing. That is exactly the latency `wake()` exists to remove.
-    try if woken.getAndSet(false) then Right(None) else Right(decoder.decode(JLine3Backend.readTimeoutMillis(timeout)))
+    try
+      if paused || woken.getAndSet(false) then Right(None)
+      else Right(decoder.decode(JLine3Backend.readTimeoutMillis(timeout)))
     catch
       // The decoder keeps every interrupted sequence for itself — a paste or a control-string skip retains its
       // progress, a half-read sequence re-queues its prefix — so the only interrupt that reaches this boundary is one
@@ -96,6 +114,7 @@ private[terminal] final class EventPump(decoder: InputDecoder):
     finally
       pollingThread.set(None) // no read is in flight any more: `wake` has nobody to interrupt
       val _ = Thread.interrupted() // drop an interrupt that landed after the read completed
+  }
 
   /** Cuts short an in-flight [[poll]].
     *

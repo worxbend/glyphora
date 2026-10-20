@@ -84,8 +84,13 @@ object LayoutSolver:
       // solved as the base, then held between the bounds by `solveDemands`; a bounded proportion no longer counts
       // towards "the constraints claim the whole axis", because a clamp can take it away from the share it asked for
       case Constraint.Bounded(min, max, base) =>
-        val floor = math.max(0, min)
-        demandOf(base, axis).copy(proportional = None, bounds = Some(Demand.Bounds(floor, math.max(floor, max))))
+        val floor                  = math.max(0, min)
+        val ceiling                = math.max(floor, max)
+        val inner                  = demandOf(base, axis)
+        def clamp(value: Int): Int = math.max(floor, math.min(ceiling, value))
+        val bounds                 =
+          inner.bounds.fold(Demand.Bounds(floor, ceiling))(b => Demand.Bounds(clamp(b.floor), clamp(b.ceiling)))
+        inner.copy(proportional = None, bounds = Some(bounds))
 
   /** The demand a `numerator / denominator` fraction of an `axis`-cell axis makes: whole cells now, plus the fraction
     * of a cell the divide threw away so the leftover can be ranked by who lost the most.
@@ -210,13 +215,13 @@ object LayoutSolver:
 
   /** Whether every constraint is proportional *and* together they ask for the whole axis.
     *
-    * The tolerance is one percentage point per constraint: an integer percentage can only approximate the share its
-    * author meant, so three thirds spell 99% and still mean "all of it", while `Percentage(50)` alone means half and
-    * `Percentage(10), Percentage(30)` means a 1:3 split with 60% of the axis left free.
+    * The tolerance is one percentage point per constraint, capped at three points: integer percentages approximate the
+    * share their author meant, so three thirds spell 99% and still mean "all of it", while `Percentage(50)` alone means
+    * half and `Percentage(10), Percentage(30)` means a 1:3 split with 60% of the axis left free.
     */
   private def claimsWholeAxis(demands: IndexedSeq[Demand]): Boolean =
     demands.forall(_.proportional.isDefined) &&
-      demands.map(_.proportional.fold(0.0)(_.share)).sum > 1.0 - demands.size / 100.0
+      demands.map(_.proportional.fold(0.0)(_.share)).sum > 1.0 - math.min(3, demands.size) / 100.0
 
   /** Shares `leftover` cells among the growing constraints by weight, honoring caps; residue refused by a capped
     * constraint is re-distributed among the still-uncapped until nothing changes.

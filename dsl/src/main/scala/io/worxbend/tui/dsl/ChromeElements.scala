@@ -385,17 +385,17 @@ final case class MenuBarElement(
       current.render(Rect(area.x, area.y, area.width, math.min(1, area.height)), buffer, state)
       (openMenu, children) match
         case (Some(index), Seq(above, below, popup)) if !props.inert && !area.isEmpty =>
-          val frame      = popupFrame(area, 1 + current.dropdown(index).heightAt(0).getOrElse(0))
-          val screen     = FrameCoordinates.translate(area)
-          val menu       = current.dropdown(index)
-          val width      = math.min(menu.widthAt(0).getOrElse(0), frame.width)
-          val (start, _) = current.titleSpan(index)
-          val x          = math.max(frame.x, math.min(screen.x + start, frame.right - width))
-          val top        = screen.y + 1
-          val height     = math.min(menu.heightAt(0).getOrElse(0), frame.bottom - top)
+          val frame  = popupFrame(area, 1 + current.dropdown(index).heightAt(0).getOrElse(0))
+          val screen = FrameCoordinates.translate(area)
+          val menu   = current.dropdown(index)
+          val width  = math.min(menu.widthAt(0).getOrElse(0), frame.width)
+          val start  = current.titleSpan(index).x
+          val x      = math.max(frame.x, math.min(screen.x + start, frame.right - width))
+          val top    = screen.y + 1
+          val height = math.min(menu.heightAt(0).getOrElse(0), frame.bottom - top)
           // the scrim covers the frame above and below the bar's own row, so a press on another title still lands on
           // the bar and switches menus rather than only dismissing the open one
-          val scrims     = Seq(
+          val scrims = Seq(
             above -> Rect(frame.x, frame.y, frame.width, math.max(0, screen.y - frame.y)),
             below -> Rect(frame.x, top, frame.width, math.max(0, frame.bottom - top)),
           )
@@ -601,7 +601,13 @@ final case class WindowElement(
   override def children: Seq[Element]                     = Seq(body)
   private def frame: w.Window                             =
     val border = if holdsFocus(this) then frameStyle.bold else frameStyle
-    w.Window(title, borderStyle = border, titleStyle = border.bold)
+    w.Window(
+      title,
+      borderStyle = border,
+      titleStyle = border.bold,
+      borderType = w.BorderType.Plain.degraded(props.glyphs),
+      gripSymbol = if props.glyphs == io.worxbend.tui.core.GlyphSupport.Ascii then "+" else "◢",
+    )
   def widget: Widget                                      =
     val current = frame
     (area, buffer) =>
@@ -678,9 +684,9 @@ private[dsl] object WindowElement:
 
 /** Floating windows over the area it is given — usually the overlay of a `layers(base, windowStack(...))`. Each
   * [[WindowElement]] is drawn at its state's rectangle, nudged back inside the area when it has been dragged past an
-  * edge (the state keeps where it was put), in stacking order: a larger `z` — the window raised last — draws on top and
-  * so takes the pointer where windows overlap. Other children draw across the whole area, beneath every window. Paints
-  * nothing of its own, so a press between the windows reaches whatever is underneath.
+  * edge (the state records the actual painted rectangle), in stacking order: a larger `z` — the window raised last —
+  * draws on top and so takes the pointer where windows overlap. Other children draw across the whole area, beneath
+  * every window. Paints nothing of its own, so a press between the windows reaches whatever is underneath.
   */
 final case class WindowStackElement(override val children: Seq[Element], props: ElementProps = ElementProps())
     extends Element:
@@ -692,7 +698,9 @@ final case class WindowStackElement(override val children: Seq[Element], props: 
       if !area.isEmpty then
         children.sortBy(child => WindowStackElement.windowOf(child).fold(Long.MinValue)(_.state.z)).foreach { child =>
           WindowStackElement.windowOf(child) match
-            case Some(window) => child.widget.render(WindowStackElement.placed(window.state.rect, area), buffer)
+            case Some(window) =>
+              window.state.settle(Size(area.width, area.height))
+              child.widget.render(WindowStackElement.placed(window.state.rect, area), buffer)
             case None         => child.widget.render(area, buffer)
         }
   private[dsl] def withProps(props: ElementProps): WindowStackElement                = copy(props = props)

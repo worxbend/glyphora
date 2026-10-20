@@ -6,8 +6,9 @@ description: Understand glyphora's pre-1.0 compatibility policy, synchronized mo
 # Versioning & releases
 
 glyphora is pre-1.0. Patch releases preserve public APIs; minor releases may make
-breaking changes as the application layer matures. `tui-core` is the stability
-anchor and has received additive changes only since `0.2`.
+breaking changes as the application layer matures. `tui-core` remains the stability
+anchor, but minor-release source migrations there also apply: `0.21.0` replaces
+public coordinate and RGB tuples with named records.
 
 Pin an exact version in applications and review release notes before moving between
 minor versions.
@@ -18,21 +19,23 @@ All publishable modules in this checkout share one synchronized version under `c
 
 ```scala
 // Mill
-def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.20.0")
+def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.21.0")
 ```
 
 ```scala
 // sbt
-libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.20.0"
+libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.21.0"
 ```
 
 Applications normally need only `tui-dsl`. Lower-tier artifacts are `tui-core`,
 `tui-terminal`, `tui-widgets`, `tui-runtime`, and `tui-macros`; `tui-test` carries the
 headless test harness and belongs in the test configuration only.
 
-Version `0.20.0` is published to Maven Central under `com.worxbend` by the `v0.20.0`
-tag (see [Release process](#release-process)); Central keeps every earlier release, so a
-build pinned to `0.19.0` keeps resolving.
+Version `0.21.0` is released from the `v0.21.0` tag. Its Publish workflow validates the
+exact tag commit before uploading to Maven Central under `com.worxbend` (see
+[Release process](#release-process)); check that workflow before expecting a newly
+pushed tag to resolve. Central keeps earlier releases, so builds pinned to `0.20.0`
+keep resolving.
 Downloads require no credentials, and Mill and sbt use Central by default. GitHub
 Packages also hosts the libraries; its resolver requires a classic PAT with
 `read:packages`.
@@ -40,6 +43,67 @@ See [Getting started](./getting-started#1-add-glyphora) for both options.
 
 GitHub Packages releases through `v0.18.1` used `io.worxbend`. Update dependency
 coordinates to `com.worxbend` when moving to `0.18.3`; Scala imports use `io.worxbend.tui`.
+
+## Migrating to 0.21.0
+
+0.21.0 repairs correctness, security, lifecycle and performance defects found in the
+0.20.0 implementation. It is a minor release because several corrections change public
+source APIs. Recompile consumers and apply these migrations when upgrading:
+
+- **Framework keymap ids use `framework.`.** In user files, `quit = ctrl+q` now names an app
+  command; use `framework.quit = ctrl+q` for the framework action. The same prefix applies to
+  `focus-next`, `focus-previous`, `command-palette`, `close-modal`, `copy-selection`, `inspector`,
+  `menu-bar`, `window-move` and `window-resize`. `FrameworkKeys` constants supply the new ids.
+  Explicit app binding ids must not use this reserved namespace. Use `Keymap.validate` and
+  `rebindEither` for recoverable user-configuration errors; `none` unbinds an entry.
+- **Domain records replace public tuples.** The DSL import exposes the new vocabulary:
+  - `GridItem.position` and `GridSpot.position` use `Option[core.GridCell(row, col)]`, not
+    coordinate pairs. The widget content record formerly named `widgets.GridCell` is now
+    `GridEntry(placement, widget)`. The cell-enumerating `GridItem.cellsOf` helper is removed;
+    grid occupancy is represented by rectangles rather than potentially unbounded cell sets.
+  - `ExportPalette.rgb` and `palette.Xterm256.rgb` return `Rgb(r, g, b)`; custom palettes return
+    that record and consumers read `.r`, `.g`, `.b`. `Color.approximateRgb` is unchanged.
+  - Stateful `Lexer.highlightLine(line, theme, state)` implementations return
+    `LexedLine(line, next)` instead of `(Line, LexState)`; consumers read `.line` and `.next`.
+    Two-argument stateless lexer implementations remain unchanged.
+  - `EditBuffer.selection` returns `Option[TextRange]`, with ordered `.start` and `.end`
+    grapheme positions. `PrettyShape.map` takes `Seq[PrettyEntry[R]]` (`key`, `value`), and
+    `PrettyShape.product` takes `Seq[PrettyField[R]]` (`name`, `value`).
+  - `Accordion(Seq(title -> widget))` becomes `Accordion(Seq(Accordion.Section(title, widget)))`.
+    `MenuBar.titleSpan` returns `MenuBar.TitleSpan(x, width)`; toolbar helpers return
+    `Toolbar.Window(start, end)` and `Seq[Toolbar.Placement]`. Read named fields, not `_1`/`_2`.
+- **JVM image decoding is explicit.** Import `io.worxbend.tui.widgets.ImageIoLoader` for
+  `fromFile` / `fromBytes` (formerly on `ImageLoader`) and `imageFromFile` (formerly
+  `Image.fromFile`). JPEG/GIF/BMP remain supported through this adapter; it is intentionally
+  not DSL-exported. Native-safe PNG loading is `ImageLoader.readPng(path).map(Image.fromRgba)`.
+- **Named highlighting arguments use `lexer`.**
+  `SyntaxHighlighter.highlight(code, language = Language.Scala)` becomes
+  `SyntaxHighlighter.highlight(code, lexer = Language.Scala)`; likewise
+  `highlightLine(line, language = ...)` becomes `highlightLine(line, lexer = ...)`.
+  Positional calls are unchanged.
+- **Composer ownership moves down a tier.** `PromptComposerState` and reusable painting live in
+  `tui-widgets`, depending only on core. Existing DSL type/companion aliases and
+  `promptComposer` calls remain available; provider scheduling stays in the DSL adapter.
+  Node-family relocation changes no factory spelling. Mutable JFR carriers are now runtime-private.
+- **Embedding additions are compatible.** `container` adds trailing defaulted `measureWidth`,
+  `TuiApp.focusKey` requests focus without activation, and `Frame` / `ImageProtocol` are
+  available through the DSL import. `ListView.itemPrefix` is a trailing optional parameter;
+  existing positional constructor and `copy` style arguments remain compatible.
+- **Custom runner/backend behavior is explicit.** `RunnerHandle` keeps its optional
+  `setTaskbarState` fallback to `setTaskbarProgress(state.progress)` (discarding error/paused
+  styling and treating indeterminate as no fraction) and its no-op `setMouseCaptureMode`.
+  Override the latter to support dynamic hover/all-motion tracking. The three required
+  `0.20.0` additions remain `setPointerShape`, `notifyDesktop` and `setTaskbarProgress`;
+  `suspend`, `printAbove` and `insertBefore` were already abstract in `0.19.0`.
+  `Backend.redrawOwed` is a new optional flag defaulting to `false`: diff-based backends expose
+  pending full-redraw requests without consuming them, `TerminalRunner` polls it, and `draw`
+  consumes the request. Custom runners should observe it too.
+
+Hosted lazy-list misses now wait for the owed resolution frame, rather than constructing a
+second paint-only hook lifetime. Standalone widgets still build directly. Default password
+prompts and hidden text inputs paint a fixed blank row and report no caret, so neither frame
+symbols nor cell styles disclose password length. Explicit visible masks may disclose grapheme
+count, but never populate the clipboard or kill ring. See [Editing](./editing) and [Prompts](./prompts).
 
 ## Migrating to 0.20.0
 
@@ -533,7 +597,14 @@ Three changes reach almost every app, so check them first:
   pressed element, with its press-time area, even after the pointer has left it — so a slider or
   split divider keeps following a drag past its edge and an `onDragEnd` fires for a release
   outside. Handlers that assumed a `Drag` lies inside their area should clamp. A press nobody
-  consumed captures nothing.
+  consumed captures nothing. Across recomposition, a unique key retains capture and the
+  press-time area through reorder; changing the key starts a new lifetime. A rebuilt
+  unkeyed built-in retains its original handlers only with the same caller-owned signal
+  or widget-state references and unchanged input topology. A same-slot state replacement,
+  unknown ownership, rebuilt user handler, removal, clipping out, disabling or focus-layer
+  transition cancels capture; its tail is discarded until a fresh press. Ordinary unkeyed
+  sliders therefore remain draggable through pressed-cue redraws without keeping a retired
+  signal alive after replacement.
 - **Prefer `.onMouse(ctx => …)` to absolute coordinates.** It hands the handler `ctx.local`,
   relative to the element's top-left, and `ctx.area`. `.onMouseEvent`, `onClickAt`, `onHover` and
   `onDrag` stay and run first.
@@ -712,15 +783,24 @@ Three changes reach almost every app, so check them first:
   `openInEditor`, and `runEffect(key, effect)` — kept abstract on purpose, because a default that
   ignored the key would silently keep the stacking bug it fixes; `runEffect(key, effect, scope)`
   and `clipboard` are concrete with defaults. `Notifications` gained `desktop(title, body)`.
-  `RunnerHandle` gained `setPointerShape`, `notifyDesktop` and `setTaskbarProgress` (add them as
-  `()`) and `setMouseCaptureMode` (defaulted).
+  `RunnerHandle` gained the abstract `setPointerShape`, `notifyDesktop` and
+  `setTaskbarProgress` (output-only test doubles can implement these three as `()`).
+  `suspend(body)`, `printAbove(lines)` and `insertBefore(height, widget)` were already abstract
+  in 0.19. The two optional additions preserve source compatibility: `setTaskbarState`
+  defaults to fractional progress, and `setMouseCaptureMode` defaults to a no-op. A custom
+  handle must override `setMouseCaptureMode` to support dynamic hover/all-motion tracking;
+  the production terminal handle implements both methods fully.
 
   ```scala
-  // after: the members a 0.19 test double now also needs
+  // after: AppServices-specific additions (also implement Notifications.desktop as noted above)
   def runEffect(key: String, effect: Effect): Unit                       = ()
   def editExternally(initial: String, suffix: String): Option[String]    = None
   def openInEditor(path: Path, line: Option[Int]): Unit                  = ()
   def keyMode: Signal[ModeId]                                            = Signal(ModeId.Default)
+  def colorScheme: Reactive[ColorScheme]                                 = Signal(ColorScheme.Unknown)
+  def taskbarProgress(progress: Reactive[Option[Double]]): Unit           = ()
+  def taskbarState(state: Reactive[TaskbarState]): Unit                   = ()
+  def clearTaskbarProgress(): Unit                                       = ()
   ```
 
 - `object TuiApp` now exists as a companion; nothing changes unless code relied on its absence.
@@ -750,6 +830,23 @@ Three changes reach almost every app, so check them first:
 
   See [Print mode](./print-mode).
 
+### Selection ranges
+
+`EditBuffer.selection` (also inherited by `TextInputState` and `TextAreaState`)
+now returns `Option[TextRange]` instead of `Option[(TextPosition, TextPosition)]`.
+Read `range.start` and `range.end` rather than `_1` and `_2`; both are grapheme
+positions in document order, whichever direction the selection was extended.
+`TextRange` is available through the DSL import as well as `tui-widgets`.
+
+### Pretty description builders
+
+Custom `PrettyShape[R]` implementations now receive named records rather than
+positional tuples: `map(name, entries: Seq[PrettyEntry[R]])` reads `entry.key` and
+`entry.value`; `product(name, fields: Seq[PrettyField[R]])` reads `field.name` and
+`field.value`. `PrettyEntry` and `PrettyField` are immutable values in `tui-macros`
+and are also available through the DSL import. Derived `Pretty` instances and
+`inspect(value)` callers need no changes.
+
 ### Widgets
 
 - **An unfocused `confirmDialog` underlines its selected button instead of painting it in the
@@ -765,7 +862,9 @@ Three changes reach almost every app, so check them first:
   `Generic` are lexer values, so anyone can add a language. `SyntaxHighlighter.highlight(code,
   Language.Scala)`, `Language.of("sh")`, equality and `case Language.Scala =>` still compile;
   `Language.values`, `valueOf`, `.ordinal` and exhaustivity do not, and `Language.of("yaml")` now
-  answers the YAML lexer rather than `Generic`:
+  answers the YAML lexer rather than `Generic`. The `highlight` and `highlightLine` named
+  argument changed from `language = Language.Scala` to `lexer = Language.Scala`; positional
+  calls are unchanged:
 
   ```scala
   // before (0.19)
@@ -1233,7 +1332,7 @@ dependencies fail the release workflow.
 To publish the current main commit manually:
 
 ```sh
-gh workflow run publish-packages.yml --ref main -f version=0.20.0
+gh workflow run publish-packages.yml --ref main -f version=0.21.0
 ```
 
 Treat released versions as immutable. Increment the shared `publishVersion`

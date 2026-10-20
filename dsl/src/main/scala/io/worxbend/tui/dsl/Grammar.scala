@@ -1,6 +1,6 @@
 package io.worxbend.tui.dsl
 
-import io.worxbend.tui.core.{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind, Position, Style, Widget}
+import io.worxbend.tui.core.{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind, Position, Style}
 import io.worxbend.tui.terminal.PointerShape
 
 /** Named key constants and constructors, so handlers read `onKey(Key.Up){ … }` instead of matching raw
@@ -252,57 +252,3 @@ private def bindKeys[E <: Element](element: E)(keys: Seq[KeyEvent])(handler: => 
   */
 def withStyle(transform: Style => Style)(inner: Element): Element =
   StyleScopeElement(inner, transform(Style.Default))
-
-/** The node [[withStyle]] builds: `inner`, with `base` cascading onto every node beneath it when painted.
-  *
-  * The focus pass layers the cascade in and marks the scope applied; a scope painted without one — a widget-level test
-  * calling `.widget` directly — applies it itself, eagerly, on that paint. Its own props start from the wrapped node's
-  * layout claims and are otherwise its own, so it is never a second focus target for the node it wraps; `.fg(...)` and
-  * the other styling builders on the scope add to `base`.
-  */
-final case class StyleScopeElement private[dsl] (
-    inner: Element,
-    base: Style,
-    override val props: ElementProps,
-    private[dsl] val applied: Boolean,
-) extends DecoratingElement:
-  type Self = StyleScopeElement
-  override def debugName: String = inner.debugName
-
-  // the scope is a styling boundary, not a second copy of the node it wraps: none of the wrapped node's behaviour is
-  // offered here as well, or the focus pass would make a pointer target of the scope and the router run it twice
-  private[dsl] override def builtinKeyHandler: Option[BuiltinKeyHandler]     = None
-  private[dsl] override def builtinMouseHandler: Option[BuiltinMouseHandler] = None
-  private[dsl] override def builtinPasteHandler: Option[BuiltinPasteHandler] = None
-  private[dsl] override def componentRole: Option[ComponentRole]             = None
-  override def pointerShape: Option[PointerShape]                            = props.pointerShape
-
-  /** What this scope cascades onto the nodes beneath it: its base with its own styling builders on top. */
-  private[dsl] def cascade: Style = base.patch(props.style)
-
-  def widget: Widget =
-    if applied then inner.widget else StyleScopeElement.restyled(cascade)(inner).widget
-
-  private[dsl] def withProps(props: ElementProps): StyleScopeElement                = copy(props = props)
-  private[dsl] override def withChildren(children: Seq[Element]): StyleScopeElement =
-    children.headOption.fold(this)(child => copy(inner = child))
-
-object StyleScopeElement:
-
-  private[dsl] def apply(inner: Element, base: Style): StyleScopeElement =
-    val claims = inner.props
-    new StyleScopeElement(
-      inner,
-      base,
-      ElementProps(constraint = claims.constraint, alignSelf = claims.alignSelf, gridSpot = claims.gridSpot),
-      applied = false,
-    )
-
-  /** The eager fallback for a scope painted with no focus pass: the subtree rebuilt with `base` under every style. */
-  private[dsl] def restyled(base: Style)(node: Element): Element =
-    node match
-      case scope: StyleScopeElement =>
-        scope.copy(inner = restyled(base.patch(scope.cascade))(scope.inner), applied = true)
-      case _                        =>
-        val own = node.withProps(node.props.copy(style = base.patch(node.props.style)))
-        own.withChildren(own.children.map(restyled(base)))

@@ -96,9 +96,11 @@ final class SearchState private (
   /** Makes the previous match current, wrapping from the first to the last, in this state and every [[view]]. */
   def previous(): Boolean = stepAll(-1)
 
-  /** Empties the query and forgets the matches — this state's and every [[view]]'s. What Esc in a `searchBar` does. */
+  /** On the root, empties the shared query and forgets every view's matches (Esc in a search bar). On a view, forgets
+    * only that view's matches; its next render may find them again for the unchanged query.
+    */
   def clear(): Unit =
-    input.clear()
+    if owner.isEmpty then input.clear()
     forget()
     views.valuesIterator.foreach(_.forget())
 

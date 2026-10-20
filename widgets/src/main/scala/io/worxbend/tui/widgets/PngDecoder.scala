@@ -12,16 +12,19 @@ import java.util.zip.{DataFormatException, Inflater}
   * Covers what pictures for a terminal are saved as: greyscale, truecolour, palette, greyscale-with-alpha and
   * truecolour-with-alpha, at 8 bits per channel (16-bit channels are read through their high byte; 1-, 2- and 4-bit
   * greyscale and palette are unpacked), with all five row filters and palette transparency (`tRNS`). Interlaced (Adam7)
-  * files are refused with a `Left` — re-save without interlacing, or decode with [[ImageLoader.fromBytes]] on the JVM.
+  * files are refused with a `Left` — re-save without interlacing, or decode with [[ImageIoLoader.fromBytes]] on the
+  * JVM.
   *
-  * Pure and thread-safe; every failure is a `Left`.
+  * Pure and thread-safe; malformed, unsupported and over-budget inputs return `Left` (VM failures are not caught).
   */
 private[widgets] object PngDecoder:
 
   private val Signature: Seq[Byte] = Seq(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a).map(_.toByte)
 
-  /** The most pixels a decoded picture may hold — far past any terminal, and well inside an array's reach. */
-  private val MaxPixels: Long = 64L * 1024 * 1024
+  /** Conservative terminal-picture budgets; neither encoded bytes nor an IHDR can request an unbounded raster. */
+  private[widgets] val MaxInputBytes: Int = 32 * 1024 * 1024
+  private val MaxPixels: Long             = 4L * 1024 * 1024
+  private val MaxInflatedBytes: Long      = 32L * 1024 * 1024
 
   private final case class Header(width: Int, height: Int, bitDepth: Int, colorType: Int, interlaced: Boolean):
     def channels: Int = colorType match
@@ -36,7 +39,8 @@ private[widgets] object PngDecoder:
     def stride: Int        = ((width.toLong * bitsPerPixel + 7) / 8).toInt
 
   def decode(bytes: Array[Byte]): Either[String, RgbaImage] =
-    if bytes.length < 8 || bytes.take(8).toSeq != Signature then Left("not a PNG file: the signature is missing")
+    if bytes.length > MaxInputBytes then Left("PNG exceeds the 32 MiB encoded-input limit")
+    else if bytes.length < 8 || bytes.take(8).toSeq != Signature then Left("not a PNG file: the signature is missing")
     else
       try chunks(bytes).flatMap(assemble)
       catch case _: DataFormatException => Left("corrupt PNG: the image data does not inflate")
@@ -69,6 +73,11 @@ private[widgets] object PngDecoder:
       alphas  = all.collectFirst { case ("tRNS", data) => data }.getOrElse(Array.emptyByteArray)
       _   <- Either.cond(header.colorType != 3 || palette.nonEmpty, (), "corrupt PNG: a palette image has no PLTE")
       raw <- inflate(all.collect { case ("IDAT", data) => data }, header)
+      _   <- Either.cond(
+        (0 until header.height).forall(row => (raw(row * (header.stride + 1)) & 0xff) <= 4),
+        (),
+        "corrupt PNG: invalid row filter",
+      )
     yield toImage(header, unfilter(raw, header), palette, alphas)
 
   private def parseHeader(data: Array[Byte]): Either[String, Header] =
@@ -81,34 +90,46 @@ private[widgets] object PngDecoder:
         case 2 | 4 | 6 => Set(8, 16)
         case _         => Set.empty[Int]
       if header.width <= 0 || header.height <= 0 then Left("corrupt PNG: the image has no pixels")
-      else if header.width.toLong * header.height > MaxPixels then Left("PNG too large to decode")
+      else if header.width.toLong * header.height > MaxPixels then Left("PNG exceeds the 4 Mi-pixel limit")
+      else if (header.stride.toLong + 1) * header.height > MaxInflatedBytes then
+        Left("PNG exceeds the 32 MiB inflated-raster limit")
+      else if data(10) != 0 || data(11) != 0 || (data(12) & 0xff) > 1 then
+        Left("unsupported PNG: compression, filter or interlace method")
       else if !depths.contains(header.bitDepth) then
         Left(s"unsupported PNG: colour type ${header.colorType} at ${header.bitDepth} bits")
       else Right(header)
 
   private def inflate(parts: Seq[Array[Byte]], header: Header): Either[String, Array[Byte]] =
-    val expected = (header.stride.toLong + 1) * header.height
-    val inflater = Inflater()
-    try
-      // the IDAT chunks are one zlib stream split at arbitrary points
-      val joined = ByteArrayOutputStream()
-      parts.foreach(joined.write)
-      inflater.setInput(joined.toByteArray)
-      val out    = new Array[Byte](expected.toInt)
-      var filled = 0
-      var stuck  = false
-      while filled < out.length && !inflater.finished() && !stuck do
-        val read = inflater.inflate(out, filled, out.length - filled)
-        if read == 0 && (inflater.needsInput() || inflater.needsDictionary()) then stuck = true
-        filled += read
-      if filled < out.length then Left("truncated PNG: the image data ends early") else Right(out)
-    finally inflater.end()
+    val expected   = (header.stride.toLong + 1) * header.height
+    val compressed = parts.iterator.map(_.length.toLong).sum
+    // DEFLATE cannot expand beyond 1032:1. Reject impossible headers before creating any raster storage.
+    if expected > compressed * 1032L then Left("truncated PNG: declared raster exceeds the compressed-data ceiling")
+    else
+      val inflater = Inflater()
+      try
+        // Feed chunks directly: no second copy of the compressed input. Grow only as real bytes inflate.
+        val chunks = parts.iterator
+        val out    = ByteArrayOutputStream()
+        val block  = new Array[Byte](8192)
+        var filled = 0L
+        var stuck  = false
+        while !inflater.finished() && !stuck && filled <= expected do
+          if inflater.needsInput() && chunks.hasNext then inflater.setInput(chunks.next())
+          val read = inflater.inflate(block)
+          filled += read
+          if filled <= expected then out.write(block, 0, read)
+          if read == 0 && !inflater.finished() &&
+            (inflater.needsDictionary() || !inflater.needsInput() || !chunks.hasNext)
+          then stuck = true
+        if filled > expected then Left("corrupt PNG: excess image data")
+        else if filled != expected || !inflater.finished() then Left("truncated PNG: the image data ends early")
+        else Right(out.toByteArray)
+      finally inflater.end()
 
   /** Undoes the per-row filters in place; the result is `height` rows of `stride` bytes, filter bytes dropped. */
   private def unfilter(raw: Array[Byte], header: Header): Array[Byte] =
     val stride = header.stride
     val bpp    = header.bytesPerPixel
-    val out    = new Array[Byte](stride * header.height)
     var row    = 0
     while row < header.height do
       val filter = raw(row * (stride + 1)) & 0xff
@@ -117,19 +138,19 @@ private[widgets] object PngDecoder:
       var i      = 0
       while i < stride do
         val x     = raw(source + i) & 0xff
-        val a     = if i >= bpp then out(target + i - bpp) & 0xff else 0
-        val b     = if row > 0 then out(target - stride + i) & 0xff else 0
-        val c     = if row > 0 && i >= bpp then out(target - stride + i - bpp) & 0xff else 0
+        val a     = if i >= bpp then raw(target + i - bpp) & 0xff else 0
+        val b     = if row > 0 then raw(target - stride + i) & 0xff else 0
+        val c     = if row > 0 && i >= bpp then raw(target - stride + i - bpp) & 0xff else 0
         val value = filter match
           case 1 => x + a
           case 2 => x + b
           case 3 => x + (a + b) / 2
           case 4 => x + paeth(a, b, c)
           case _ => x
-        out(target + i) = value.toByte
+        raw(target + i) = value.toByte
         i += 1
       row += 1
-    out
+    raw
 
   private def paeth(a: Int, b: Int, c: Int): Int =
     val p  = a + b - c

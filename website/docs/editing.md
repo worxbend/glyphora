@@ -54,6 +54,15 @@ clipboard through OSC 52 and is also kept in an in-app buffer. A terminal never 
 app read the system clipboard, so `Ctrl+V` pastes what this app last copied or cut. The
 terminal's own paste (`Ctrl+Shift+V` in most terminals) still arrives as a bracketed paste.
 
+Masked and hidden `input` fields suppress copy/cut and never send killed secrets to the
+shared ring. Word motion and word kills treat a secret as one word. Hidden inputs paint
+blank cells and report no hardware caret; their source value remains sensitive app state.
+A visible mask intentionally shows the number of graphemes, not their original widths.
+
+Pasted CRLF, bare CR and LF all represent line breaks. Single-line fields fold them to
+spaces. An open text-area search or composer reverse search accepts only the first pasted
+line into its query; it never changes the document or draft.
+
 ## Kill ring
 
 Kills go into a `KillRing`, which is kept apart from the clipboard: `Ctrl+K` does not
@@ -67,7 +76,8 @@ Undo stores diffs, not copies of the document, so a long editing session costs m
 proportion to what was typed. Consecutive single-grapheme inserts join one undo step, and
 so do consecutive backspaces. Typing `hello` and pressing `Ctrl+Z` removes the word. A
 space after a word, a caret move or a selection change starts a new step. The history keeps
-the newest 100 steps. Call `breakUndoGroup()` to force a boundary from code.
+the newest 100 steps. Undo of a replacement restores the original selection and its direction.
+Call `breakUndoGroup()` to force a boundary from code.
 
 ## Soft wrap, line numbers and syntax highlighting
 
@@ -122,7 +132,7 @@ def view(using ReactiveScope, Theme): Element =
 
 - `Enter` submits. The callback receives the text, and the composer clears and records it
   in its history. `Shift+Enter` or `Alt+Enter` inserts a newline.
-- `Up` on the first line and `Down` on the last walk the history. Going past the newest
+- `Up` on the first visual row and `Down` on the last visual row walk the history. Going past the newest
   entry brings back the draft you were typing.
 - `Ctrl+R` opens a reverse search over the history, shown as
   ``(reverse-i-search)`dep': deploy prod``. `Ctrl+R` again finds an older match, `Enter`
@@ -134,7 +144,9 @@ def view(using ReactiveScope, Theme): Element =
   `debounce` (150 ms by default), and a newer query always replaces an older answer. `Up`
   and `Down` move the highlight, `Enter` or `Tab` accept it and `Esc` closes the popup.
 - A paste of `pasteLines` lines or more (10 by default) shows as `[Pasted 50 lines]`. The
-  submitted text has the whole paste in its place.
+  submitted text has the whole paste in its place. Repeated/localized placeholders expand
+  longest-first in a single pass, never recursively through paste payloads. Typing the exact
+  text of a placeholder also expands it; placeholders are text, not protected objects.
 - The composer is as tall as its draft soft-wrapped at the width it is given — a long line
   grows it as surely as a newline does — up to `maxRows` (8 by default), after which it
   scrolls inside them.
@@ -142,7 +154,18 @@ def view(using ReactiveScope, Theme): Element =
   wraps onto start after the glyph, so continuation rows hang under the text.
 
 The provider must not touch UI state, because it runs off the render thread. Everything
-else on `PromptComposerState` is render-thread-only, like every widget state.
+else on `PromptComposerState` is render-thread-only, like every widget state. The state and
+`widgets.PromptComposer` painter are reusable without the runtime; the DSL spelling is an
+alias and its small adapter owns asynchronous provider execution. A retained state works
+across sequential app runs without reusing retired task scopes.
+
+Wrapped text areas cache row-count prefix sums and construct only viewport rows on a
+steady frame. Single-line edits update their row count logarithmically. The initial layout,
+a width change or a line-count change still builds the row-count index over the document.
+
+External editors use `VISUAL`, then `EDITOR`, then `vi`. Command values support quoted
+paths and arguments and backslash escapes; shell operators and substitutions are literal,
+not executed. A missing editor is a warning, not a fatal terminal-backend error.
 
 Next: bind your own keys around the editors in [Key bindings](./keybindings), validate
 what users type in [Forms & validation](./forms-and-validation), and drive an editor

@@ -68,6 +68,10 @@ are listed under the field.
 The summary for a `password` is a fixed `********`, never the secret's length. While it
 is typed the field is invisible by default; `Prompt.password("Token", mask = Some("•"))`
 draws one bullet per character instead, so the user can see how much they typed.
+The default writes no secret characters into the frame or terminal output, and keeps the
+painted caret at the start of the field without moving the hardware cursor. Rejected
+passwords use a generic translated diagnostic instead of the validator's text, which
+might itself quote the secret. Scripted errors redact the answer too.
 
 ## A form, one field per step
 
@@ -110,7 +114,10 @@ has therefore cleaned up by the time the caller continues; work that ignores it 
 running on its daemon thread after the two seconds, and ends with the process.
 
 `Prompt.loader` is the same with a progress row instead of the log: it runs `f` over
-every item and draws the bar, the percentage and the ETA as it goes.
+every item and draws the bar, the percentage and the ETA as it goes. Reports coalesce
+into a single pending UI update instead of queueing one callback per item. Cancellation
+stops the framework's loop before the next item; an already-running `f` must still honour
+the interrupt to stop immediately.
 
 ```scala
 val sizes: Option[Seq[Long]] = Prompt.loader("Hashing", files)(file => hash(file))
@@ -162,7 +169,11 @@ app's own code — a validator or a view that throws — escapes, as the excepti
 `PromptSession.terminal`
 takes a `fallbackWhen` to decide differently — the same idea as Laravel Prompts'
 `fallbackWhen` — and `PromptSession.plain(read, write)` builds the line shape over any
-reader and writer.
+reader and writer. A standard-input password read from a terminal uses
+`System.console().readPassword` with echo disabled, even if output is redirected. If no
+secure console reader is available it refuses the read rather than echoing a secret;
+piped answers still use the shared line reader. A custom `plain` reader owns its own
+terminal echo policy.
 
 ```bash
 printf 'glyphora\n2\ny\n' | my-installer
@@ -217,4 +228,6 @@ The rate — and the ETA computed from it — is measured over a sliding window,
 ten seconds by default, so a transfer that speeds up or stalls shows it within one
 window instead of averaging it away; a stall longer than the window prints `-`/`--:--`.
 `ProgressTask(label, total, rateWindow = Some(30.seconds))` widens it, and
-`rateWindow = None` keeps the average since the start.
+`rateWindow = None` keeps the average since the start. Reports within one sixty-fourth
+of a window coalesce, so estimates have that time resolution and history stays bounded
+even for millions of reports.

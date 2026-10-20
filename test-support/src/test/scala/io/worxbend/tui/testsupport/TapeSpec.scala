@@ -96,6 +96,22 @@ final class TapeSpec extends AnyFunSuite:
       GoldenFrames.assertMatches("tape-hi", frame)
     }
 
+  test("mid-tape width and height changes write resize events before their repaints"):
+    val tape = Tape
+      .parse("Set Width 12\nSet Height 2\nType \"hi\"\nSet Width 20\nSet Height 4\nScreenshot resized\n")
+      .fold(problem => fail(problem), identity)
+    withOutput("resize") { directory =>
+      val result  = Tape.run(tape, directory, "resize")(echo)
+      val events  = Files.readString(result.cast).split("\n").toVector.tail
+      val resizes = events.zipWithIndex.filter(_._1.contains(",\"r\","))
+      assert(resizes.map(_._1.dropWhile(_ != 'r')) == Vector("r\",\"20x2\"]", "r\",\"20x4\"]"))
+      resizes.foreach { (_, index) =>
+        assert(events(index + 1).contains(",\"o\","))
+        assert(events(index + 1).contains("\\u001b[2J"))
+      }
+      assert(result.frames("resized").area.size == Size(20, 4))
+    }
+
   /** A throwaway directory, or — when `GLYPHORA_TAPE_OUTPUT` is set, as `scripts/render-tapes.sh` sets it — a kept one
     * under it, so the artefacts this suite produces are the ones the script leaves behind.
     */

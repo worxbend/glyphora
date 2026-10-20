@@ -54,7 +54,14 @@ private[dsl] final class PointerGestures(val recorder: NodeBounds):
       buffer: Buffer,
       anchor: Option[String] = None,
   ): Unit =
-    if roles.selectable then selection.painted(TextSelection.anchorOf(id, anchor), area, buffer, node.props.focusStyle)
+    if roles.selectable then
+      selection.painted(
+        TextSelection.anchorOf(id, anchor),
+        area,
+        buffer,
+        node.props.focusStyle,
+        TextSelection.invalidatesOnContentChange(node),
+      )
     if roles.drag.isDefined || roles.drop.isDefined then drag.painted(id, node, area, buffer)
 
   /** Called once the frame is painted and its bounds published: a parked press resolves against it. */
@@ -96,12 +103,13 @@ private[dsl] final class PointerGestures(val recorder: NodeBounds):
   /** Starts a gesture from a press the elements declined, and clears the selection on any press. `true` when the next
     * frame looks different.
     */
-  def afterDelivery(event: MouseEvent, consumed: Boolean): Boolean =
+  def afterDelivery(event: MouseEvent, consumed: Boolean, targetDraggable: Boolean): Boolean =
     if event.kind != MouseEventKind.Down then false
     else
       val cleared = selection.clear()
-      // a draggable node arms a drag whether or not its own press handler took the press: it starts only on motion
-      if event.button == MouseButton.Left && drag.arm(event, recorder.current) then cleared
+      // A draggable's own handler may consume the press; a captured child control takes priority over its ancestor.
+      if event.button == MouseButton.Left && (!consumed || targetDraggable) && drag.arm(event, recorder.current) then
+        cleared
       else if event.button != MouseButton.Left || !selection.enabled then cleared
       else if consumed then
         // a node that takes the press for itself but still selects on a drag arms the selection instead of starting it

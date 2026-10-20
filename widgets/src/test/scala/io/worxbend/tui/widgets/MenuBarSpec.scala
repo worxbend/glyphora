@@ -34,7 +34,7 @@ final class MenuBarSpec extends AnyFunSuite:
 
   test("titleAt and titleSpan agree with the drawn titles"):
     val bar = MenuBar(menus)
-    assert(bar.titleSpan(1) == (6, 6))
+    assert(bar.titleSpan(1) == MenuBar.TitleSpan(6, 6))
     assert(bar.titleAt(7).contains(1) && bar.titleAt(0).contains(0) && bar.titleAt(19).isEmpty)
     assert(bar.widthAt(1).contains(18))
 

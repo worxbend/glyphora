@@ -2,6 +2,7 @@ package io.worxbend.tui.widgets
 
 import io.worxbend.tui.core.VersionedState
 
+import scala.collection.mutable
 import scala.concurrent.duration.{Duration, DurationInt, DurationLong, FiniteDuration}
 
 /** Caller-owned progress of one unit of work — what a [[MultiProgress]] row reads.
@@ -19,8 +20,10 @@ import scala.concurrent.duration.{Duration, DurationInt, DurationLong, FiniteDur
   * last progress report at or before the window's start, over the time since that report. A download that speeds up or
   * a build stage that slows down shows in the rate and the ETA within one window instead of averaging away, and a stall
   * longer than the window makes both unknown. `rateWindow = None` keeps the average since the start, which settles
-  * rather than reacts. Only the reports inside the window plus one anchor are kept, so the history stays small.
-  * `completed` is clamped into `[0, total]` on every write.
+  * rather than reacts. Reports coalesce into window/64 time buckets, retaining at most 66 samples including the start
+  * and window anchors. Windowed estimates are approximate to one bucket; reporting and reads have bounded amortized
+  * cost even for a CPU-cheap task that reports millions of times per window. `completed` is clamped into `[0, total]`
+  * on every write.
   *
   * '''Threads.''' Render-thread-only, like every widget state: a worker reports progress by posting `task.advance(n)`
   * back onto the render thread (`RenderThread.capture()` / `Async`), not by calling it directly. Every mutation raises
@@ -49,9 +52,11 @@ final class ProgressTask(
   private var startStamp: Option[FiniteDuration]  = None
   private var finishStamp: Option[FiniteDuration] = None
 
-  // (time, completed) at the start and at every progress report since, oldest first; pruned to the window plus the one
-  // report at or before its start, which is the anchor the windowed rate measures from
-  private var reports = Vector.empty[(FiniteDuration, Long)]
+  // A start anchor plus the newest report in each window/64 bucket. At most 66 samples survive pruning, regardless
+  // of reporting frequency. The deque drops expired anchors in amortized O(1), including when rate is read after a stall.
+  private val reports                             = mutable.ArrayDeque.empty[(FiniteDuration, Long)]
+  private var bucketStart: Option[FiniteDuration] = None
+  private val bucketNanos                         = rateWindow.fold(1L)(window => math.max(1L, window.toNanos / 64L))
 
   def label: String = currentLabel
 
@@ -81,7 +86,9 @@ final class ProgressTask(
     if startStamp.isEmpty then
       val now = clock()
       startStamp = Some(now)
-      reports = Vector(now -> done)
+      reports.clear()
+      reports.append(now -> done)
+      bucketStart = None
       touch()
 
   /** Adds `by` units, starting the task first if it has not been. */
@@ -127,7 +134,8 @@ final class ProgressTask(
       case Some(window) =>
         startStamp.flatMap { _ =>
           val end                  = finishStamp.getOrElse(clock())
-          val (anchorAt, anchored) = reports.findLast(_._1 <= end - window).getOrElse(reports.head)
+          prune(end - window)
+          val (anchorAt, anchored) = reports.head
           val seconds              = (end - anchorAt).toNanos.toDouble / 1e9
           val units                = done - anchored
           Option.when(seconds > 0.0 && units > 0L)(units / seconds)
@@ -142,15 +150,20 @@ final class ProgressTask(
         speed <- rate
       yield (left / speed * 1e9).toLong.nanos
 
-  /** Records the progress just made and drops the reports the window no longer needs. */
+  /** Coalesces the current bucket's newest report; preserves the start anchor until the window has passed it. */
   private def report(): Unit =
-    val now = clock()
-    reports = reports :+ (now -> done)
     rateWindow.foreach { window =>
-      // keep the newest report at or before the window's start as the anchor; everything older is history nobody reads
-      while reports.sizeIs > 1 && reports(1)._1 <= now - window do reports = reports.tail
+      val now = clock()
+      if bucketStart.forall(start => (now - start).toNanos >= bucketNanos) then
+        reports.append(now -> done)
+        bucketStart = Some(now)
+      else reports.update(reports.size - 1, now -> done)
+      prune(now - window)
     }
-    if rateWindow.isEmpty then reports = reports.take(1)
+
+  private def prune(cutoff: FiniteDuration): Unit =
+    while reports.sizeIs > 1 && reports(1)._1 <= cutoff do
+      val _ = reports.removeHead()
 
   private def clampToTotal(value: Long): Long =
     val floor = math.max(0L, value)

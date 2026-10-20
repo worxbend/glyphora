@@ -64,8 +64,21 @@ final case class FrameworkKeys(
     * keymap can serve both this and `KeyBindings.rebind`. Throws `IllegalArgumentException` for a multi-key sequence
     * given to `menu-bar`, `window-move` or `window-resize`.
     */
-  def rebind(keymap: Map[BindingId, KeySequence]): FrameworkKeys =
-    def key(id: BindingId, current: KeySequence): KeySequence = keymap.getOrElse(id, current)
+  def rebind(keymap: Map[BindingId, KeySequence])(using leader: KeyLeader): FrameworkKeys =
+    rebindEither(keymap).fold(error => throw IllegalArgumentException(error.message), identity)
+
+  /** Rebinds user-supplied keys without throwing for a sequence on a single-key framework action. */
+  def rebindEither(keymap: Map[BindingId, KeySequence])(using leader: KeyLeader): Either[RebindError, FrameworkKeys] =
+    val problem = keymap.iterator
+      .flatMap { (id, sequence) =>
+        FrameworkKeys.singleKeyError(id, sequence).map(message => RebindError(Seq(id), message))
+      }
+      .nextOption()
+    problem.toLeft(()).map(_ => rebound(keymap))
+
+  private def rebound(keymap: Map[BindingId, KeySequence])(using leader: KeyLeader): FrameworkKeys =
+    def key(id: BindingId, current: KeySequence): KeySequence =
+      keymap.get(id).fold(current)(_.withLeader(leader.key))
     copy(
       focusNext = key(FrameworkKeys.FocusNext, focusNext),
       focusPrevious = key(FrameworkKeys.FocusPrevious, focusPrevious),
@@ -105,18 +118,23 @@ final case class FrameworkKeys(
 
 object FrameworkKeys:
 
-  val FocusNext: BindingId      = BindingId("focus-next")
-  val FocusPrevious: BindingId  = BindingId("focus-previous")
-  val CommandPalette: BindingId = BindingId("command-palette")
-  val Quit: BindingId           = BindingId("quit")
-  val CloseModal: BindingId     = BindingId("close-modal")
-  val MenuBar: BindingId        = BindingId("menu-bar")
-  val WindowMove: BindingId     = BindingId("window-move")
-  val WindowResize: BindingId   = BindingId("window-resize")
-  val CopySelection: BindingId  = BindingId("copy-selection")
+  val FocusNext: BindingId      = BindingId("framework.focus-next")
+  val FocusPrevious: BindingId  = BindingId("framework.focus-previous")
+  val CommandPalette: BindingId = BindingId("framework.command-palette")
+  val Quit: BindingId           = BindingId("framework.quit")
+  val CloseModal: BindingId     = BindingId("framework.close-modal")
+  val MenuBar: BindingId        = BindingId("framework.menu-bar")
+  val WindowMove: BindingId     = BindingId("framework.window-move")
+  val WindowResize: BindingId   = BindingId("framework.window-resize")
+  val CopySelection: BindingId  = BindingId("framework.copy-selection")
 
   /** F12 by default: cycles the inspector overlay — node card, card plus element tree, off. */
-  val Inspector: BindingId = BindingId("inspector")
+  val Inspector: BindingId = BindingId("framework.inspector")
+
+  private[dsl] def singleKeyError(id: BindingId, sequence: KeySequence): Option[String] =
+    Option.when(Set(MenuBar, WindowMove, WindowResize).contains(id) && sequence.steps.sizeIs > 1)(
+      s"framework key '$id' takes a single key, not \"${sequence.spelling}\""
+    )
 
   private def matches(key: KeyEvent, event: KeyEvent): Boolean =
     event.code == key.code && event.modifiers.hasAll(key.modifiers)
@@ -168,8 +186,31 @@ object Keymap:
               .parse(line.value)
               .left
               .map(problem => LineError(line.number, problem))
-              .map(sequence => parsed + (id -> sequence))
+              .flatMap(sequence =>
+                FrameworkKeys
+                  .singleKeyError(id, sequence)
+                  .map(message => LineError(line.number, message))
+                  .toLeft(parsed + (id -> sequence))
+              )
         }
+      }
+    }
+
+  /** Parses and validates a file against both sets of declarations, retaining line numbers for rebind errors. Nothing
+    * is mutated; use the returned map with `rebindEither`, or retain the original bindings on failure.
+    */
+  def validate(text: String, bindings: KeyBindings, framework: FrameworkKeys)(using
+      KeyLeader
+  ): Either[LineError, Map[BindingId, KeySequence]] =
+    parse(text).flatMap { keymap =>
+      val valid = for
+        _ <- bindings.rebindEither(keymap)
+        _ <- framework.rebindEither(keymap)
+      yield keymap
+      valid.left.map { error =>
+        val lines = KeyValueLines.read(text, "id = keys").toOption.toSeq.flatten
+        val line  = lines.find(entry => error.ids.contains(BindingId(entry.key))).fold(1)(_.number)
+        LineError(line, error.message)
       }
     }
 

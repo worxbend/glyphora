@@ -170,6 +170,13 @@ jobs:
           + test-support.compile
           + __.test.compile
 
+      - name: Compile the Scala CLI quickstart against this checkout
+        timeout-minutes: 15
+        # Pin the tool as well as the example's Scala/JDK; do not compile against an older Central jar.
+        run: |
+          curl --fail --silent --show-error --location --retry 3 --max-time 120 -o "$RUNNER_TEMP/scala-cli.jar" https://repo.maven.apache.org/maven2/org/virtuslab/scala-cli/cliBootstrapped/1.17.1/cliBootstrapped-1.17.1.jar
+          python3 scripts/verify-scala-cli.py --scala-cli-jar "$RUNNER_TEMP/scala-cli.jar"
+
       - name: Share the build output with the jobs below
         timeout-minutes: 5
         # Keyed by SHA, so it is scoped to this run. Mill's metadata embeds absolute

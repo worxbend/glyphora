@@ -108,3 +108,22 @@ final class ProgressTaskSpec extends AnyFunSuite:
 
   test("the default window is ten seconds"):
     assert(ProgressTask.DefaultRateWindow == 10.seconds)
+
+  test("RTP-11 a burst retains bounded rate history instead of allocating per report"):
+    val clock = Clock()
+    val t     = task(None, clock)
+    t.start()
+    val bean  = java.lang.management.ManagementFactory.getThreadMXBean
+      .asInstanceOf[com.sun.management.ThreadMXBean] // scalafix:ok DisableSyntax; JDK test allocation counter
+    val thread    = Thread.currentThread().threadId()
+    val before    = bean.getThreadAllocatedBytes(thread)
+    var n         = 0
+    while n < 100000 do
+      t.advance()
+      n += 1
+    val allocated = bean.getThreadAllocatedBytes(thread) - before
+    assert(allocated < 16_000_000L, s"100k same-bucket reports allocated $allocated bytes")
+    clock.now = 1.second
+    assert(t.rate.contains(100000.0))
+    clock.now = 30.seconds
+    assert(t.rate.isEmpty)

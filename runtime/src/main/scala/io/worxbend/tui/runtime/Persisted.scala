@@ -3,7 +3,6 @@ package io.worxbend.tui.runtime
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, StandardCopyOption}
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
-import scala.annotation.tailrec
 import scala.util.control.NonFatal
 
 /** A [[Signal]] whose value survives a restart: loaded from a file when the signal is created, written back whenever
@@ -24,7 +23,9 @@ import scala.util.control.NonFatal
   * missing file, an unreadable one or text `decode` rejects all yield `initial`: a persisted value is a convenience the
   * app must be able to run without, so the file is never a reason not to start. A write failure is reported the way a
   * failing `Async.run` is — to the render loop that owns the signal, which surfaces it as `RunnerError.QueuedTask` when
-  * the app exits — and the signal keeps its in-memory value regardless.
+  * the app exits — and the signal keeps its in-memory value regardless. A drain reports its first write failure,
+  * attempts newer pending values, and releases its gate so later changes can recover; it does not retain an unbounded
+  * list of failures during a burst.
   *
   * Ownership and threads: the render-thread rules of `Signal` are unchanged; `set` is a render-thread call. The encoded
   * text is produced on the render thread at change time, so `encode` sees a consistent value, and only the finished
@@ -59,18 +60,36 @@ object Persisted:
 
     def schedule(text: String): Unit =
       pending.set(Some(text))
-      if inFlight.compareAndSet(false, true) then Async.run(drain())(_ => ())
+      if inFlight.compareAndSet(false, true) then
+        try Async.run(drain())(_ => ())
+        catch
+          case NonFatal(error) =>
+            inFlight.set(false)
+            throw error
 
-    @tailrec private def drain(): Unit =
-      pending.getAndSet(None) match
-        case Some(text) =>
-          write(text)
-          drain()
-        case None       =>
+    private def drain(): Unit =
+      var failure  = Option.empty[Throwable]
+      var draining = true
+      try
+        while draining do
+          pending.getAndSet(None) match
+            case Some(text) =>
+              try write(text)
+              catch
+                case NonFatal(error) =>
+                  failure match
+                    case None    => failure = Some(error)
+                    case Some(_) => () // one reported failure per coalesced drain; error retention is bounded too
+            case None       =>
+              inFlight.set(false)
+              // Close the empty-read/release race without scheduling worker work under the wrong render owner.
+              draining = pending.get().isDefined && inFlight.compareAndSet(false, true)
+      catch
+        case error: Throwable =>
           inFlight.set(false)
-          // a value published between the empty read above and the flag going down would otherwise wait for the
-          // next change; whoever wins the flag again writes it
-          if pending.get().isDefined && inFlight.compareAndSet(false, true) then drain()
+          throw error
+      // Report the first failure through this Async invocation, after releasing the gate and attempting newer values.
+      failure.foreach(error => throw error)
 
     private def write(text: String): Unit =
       Option(path.toAbsolutePath.getParent).foreach(parent => { val _ = Files.createDirectories(parent) })

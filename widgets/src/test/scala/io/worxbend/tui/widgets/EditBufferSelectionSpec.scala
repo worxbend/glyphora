@@ -12,7 +12,16 @@ final class EditBufferSelectionSpec extends AnyFunSuite:
     state.moveHome()
     (1 to 3).foreach(_ => state.moveRight(select = true))
     assert(state.selectedText == s"a${Family}b")
-    assert(state.selection == Some((TextPosition(0, 0), TextPosition(0, 3))))
+    assert(state.selection == Some(TextRange(TextPosition(0, 0), TextPosition(0, 3))))
+
+  test("selection names ordered grapheme endpoints even when extended backwards across lines"):
+    val state               = TextAreaState(s"a${Family}b\ncd")
+    state.moveTo(TextPosition(1, 1))
+    state.moveTo(TextPosition(0, 1), select = true)
+    val selected: TextRange = state.selection.get
+    assert(selected.start == TextPosition(0, 1))
+    assert(selected.end == TextPosition(1, 1))
+    assert(state.selectedText == s"${Family}b\nc")
 
   test("typing replaces the selection and a plain move collapses it"):
     val state = TextInputState("hello world")

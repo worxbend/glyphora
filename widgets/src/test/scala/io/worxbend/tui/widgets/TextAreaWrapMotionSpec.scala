@@ -76,7 +76,7 @@ final class TextAreaWrapMotionSpec extends AnyFunSuite:
     state.moveTo(TextPosition(0, 0))
     paint(state)
     state.moveDown(select = true)
-    assert(state.selection.contains((TextPosition(0, 0), TextPosition(0, 10))))
+    assert(state.selection.contains(TextRange(TextPosition(0, 0), TextPosition(0, 10))))
 
   test("an edit re-wraps only the line it touched"):
     val state = TextAreaState(Vector.fill(200)("lorem ipsum dolor sit amet consectetur").mkString("\n"))

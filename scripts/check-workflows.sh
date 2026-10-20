@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Verify a fixed actionlint release before executing it; no mutable installer or action.
 set -euo pipefail
+# Fail before downloading actionlint when local Python lacks the declared dependency.
+python3 -c 'import importlib.util, sys; sys.exit(0 if importlib.util.find_spec("yaml") else "PyYAML is required: python3 -m pip install -r scripts/requirements-ci.txt")'
 version=1.7.12
 checksum=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
 work=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:?set TMPDIR}}/glyphora-actionlint.XXXXXX")

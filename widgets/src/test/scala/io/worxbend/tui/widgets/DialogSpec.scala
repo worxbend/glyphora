@@ -1,11 +1,29 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, Rect, Style, Text, Widget}
+import io.worxbend.tui.core.{Buffer, Position, Rect, Style, Text, Widget}
 import io.worxbend.tui.testsupport.BufferAssertions.{rendered, trimmedLines}
 
 import org.scalatest.funsuite.AnyFunSuite
 
 final class DialogSpec extends AnyFunSuite:
+
+  test("published box and button geometry agrees with painting at a nonzero origin, including wide labels"):
+    val dialog = Dialog("T", Text.raw("hi"), Seq("界", "NO"))
+    val area   = Rect(3, 2, 30, 9)
+    val buffer = Buffer(Rect(0, 0, 40, 15))
+    dialog.render(area, buffer)
+    val box    = dialog.boxIn(area)
+    assert(box == Rect(8, 4, 20, 5))
+    assert(dialog.buttonAt(Position(11, 7), area).contains(0))
+    assert(dialog.buttonAt(Position(16, 7), area).contains(0))
+    assert(dialog.buttonAt(Position(17, 7), area).isEmpty, "gap between buttons is not a button")
+    assert(dialog.buttonAt(Position(18, 7), area).contains(1))
+    assert(buffer.get(11, 7).symbol == "[")
+    assert(buffer.get(18, 7).symbol == "[")
+    assert(dialog.buttonAt(Position(box.x, box.y), area).isEmpty)
+    assert(dialog.buttonAt(Position(0, 0), area).isEmpty)
+    assert(dialog.boxIn(Rect(0, 0, 3, 3)).isEmpty)
+    assert(dialog.buttonAt(Position(1, 1), Rect(0, 0, 3, 3)).isEmpty)
 
   test("a dialog paints a cleared, bordered box over existing content"):
     val underlying: Widget =

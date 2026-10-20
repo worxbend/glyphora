@@ -98,7 +98,7 @@ object JfrEvents:
 @Category(Array("glyphora"))
 @Description("A frame composed and flushed by a glyphora runner")
 @StackTrace(false)
-final class FrameDrawnEvent extends jdk.jfr.Event:
+final private[runtime] class FrameDrawnEvent extends jdk.jfr.Event:
   @Label("Frame")
   var frame: Long = 0L
 
@@ -111,7 +111,7 @@ final class FrameDrawnEvent extends jdk.jfr.Event:
 @Label("Event Routed")
 @Category(Array("glyphora"))
 @StackTrace(false)
-final class EventRoutedEvent extends jdk.jfr.Event:
+final private[runtime] class EventRoutedEvent extends jdk.jfr.Event:
   @Label("Kind")
   var kind: String = ""
 
@@ -124,7 +124,7 @@ final class EventRoutedEvent extends jdk.jfr.Event:
 @Label("Focus Changed")
 @Category(Array("glyphora"))
 @StackTrace(false)
-final class FocusChangedEvent extends jdk.jfr.Event:
+final private[runtime] class FocusChangedEvent extends jdk.jfr.Event:
   @Label("From index")
   var fromIndex: Int = -1
 
@@ -142,7 +142,7 @@ final class FocusChangedEvent extends jdk.jfr.Event:
 @Label("Async Admitted")
 @Category(Array("glyphora"))
 @StackTrace(false)
-final class AsyncAdmittedEvent extends jdk.jfr.Event:
+final private[runtime] class AsyncAdmittedEvent extends jdk.jfr.Event:
   @Label("Queue")
   @Description("worker for the background pool, owner for a render loop's callback slots")
   var queue: String = ""
@@ -155,7 +155,7 @@ final class AsyncAdmittedEvent extends jdk.jfr.Event:
 @Label("Async Rejected")
 @Category(Array("glyphora"))
 @StackTrace(true)
-final class AsyncRejectedEvent extends jdk.jfr.Event:
+final private[runtime] class AsyncRejectedEvent extends jdk.jfr.Event:
   @Label("Queue")
   var queue: String = ""
 

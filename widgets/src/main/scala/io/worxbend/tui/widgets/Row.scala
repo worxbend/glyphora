@@ -98,12 +98,29 @@ final case class Row(
     LayoutItem.renderSplit(Direction.Horizontal, items, spacing, flex, crossAlign, area, buffer)
 
   override def heightAt(width: Int): Option[Int] =
-    // a measurement pass has no row count yet, so an `Auto` child is asked for its width at a single row
-    val segments = LayoutItem.split(Direction.Horizontal, items, spacing, flex, Rect(0, 0, math.max(0, width), 1))
-    items.zip(segments).foldLeft(Option(0)) { case (height, (item, segment)) =>
-      val childHeight = if segment.width == 0 then Some(0) else LayoutItem.heightOf(item.widget, segment.width)
-      for current <- height; child <- childHeight yield math.max(current, child)
-    }
+    def measuredAt(height: Int): Option[Int]     =
+      val segments =
+        LayoutItem.split(Direction.Horizontal, items, spacing, flex, Rect(0, 0, math.max(0, width), height))
+      items.zip(segments).foldLeft(Option(0)) { case (currentHeight, (item, segment)) =>
+        val childHeight = if segment.width == 0 then Some(0) else LayoutItem.heightOf(item.widget, segment.width)
+        for current <- currentHeight; child <- childHeight yield math.max(current, child)
+      }
+    def hasAuto(constraint: Constraint): Boolean = constraint match
+      case Constraint.Auto                => true
+      case Constraint.Bounded(_, _, base) => hasAuto(base)
+      case _                              => false
+    val refine                                   = items.exists(item => hasAuto(item.constraint))
+    // Only Auto widths depend on height. Refine those to a fixed point; cycles are unmeasurable.
+    var candidate                                = 1
+    var result                                   = measuredAt(candidate)
+    var seen                                     = Set(candidate)
+    var rounds                                   = 0
+    while refine && result.isDefined && result.get != candidate && !seen.contains(result.get) && rounds < 16 do
+      candidate = result.get
+      seen += candidate
+      result = measuredAt(candidate)
+      rounds += 1
+    if refine then result.filter(_ == candidate) else result
 
   override def widthAt(height: Int): Option[Int] =
     LayoutItem
