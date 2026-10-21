@@ -229,6 +229,12 @@ class WorkflowPolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, text):
             self.tool.validate(self.workflows, self.actions)
 
+    def test_docs_assets_trigger_pages_and_cannot_be_removed(self):
+        paths = self.workflows["docs.yml"]["on"]["push"]["paths"]
+        self.assertIn("docs/assets/**", paths)
+        paths.remove("docs/assets/**")
+        self.fails("docs: static assets must trigger Pages")
+
     def test_website_compatibility_tests_cannot_be_skipped(self):
         for filename, job in (("ci.yml", "website-build"), ("docs.yml", "build")):
             with self.subTest(workflow=filename):

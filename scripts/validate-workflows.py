@@ -84,6 +84,9 @@ def validate(workflows: dict[str, dict], actions: dict[str, dict]) -> None:
         require(len(build_steps) == 1 and commands == expected,
                 f"{filename}: website dependency checks must precede the production build without failure bypass")
 
+    require("docs/assets/**" in workflows["docs.yml"].get("on", {}).get("push", {}).get("paths", []),
+            "docs: static assets must trigger Pages")
+
     ci = workflows["ci.yml"]
     jobs = ci["jobs"]
     require(set(jobs) == REQUIRED_GATES | {"validated"}, "ci: required validation jobs changed")

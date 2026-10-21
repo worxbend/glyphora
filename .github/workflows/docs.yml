@@ -7,6 +7,7 @@ on:
     branches: [main]
     paths:
       - "website/**"
+      - "docs/assets/**"
       - "scripts/export-wiki.mjs"
       - "scripts/style-scaladoc.mjs"
       - "core/**"
