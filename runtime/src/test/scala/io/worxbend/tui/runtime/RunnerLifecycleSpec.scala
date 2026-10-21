@@ -103,6 +103,99 @@ final class RunnerLifecycleSpec extends AnyFunSuite:
         case other       => fail(s"expected the original run failure, got $other")
       assert(backend.closes == 1)
 
+  for kind <- List("handler", "backend", "queued task") do
+    test(s"a fatal onStop stays secondary to a prior $kind failure through later releases"):
+      val runFailure                             = IllegalStateException("run failure")
+      val fatal                                  = FatalOnStop()
+      val close                                  = IllegalStateException("close failure")
+      val secondary                              = IllegalStateException("close secondary")
+      close.addSuppressed(secondary)
+      val backend                                = ReportingCloseBackend(
+        close,
+        if kind == "backend" then Some(BackendError.Io(runFailure)) else None,
+      )
+      val priorOut                               = System.out
+      val priorErr                               = System.err
+      var owner: Option[RenderThread.RenderLoop] = None
+      val result                                 = TerminalRunner(
+        backend,
+        RunnerConfig(captureStdio = Some(CaptureStdio.Console(LogRing()))),
+        onStop = () =>
+          assert(RenderThread.isRenderThread)
+          owner = Some(RenderThread.capture())
+          assert(!(System.out eq priorOut))
+          assert(!(System.err eq priorErr))
+          throw fatal,
+      ).run(
+        handle =>
+          if kind == "handler" then throw runFailure
+          if kind == "queued task" then RenderThread.runLater(throw runFailure)
+          handle.quit()
+        ,
+        (_, _) => EventOutcome.Ignored,
+        _ => (),
+      )
+      val expected                               = kind match
+        case "handler"     => RunnerError.Handler(runFailure)
+        case "backend"     => RunnerError.Backend(BackendError.Io(runFailure))
+        case "queued task" => RunnerError.QueuedTask(QueuedTaskFailures(runFailure, 1))
+        case other         => fail(s"unexpected failure kind: $other")
+      result match
+        case Left(error) =>
+          assert(error == expected)
+          assert(error.primaryThrowable.exists(_ eq runFailure))
+          assert(error.cleanupFailures == Vector(fatal, close, secondary))
+          assert(runFailure.getSuppressed.toVector == Vector(fatal, close, secondary))
+          assert(close.getSuppressed.toVector == Vector(secondary))
+          assert(fatal.getSuppressed.isEmpty)
+        case other       => fail(s"expected the original run failure, got $other")
+      assert(backend.closes == 1)
+      assert(backend.terminal.emergencyRestoreCount == (if kind == "backend" then 1L else 0L))
+      assert(!backend.terminal.isRawMode)
+      assert(!backend.terminal.isAlternateScreen)
+      assert(backend.terminal.isCursorVisible)
+      assert(owner.exists(loop => !loop.execute(())), "cleanup must close its registered owner")
+      assert(RenderThread.currentOwner.isEmpty, "cleanup must unregister its owner")
+      assert(System.out eq priorOut, "capture must restore stdout after failed backend close")
+      assert(System.err eq priorErr, "capture must restore stderr after failed backend close")
+
+  test("a fatal onStop on a clean quit escapes only after later releases and retains the close failure"):
+    val fatal                                  = FatalOnStop()
+    val close                                  = IllegalStateException("close failure")
+    val secondary                              = IllegalStateException("close secondary")
+    close.addSuppressed(secondary)
+    val backend                                = ReportingCloseBackend(close)
+    val priorOut                               = System.out
+    val priorErr                               = System.err
+    var owner: Option[RenderThread.RenderLoop] = None
+    val thrown                                 = intercept[FatalOnStop] {
+      TerminalRunner(
+        backend,
+        RunnerConfig(captureStdio = Some(CaptureStdio.Console(LogRing()))),
+        onStop = () =>
+          assert(RenderThread.isRenderThread)
+          owner = Some(RenderThread.capture())
+          assert(!(System.out eq priorOut))
+          assert(!(System.err eq priorErr))
+          throw fatal,
+      ).run(_.quit(), (_, _) => EventOutcome.Ignored, _ => ())
+    }
+    assert(thrown eq fatal)
+    // With an escaping primary the aggregated close throwable stays nested, rather than being flattened.
+    assert(fatal.getSuppressed.toVector == Vector(close))
+    assert(close.getSuppressed.toVector == Vector(secondary))
+    assert(backend.closes == 1)
+    assert(!backend.terminal.isRawMode)
+    assert(!backend.terminal.isAlternateScreen)
+    assert(backend.terminal.isCursorVisible)
+    assert(owner.exists(loop => !loop.execute(())), "cleanup must close its registered owner")
+    assert(RenderThread.currentOwner.isEmpty, "cleanup must unregister its owner")
+    assert(System.out eq priorOut, "capture must restore stdout before the fatal escapes")
+    assert(System.err eq priorErr, "capture must restore stderr before the fatal escapes")
+
+  /** A synthetic fatal throwable: no real VM failure is needed to pin the teardown policy. */
+  private final class FatalOnStop extends VirtualMachineError("fatal in onStop")
+
   /** Restores a real headless terminal, then reports an aggregated close failure like the JLine backend. */
   private final class ReportingCloseBackend(failure: Throwable, setupFailure: Option[BackendError] = None)
       extends Backend:
@@ -122,6 +215,7 @@ final class RunnerLifecycleSpec extends AnyFunSuite:
     def close(): Either[BackendError, Unit]                               =
       closes += 1
       terminal.close().flatMap(_ => Left(BackendError.Io(failure)))
+    override def emergencyRestore(): Unit                                 = terminal.emergencyRestore()
 
   /** Records every timeout the runner asks for and never delivers an event. */
   private final class TimeoutSpy(reported: Size, stopAfter: Int) extends Backend:
