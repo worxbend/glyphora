@@ -85,7 +85,7 @@ final case class RunStats(
       val span   = math.max(1L, histogram.last.highMicros - low)
       val counts = histogram.map(_.count).toArray
       successes.foreach { value =>
-        val index = math.min(buckets - 1, ((value - low) * buckets / span).toInt)
+        val index = Histogram.bucketIndex(value, low, buckets, span)
         counts(index) += 1
       }
       histogram.zipWithIndex.map((bucket, index) => bucket.copy(count = counts(index)))
@@ -136,6 +136,9 @@ final case class LatencyBucket(lowMicros: Long, highMicros: Long, count: Int)
 
 object Histogram:
 
+  private[loadtest] def bucketIndex(value: Long, low: Long, buckets: Int, span: Long): Int =
+    math.min(buckets - 1, ((value - low) * buckets / span).toInt)
+
   /** Equal-width buckets spanning min..max of the sample set.
     *
     * The edges move as the run goes on, which is the honest thing to draw: a fixed scale chosen from the first hundred
@@ -148,7 +151,7 @@ object Histogram:
       val span   = math.max(1L, latencies.max - low)
       val counts = Array.fill(buckets)(0)
       latencies.foreach { value =>
-        val index = math.min(buckets - 1, ((value - low) * buckets / span).toInt)
+        val index = bucketIndex(value, low, buckets, span)
         counts(index) += 1
       }
       Vector.tabulate(buckets) { index =>
