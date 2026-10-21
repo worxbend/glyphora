@@ -37,7 +37,7 @@ def authenticated_opener(url: str) -> urllib.request.OpenerDirector:
         parsed = urllib.parse.urlsplit(value)
         if parsed.scheme != "https" or parsed.username is not None or parsed.password is not None:
             raise ValueError("unsafe authenticated redirect")
-        return parsed.hostname, parsed.port or 443
+        return parsed.hostname, 443 if parsed.port is None else parsed.port
 
     expected = origin(url)
 

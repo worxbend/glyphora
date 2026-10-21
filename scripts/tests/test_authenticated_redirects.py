@@ -58,7 +58,7 @@ class AuthenticatedRedirectTests(unittest.TestCase):
 
     def test_disallowed_destinations_are_rejected_before_delivery(self):
         for target in ("https://example.com/leak", "http://maven.pkg.github.com/leak",
-                       ORIGIN + ":444/leak", "https://maven.pkg.github.com.evil.test/leak",
+                       ORIGIN + ":444/leak", ORIGIN + ":0/leak", "https://maven.pkg.github.com.evil.test/leak",
                        "https://fixture-user@maven.pkg.github.com/leak"):
             with self.subTest(target=target), self.assertRaisesRegex(ValueError, "authenticated redirect"):
                 self.fetch([target])
