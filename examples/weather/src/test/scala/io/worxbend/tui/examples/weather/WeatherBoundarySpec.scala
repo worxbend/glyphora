@@ -9,6 +9,7 @@ import java.time.Duration as JDuration
 import java.util.Optional
 import java.util.concurrent.{CompletableFuture, Executor}
 import javax.net.ssl.{SSLContext, SSLParameters}
+import scala.util.Using
 
 final class WeatherBoundarySpec extends AnyFunSuite:
   private val location   = """{"results":[{"name":"Lisbon","latitude":38.7,"longitude":-9.1}]}"""
@@ -20,7 +21,8 @@ final class WeatherBoundarySpec extends AnyFunSuite:
     private val delegate = HttpClient.newHttpClient()
     override def send[T](request: HttpRequest, handler: HttpResponse.BodyHandler[T]): HttpResponse[T] =
       requests += request
-      delegate.send(HttpRequest.newBuilder(route(request)).GET().build(), handler)
+      delegate.send(HttpRequest.newBuilder(route(request)).timeout(request.timeout().get()).GET().build(), handler)
+    override def close(): Unit                                                                        = delegate.close()
     override def sendAsync[T](
         request: HttpRequest,
         responseBodyHandler: HttpResponse.BodyHandler[T],
@@ -56,7 +58,7 @@ final class WeatherBoundarySpec extends AnyFunSuite:
         finally exchange.close(),
     )
     server.start()
-    try body(RoutedClient(_ => URI.create(s"http://127.0.0.1:${server.getAddress.getPort}/")))
+    try Using.resource(RoutedClient(_ => URI.create(s"http://127.0.0.1:${server.getAddress.getPort}/")))(body)
     finally server.stop(0)
 
   test("HTTP requests encode city names, preserve timeout, and decode both responses with optional defaults"):
@@ -93,12 +95,14 @@ final class WeatherBoundarySpec extends AnyFunSuite:
 
   test("I/O and interruption map to network failure and restore only the interrupt flag"):
     val io          = RoutedClient(_ => throw java.io.IOException("offline"))
-    assert(OpenMeteoClient(io).fetch("x") == Left(WeatherError.NetworkFailure("offline")))
     val interrupted = RoutedClient(_ => throw InterruptedException("stop"))
-    try
-      assert(OpenMeteoClient(interrupted).fetch("x") == Left(WeatherError.NetworkFailure("stop")))
-      assert(Thread.currentThread().isInterrupted)
-    finally { val _ = Thread.interrupted() }
+    Using.resources(io, interrupted) { (offline, stopped) =>
+      assert(OpenMeteoClient(offline).fetch("x") == Left(WeatherError.NetworkFailure("offline")))
+      try
+        assert(OpenMeteoClient(stopped).fetch("x") == Left(WeatherError.NetworkFailure("stop")))
+        assert(Thread.currentThread().isInterrupted)
+      finally { val _ = Thread.interrupted() }
+    }
 
   test("JSON model covers escapes, nested values, numeric coercion and existing permissive syntax"):
     val parsed = Json.parse("""{"s":"a\n\u65e5","a":[true,false,null,-1.25e2],"n":2.9}""").toOption.get
