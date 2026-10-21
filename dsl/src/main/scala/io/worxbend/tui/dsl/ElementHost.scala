@@ -462,24 +462,9 @@ final class ElementHost:
         val restyled = trackPointerStates(event, under) && cuesDemanded
         redraw || restyled
       case None         =>
-        // a pass-through layer above the target hears a press first and lets it go on
-        val heard      =
-          if event.kind == MouseEventKind.Down then
-            tracker.bounds
-              .passThroughAt(event.position)
-              .foldLeft(false)((any, hit) =>
-                lastTree.exists(EventRouter.dispatchMouse(_, event, Some(hit), targetPaths.get)) || any
-              )
-          else false
+        val heard      = notifyPressObservers(event)
         val target     = pointer.route(event, under)
-        val focusMoved =
-          if event.kind == MouseEventKind.Down then
-            target.flatMap(_.target.focusIndex) match
-              case Some(index) if index != tracker.focusedIndex =>
-                tracker.focusTo(index)
-                true
-              case _                                            => false
-          else false
+        val focusMoved = focusPressedTarget(event, target)
 
         val consumed = pointer.continue(event).getOrElse {
           lastTree.exists(EventRouter.dispatchMouse(_, event, target, targetPaths.get))
@@ -503,6 +488,26 @@ final class ElementHost:
           target.exists(hit => lastTree.exists(EventRouter.targetDraggable(_, hit.target, targetPaths.get)))
         val gestured = lastTree.isDefined && gestures.afterDelivery(event, consumed, ownDrag)
         consumed || focusMoved || restyled || gestured || heard || recovering
+
+  /** Pass-through layers hear a press topmost first, even after an earlier observer consumed it. */
+  private def notifyPressObservers(event: MouseEvent): Boolean =
+    if event.kind == MouseEventKind.Down then
+      tracker.bounds
+        .passThroughAt(event.position)
+        .foldLeft(false)((any, hit) =>
+          lastTree.exists(EventRouter.dispatchMouse(_, event, Some(hit), targetPaths.get)) || any
+        )
+    else false
+
+  /** Transfer press focus before the target callback; other pointer events never move it. */
+  private def focusPressedTarget(event: MouseEvent, target: Option[MouseHit]): Boolean =
+    if event.kind == MouseEventKind.Down then
+      target.flatMap(_.target.focusIndex) match
+        case Some(index) if index != tracker.focusedIndex =>
+          tracker.focusTo(index)
+          true
+        case _                                            => false
+    else false
 
   /** A drag that is selecting text and has run past the top or bottom of the selected node's rows on screen scrolls the
     * nearest scrollable around that edge one step — a wheel event at the edge cell, routed the way a real wheel there
