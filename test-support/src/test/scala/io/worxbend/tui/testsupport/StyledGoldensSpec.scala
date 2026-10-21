@@ -60,3 +60,23 @@ final class StyledGoldensSpec extends AnyFunSuite:
     TempWorkspace.withWorkspace("glyphora-styled") { directory =>
       GoldenFrames.assertMatchesStyledText("hand-edited", source, BufferExport.ansi(source) + "\n", directory)
     }
+
+  test("text mismatches preserve exact diagnostics and cell report counts"):
+    val expected = styledFrame("ab")
+    val actual   = styledFrame("xy")
+    TempWorkspace.withWorkspace("glyphora-styled") { directory =>
+      val error   = intercept[AssertionError] {
+        GoldenFrames.assertMatchesStyledText("text-diff", actual, BufferExport.ansi(expected), directory)
+      }
+      val reports = Seq("text-diff.expected.svg", "text-diff.actual.svg", "text-diff.diff.html")
+        .map(directory.resolve(_))
+      assert(
+        error.getMessage == "styled frame differs from golden/text-diff.ansi" +
+          s" — see the report:\n${reports.mkString("\n")}" +
+          s"\n--- expected (text) ---\n${BufferAssertions.text(expected)}" +
+          s"\n--- actual (text) ---\n${BufferAssertions.text(actual)}"
+      )
+      assert(Files.readString(reports.last).contains("2 of 16 cells differ"))
+      assert(Files.readString(reports.head).contains("ab"))
+      assert(Files.readString(reports(1)).contains("xy"))
+    }
