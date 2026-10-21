@@ -33,6 +33,10 @@ class GalleryApp(fixtures: GalleryFixtures = GalleryFixtures.live()) extends Tui
   /** The pages, built once: each owns the states it draws, for the life of the app. */
   val pages: Vector[GalleryPage] = Gallery.pages(fixtures)
 
+  // Only immutable labels are cached: page views, props, state and theme still resolve on every frame.
+  private val sidebarItems: Vector[Line] =
+    pages.map(p => Line(Seq(Span(f"${p.family.take(10)}%-10s ", Style.Default.dim), Span(p.factory))))
+
   private val sidebar: ListState = ListState(selected = Some(0))
 
   private def current: Int = sidebar.selected.getOrElse(0)
@@ -47,11 +51,10 @@ class GalleryApp(fixtures: GalleryFixtures = GalleryFixtures.live()) extends Tui
   )
 
   def view(using ReactiveScope, Theme): Element =
-    val page  = pages(current)
-    val items = pages.map(p => Line(Seq(Span(f"${p.family.take(10)}%-10s ", Style.Default.dim), Span(p.factory))))
+    val page = pages(current)
     column(
       row(
-        panel(s"Gallery · ${pages.size} factories")(list(items, sidebar).autofocus.fill).length(34),
+        panel(s"Gallery · ${pages.size} factories")(list(sidebarItems, sidebar).autofocus.fill).length(34),
         panel(s"${page.factory} — ${page.family}")(
           text(page.summary).dim.length(1),
           spacer.length(1),
