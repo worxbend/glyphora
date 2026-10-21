@@ -38,7 +38,8 @@ extension [E <: Element](element: E)
   def caretStyle(style: CaretStyle): element.Self =
     element.withProps(element.props.copy(caretStyle = style))
 
-/** The editing chords every free-text node shares, over the [[w.EditBuffer]] both editor states are:
+/** The editing chords every free-text node shares, over the [[io.worxbend.tui.widgets.EditBuffer EditBuffer]] both
+  * editor states are:
   *
   *   - `Shift` + arrows / `Home` / `End` select; `Ctrl+Left`/`Ctrl+Right` (and `Alt+B`/`Alt+F`) move by word, with
   *     `Shift` selecting; `Ctrl+Up`/`Ctrl+Down` move by paragraph; `Ctrl+A` selects all
@@ -156,9 +157,10 @@ final case class InputElement(
         val secret = mask.isDefined || componentStyled(props).modifiers.hasAny(io.worxbend.tui.core.Modifiers.Hidden)
         editingChords(state, secret)(event) || cursorKeys(state)(event)
 
-/** The query input of a search: a one-row text field over the caller-owned [[w.SearchState]]'s own
-  * [[w.SearchState.input]], so every keystroke changes the query the searched view (`log(…).searchable(state)`,
-  * `scrollView(…).searchable(state)`, `markdown(…).searchable(state)`) finds on its next frame — the search is live.
+/** The query input of a search: a one-row text field over the caller-owned [[io.worxbend.tui.widgets.SearchState]]'s
+  * own [[io.worxbend.tui.widgets.SearchState.input]], so every keystroke changes the query the searched view
+  * (`log(…).searchable(state)`, `scrollView(…).searchable(state)`, `markdown(…).searchable(state)`) finds on its next
+  * frame — the search is live.
   *
   * While focused: typing and the shared editing chords edit the query; Enter (or Down) steps to the next match and
   * Shift+Enter (or Up) to the previous one; Esc clears the query and the highlight. With nothing to clear, Esc is left
@@ -431,10 +433,11 @@ final case class TemplateInputElement(
   * `Enter` keeps the match and closes the prompt, `Esc` cancels back to where the search started. Afterwards `F3` /
   * `Shift+F3` (and `n` / `N` when read-only) step to the next and previous match.
   *
-  * [[searchable]] hands the search to a caller-owned [[w.SearchState]] instead, the path `log`, `scrollView` and
-  * `markdown` take: a `searchBar` over the same state types the query, the matches are highlighted in the theme's
-  * search styles, and every move of the search puts the caret on the current match. `F3` / `Shift+F3` (and `n` / `N`
-  * when read-only) then step that shared search, and `Ctrl+F` / `/` are left to bubble to the app, which owns the bar.
+  * [[searchable]] hands the search to a caller-owned [[io.worxbend.tui.widgets.SearchState]] instead, the path `log`,
+  * `scrollView` and `markdown` take: a `searchBar` over the same state types the query, the matches are highlighted in
+  * the theme's search styles, and every move of the search puts the caret on the current match. `F3` / `Shift+F3` (and
+  * `n` / `N` when read-only) then step that shared search, and `Ctrl+F` / `/` are left to bubble to the app, which owns
+  * the bar.
   */
 final case class TextAreaElement(
     state: w.TextAreaState,
@@ -467,8 +470,9 @@ final case class TextAreaElement(
   /** A viewer: motion, selection, copy and search work, edits do not — and `/`, `n`, `N` search like `less`. */
   def readOnly: TextAreaElement = copy(editable = false)
 
-  /** Searches this area through `state` — the shared [[w.SearchState]] path; see the class notes. Pair it with a
-    * [[searchBar]] over the same state (or over the state a [[w.SearchState.view]] came from).
+  /** Searches this area through `state` — the shared [[io.worxbend.tui.widgets.SearchState]] path; see the class notes.
+    * Pair it with a [[searchBar]] over the same state (or over the state a [[io.worxbend.tui.widgets.SearchState.view]]
+    * came from).
     */
   def searchable(state: w.SearchState): TextAreaElement = copy(search = Some(state))
 
@@ -582,11 +586,12 @@ final case class TextAreaElement(
         case KeyEvent(KeyCode.End, _)                                     => state.moveEnd()
       }(event)
 
-/** A tag (chip) field over a caller-owned [[w.TagInputState]]: committed tags draw as chips that wrap onto further rows
-  * through [[w.Flow]], followed by the text being typed. While focused, typing edits the text with every key a text
-  * field knows; Enter or a comma commits it as a tag, Backspace on an empty field removes the last tag, and Tab (or
-  * Right at the end of the text) accepts the dim suggestion when there is one. `onChange` hears the tags after every
-  * commit or removal. An Enter on a blank field, and a Tab with nothing to accept, keep bubbling.
+/** A tag (chip) field over a caller-owned [[io.worxbend.tui.widgets.TagInputState]]: committed tags draw as chips that
+  * wrap onto further rows through [[io.worxbend.tui.widgets.Flow Flow]], followed by the text being typed. While
+  * focused, typing edits the text with every key a text field knows; Enter or a comma commits it as a tag, Backspace on
+  * an empty field removes the last tag, and Tab (or Right at the end of the text) accepts the dim suggestion when there
+  * is one. `onChange` hears the tags after every commit or removal. An Enter on a blank field, and a Tab with nothing
+  * to accept, keep bubbling.
   *
   * Measures as many rows as its chips wrap onto at the width it is given, and reports its caret like every text node.
   */

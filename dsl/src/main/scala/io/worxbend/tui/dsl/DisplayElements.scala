@@ -438,7 +438,7 @@ final case class WidgetElement(
     * column alignment. Inside a `scrollView` the whole widget is searched, not just the window, and the view scrolls to
     * the current match when the query changes or steps. The node becomes focusable; `n`/`N` step through the matches
     * while it is focused, and the keys it does not use (the arrows, Page keys) bubble to the enclosing scroll view.
-    * Pair it with a [[searchBar]] over the same state. See [[w.SearchState]].
+    * Pair it with a [[searchBar]] over the same state. See [[io.worxbend.tui.widgets.SearchState w.SearchState]].
     */
   def searchable(state: w.SearchState): WidgetElement =
     copy(search = Some(state), props = props.copy(focusable = true))
@@ -654,7 +654,8 @@ final case class RichTextElement(
   private[dsl] override def claim: SizeClaim =
     if overflow.wraps then SizeClaim.Fill else SizeClaim.Measured
 
-/** Markdown that is still arriving — an LLM's reply, token by token — drawn from a caller-owned [[w.MarkdownStream]].
+/** Markdown that is still arriving — an LLM's reply, token by token — drawn from a caller-owned
+  * [[io.worxbend.tui.widgets.MarkdownStream w.MarkdownStream]].
   *
   * Without a `follow` state this is a measured leaf like `markdown(…)`: it reports its wrapped height, so it sizes
   * correctly in a column or inside a `scrollView` — and inside one it keeps the view pinned to its newest row through
@@ -684,7 +685,9 @@ final case class MarkdownStreamElement(
   override private[dsl] def watchedStates: Seq[Versioned] = stream +: follow.toSeq
   override def debugName: String                          = "markdownStream"
 
-  /** Tables, lexers and list glyphs for the document — see [[w.MarkdownOptions]]. */
+  /** Tables, lexers and list glyphs for the document — see
+    * [[io.worxbend.tui.widgets.MarkdownOptions w.MarkdownOptions]].
+    */
   def withOptions(options: w.MarkdownOptions): MarkdownStreamElement = copy(markdownOptions = options)
 
   def widget: Widget =
@@ -722,8 +725,9 @@ private final class TailReporting(document: Widget & Measured, owner: Int) exten
   override def heightAt(width: Int): Option[Int] = document.heightAt(width)
   override def widthAt(height: Int): Option[Int] = document.widthAt(height)
 
-/** A unified diff drawn by [[w.DiffView]] — `git diff` output read with `Patch.parse`, or two texts compared with
-  * `Patch.of` — scrolled and stepped through by a caller-owned [[w.DiffViewState]].
+/** A unified diff drawn by [[io.worxbend.tui.widgets.DiffView w.DiffView]] — `git diff` output read with `Patch.parse`,
+  * or two texts compared with `Patch.of` — scrolled and stepped through by a caller-owned
+  * [[io.worxbend.tui.widgets.DiffViewState DiffViewState]].
   *
   * Focusable. While focused, `n` or `]` puts the next hunk's header on the top row and `p` or `[` the previous one;
   * Up/Down/PageUp/PageDown and the wheel scroll, Home and End jump to the ends. The keys are the element's own, like
@@ -760,7 +764,7 @@ final case class DiffViewElement(
   /** Highlights each line's text through `lexer`, in the options' syntax theme. */
   def lexer(lexer: w.Lexer): DiffViewElement = copy(options = options.copy(lexer = Some(lexer)))
 
-  /** Replaces every option at once — see [[w.DiffViewOptions]]. */
+  /** Replaces every option at once — see [[io.worxbend.tui.widgets.DiffViewOptions w.DiffViewOptions]]. */
   def withOptions(options: w.DiffViewOptions): DiffViewElement = copy(options = options)
 
   // Layout measures and the frame paints the same value, so the rows are laid out once per node.
@@ -813,10 +817,10 @@ final case class PlaceholderElement(
   def widget: Widget                                                  = w.Placeholder(label, props.style, labelStyle)
   private[dsl] def withProps(props: ElementProps): PlaceholderElement = copy(props = props)
 
-/** A scrollable hex dump of `bytes` over a caller-owned [[w.HexViewerState]]. While focused, Left/Right move the
-  * selected byte by one, Up/Down by a row, PageUp/PageDown by ten rows and Home/End to either end; the wheel moves a
-  * row on hover. The view scrolls to keep the selection on screen, and the selected byte wears the focus style in both
-  * the hex and the ASCII column.
+/** A scrollable hex dump of `bytes` over a caller-owned [[io.worxbend.tui.widgets.HexViewerState w.HexViewerState]].
+  * While focused, Left/Right move the selected byte by one, Up/Down by a row, PageUp/PageDown by ten rows and Home/End
+  * to either end; the wheel moves a row on hover. The view scrolls to keep the selection on screen, and the selected
+  * byte wears the focus style in both the hex and the ASCII column.
   */
 final case class HexViewerElement(
     bytes: IndexedSeq[Byte],
@@ -853,8 +857,9 @@ final case class HexViewerElement(
 
   private def move(delta: Int): Unit = state.moveBy(delta, bytes.size)
 
-/** A tree view of a described value — see [[w.Inspect]]. Claims exactly the rows its tree measures, so it stacks in a
-  * `column` like text; put it in a [[scrollView]] when the value is taller than the screen.
+/** A tree view of a described value — see [[io.worxbend.tui.widgets.Inspect w.Inspect]]. Claims exactly the rows its
+  * tree measures, so it stacks in a `column` like text; put it in a [[scrollView]] when the value is taller than the
+  * screen.
   *
   * Read-only without a `state`. With one it is focusable and collapsible: Up/Down (Home/End) move the selected row,
   * Enter or Space folds or unfolds it, Right unfolds, Left folds — or, on a row that is already folded or cannot fold,
@@ -919,8 +924,8 @@ final case class InspectElement(
         case _                                               => false
     }
 
-/** The [[PrettyShape]] that builds `tui-widgets`' [[w.PrettyValue]] — the glue between the derivation in `tui-macros`
-  * and the widget, neither of which can name the other.
+/** The [[PrettyShape]] that builds `tui-widgets`' [[io.worxbend.tui.widgets.PrettyValue PrettyValue]] — the glue
+  * between the derivation in `tui-macros` and the widget, neither of which can name the other.
   */
 private[dsl] object PrettyValueShape extends PrettyShape[w.PrettyValue]:
   def atom(text: String): w.PrettyValue                                             = w.PrettyValue.Atom(text)
@@ -930,8 +935,9 @@ private[dsl] object PrettyValueShape extends PrettyShape[w.PrettyValue]:
   def product(name: String, fields: Seq[PrettyField[w.PrettyValue]]): w.PrettyValue =
     w.PrettyValue.Product(name, fields.map(field => field.name -> field.value))
 
-/** A scannable QR code for `text` — see [[w.QrCode]]. Claims exactly the box the symbol and its quiet zone measure, so
-  * it sits beside text in a `row` without being stretched; the code is only readable whole, so give it that room.
+/** A scannable QR code for `text` — see [[io.worxbend.tui.widgets.QrCode w.QrCode]]. Claims exactly the box the symbol
+  * and its quiet zone measure, so it sits beside text in a `row` without being stretched; the code is only readable
+  * whole, so give it that room.
   */
 final case class QrCodeElement(
     code: w.QrCode,

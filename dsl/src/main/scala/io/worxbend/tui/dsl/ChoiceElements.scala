@@ -520,11 +520,12 @@ final case class DialogElement(
 
   private[dsl] def withProps(props: ElementProps): DialogElement = copy(props = props)
 
-/** An interactive month grid over a caller-owned [[w.DatePickerState]]. While focused, Left/Right move the cursor a day
-  * and Up/Down a week — across month and year ends, so the grid follows — PageUp/PageDown move it a month, `t` jumps to
-  * today, and Enter or Space chooses the cursor's date and hands it to `onSelect`; a click on a day chooses that day.
-  * The cursor wears the focus style; the chosen date, once the cursor leaves it, is underlined. Days outside the
-  * state's `min`/`max` are dimmed, and neither the keys nor a click can reach them.
+/** An interactive month grid over a caller-owned [[io.worxbend.tui.widgets.DatePickerState w.DatePickerState]]. While
+  * focused, Left/Right move the cursor a day and Up/Down a week — across month and year ends, so the grid follows —
+  * PageUp/PageDown move it a month, `t` jumps to today, and Enter or Space chooses the cursor's date and hands it to
+  * `onSelect`; a click on a day chooses that day. The cursor wears the focus style; the chosen date, once the cursor
+  * leaves it, is underlined. Days outside the state's `min`/`max` are dimmed, and neither the keys nor a click can
+  * reach them.
   */
 final case class DatePickerElement(
     state: w.DatePickerState,
@@ -569,17 +570,18 @@ final case class DatePickerElement(
         case _                                 => false
     }
 
-  /** The grid a [[w.Calendar]] draws with both headers: seven two-column days with one-column gaps, and a title row, a
-    * weekday row and up to six weeks.
+  /** The grid a [[io.worxbend.tui.widgets.Calendar Calendar]] draws with both headers: seven two-column days with
+    * one-column gaps, and a title row, a weekday row and up to six weeks.
     */
   private val DatePickerWidth  = 20
   private val DatePickerHeight = 8
   private val DaysPerWeek      = 7
 
-/** A one-row `hh:mm:ss` field over a caller-owned [[w.TimePickerState]]. While focused, Left/Right move between the
-  * hour, minute and second fields and Up/Down step the time by the focused field's unit, wrapping past midnight — one
-  * minute up from `23:59` is `00:00`. Digits type into the focused field: two make its value (clamped to the field's
-  * maximum) and move focus on, so `0930` sets `09:30`. The focused field wears the focus style.
+/** A one-row `hh:mm:ss` field over a caller-owned [[io.worxbend.tui.widgets.TimePickerState w.TimePickerState]]. While
+  * focused, Left/Right move between the hour, minute and second fields and Up/Down step the time by the focused field's
+  * unit, wrapping past midnight — one minute up from `23:59` is `00:00`. Digits type into the focused field: two make
+  * its value (clamped to the field's maximum) and move focus on, so `0930` sets `09:30`. The focused field wears the
+  * focus style.
   */
 final case class TimePickerElement(
     state: w.TimePickerState,
@@ -608,12 +610,12 @@ final case class TimePickerElement(
       }
     )
 
-/** A two-thumb range slider over a caller-owned [[w.RangeSliderState]]. While focused, Left/Right move the thumb that
-  * has the keyboard by `state.range.step` and Home/End send it to its limit; a thumb stops at the other one (and at the
-  * state's minimum gap), so the two never cross. Tab hands the keyboard from the lower thumb to the upper one and
-  * Shift+Tab back; from the upper thumb Tab is left unconsumed, so focus moves on to the next control as usual and a
-  * user is never trapped inside the slider. A press or drag on the track moves whichever thumb is nearer. `onChange`
-  * hears the pair after every move.
+/** A two-thumb range slider over a caller-owned [[io.worxbend.tui.widgets.RangeSliderState w.RangeSliderState]]. While
+  * focused, Left/Right move the thumb that has the keyboard by `state.range.step` and Home/End send it to its limit; a
+  * thumb stops at the other one (and at the state's minimum gap), so the two never cross. Tab hands the keyboard from
+  * the lower thumb to the upper one and Shift+Tab back; from the upper thumb Tab is left unconsumed, so focus moves on
+  * to the next control as usual and a user is never trapped inside the slider. A press or drag on the track moves
+  * whichever thumb is nearer. `onChange` hears the pair after every move.
   */
 final case class RangeSliderElement(
     state: w.RangeSliderState,
@@ -662,15 +664,16 @@ final case class RangeSliderElement(
   /** Columns the end caps and one thumb take off the draggable track. */
   private val ChromeWidth = 3
 
-/** A 256-colour palette grid over a caller-owned [[w.ColorPickerState]]. While focused, the arrows move the cursor
-  * swatch and Enter or Space chooses it, recording it in `state.chosen` and handing the `Color.Indexed` to `onSelect`.
-  * A click on a swatch moves the cursor there and chooses it. Claims the 36×17 box the grid and its caption measure.
+/** A 256-colour palette grid over a caller-owned [[io.worxbend.tui.widgets.ColorPickerState w.ColorPickerState]]. While
+  * focused, the arrows move the cursor swatch and Enter or Space chooses it, recording it in `state.chosen` and handing
+  * the `Color.Indexed` to `onSelect`. A click on a swatch moves the cursor there and chooses it. Claims the 36×17 box
+  * the grid and its caption measure.
   *
-  * In [[w.ColorPickerMode.Rgb]] the R/G/B fields beside the grid take part too: Tab moves the keyboard from the grid
-  * through red, green and blue and Shift+Tab back — from the blue field Tab (and from the grid Shift+Tab) is left
-  * unconsumed, so focus moves on and nobody is trapped. On a field, digits type, Backspace deletes, Up/Down step the
-  * value, and Enter chooses the fields' `Color.Rgb` — only while all three are in `0..255`. A click on a swatch chooses
-  * its RGB value; a click on a field gives it the keyboard.
+  * In [[io.worxbend.tui.widgets.ColorPickerMode.Rgb ColorPickerMode.Rgb]] the R/G/B fields beside the grid take part
+  * too: Tab moves the keyboard from the grid through red, green and blue and Shift+Tab back — from the blue field Tab
+  * (and from the grid Shift+Tab) is left unconsumed, so focus moves on and nobody is trapped. On a field, digits type,
+  * Backspace deletes, Up/Down step the value, and Enter chooses the fields' `Color.Rgb` — only while all three are in
+  * `0..255`. A click on a swatch chooses its RGB value; a click on a field gives it the keyboard.
   */
 final case class ColorPickerElement(
     state: w.ColorPickerState,

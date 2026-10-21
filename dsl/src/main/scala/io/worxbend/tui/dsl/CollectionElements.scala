@@ -22,10 +22,11 @@ import java.nio.file.Path
   * `direction` says which edge the rows are anchored to — call [[bottomToTop]] for the chat-transcript shape.
   *
   * An item is a plain `String`, a styled [[Line]], or a whole [[Text]], and the three may be mixed in one list — the
-  * same union [[w.ListView]] itself accepts. A plain string is the common case and needs no ceremony; a `Line` is how a
-  * single row carries its own colour (a red failure, a dimmed disabled entry) or several styles at once; a `Text` is
-  * how one item takes several rows, a title with a dimmed subtitle under it being the usual reason. Selection and the
-  * keyboard moves count items, not rows, so one press of Down still moves past a whole multi-row item.
+  * same union [[io.worxbend.tui.widgets.ListView w.ListView]] itself accepts. A plain string is the common case and
+  * needs no ceremony; a `Line` is how a single row carries its own colour (a red failure, a dimmed disabled entry) or
+  * several styles at once; a `Text` is how one item takes several rows, a title with a dimmed subtitle under it being
+  * the usual reason. Selection and the keyboard moves count items, not rows, so one press of Down still moves past a
+  * whole multi-row item.
   */
 final case class ListElement(
     items: Seq[String | Line | Text],
@@ -49,8 +50,9 @@ final case class ListElement(
     */
   def bottomToTop: ListElement = copy(direction = w.ListDirection.BottomToTop)
 
-  /** Chooses when the columns holding the `> ` selection marker are reserved; see [[w.HighlightSpacing]]. The default
-    * reserves them always, so the text never shifts sideways.
+  /** Chooses when the columns holding the `> ` selection marker are reserved; see
+    * [[io.worxbend.tui.widgets.HighlightSpacing w.HighlightSpacing]]. The default reserves them always, so the text
+    * never shifts sideways.
     */
   def highlightGutter(spacing: w.HighlightSpacing): ListElement = copy(highlightSpacing = spacing)
 
@@ -364,7 +366,8 @@ final case class LogElement(
       case None        => (area, buffer) => log.render(area, buffer, state)
 
   /** Searches every line the log holds for `state`'s query, highlighting the matches and scrolling to the current one;
-    * `n`/`N` step through them while focused. Pair it with a [[searchBar]] over the same state. See [[w.SearchState]].
+    * `n`/`N` step through them while focused. Pair it with a [[searchBar]] over the same state. See
+    * [[io.worxbend.tui.widgets.SearchState w.SearchState]].
     */
   def searchable(state: w.SearchState): LogElement                       = copy(search = Some(state))
   private[dsl] def withProps(props: ElementProps): LogElement            = copy(props = props)
@@ -379,13 +382,13 @@ private[dsl] final case class LazyWindow(from: Int, items: Vector[Element]):
   * viewport shows — plus one either side — however large `count` is.
   *
   * The items are built during the frame's resolution pass, not at the factory call, because which items are visible is
-  * a question about the frame: the pass asks the caller-owned [[w.LazyListState]] for its build window (the last
-  * frame's viewport, re-anchored on the current offset and selection; the frame's height before the first render) and
-  * calls `build` for exactly those indices. What it builds is then an ordinary part of the tree: focusables in it take
-  * Tab stops, keys bubble out of it, the bounds recorder sees it, a focused text field in it drives the caret. An item
-  * that falls outside the window between frames — the enclosing scroll view jumped a page — is left blank for that
-  * paint. The miss asks the host for the frame that builds and decorates it with its normal hook identity; painting
-  * never invents a second, inert component lifetime.
+  * a question about the frame: the pass asks the caller-owned [[io.worxbend.tui.widgets.LazyListState w.LazyListState]]
+  * for its build window (the last frame's viewport, re-anchored on the current offset and selection; the frame's height
+  * before the first render) and calls `build` for exactly those indices. What it builds is then an ordinary part of the
+  * tree: focusables in it take Tab stops, keys bubble out of it, the bounds recorder sees it, a focused text field in
+  * it drives the caret. An item that falls outside the window between frames — the enclosing scroll view jumped a page
+  * — is left blank for that paint. The miss asks the host for the frame that builds and decorates it with its normal
+  * hook identity; painting never invents a second, inert component lifetime.
   *
   * While focused, Up/Down move the selection, Home/End jump to the ends and PageUp/PageDown move a page; the wheel
   * moves the selection on hover, and a press selects the item under the pointer. The selected item is drawn in the same
@@ -489,9 +492,9 @@ final case class LazyListElement(
         case _                   => wheel(event, area)
     }
 
-/** A tree with columns over a caller-owned [[w.TreeState]]. While focused, Up/Down move the selection through the
-  * visible rows, Enter toggles the selected branch, Right expands it and Left collapses it; the wheel moves the
-  * selection on hover. The selected row wears the focus style across every column.
+/** A tree with columns over a caller-owned [[io.worxbend.tui.widgets.TreeState w.TreeState]]. While focused, Up/Down
+  * move the selection through the visible rows, Enter toggles the selected branch, Right expands it and Left collapses
+  * it; the wheel moves the selection on hover. The selected row wears the focus style across every column.
   */
 final case class TreeTableElement[K](
     table: w.TreeTable[K],

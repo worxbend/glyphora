@@ -239,7 +239,7 @@ private[dsl] trait ElementFactories:
     * `progressBar(current, total)`.
     *
     * The caption defaults to the percentage; `.label("…")`, `.labelled("…")` and `.bare` change it, and `.ramp(...)`
-    * colours the fill by how far along it is. See [[w.Gauge]].
+    * colours the fill by how far along it is. See [[io.worxbend.tui.widgets.Gauge w.Gauge]].
     */
   def gauge(ratio: Double)(using theme: Theme): GaugeElement =
     LateBinding.themed(theme) { theme =>
@@ -257,7 +257,8 @@ private[dsl] trait ElementFactories:
     * The scale runs from zero to the largest value present, so a series is always drawn using the full row height and
     * two sparklines side by side are *not* comparable unless you pin the ceiling with `.max(n)`. Points that do not fit
     * the width are clipped on the right — call `.rightToLeft` to anchor the series to the other edge instead, so the
-    * newest reading stays in the last column and the history scrolls off the left. See [[w.Sparkline]].
+    * newest reading stays in the last column and the history scrolls off the left. See
+    * [[io.worxbend.tui.widgets.Sparkline w.Sparkline]].
     */
   def sparkline(data: Seq[Long]): SparklineElement = SparklineElement(data)
 
@@ -319,12 +320,13 @@ private[dsl] trait ElementFactories:
       build: (S, InteractiveContext) => Widget
   ): InteractiveWidgetElement[S] = InteractiveWidgetElement(state, handlers, build)
 
-  /** A single-line text field over caller-owned [[w.TextInputState]], showing `placeholder` while empty.
+  /** A single-line text field over caller-owned [[io.worxbend.tui.widgets.TextInputState w.TextInputState]], showing
+    * `placeholder` while empty.
     *
     * Create the state once, outside `view` — a `TextInputState()` built inside the view is a new empty editor on every
     * frame, which is the "my input keeps resetting" bug. It is render-thread-only; a write made on that thread outside
     * an event handler is drawn on the next loop iteration, because the node watches its version: see
-    * [[w.TextInputState]].
+    * [[io.worxbend.tui.widgets.TextInputState w.TextInputState]].
     *
     * Editing keys (typing, arrows, Home/End, Backspace/Delete) are handled while focused; `Enter` is left unconsumed so
     * the enclosing app can decide what submitting means.
@@ -332,9 +334,9 @@ private[dsl] trait ElementFactories:
   def input(state: w.TextInputState, placeholder: String = ""): InputElement =
     InputElement(state, placeholder)
 
-  /** The query field of a search over a caller-owned [[w.SearchState]] — create the state once outside `view` and hand
-    * the same one to the view it searches with `.searchable(state)`. Typing updates the search live, Enter /
-    * Shift+Enter step to the next / previous match, Esc clears. See [[SearchBarElement]].
+  /** The query field of a search over a caller-owned [[io.worxbend.tui.widgets.SearchState w.SearchState]] — create the
+    * state once outside `view` and hand the same one to the view it searches with `.searchable(state)`. Typing updates
+    * the search live, Enter / Shift+Enter step to the next / previous match, Esc clears. See [[SearchBarElement]].
     */
   def searchBar(state: w.SearchState, placeholder: String = Messages.active.searchPlaceholder): SearchBarElement =
     SearchBarElement(state, placeholder)
@@ -351,11 +353,12 @@ private[dsl] trait ElementFactories:
   def select(options: Seq[String], selected: Signal[Int])(using ReactiveScope): SelectElement =
     SelectElement(options, selected.get, selected.set)
 
-  /** A scrollable single-selection list over caller-owned [[w.ListState]].
+  /** A scrollable single-selection list over caller-owned [[io.worxbend.tui.widgets.ListState w.ListState]].
     *
     * The state must be created once, outside `view` — a `ListState` built inside the view would be a fresh one every
     * frame and the selection would never move. It is read and written on the render thread only, and a mutation made
-    * there outside an event handler is drawn on the next loop iteration: see [[w.ListState]].
+    * there outside an event handler is drawn on the next loop iteration: see
+    * [[io.worxbend.tui.widgets.ListState w.ListState]].
     *
     * The selected row is drawn in the app [[Theme]]'s `focus` style, which the focus pass stamps onto every element —
     * focused or not — so a list keeps the app's highlight even while the keyboard is somewhere else.
@@ -366,9 +369,10 @@ private[dsl] trait ElementFactories:
   def list(items: Seq[String | Line | Text], state: w.ListState): ListElement =
     ListElement(items, state)
 
-  /** A virtual list of `count` items, `itemHeight` rows each, over caller-owned [[w.LazyListState]]: `item(i)` is
-    * called only for the items on screen plus one either side, so `lazyList(100000, 1, state)(row)` costs a screenful
-    * per frame, not a hundred thousand elements.
+  /** A virtual list of `count` items, `itemHeight` rows each, over caller-owned
+    * [[io.worxbend.tui.widgets.LazyListState w.LazyListState]]: `item(i)` is called only for the items on screen plus
+    * one either side, so `lazyList(100000, 1, state)(row)` costs a screenful per frame, not a hundred thousand
+    * elements.
     *
     * {{{
     * val rows = LazyListState()
@@ -377,7 +381,7 @@ private[dsl] trait ElementFactories:
     * }}}
     *
     * Unlike `scrollView(column(items*))`, nothing outside the window is built, measured, decorated or painted. Items
-    * are real elements — key the focusable ones (`.key(s"row-$id")`) so focus follows them as the window moves. Each
+    * are real elements — key the focusable ones (`.key(s"row-\$id")`) so focus follows them as the window moves. Each
     * item's hooks are scoped by its index. The state follows the same ownership rules as [[list]]'s; see
     * [[LazyListElement]] for scrolling, selection and how it behaves inside a `scrollView`.
     */
@@ -385,7 +389,9 @@ private[dsl] trait ElementFactories:
     val build = ViewState.deferred((range: Range) => range.map(i => ViewState.scopeIfActive(s"lazyList:$i")(item(i))))
     LazyListElement(math.max(0, count), math.max(1, itemHeight), build, state)
 
-  /** A collapsible tree over caller-owned [[w.TreeState]] — same state ownership rules as [[list]]. */
+  /** A collapsible tree over caller-owned [[io.worxbend.tui.widgets.TreeState w.TreeState]] — same state ownership
+    * rules as [[list]].
+    */
   def tree(nodes: Seq[w.TreeNode], state: w.TreeState[?]): TreeElement =
     TreeElement(nodes, state)
 
@@ -394,8 +400,8 @@ private[dsl] trait ElementFactories:
     * Bars are scaled against the largest value in `data`, so the tallest always reaches the top of the area; the top of
     * each bar uses a partial block glyph for sub-cell precision. `showValues = true` writes each bar's number on the
     * row above it, so a reader gets the magnitude and not only the comparison; a number with no room there, or wider
-    * than its own bar, is left out rather than truncated. See [[w.BarChartOptions]] for the styling, gap and
-    * number-format knobs.
+    * than its own bar, is left out rather than truncated. See
+    * [[io.worxbend.tui.widgets.BarChartOptions w.BarChartOptions]] for the styling, gap and number-format knobs.
     */
   def barChart(data: Seq[(String, Long)], barWidth: Int = 3, showValues: Boolean = false): WidgetElement =
     WidgetElement(w.BarChart(data, w.BarChartOptions(barWidth = barWidth, showValues = showValues)))
@@ -434,7 +440,7 @@ private[dsl] trait ElementFactories:
     * "authentication" under a three-column bar becomes "aut"; here the names get a strip of their own — up to half the
     * width — and the bars take the rest. A name still too long for the gutter keeps its beginning, which is the part
     * that identifies the category. `showValues = true` writes each bar's number in the track just past the bar's end.
-    * See [[w.BarChartOptions]] for the scale, gap and styling knobs.
+    * See [[io.worxbend.tui.widgets.BarChartOptions w.BarChartOptions]] for the scale, gap and styling knobs.
     */
   def horizontalBarChart(
       data: Seq[(String, Long)],
@@ -448,7 +454,8 @@ private[dsl] trait ElementFactories:
       )
     )
 
-  /** An x/y plot of one or more [[w.Dataset]]s with axes, over an explicit world window.
+  /** An x/y plot of one or more [[io.worxbend.tui.widgets.Dataset w.Dataset]]s with axes, over an explicit world
+    * window.
     *
     * `xBounds` and `yBounds` are the `(min, max)` of each axis in the data's own units — they are *not* derived from
     * the points, so a series outside the window is simply not drawn. A `GraphType.Line` dataset joins its points in the
@@ -457,8 +464,10 @@ private[dsl] trait ElementFactories:
     * Everything past the data and the window — axis styling, bound labels and their alignment, the legend, axis titles
     * and axis labels — rides in the `options` bundle rather than a parameter list: `chart(series, Bounds(0, 24),
     * Bounds(0, 100), ChartOptions(showLegend = true, xTitle = Some("hour")))`. The defaults draw no labels and no
-    * legend, exactly the chart a call that passes nothing has always drawn; see [[w.ChartOptions]] for what each knob
-    * does and [[w.Chart]] for how labels, titles and the legend take rows from the plot rather than covering it.
+    * legend, exactly the chart a call that passes nothing has always drawn; see
+    * [[io.worxbend.tui.widgets.ChartOptions ChartOptions]] for what each knob does and
+    * [[io.worxbend.tui.widgets.Chart Chart]] for how labels, titles and the legend take rows from the plot rather than
+    * covering it.
     */
   def chart(
       datasets: Seq[w.Dataset],
@@ -504,22 +513,23 @@ private[dsl] trait ElementFactories:
     }
 
   /** A month grid for `month` (1–12) of `year`, weeks starting Monday, with `selected` (a day of the month)
-    * highlighted. Needs 20 columns and up to 8 rows; anything smaller clips. See [[w.Calendar]], and
-    * [[w.CalendarOptions]] for the header, week-start, locale and styling knobs.
+    * highlighted. Needs 20 columns and up to 8 rows; anything smaller clips. See
+    * [[io.worxbend.tui.widgets.Calendar w.Calendar]], and [[io.worxbend.tui.widgets.CalendarOptions CalendarOptions]]
+    * for the header, week-start, locale and styling knobs.
     */
   def calendar(year: Int, month: Int, selected: Option[Int] = None): WidgetElement =
     WidgetElement(w.Calendar(year, month, selected))
 
   /** A filled pie with a legend: each `(label, value)` gets a sector proportional to its share of the total, so the
     * values are read as parts of a whole and need no normalising. Non-positive values are ignored. The disc corrects
-    * for the cell aspect ratio so it looks round rather than oval. See [[w.PieChart]].
+    * for the cell aspect ratio so it looks round rather than oval. See [[io.worxbend.tui.widgets.PieChart w.PieChart]].
     */
   def pieChart(data: Seq[(String, Double)]): WidgetElement =
     WidgetElement(w.PieChart(data))
 
   /** [[barChart]] with each column split into one segment per series: `(label, values)` stacks `values` bottom-up.
     * Columns are scaled against the tallest *stack*, so the columns are comparable to each other. See
-    * [[w.StackedBarChart]].
+    * [[io.worxbend.tui.widgets.StackedBarChart w.StackedBarChart]].
     *
     * `max` pins that scale instead of letting it float to the tallest stack present. Two of these charts side by side,
     * or the same chart across two frames, are only comparable when both are pinned to the same ceiling — otherwise a
@@ -535,7 +545,8 @@ private[dsl] trait ElementFactories:
   /** A value grid drawn as shade intensity — outer sequence is rows (top first), inner is columns.
     *
     * Each cell is shaded by its value *relative to the largest value in the whole grid*, so the scale is per-heatmap
-    * and two heatmaps are not comparable to each other. An all-zero (or empty) grid renders nothing. See [[w.Heatmap]].
+    * and two heatmaps are not comparable to each other. An all-zero (or empty) grid renders nothing. See
+    * [[io.worxbend.tui.widgets.Heatmap w.Heatmap]].
     */
   def heatmap(values: Seq[Seq[Double]]): WidgetElement =
     WidgetElement(w.Heatmap(values))
@@ -543,8 +554,8 @@ private[dsl] trait ElementFactories:
   /** An animation frame indicator. Needs a tick to animate — its own `config.tickRate` or the ambient one — and nothing
     * else to declare: it reads the ambient [[AnimationClock]], so there is no counter to advance or thread through.
     *
-    * Colors come from the ambient [[Theme]]'s [[LoadingTheme]]; the animation from [[w.SpinnerPreset]], swappable with
-    * `.preset(...)`.
+    * Colors come from the ambient [[Theme]]'s [[LoadingTheme]]; the animation from
+    * [[io.worxbend.tui.widgets.SpinnerPreset w.SpinnerPreset]], swappable with `.preset(...)`.
     */
   def spinner(label: String = "")(using theme: Theme, scope: ReactiveScope): SpinnerElement =
     spinnerAt(AnimationClock.elapsed, label)
@@ -601,7 +612,7 @@ private[dsl] trait ElementFactories:
     * The overlay recipe is `layers(page, positioned(x, y, w, h)(layers(clear(), menu(items, state)(onPick))))`: without
     * the `clear()` the page underneath stays visible wherever the popup does not paint — to the right of a short menu
     * row, or in the gap between two of them. Pass a style with a background colour to paint an opaque panel instead of
-    * erasing to the terminal's own background. See [[w.Clear]].
+    * erasing to the terminal's own background. See [[io.worxbend.tui.widgets.Clear w.Clear]].
     */
   def clear(style: Style = Style.Default): WidgetElement =
     WidgetElement(w.Clear(style))
@@ -651,7 +662,8 @@ private[dsl] trait ElementFactories:
   /** Two sparklines sharing one area — `upper` in the top half, `lower` in the bottom — for comparing a pair of series
     * such as ingress against egress. Each series is scaled independently, so the shapes are comparable but the heights
     * are not. `direction` anchors both halves to the same edge — pass `SparkDirection.RightToLeft` for a live pair, so
-    * the newest reading of each series sits in the last column. See [[w.DualSparkline]].
+    * the newest reading of each series sits in the last column. See
+    * [[io.worxbend.tui.widgets.DualSparkline w.DualSparkline]].
     */
   def dualSparkline(
       upper: Seq[Long],
@@ -743,8 +755,8 @@ private[dsl] trait ElementFactories:
 
   /** A one-row determinate progress bar: a caption then a filled track.
     *
-    * `ratio` is clamped to `[0, 1]`. The glyphs come from [[w.ProgressPreset]] — the default steps whole cells, and
-    * `.preset(ProgressPreset.Blocks)` moves smoothly with sub-cell partials.
+    * `ratio` is clamped to `[0, 1]`. The glyphs come from [[io.worxbend.tui.widgets.ProgressPreset w.ProgressPreset]] —
+    * the default steps whole cells, and `.preset(ProgressPreset.Blocks)` moves smoothly with sub-cell partials.
     */
   def progressBar(ratio: Double)(using theme: Theme): ProgressBarElement =
     LateBinding.themed(theme) { theme =>
@@ -763,9 +775,10 @@ private[dsl] trait ElementFactories:
   def progressBar(current: Int, total: Int)(using Theme): ProgressBarElement =
     progressBar(if total <= 0 then 0.0 else current.toDouble / total)
 
-  /** Rich-style multi-task progress: one row per caller-owned [[w.ProgressTask]], each the same `columns`
-    * ([[w.ProgressColumn.Default]] is label, bar, percentage, ETA). Times come from each task's own clock; while a task
-    * is unfinished the node requests animation ticks so the spinner, elapsed and ETA columns move.
+  /** Rich-style multi-task progress: one row per caller-owned [[io.worxbend.tui.widgets.ProgressTask w.ProgressTask]],
+    * each the same `columns` ([[io.worxbend.tui.widgets.ProgressColumn.Default ProgressColumn.Default]] is label, bar,
+    * percentage, ETA). Times come from each task's own clock; while a task is unfinished the node requests animation
+    * ticks so the spinner, elapsed and ETA columns move.
     */
   def multiProgress(tasks: Seq[w.ProgressTask], columns: Seq[w.ProgressColumn] = w.ProgressColumn.Default)(using
       theme: Theme,
@@ -860,7 +873,8 @@ private[dsl] trait ElementFactories:
     MarqueeElement(content, elapsed)
 
   /** A raster image drawn with half-block cells, so one cell shows two vertical pixels. Scaled to the area by
-    * nearest-neighbour sampling — pre-scale the pixels if quality matters. See [[w.Image]] for how to build one.
+    * nearest-neighbour sampling — pre-scale the pixels if quality matters. See
+    * [[io.worxbend.tui.widgets.Image w.Image]] for how to build one.
     */
   def image(source: w.Image): WidgetElement =
     WidgetElement(source)
@@ -868,8 +882,9 @@ private[dsl] trait ElementFactories:
   /** A picture the terminal draws itself — kitty graphics or iTerm2 inline images, whichever the terminal answered for
     * at start-up — with a half-block rendering in its cells for every terminal that can do neither. Build the
     * [[RgbaImage]] once and keep it: an unchanged picture sends nothing, and a covered one (a popup over it) is taken
-    * down and put back by the backend. Load one from a file with [[w.ImageLoader]]. The node measures itself, so in a
-    * column it claims the rows that keep the picture's shape. See [[w.PixelImage]].
+    * down and put back by the backend. Load one from a file with [[io.worxbend.tui.widgets.ImageLoader w.ImageLoader]].
+    * The node measures itself, so in a column it claims the rows that keep the picture's shape. See
+    * [[io.worxbend.tui.widgets.PixelImage PixelImage]].
     */
   def pixelImage(image: RgbaImage, options: w.PixelImageOptions = w.PixelImageOptions()): WidgetElement =
     WidgetElement(PicturePainter(w.PixelImage(image, options)))
@@ -885,8 +900,8 @@ private[dsl] trait ElementFactories:
     * measures correctly inside a [[scrollView]].
     *
     * Styling comes from the ambient [[Theme]]'s `markdown` palette, which is why `Theme.Light` renders a document in
-    * dark-on-white rather than the widget-level defaults' cyan-on-black. See [[w.Markdown]] for exactly which
-    * constructs are supported.
+    * dark-on-white rather than the widget-level defaults' cyan-on-black. See
+    * [[io.worxbend.tui.widgets.Markdown w.Markdown]] for exactly which constructs are supported.
     */
   def markdown(source: String)(using theme: Theme): WidgetElement =
     LateBinding.themed(theme) { theme =>
@@ -894,9 +909,10 @@ private[dsl] trait ElementFactories:
       WidgetElement(w.Markdown(source, theme.markdown), props = ElementProps(selectable = Some(true)))
     }
 
-  /** Markdown that is still arriving, read from a caller-owned [[w.MarkdownStream]] — `stream.append(chunk)` as tokens
-    * come in. Half-written syntax (`**bold`, a link, an open fence) renders as it will once complete. A measured leaf,
-    * like [[markdown]]; see [[MarkdownStreamElement]].
+  /** Markdown that is still arriving, read from a caller-owned
+    * [[io.worxbend.tui.widgets.MarkdownStream w.MarkdownStream]] — `stream.append(chunk)` as tokens come in.
+    * Half-written syntax (`**bold`, a link, an open fence) renders as it will once complete. A measured leaf, like
+    * [[markdown]]; see [[MarkdownStreamElement]].
     */
   def markdownStream(stream: w.MarkdownStream)(using theme: Theme): MarkdownStreamElement =
     LateBinding.themed(theme) { theme =>
@@ -904,8 +920,9 @@ private[dsl] trait ElementFactories:
     }
 
   /** The same stream as its own scroll view, pinned to the newest row while content arrives until the user scrolls up;
-    * End rejoins the tail. `scroll` is caller-owned like any [[w.ScrollViewState]]: create it once outside `view`.
-    * Focusable; Up/Down/PageUp/PageDown/Home/End and the wheel scroll it.
+    * End rejoins the tail. `scroll` is caller-owned like any
+    * [[io.worxbend.tui.widgets.ScrollViewState w.ScrollViewState]]: create it once outside `view`. Focusable;
+    * Up/Down/PageUp/PageDown/Home/End and the wheel scroll it.
     */
   def markdownStream(stream: w.MarkdownStream, scroll: w.ScrollViewState)(using theme: Theme): MarkdownStreamElement =
     LateBinding.themed(theme) { theme =>
@@ -939,21 +956,22 @@ private[dsl] trait ElementFactories:
     *
     * The state must be created once outside `view` — it holds the sort, the substring filter, the selection and the
     * scroll offset, and rebuilding it every frame would reset all four. It is render-thread-only and writing to it does
-    * not by itself schedule a frame: see [[w.DataTableState]].
+    * not by itself schedule a frame: see [[io.worxbend.tui.widgets.DataTableState w.DataTableState]].
     *
     * Up/Down move the selection while focused, and PageUp/PageDown turn the page once `state.paging` is set. Sorting
     * and filtering have no built-in keys on purpose — drive `state.sortBy` / `state.setFilter` from the app's own
     * bindings, so the keys appear in the status bar and the palette.
     *
-    * Each row is a [[w.KeyedRow]], so the selection follows the record across re-sorts and data refreshes rather than
-    * the screen position it happened to occupy; `table.selectedKey(state)` reads back which record that is without
-    * parsing its own formatted cells. [[w.DataTable.fromStrings]] builds the table from plain text rows when the
-    * records have no identity of their own.
+    * Each row is a [[io.worxbend.tui.widgets.KeyedRow KeyedRow]], so the selection follows the record across re-sorts
+    * and data refreshes rather than the screen position it happened to occupy; `table.selectedKey(state)` reads back
+    * which record that is without parsing its own formatted cells.
+    * [[io.worxbend.tui.widgets.DataTable.fromStrings DataTable.fromStrings]] builds the table from plain text rows when
+    * the records have no identity of their own.
     *
     * This is the one selection element whose highlight the theme does not reach: `table` is a widget value the caller
     * built, so its `highlightStyle` is the caller's to set and overriding it here would silently discard an explicit
-    * choice. Pass `options = DataTableOptions(highlightStyle = theme.focus)` when building the [[w.DataTable]] to line
-    * it up with `list` and the rest.
+    * choice. Pass `options = DataTableOptions(highlightStyle = theme.focus)` when building the
+    * [[io.worxbend.tui.widgets.DataTable DataTable]] to line it up with `list` and the rest.
     */
   def dataTable[K](
       table: w.DataTable[K],
@@ -964,16 +982,19 @@ private[dsl] trait ElementFactories:
   /** A filesystem browser rooted at the state's path, expanding branches on demand.
     *
     * Caller-owned state, created once outside `view`, render-thread-only and initially unloaded. Painting and
-    * navigation never access the filesystem. Acquire immutable [[w.DirectoryListing]] values on a worker, then install
-    * them on the owner and request a redraw; [[w.DirectoryTreeState]] describes the generation protocol. For small
-    * local directories call `state.loadVisible()` explicitly outside `view`, initially and after expanding.
+    * navigation never access the filesystem. Acquire immutable
+    * [[io.worxbend.tui.widgets.DirectoryListing w.DirectoryListing]] values on a worker, then install them on the owner
+    * and request a redraw; [[io.worxbend.tui.widgets.DirectoryTreeState DirectoryTreeState]] describes the generation
+    * protocol. For small local directories call `state.loadVisible()` explicitly outside `view`, initially and after
+    * expanding.
     */
   def directoryTree(state: w.DirectoryTreeState): DirectoryTreeElement =
     DirectoryTreeElement(state)
 
-  /** A multi-line editor over caller-owned [[w.TextAreaState]]: selection, word motion, clipboard, kill ring, undo
-    * (`Ctrl+Z`) and redo (`Ctrl+Shift+Z`), and incremental search (`Ctrl+F`). `options` carries the widget's knobs —
-    * `lexer`, soft `wrap`, `lineNumbers` — which the `.lexer(…)`, `.wrap` and `.lineNumbers` builders also set.
+  /** A multi-line editor over caller-owned [[io.worxbend.tui.widgets.TextAreaState w.TextAreaState]]: selection, word
+    * motion, clipboard, kill ring, undo (`Ctrl+Z`) and redo (`Ctrl+Shift+Z`), and incremental search (`Ctrl+F`).
+    * `options` carries the widget's knobs — `lexer`, soft `wrap`, `lineNumbers` — which the `.lexer(…)`, `.wrap` and
+    * `.lineNumbers` builders also set.
     *
     * Create the state once outside `view`, as for [[input]]; it is render-thread-only, and a write made on that thread
     * outside an event handler is drawn on the next loop iteration.
@@ -1049,8 +1070,8 @@ private[dsl] trait ElementFactories:
     * fixed-height diagram. The other overload measures the content itself. Getting `contentHeight` wrong does not
     * corrupt anything: too small and the tail is unreachable, too large and the view scrolls past the end into blanks.
     *
-    * The [[w.ScrollViewState]] holds the offset and is caller-owned: create it once outside `view`. It is
-    * render-thread-only; a write made on that thread is drawn on the next loop iteration.
+    * The [[io.worxbend.tui.widgets.ScrollViewState w.ScrollViewState]] holds the offset and is caller-owned: create it
+    * once outside `view`. It is render-thread-only; a write made on that thread is drawn on the next loop iteration.
     */
   def scrollView(
       content: Element,
@@ -1079,8 +1100,9 @@ private[dsl] trait ElementFactories:
   ): CollapsibleElement =
     CollapsibleElement(title, body, expanded.get, expanded.set)
 
-  /** Two panes divided by a draggable split. `axis` is the axis the panes are laid out along: [[Direction.Horizontal]]
-    * puts them side by side, [[Direction.Vertical]] stacks them.
+  /** Two panes divided by a draggable split. `axis` is the axis the panes are laid out along:
+    * [[io.worxbend.tui.core.Direction.Horizontal Direction.Horizontal]] puts them side by side,
+    * [[io.worxbend.tui.core.Direction.Vertical Direction.Vertical]] stacks them.
     */
   def splitPane(
       first: Element,
@@ -1097,7 +1119,8 @@ private[dsl] trait ElementFactories:
       ElementProps(focusable = true, captureOwner = Some(splitPercent)),
     )
 
-  /** An append-only scrolling panel for build output, chat, or a live log, over caller-owned [[w.LogState]].
+  /** An append-only scrolling panel for build output, chat, or a live log, over caller-owned
+    * [[io.worxbend.tui.widgets.LogState w.LogState]].
     *
     * The state holds a bounded ring of lines and follows the tail by default; scrolling up detaches, scrolling back to
     * the bottom re-attaches. Create it once outside `view`. Appending a line to it on the render thread is drawn on the
@@ -1143,7 +1166,7 @@ private[dsl] trait ElementFactories:
     * [[ErrorBoundaryElement]].
     *
     * {{{
-    * errorBoundary(error => text(s"chart unavailable: ${error.getMessage}").dim) {
+    * errorBoundary(error => text(s"chart unavailable: \${error.getMessage}").dim) {
     *   chart(datasets, xBounds, yBounds)
     * }
     * }}}
@@ -1229,26 +1252,28 @@ private[dsl] trait ElementFactories:
   /** A sized, labelled stand-in for content that does not exist yet: a dashed box with `label` centred in it and the
     * box's own size — `40×12` — written underneath, so the layout can be tuned before the real panels are written. It
     * fills whatever its container hands out. The frame and size line draw in the theme's muted style, the label in its
-    * accent. See [[w.Placeholder]].
+    * accent. See [[io.worxbend.tui.widgets.Placeholder w.Placeholder]].
     */
   def placeholder(label: String)(using theme: Theme): PlaceholderElement =
     PlaceholderElement(label, theme.accent, ElementProps(style = theme.muted))
 
   /** An interactive month grid over a caller-owned cursor: arrows move a day or a week, PageUp/PageDown a month, `t`
     * jumps to today, and Enter chooses the cursor's date, recording it in `state.selected` and handing it to
-    * `onSelect`. Keep the state in a field: it holds the cursor between frames. See [[w.DatePicker]].
+    * `onSelect`. Keep the state in a field: it holds the cursor between frames. See
+    * [[io.worxbend.tui.widgets.DatePicker w.DatePicker]].
     */
   def datePicker(state: w.DatePickerState, onSelect: java.time.LocalDate => Unit = _ => ()): DatePickerElement =
     DatePickerElement(state, onSelect)
 
   /** A one-row `hh:mm:ss` field over a caller-owned time: Left/Right pick the field, Up/Down step the time by it and
-    * wrap past midnight. Read the value back from `state.time`. See [[w.TimePicker]].
+    * wrap past midnight. Read the value back from `state.time`. See
+    * [[io.worxbend.tui.widgets.TimePicker w.TimePicker]].
     */
   def timePicker(state: w.TimePickerState): TimePickerElement = TimePickerElement(state)
 
   /** A slider with two thumbs selecting a sub-range of `state.range`: Left/Right move the focused thumb, Tab and
     * Shift+Tab switch thumbs, and the thumbs never cross or come closer than the state's `minGap`. `onChange` hears the
-    * `(low, high)` pair after each move. See [[w.RangeSlider]].
+    * `(low, high)` pair after each move. See [[io.worxbend.tui.widgets.RangeSlider w.RangeSlider]].
     */
   def rangeSlider(state: w.RangeSliderState, onChange: (Int, Int) => Unit = (_, _) => ()): RangeSliderElement =
     RangeSliderElement(state, onChange)
@@ -1257,7 +1282,7 @@ private[dsl] trait ElementFactories:
     * cursor's index and RGB value. Arrows move, Enter (or a click) chooses: the `Color.Indexed` lands in `state.chosen`
     * and in `onSelect`. With `mode = ColorPickerMode.Rgb` three R/G/B fields sit beside the grid: Tab walks from the
     * grid through them, digits fill the focused one, and Enter chooses their `Color.Rgb` once all three are in
-    * `0..255`. See [[w.ColorPicker]].
+    * `0..255`. See [[io.worxbend.tui.widgets.ColorPicker w.ColorPicker]].
     */
   def colorPicker(
       state: w.ColorPickerState,
@@ -1268,29 +1293,30 @@ private[dsl] trait ElementFactories:
 
   /** A scrollable `offset | hex | ASCII` dump of `bytes` with a selected byte the arrows move — a row per 16 bytes, the
     * selection kept on screen. `ArraySeq.unsafeWrapArray(array)` views an `Array[Byte]` without copying. See
-    * [[w.HexViewer]].
+    * [[io.worxbend.tui.widgets.HexViewer w.HexViewer]].
     */
   def hexViewer(bytes: IndexedSeq[Byte], state: w.HexViewerState): HexViewerElement = HexViewerElement(bytes, state)
 
-  /** A collapsible tree whose rows carry columns — build the [[w.TreeTable]] with the nodes, the column titles, a
-    * `cells` lookup by row key and the column widths. Up/Down select, Enter toggles, Right/Left expand/collapse. The
-    * state is the same [[w.TreeState]] a [[tree]] takes; key it with `TreeState.keyed` so the `cells` lookup and the
-    * expansion follow a node across a refresh.
+  /** A collapsible tree whose rows carry columns — build the [[io.worxbend.tui.widgets.TreeTable w.TreeTable]] with the
+    * nodes, the column titles, a `cells` lookup by row key and the column widths. Up/Down select, Enter toggles,
+    * Right/Left expand/collapse. The state is the same [[io.worxbend.tui.widgets.TreeState w.TreeState]] a [[tree]]
+    * takes; key it with `TreeState.keyed` so the `cells` lookup and the expansion follow a node across a refresh.
     */
   def treeTable[K](table: w.TreeTable[K], state: w.TreeState[K]): TreeTableElement[K] = TreeTableElement(table, state)
 
   /** A tree view of any value, for debugging: `inspect(config)` draws a case class, enum, collection or map with
     * `├─`/`└─` guides, field names in the theme's accent, short all-atom nodes on one row. The description comes from a
     * `Pretty[A]`, which any case class, enum or sealed hierarchy derives through its `Mirror` — declare a `given
-    * Pretty[A]` beside a type to change (or redact) how it is shown. See [[w.Inspect]].
+    * Pretty[A]` beside a type to change (or redact) how it is shown. See [[io.worxbend.tui.widgets.Inspect w.Inspect]].
     */
   def inspect[A](value: A)(using pretty: io.worxbend.tui.macros.Pretty[A], theme: Theme): InspectElement =
     InspectElement(pretty.describe(value, PrettyValueShape), theme.accent, theme.muted)
 
-  /** The collapsible form of `inspect(value)`: a focusable tree over a caller-owned [[w.InspectState]] that remembers
-    * which nodes are folded and which row is selected. Up/Down move, Enter/Space (or a click) fold and unfold the
-    * selected node, Right unfolds, Left folds or climbs to the parent. Keep the state in a field: it holds the folds
-    * between frames. See [[w.Inspect]].
+  /** The collapsible form of `inspect(value)`: a focusable tree over a caller-owned
+    * [[io.worxbend.tui.widgets.InspectState w.InspectState]] that remembers which nodes are folded and which row is
+    * selected. Up/Down move, Enter/Space (or a click) fold and unfold the selected node, Right unfolds, Left folds or
+    * climbs to the parent. Keep the state in a field: it holds the folds between frames. See
+    * [[io.worxbend.tui.widgets.Inspect w.Inspect]].
     */
   def inspect[A](value: A, state: w.InspectState)(using
       pretty: io.worxbend.tui.macros.Pretty[A],
@@ -1306,14 +1332,14 @@ private[dsl] trait ElementFactories:
 
   /** A scannable QR code for `text` — a URL, a pairing token — drawn two modules per cell in half blocks, dark on light
     * whatever the terminal's own background. Byte mode, the smallest version from 1 to 10 that fits at `ecc`; longer
-    * text draws `QR: too long`. See [[w.QrCode]].
+    * text draws `QR: too long`. See [[io.worxbend.tui.widgets.QrCode w.QrCode]].
     */
   def qrCode(text: String, ecc: w.QrEcc = w.QrEcc.Medium): QrCodeElement = QrCodeElement(w.QrCode(text, ecc))
 
   /** A one-row navigation trail — `breadcrumb("Home" +: screenLabels, index => …)` inside a [[TuiApp]] — whose middle
     * items fold into `…` when the row is too narrow, by display width. A click on a visible item hands its index to
     * `onSelect`. The separators draw in the theme's muted style, the last item (where the user is) in its accent. See
-    * [[w.Breadcrumb]].
+    * [[io.worxbend.tui.widgets.Breadcrumb w.Breadcrumb]].
     */
   def breadcrumb(items: Seq[String], onSelect: Int => Unit = _ => ())(using theme: Theme): BreadcrumbElement =
     LateBinding.themed(theme) { theme =>
@@ -1323,7 +1349,8 @@ private[dsl] trait ElementFactories:
   /** Titled sections of which at most one is open:
     * `accordion(state)(AccordionSection("General", general), AccordionSection("Network", network))`. Each header is a
     * [[collapsible]] — Enter or Space toggles it — and opening one closes the other; the open body fills the rows the
-    * headers leave. `state` is caller-owned: keep it in a field. See [[w.AccordionState]].
+    * headers leave. `state` is caller-owned: keep it in a field. See
+    * [[io.worxbend.tui.widgets.AccordionState w.AccordionState]].
     */
   def accordion(state: w.AccordionState)(sections: AccordionSection*): AccordionElement =
     AccordionElement.of(state, sections)
@@ -1331,7 +1358,8 @@ private[dsl] trait ElementFactories:
   /** An ordered multi-step flow: a progress header (`✓ Account ─ ● Profile ─ ○ Confirm`), the current step's content,
     * and `Back` / `Next` buttons. `Next` runs the step's `validate` first and stays put, showing the message in the
     * theme's error style, when it refuses; on the last step it reads `Finish` and runs `onFinish`. `state` is
-    * caller-owned and holds the step on screen — keep it in a field. See [[WizardStep]] and [[w.WizardState]].
+    * caller-owned and holds the step on screen — keep it in a field. See [[WizardStep]] and
+    * [[io.worxbend.tui.widgets.WizardState w.WizardState]].
     *
     * {{{
     * wizard(signup)(
@@ -1345,7 +1373,8 @@ private[dsl] trait ElementFactories:
 
   /** A row of controls that is one tab stop: `Tab` enters on the control last used, `Left`/`Right` move between them
     * (see [[focusGroup]]). Controls sit at their natural widths a column apart; when the row is too narrow it shows the
-    * ones that fit, marked `«`/`»`, and slides to keep the focused one on screen. See [[w.Toolbar]].
+    * ones that fit, marked `«`/`»`, and slides to keep the focused one on screen. See
+    * [[io.worxbend.tui.widgets.Toolbar w.Toolbar]].
     */
   def toolbar(buttons: Element*): FocusGroupElement =
     FocusGroupElement(ToolbarElement(buttons, gap = 1, divider = None))
@@ -1353,7 +1382,7 @@ private[dsl] trait ElementFactories:
   /** [[toolbar]] with an overflow menu: when the row is too narrow, a click on the trailing `»` opens a popup — floated
     * over everything through the frame root — holding the controls that did not fit; a click on one presses it and
     * closes the popup, and a click outside or Esc closes it too. `state` is caller-owned and only remembers whether the
-    * popup is open. See [[w.ToolbarState]].
+    * popup is open. See [[io.worxbend.tui.widgets.ToolbarState w.ToolbarState]].
     */
   def toolbar(state: w.ToolbarState)(buttons: Element*): FocusGroupElement =
     FocusGroupElement(ToolbarElement(buttons, gap = 1, divider = None, overflow = Some(state)))
@@ -1362,10 +1391,11 @@ private[dsl] trait ElementFactories:
   def buttonGroup(buttons: Element*): FocusGroupElement =
     FocusGroupElement(ToolbarElement(buttons, gap = 0, divider = Some("│")))
 
-  /** A tag (chip) field over caller-owned [[w.TagInputState]]: committed tags draw as chips that wrap onto more rows,
-    * followed by the text being typed. Enter or a comma commits the text as a tag, Backspace on an empty field removes
-    * the last tag, Tab accepts the dim suggestion from `state.suggestions`. `onChange` hears the tags after each commit
-    * or removal; `state.tags` holds them. See [[w.TagInput]].
+  /** A tag (chip) field over caller-owned [[io.worxbend.tui.widgets.TagInputState w.TagInputState]]: committed tags
+    * draw as chips that wrap onto more rows, followed by the text being typed. Enter or a comma commits the text as a
+    * tag, Backspace on an empty field removes the last tag, Tab accepts the dim suggestion from `state.suggestions`.
+    * `onChange` hears the tags after each commit or removal; `state.tags` holds them. See
+    * [[io.worxbend.tui.widgets.TagInput TagInput]].
     */
   def tagInput(
       state: w.TagInputState,
@@ -1375,9 +1405,10 @@ private[dsl] trait ElementFactories:
     TagInputElement(state, onChange, placeholder)
 
   /** A one-row menu bar whose menus drop down over everything else: `Alt+<mnemonic>` (the title's first letter unless
-    * the [[w.MenuBarMenu]] names another) opens a menu and `F10` (the `menu-bar` framework key) the first, whatever
-    * holds focus. While a menu is open the arrows move between menus and items, Enter runs the item — `onSelect`
-    * receives the menu's and the item's index — and Esc closes it. `state` is caller-owned: keep it in a field.
+    * the [[io.worxbend.tui.widgets.MenuBarMenu w.MenuBarMenu]] names another) opens a menu and `F10` (the `menu-bar`
+    * framework key) the first, whatever holds focus. While a menu is open the arrows move between menus and items,
+    * Enter runs the item — `onSelect` receives the menu's and the item's index — and Esc closes it. `state` is
+    * caller-owned: keep it in a field.
     *
     * {{{
     * menuBar(Seq(MenuBarMenu("File", Seq(MenuEntry.Item("Open", Some("^O")), MenuEntry.Item("Quit")))), bar) {
@@ -1399,9 +1430,10 @@ private[dsl] trait ElementFactories:
     ContextMenuElement(target, items, state, onSelect)
 
   /** A movable, resizable floating window titled `title` around `content`, at the rectangle in caller-owned
-    * [[w.WindowState]]. Put windows in a [[windowStack]]: a press raises a window, dragging its title moves it and
-    * dragging its `◢` grip resizes it; with focus inside, `Alt+M` / `Alt+R` (the `window-move` / `window-resize`
-    * framework keys) enter a keyboard mode where the arrows move or resize it and Enter or Esc leave. See [[w.Window]].
+    * [[io.worxbend.tui.widgets.WindowState w.WindowState]]. Put windows in a [[windowStack]]: a press raises a window,
+    * dragging its title moves it and dragging its `◢` grip resizes it; with focus inside, `Alt+M` / `Alt+R` (the
+    * `window-move` / `window-resize` framework keys) enter a keyboard mode where the arrows move or resize it and Enter
+    * or Esc leave. See [[io.worxbend.tui.widgets.Window Window]].
     *
     * The frame is drawn in the ambient [[Theme]]'s `border` style; `.frameStyle(...)` recolours it and
     * `.fg(...)`/`.styled(...)` the content, as on a panel.
