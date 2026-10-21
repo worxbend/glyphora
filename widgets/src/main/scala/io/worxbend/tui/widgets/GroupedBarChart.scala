@@ -1,6 +1,6 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Alignment, Buffer, CharWidth, Rect, Style, Widget}
+import io.worxbend.tui.core.{Buffer, Rect, Style, Widget}
 
 /** One bar inside a [[BarGroup]]: what it measures, how tall it is, and the colour that identifies the series it
   * belongs to.
@@ -100,7 +100,7 @@ final case class GroupedBarChart(
               set = barSet,
             )
           }
-          if showLabels then drawGroupLabel(buffer, area, groupLeft, groupWidth, group.label)
+          if showLabels then ColumnChart.drawCentredLabel(buffer, area, groupLeft, groupWidth, group.label, labelStyle)
         // The gap is added even for a group that was dropped, so dropping one does not shuffle the rest leftwards
         // into columns the reader has already learned to associate with another group.
         groupLeft += groupWidth + math.max(0, groupGap)
@@ -117,16 +117,6 @@ final case class GroupedBarChart(
     */
   private def widthOf(group: BarGroup, stride: Int): Int =
     if group.bars.isEmpty then 0 else (group.bars.size - 1) * stride + barWidth
-
-  /** Writes a group's label centred under the whole group on the area's last row, truncated to the group's width.
-    *
-    * Truncation goes through [[io.worxbend.tui.core.CharWidth]], so a label of wide (CJK) or combining characters is
-    * measured in terminal columns rather than in characters and cannot overrun into the next group.
-    */
-  private def drawGroupLabel(buffer: Buffer, area: Rect, groupLeft: Int, groupWidth: Int, label: String): Unit =
-    val fitted = CharWidth.substringByWidth(label, groupWidth)
-    val startX = Alignment.Center.originAt(groupLeft, groupWidth, CharWidth.of(fitted))
-    buffer.setString(startX, area.bottom - 1, fitted, labelStyle)
 
   /** The top of the shared scale, at least one so an all-zero chart cannot divide by zero. */
   private def scaleCeiling: Long =
