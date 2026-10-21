@@ -1,11 +1,30 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Color, Style}
+import io.worxbend.tui.core.{Buffer, Cell, Color, Rect, Style}
 import io.worxbend.tui.testsupport.BufferAssertions.{rendered, trimmedLines}
 
 import org.scalatest.funsuite.AnyFunSuite
 
 final class GroupedBarChartSpec extends AnyFunSuite:
+
+  test("centred labels preserve styled cells, odd padding and whole graphemes at a nonzero origin"):
+    val sentinel   = Cell(".", Style.Default.withBg(Color.Blue))
+    val labelStyle = Style.Default.withFg(Color.Red).withBg(Color.Green).bold
+    for (label, width, fitted, offset) <- Seq(
+        ("ab", 5, "ab", 1),
+        ("你好世", 5, "你好", 0),
+        ("e\u0301", 4, "e\u0301", 1),
+        ("👩‍💻x", 2, "👩‍💻", 0),
+        ("👩‍💻", 1, "", 0),
+      )
+    do
+      val area     = Rect(3, 2, width, 3)
+      val actual   = Buffer.filled(Rect(0, 0, 12, 7), sentinel)
+      val expected = actual.snapshot
+      val _        = expected.setString(3 + offset, 4, fitted, labelStyle)
+      GroupedBarChart(Seq(BarGroup.of(label, "a" -> 0L)), barWidth = width, labelStyle = labelStyle)
+        .render(area, actual)
+      for y <- 0 until 7; x <- 0 until 12 do assert(actual.get(x, y) == expected.get(x, y), s"$label at ($x,$y)")
 
   private def chart(groups: Seq[BarGroup]): GroupedBarChart =
     GroupedBarChart(groups, barWidth = 1, barGap = 0, groupGap = 1, max = Some(8))
