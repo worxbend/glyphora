@@ -4,15 +4,15 @@ import io.worxbend.tui.core.{Rect, Size}
 
 /** How much of the terminal one run owns.
   *
-  * [[Fullscreen]] is the takeover every glyphora app has had until now. The terminal has two screen buffers: the
-  * *primary* one, which holds the shell's output and scrolls into scrollback, and the *alternate* one, a single
-  * screenful with no history. A full-screen app switches to the alternate screen, paints over the whole of it, and
-  * switches back on exit — so the user's shell output is hidden for the app's lifetime and comes back untouched
-  * afterwards, and the app leaves no trace behind.
+  * [[io.worxbend.tui.runtime.Viewport.Fullscreen Fullscreen]] is the takeover every glyphora app has had until now. The
+  * terminal has two screen buffers: the *primary* one, which holds the shell's output and scrolls into scrollback, and
+  * the *alternate* one, a single screenful with no history. A full-screen app switches to the alternate screen, paints
+  * over the whole of it, and switches back on exit — so the user's shell output is hidden for the app's lifetime and
+  * comes back untouched afterwards, and the app leaves no trace behind.
   *
-  * [[Inline]] stays on the primary screen and owns only the bottom `height` rows of it. The shell's earlier output
-  * stays visible above the app, and the app's last frame is still there after it exits, the way `git`'s output is. That
-  * is the shape a progress panel, an installer, or a one-question prompt wants.
+  * [[io.worxbend.tui.runtime.Viewport.Inline Inline]] stays on the primary screen and owns only the bottom `height`
+  * rows of it. The shell's earlier output stays visible above the app, and the app's last frame is still there after it
+  * exits, the way `git`'s output is. That is the shape a progress panel, an installer, or a one-question prompt wants.
   *
   * These are terminal-space decisions, not widget-space ones: this picks the `Rect` a frame is composed into. Scrolling
   * *inside* a widget is a separate thing entirely and is unaffected.

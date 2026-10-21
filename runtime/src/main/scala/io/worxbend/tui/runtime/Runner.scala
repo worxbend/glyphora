@@ -6,13 +6,13 @@ import io.worxbend.tui.terminal.{BackendError, MouseCaptureMode, PointerShape, T
 import java.nio.file.Path
 import scala.concurrent.duration.FiniteDuration
 
-/** Runner configuration: an optional tick rate (synthetic [[Event.Tick]]s for animation) and whether to capture mouse
-  * events.
+/** Runner configuration: an optional tick rate (synthetic [[io.worxbend.tui.core.Event.Tick Event.Tick]]s for
+  * animation) and whether to capture mouse events.
   *
-  * `tickRate` is a [[FiniteDuration]] rather than a `Duration` on purpose: "no ticks" is spelled `None`, and every
-  * infinite `Duration` is a runtime failure waiting to happen — `Duration.Inf.toNanos` throws, so
-  * `RunnerConfig(tickRate = Some(Duration.Inf))`, a plausible spelling of "never tick", used to type-check and then
-  * kill the render loop on its first iteration.
+  * `tickRate` is a [[scala.concurrent.duration.FiniteDuration FiniteDuration]] rather than a `Duration` on purpose: "no
+  * ticks" is spelled `None`, and every infinite `Duration` is a runtime failure waiting to happen —
+  * `Duration.Inf.toNanos` throws, so `RunnerConfig(tickRate = Some(Duration.Inf))`, a plausible spelling of "never
+  * tick", used to type-check and then kill the render loop on its first iteration.
   *
   * `onTaskError` decides what happens when a body queued onto the render thread (an [[Async]] continuation, a timer
   * body) throws. `None` — the default — accumulates them and returns them from [[Runner.run]] as
@@ -37,10 +37,10 @@ import scala.concurrent.duration.FiniteDuration
   * Timing alone takes no snapshots; only `onFrame` enables those.
   *
   * `keyEventTypes` asks the terminal to report key *releases* as well as presses, which reaches the app as
-  * [[Event.KeyRelease]]. It is off by default because it doubles the input volume for every keystroke and an app that
-  * ignores releases gains nothing for the traffic, and it is best-effort even when on: only a terminal speaking the
-  * kitty keyboard protocol can report a release at all, so an app must treat releases as an enrichment rather than as
-  * the event a feature depends on.
+  * [[io.worxbend.tui.core.Event.KeyRelease Event.KeyRelease]]. It is off by default because it doubles the input volume
+  * for every keystroke and an app that ignores releases gains nothing for the traffic, and it is best-effort even when
+  * on: only a terminal speaking the kitty keyboard protocol can report a release at all, so an app must treat releases
+  * as an enrichment rather than as the event a feature depends on.
   *
   * `viewport` decides how much of the terminal the run owns — the whole alternate screen (the default), or a strip of
   * rows at the bottom of the primary screen that leaves the shell's own output visible above it. See [[Viewport]].
@@ -83,19 +83,22 @@ final class RunnerConfig private (
     val nonInteractive: NonInteractivePolicy,
 ):
 
-  /** Synthetic [[Event.Tick]]s every `rate` — the whole-app clock for animation; see the class notes on why the type is
-    * `FiniteDuration`.
+  /** Synthetic [[io.worxbend.tui.core.Event.Tick Event.Tick]]s every `rate` — the whole-app clock for animation; see
+    * the class notes on why the type is `FiniteDuration`.
     */
   def withTickRate(rate: FiniteDuration): RunnerConfig = updated(tickRate = Some(rate))
 
   /** No synthetic ticks at all: the loop blocks on input for its default poll between events. The default. */
   def withoutTickRate: RunnerConfig = updated(tickRate = None)
 
-  /** How much mouse traffic the terminal is asked to report — see [[MouseCaptureMode]]. Reports reach the app as
-    * [[Event.Mouse]]; [[MouseCaptureMode.AllMotion]] is what delivers [[io.worxbend.tui.core.MouseEventKind.Moved]] and
-    * so hover. A DSL `TuiApp` running with [[MouseCaptureMode.Buttons]] upgrades itself to `AllMotion` the first time a
-    * frame asks for a hover cue, so asking for `AllMotion` here is for an app that wants hover from the very first
-    * frame, or drives its own loop.
+  /** How much mouse traffic the terminal is asked to report — see
+    * [[io.worxbend.tui.terminal.MouseCaptureMode MouseCaptureMode]]. Reports reach the app as
+    * [[io.worxbend.tui.core.Event.Mouse Event.Mouse]];
+    * [[io.worxbend.tui.terminal.MouseCaptureMode.AllMotion MouseCaptureMode.AllMotion]] is what delivers
+    * [[io.worxbend.tui.core.MouseEventKind.Moved]] and so hover. A DSL `TuiApp` running with
+    * [[io.worxbend.tui.terminal.MouseCaptureMode.Buttons MouseCaptureMode.Buttons]] upgrades itself to `AllMotion` the
+    * first time a frame asks for a hover cue, so asking for `AllMotion` here is for an app that wants hover from the
+    * very first frame, or drives its own loop.
     */
   def withMouse(mode: MouseCaptureMode): RunnerConfig = updated(mouse = mode)
 
@@ -105,7 +108,9 @@ final class RunnerConfig private (
   /** Leaves mouse reporting off — `withMouse(MouseCaptureMode.Off)`. The default. */
   def withoutMouseCapture: RunnerConfig = updated(mouse = MouseCaptureMode.Off)
 
-  /** Whether the terminal is asked to report the mouse at all: [[mouse]] is anything but [[MouseCaptureMode.Off]]. */
+  /** Whether the terminal is asked to report the mouse at all: [[mouse]] is anything but
+    * [[io.worxbend.tui.terminal.MouseCaptureMode.Off MouseCaptureMode.Off]].
+    */
   def mouseCapture: Boolean = mouse != MouseCaptureMode.Off
 
   /** Takes over the reporting of queued-body failures as they happen — see the class notes for what that changes about
@@ -127,8 +132,8 @@ final class RunnerConfig private (
   /** How much of the terminal the run owns — see [[Viewport]]. */
   def withViewport(viewport: Viewport): RunnerConfig = updated(viewport = viewport)
 
-  /** Asks the terminal to report key releases as well as presses, as [[Event.KeyRelease]] — best-effort, see the class
-    * notes.
+  /** Asks the terminal to report key releases as well as presses, as
+    * [[io.worxbend.tui.core.Event.KeyRelease Event.KeyRelease]] — best-effort, see the class notes.
     */
   def withKeyEventTypes: RunnerConfig = updated(keyEventTypes = true)
 
@@ -260,7 +265,8 @@ object RunnerConfig:
     )
 
   /** The ten-field arity `apply` had while mouse capture was a Boolean, kept default-free so code compiled against it
-    * keeps working — the policy the `apply` above documents. `mouseCapture = true` is [[MouseCaptureMode.Buttons]].
+    * keeps working — the policy the `apply` above documents. `mouseCapture = true` is
+    * [[io.worxbend.tui.terminal.MouseCaptureMode.Buttons MouseCaptureMode.Buttons]].
     */
   def apply(
       tickRate: Option[FiniteDuration],
@@ -378,27 +384,28 @@ object RunnerConfig:
   *
   * "No terminal" is decided by the host of the run — in the DSL, `TuiApp.printTarget`: standard output is not a TTY
   * (redirected into a file, piped into another program, an IDE's output panel), or the `CI` environment variable is
-  * set. Every policy but [[Fail]] drives the app without a terminal: `onStart` runs, the first frame is composed at the
-  * detected size (`COLUMNS`×`LINES`, else 80×24), and the run ends the first time the loop would wait for input — no
-  * keystroke is ever going to arrive — so an app that only exits on `q` still exits, and exits `0`. Background work and
-  * ticks are not waited for: the frame printed is the one the app composes from its initial state and whatever
-  * `onStart` set synchronously.
+  * set. Every policy but [[io.worxbend.tui.runtime.NonInteractivePolicy.Fail Fail]] drives the app without a terminal:
+  * `onStart` runs, the first frame is composed at the detected size (`COLUMNS`×`LINES`, else 80×24), and the run ends
+  * the first time the loop would wait for input — no keystroke is ever going to arrive — so an app that only exits on
+  * `q` still exits, and exits `0`. Background work and ticks are not waited for: the frame printed is the one the app
+  * composes from its initial state and whatever `onStart` set synchronously.
   *
-  *   - [[Fail]] — the behaviour every release before 0.20.0 had: the backend reports `terminal not supported` and the
-  *     app exits non-zero. The default, because it is what a user who piped a full-screen app by mistake needs to see,
-  *     and what the CI smoke test of every example asserts.
-  *   - [[PrintFinalFrame]] — the last frame the run composed is written to standard output as styled text (colour per
-  *     the detected depth, `NO_COLOR`/`FORCE_COLOR` honoured, no escape sequence at all when colour is off), one row
-  *     per line.
-  *   - [[PrintEveryFrame]] — every frame the run composed, in order, each in the same encoding.
-  *   - [[Plain]] — the text rows of every frame with no styling whatsoever, consecutive identical frames written once:
-  *     the form for a screen reader, a log file, or a `grep`.
-  *   - [[AwaitingIdle]] — any of the three above, made to wait for the app to settle: built with
-  *     `PrintFinalFrame.awaitIdle(5.seconds)`. Instead of ending at the first wait for input, the run goes on — ticks
-  *     fire, `Async` results land and repaint — until the loop is idle (no queued render-thread work, no outstanding
-  *     `Async` work or timer, and no frame composed since it last waited) or `timeout` has passed since the run
-  *     started, whichever comes first. An app with a repeating `Async.every` or an animation that repaints on every
-  *     tick is never idle, so it prints the frame it had reached at the timeout.
+  *   - [[io.worxbend.tui.runtime.NonInteractivePolicy.Fail Fail]] — the behaviour every release before 0.20.0 had: the
+  *     backend reports `terminal not supported` and the app exits non-zero. The default, because it is what a user who
+  *     piped a full-screen app by mistake needs to see, and what the CI smoke test of every example asserts.
+  *   - [[io.worxbend.tui.runtime.NonInteractivePolicy.PrintFinalFrame PrintFinalFrame]] — the last frame the run
+  *     composed is written to standard output as styled text (colour per the detected depth, `NO_COLOR`/`FORCE_COLOR`
+  *     honoured, no escape sequence at all when colour is off), one row per line.
+  *   - [[io.worxbend.tui.runtime.NonInteractivePolicy.PrintEveryFrame PrintEveryFrame]] — every frame the run composed,
+  *     in order, each in the same encoding.
+  *   - [[io.worxbend.tui.runtime.NonInteractivePolicy.Plain Plain]] — the text rows of every frame with no styling
+  *     whatsoever, consecutive identical frames written once: the form for a screen reader, a log file, or a `grep`.
+  *   - [[io.worxbend.tui.runtime.NonInteractivePolicy.AwaitingIdle AwaitingIdle]] — any of the three above, made to
+  *     wait for the app to settle: built with `PrintFinalFrame.awaitIdle(5.seconds)`. Instead of ending at the first
+  *     wait for input, the run goes on — ticks fire, `Async` results land and repaint — until the loop is idle (no
+  *     queued render-thread work, no outstanding `Async` work or timer, and no frame composed since it last waited) or
+  *     `timeout` has passed since the run started, whichever comes first. An app with a repeating `Async.every` or an
+  *     animation that repaints on every tick is never idle, so it prints the frame it had reached at the timeout.
   */
 enum NonInteractivePolicy:
   case Fail, PrintFinalFrame, PrintEveryFrame, Plain
@@ -415,7 +422,9 @@ enum NonInteractivePolicy:
       case AwaitingIdle(inner, _) => AwaitingIdle(inner, timeout)
       case printing               => AwaitingIdle(printing, timeout)
 
-  /** What is printed: this policy itself, or the one an [[AwaitingIdle]] wraps. */
+  /** What is printed: this policy itself, or the one an
+    * [[io.worxbend.tui.runtime.NonInteractivePolicy.AwaitingIdle AwaitingIdle]] wraps.
+    */
   def output: NonInteractivePolicy =
     this match
       case AwaitingIdle(inner, _) => inner.output
@@ -429,22 +438,28 @@ enum NonInteractivePolicy:
 
 /** An event handler's answer to one question: does this event change what is on screen?
   *
-  * [[Redraw]] asks the loop to compose and flush a frame once the handler returns; [[Ignored]] says the handler left
-  * the UI exactly as it was, so the loop goes straight back to waiting for input. Answering [[Ignored]] after changing
-  * state the render function reads is what leaves a stale frame on screen; answering [[Redraw]] when nothing changed
-  * costs one composed frame that the backend's diff then flushes as nothing.
+  * [[io.worxbend.tui.runtime.EventOutcome.Redraw Redraw]] asks the loop to compose and flush a frame once the handler
+  * returns; [[io.worxbend.tui.runtime.EventOutcome.Ignored Ignored]] says the handler left the UI exactly as it was, so
+  * the loop goes straight back to waiting for input. Answering [[io.worxbend.tui.runtime.EventOutcome.Ignored Ignored]]
+  * after changing state the render function reads is what leaves a stale frame on screen; answering
+  * [[io.worxbend.tui.runtime.EventOutcome.Redraw Redraw]] when nothing changed costs one composed frame that the
+  * backend's diff then flushes as nothing.
   *
-  * One event reads more into the answer than "repaint or not". [[Event.Interrupt]] (Ctrl+C) is offered to the handler
-  * first, and a handler that answers [[Ignored]] is taken to have declined it: the loop then quits through its normal
-  * teardown, which is what makes Ctrl+C work in an app that never wrote a handler for it. A handler that wants to stay
-  * running through an interrupt — to ask "really quit?", say — answers [[Redraw]], which it was going to have to do
-  * anyway to put that question on screen.
+  * One event reads more into the answer than "repaint or not". [[io.worxbend.tui.core.Event.Interrupt Event.Interrupt]]
+  * (Ctrl+C) is offered to the handler first, and a handler that answers
+  * [[io.worxbend.tui.runtime.EventOutcome.Ignored Ignored]] is taken to have declined it: the loop then quits through
+  * its normal teardown, which is what makes Ctrl+C work in an app that never wrote a handler for it. A handler that
+  * wants to stay running through an interrupt — to ask "really quit?", say — answers
+  * [[io.worxbend.tui.runtime.EventOutcome.Redraw Redraw]], which it was going to have to do anyway to put that question
+  * on screen.
   */
 enum EventOutcome:
   /** Compose and flush a frame before waiting for the next event. */
   case Redraw
 
-  /** Nothing on screen changed. (On [[Event.Interrupt]] this also declines the interrupt, and the loop quits.) */
+  /** Nothing on screen changed. (On [[io.worxbend.tui.core.Event.Interrupt Event.Interrupt]] this also declines the
+    * interrupt, and the loop quits.)
+    */
   case Ignored
 
 /** The mid-level API tier: owns the event/render loop over a `Backend`.
@@ -609,9 +624,10 @@ enum RunnerError:
     *
     * The generated `toString` of an enum case is a constructor call — `Backend(Io(java.io.IOException: ...),None)` —
     * which is a fine debugging string and a poor thing to print at someone. This is the sentence to print instead;
-    * [[RunnerError.Backend]] delegates to [[BackendError.message]] for its half. When teardown failed as well, the line
-    * ends with how many [[cleanupFailures]] there were — ` (+2 cleanup failures)` — so the one line an app prints
-    * admits that `onStop` or the terminal restore went wrong too, rather than leaving that to a field nobody reads.
+    * [[RunnerError.Backend]] delegates to [[io.worxbend.tui.terminal.BackendError.message BackendError.message]] for
+    * its half. When teardown failed as well, the line ends with how many [[cleanupFailures]] there were —
+    * ` (+2 cleanup failures)` — so the one line an app prints admits that `onStop` or the terminal restore went wrong
+    * too, rather than leaving that to a field nobody reads.
     */
   def message: String =
     val primary = this match
