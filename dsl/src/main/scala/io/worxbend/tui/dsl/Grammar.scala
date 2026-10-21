@@ -80,7 +80,8 @@ extension (key: KeyEvent)
   *
   * `onKey` binds an action to one or more keys; it consumes the event only when a bound key matches, delegating
   * anything else to a handler already on the element — so several `.onKey(…)` calls compose instead of overwriting each
-  * other. Use [[Element.onKeyEvent]] directly when a handler needs the raw event or conditional consumption.
+  * other. Use [[io.worxbend.tui.dsl.onKeyEvent Element.onKeyEvent]] directly when a handler needs the raw event or
+  * conditional consumption.
   *
   * Like the styling and layout builders it gives back the element's own type, so `panel(…).onKey(Key.Enter){…}.rounded`
   * still sees a `PanelElement` and the panel-only builders stay reachable after the binding.
@@ -110,8 +111,9 @@ extension [E <: Element](element: E)
 
 /** Ergonomic mouse handlers, the mouse-side counterpart of the `onKey` block above.
   *
-  * The DSL's only mouse seam used to be [[Element.onMouseEvent]], which takes a raw `MouseEvent => Boolean`. Every call
-  * site that only wanted "run this when the user clicks me" therefore repeated the same shape:
+  * The DSL's only mouse seam used to be [[io.worxbend.tui.dsl.onMouseEvent Element.onMouseEvent]], which takes a raw
+  * `MouseEvent => Boolean`. Every call site that only wanted "run this when the user clicks me" therefore repeated the
+  * same shape:
   *
   * {{{
   * .onMouseEvent { event =>
@@ -124,8 +126,9 @@ extension [E <: Element](element: E)
   *
   * which is the exact ceremony `onKey` was written to remove for keys. Each handler here consumes only the mouse kinds
   * it names and hands every other kind to a handler already on the element, so several of them compose instead of
-  * overwriting each other — the same layering rule `onKey` follows. Reach for [[Element.onMouseEvent]] directly when a
-  * handler needs the raw event, its modifiers, or conditional consumption.
+  * overwriting each other — the same layering rule `onKey` follows. Reach for
+  * [[io.worxbend.tui.dsl.onMouseEvent Element.onMouseEvent]] directly when a handler needs the raw event, its
+  * modifiers, or conditional consumption.
   *
   * Positions are absolute, zero-based terminal cells — the same coordinate space a `Rect` uses — because that is what a
   * `MouseEvent` carries. An element that wants coordinates relative to its own area subtracts that area's origin.
@@ -137,7 +140,8 @@ extension [E <: Element](element: E)
 
   /** A mouse handler that is told where the element is: a [[MouseContext]] carrying the event, the position relative to
     * the element's top-left cell (`ctx.local`, `(0, 0)` at the corner) and the element's laid-out area. Prefer it to
-    * [[Element.onMouseEvent]], whose absolute coordinates leave a handler to subtract an origin it was never given.
+    * [[io.worxbend.tui.dsl.onMouseEvent Element.onMouseEvent]], whose absolute coordinates leave a handler to subtract
+    * an origin it was never given.
     *
     * `true` consumes the event, `false` lets it keep bubbling, and several handlers compose, the most recent first. A
     * press this handler consumes captures the pointer, so the drags and the release that follow arrive here even when

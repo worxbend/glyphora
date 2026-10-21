@@ -15,7 +15,7 @@ import scala.concurrent.duration.FiniteDuration
   * {{{
   * def saveRow(row: Row)(using notifications: Notifications): Unit =
   *   repository.save(row)
-  *   notifications.success(s"saved ${row.name}")
+  *   notifications.success(s"saved \${row.name}")
   * }}}
   *
   * Ownership and threads: an instance is bound to one `TuiApp` and, like everything else that writes a `Signal`, must

@@ -379,7 +379,7 @@ object ViewState:
   * {{{
   * def counter(label: String)(using ReactiveScope, Theme): Element =
   *   val count = useSignal(0)
-  *   row(text(s"$label: ${count.get}"), button("+")(count.update(_ + 1)))
+  *   row(text(s"\$label: \${count.get}"), button("+")(count.update(_ + 1)))
   * }}}
   *
   * `initial` is by-name and is evaluated only on the frame that creates the slot, so an expensive starting value costs

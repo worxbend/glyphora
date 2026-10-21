@@ -47,7 +47,8 @@ object KeySequence:
 
   private val LeaderToken = "<leader>"
 
-  /** Parses a sequence spec: whitespace-separated steps, each one a [[KeyEvent.parse]] spec or `<leader>`.
+  /** Parses a sequence spec: whitespace-separated steps, each one a
+    * [[io.worxbend.tui.core.KeyEvent.parse KeyEvent.parse]] spec or `<leader>`.
     *
     * A spec with no inner whitespace is handed to `KeyEvent.parse` whole, so its padding rules hold unchanged — `" "`
     * is still the space bar and `"ctrl+ "` still Ctrl+Space. Inside a multi-step sequence the space bar is spelled

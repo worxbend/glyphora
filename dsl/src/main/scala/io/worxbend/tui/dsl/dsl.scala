@@ -255,7 +255,7 @@ val Borders: io.worxbend.tui.widgets.Borders.type = io.worxbend.tui.widgets.Bord
   * Written out here rather than `export`ed for a mechanical reason: an extension method on `StringContext` cannot be
   * re-exported, so the one-import promise needs the forwarder. Its body is the same macro call `tui-core` declares, so
   * there is one implementation and not two. Only a literal can be checked; a spec assembled at run time keeps going
-  * through [[KeyEvent.parse]].
+  * through [[io.worxbend.tui.core.KeyEvent.parse KeyEvent.parse]].
   */
 extension (inline sc: StringContext)
   inline def key(inline args: Any*): KeyEvent = ${ io.worxbend.tui.core.KeySpecLiteral.expand('sc, 'args) }
@@ -627,7 +627,7 @@ extension [E <: Element](element: E)
     * Handlers compose rather than replace one another: the most recently added runs first, and its `false` falls
     * through to whatever was already on the element. That is what lets a helper hand back an element with a binding on
     * it and a call site add a second binding without silently erasing the first — which is what a plain overwrite did,
-    * with no error and no warning to say so. `onKey` in [[Grammar]] has always composed this way; this is the raw
+    * with no error and no warning to say so. `onKey` in `Grammar.scala` has always composed this way; this is the raw
     * builder catching up with it.
     */
   def onKeyEvent(handler: KeyEvent => Boolean): element.Self =
