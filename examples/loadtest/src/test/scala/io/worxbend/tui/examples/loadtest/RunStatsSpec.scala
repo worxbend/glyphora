@@ -105,6 +105,8 @@ final class RunStatsSpec extends AnyFunSuite:
       Vector(4L, 4L, 4L, 4L, 4L, 4L),
       Vector(4L, 2L, 6L, -2L, 10L, 4L),
       Vector(-8L, -2L, -6L, -4L, -2L, -8L),
+      Vector(Long.MinValue, Long.MaxValue, 0L, -1L, Long.MaxValue, Long.MinValue),
+      Vector(Long.MaxValue, Long.MaxValue, Long.MaxValue),
     )
     for
       values  <- inputs
@@ -144,22 +146,32 @@ final class RunStatsSpec extends AnyFunSuite:
       assert(restored.histogram == Histogram.of(restored.latencies, 4))
     assert(Histogram.of(Vector.empty, 4).isEmpty)
 
-  test("Long arithmetic retains wrapping edges and summary sums"):
+  test("Long extrema retain bounded edges and an exact mean without wrapping"):
     val initial = record(Vector(Long.MaxValue), 1)
     val next    = initial.record(Vector(Sample.Ok(Long.MaxValue)), 1)
-    assert(initial.histogram == Vector(LatencyBucket(Long.MaxValue, Long.MinValue, 1)))
-    assert(next.histogram == Vector(LatencyBucket(Long.MaxValue, Long.MinValue, 2)))
+    assert(initial.histogram == Vector(LatencyBucket(Long.MaxValue, Long.MaxValue, 1)))
+    assert(next.histogram == Vector(LatencyBucket(Long.MaxValue, Long.MaxValue, 2)))
     assert(next.histogram == Histogram.of(next.latencies, 1))
     assert(
-      next.summary == LatencySummary(2, Long.MaxValue, Long.MaxValue, -1L, Long.MaxValue, Long.MaxValue, Long.MaxValue)
+      next.summary == LatencySummary(
+        2,
+        Long.MaxValue,
+        Long.MaxValue,
+        Long.MaxValue,
+        Long.MaxValue,
+        Long.MaxValue,
+        Long.MaxValue,
+      )
     )
 
-  test("overflowing bucket multiplication currently throws rather than clamping negative indices"):
-    // (2^62 * 3) wraps to -2^62; dividing by the span yields index -1.
-    val values = Vector(0L, 4611686018427387904L)
-    intercept[ArrayIndexOutOfBoundsException] {
-      Histogram.of(values, 3)
-    }
-    intercept[ArrayIndexOutOfBoundsException] {
-      record(values, 3)
-    }
+  test("large multiplication and signed spans classify without overflow on rebuild and increment"):
+    for values <- Vector(Vector(0L, 4611686018427387904L), Vector(Long.MinValue, Long.MaxValue)) do
+      val initial = record(values, 3)
+      assert(initial.histogram.map(_.count) == Vector(1, 0, 1))
+      assert(initial.histogram.head.lowMicros == values.head)
+      assert(initial.histogram.last.highMicros == values.last)
+      val next    = initial.record(Vector(Sample.Ok(values.last)), 3)
+      assert(next.histogram.map(_.count) == Vector(1, 0, 2))
+      assert(next.histogram == Histogram.of(next.latencies, 3))
+      assert(next.summary.mean == ((values.map(BigInt(_)).sum + BigInt(values.last)) / 3).toLong)
+    assert(LatencySummary.ofSorted(Vector(Long.MinValue, Long.MaxValue)).mean == 0L)

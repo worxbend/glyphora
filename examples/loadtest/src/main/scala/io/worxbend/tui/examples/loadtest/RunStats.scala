@@ -78,11 +78,11 @@ final case class RunStats(
   private def foldHistogram(successes: Vector[Long], merged: Vector[Long], buckets: Int): Vector[LatencyBucket] =
     val edgesUnmoved = histogram.nonEmpty && histogram.length == buckets && merged.nonEmpty &&
       histogram.head.lowMicros == merged.head &&
-      histogram.last.highMicros == merged.head + math.max(1L, merged.last - merged.head)
+      histogram.last.highMicros == Histogram.edge(merged.head, Histogram.span(merged.head, merged.last), 1, 1)
     if successes.isEmpty then histogram
     else if edgesUnmoved then
       val low    = histogram.head.lowMicros
-      val span   = math.max(1L, histogram.last.highMicros - low)
+      val span   = Histogram.span(merged.head, merged.last)
       val counts = histogram.map(_.count).toArray
       successes.foreach { value =>
         val index = Histogram.bucketIndex(value, low, buckets, span)
@@ -119,7 +119,7 @@ object LatencySummary:
         count = sorted.size,
         min = sorted.head,
         max = sorted.last,
-        mean = sorted.sum / sorted.size,
+        mean = (sorted.iterator.map(BigInt(_)).sum / sorted.size).toLong,
         p50 = percentile(sorted, 0.50),
         p90 = percentile(sorted, 0.90),
         p99 = percentile(sorted, 0.99),
@@ -136,8 +136,16 @@ final case class LatencyBucket(lowMicros: Long, highMicros: Long, count: Int)
 
 object Histogram:
 
-  private[loadtest] def bucketIndex(value: Long, low: Long, buckets: Int, span: Long): Int =
-    math.min(buckets - 1, ((value - low) * buckets / span).toInt)
+  // Signed inputs remain supported. Widen before subtraction/multiplication; even the full
+  // Long range needs at most 95 bits after scaling by a positive Int bucket count.
+  private[loadtest] def span(low: Long, high: Long): BigInt = (BigInt(high) - low).max(BigInt(1))
+
+  private[loadtest] def edge(low: Long, span: BigInt, index: Int, buckets: Int): Long =
+    // A unit span above Long.MaxValue cannot be represented: saturate that endpoint only.
+    (BigInt(low) + span * index / buckets).min(BigInt(Long.MaxValue)).toLong
+
+  private[loadtest] def bucketIndex(value: Long, low: Long, buckets: Int, span: BigInt): Int =
+    (((BigInt(value) - low) * buckets / span).max(BigInt(0)).min(BigInt(buckets - 1))).toInt
 
   /** Equal-width buckets spanning min..max of the sample set.
     *
@@ -148,12 +156,12 @@ object Histogram:
     if latencies.isEmpty || buckets <= 0 then Vector.empty
     else
       val low    = latencies.min
-      val span   = math.max(1L, latencies.max - low)
+      val span   = Histogram.span(low, latencies.max)
       val counts = Array.fill(buckets)(0)
       latencies.foreach { value =>
         val index = bucketIndex(value, low, buckets, span)
         counts(index) += 1
       }
       Vector.tabulate(buckets) { index =>
-        LatencyBucket(low + span * index / buckets, low + span * (index + 1) / buckets, counts(index))
+        LatencyBucket(edge(low, span, index, buckets), edge(low, span, index + 1, buckets), counts(index))
       }
