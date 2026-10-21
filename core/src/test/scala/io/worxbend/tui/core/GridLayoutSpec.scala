@@ -42,6 +42,26 @@ final class GridLayoutSpec extends AnyFunSuite:
     val placed = GridLayout.autoFlow(2, Seq(GridItem.auto, GridItem.span(1, 2)))
     assert(placed == Seq(GridPlacement(0, 0), GridPlacement(1, 0, 1, 2)))
 
+  test("a sparse cursor retries the free prefix on the next row before the tall blocker ends"):
+    val placed = GridLayout.autoFlow(4, Seq(GridItem.at(0, 2, 10, 2), GridItem.auto, GridItem.span(1, 2)))
+    assert(placed == Seq(GridPlacement(0, 2, 10, 2), GridPlacement(0, 0), GridPlacement(1, 0, 1, 2)))
+
+  test("widened occupied row ends saturate public coordinates without wrapping the cursor"):
+    val placed = GridLayout.autoFlow(
+      2,
+      Seq(
+        GridItem.at(0, 0, Int.MaxValue, 2),
+        GridItem.at(Int.MaxValue, 0, Int.MaxValue, 2),
+        GridItem.auto,
+        GridItem.auto,
+      ),
+    )
+    assert(placed.takeRight(2) == Seq(GridPlacement(Int.MaxValue, 0), GridPlacement(Int.MaxValue, 0)))
+
+  test("nonpositive grids and spans normalize only flowed items, leaving explicit placements unchanged"):
+    val placed = GridLayout.autoFlow(0, Seq(GridItem.at(-2, -3, 0, -1), GridItem.span(0, -1), GridItem.span(2, 9)))
+    assert(placed == Seq(GridPlacement(-2, -3, 0, -1), GridPlacement(0, 0), GridPlacement(1, 0, 2, 1)))
+
   test("a template of named areas resolves to the rectangle each name covers"):
     val areas = GridAreas.parse("top top", "main side")
     assert(
