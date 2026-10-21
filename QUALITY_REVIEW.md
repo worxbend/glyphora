@@ -154,3 +154,72 @@ Additional tool findings: existing unused suppression warnings are **L09 / Low /
 4. Is failed backend output recoverable on a given handle, and should graphics accounting support retries independently of PrintWriter's error latch? P03 needs a targeted failure model.
 5. Which existing observable boundary can prove weather Async completion without sleeps or a new production/public test hook? P07 is not safely addressed by merely changing timing.
 6. No live kitty/IME/screen-reader validation, Windows/macOS verification, browser visual pass or JDK26 run is implied by the local Linux/JDK25 gate.
+
+## Phase 2 plan
+
+### Decisions and order
+
+Only R01 and R02 are accepted implementation findings. They are the safely addressable medium structural findings, and both owning baselines passed. No high-priority structural blocker was established. The lower-risk R01 literal extraction precedes the higher-churn R02 lifecycle extraction. Each theme touches two files at most. Test and refactor commits remain separate; this review/plan is committed separately from code.
+
+All L01-L08 findings remain deferred: they are low-priority changes in files not otherwise touched by an accepted batch. P08 is additionally CI-policy tooling, which needs approval even for a structural change. P07 cannot be made deterministic merely by changing sleeps or assuming idle proves background completion; the missing observation strategy is a real safety boundary. No DSL changes are permitted after its baseline failure.
+
+### Batch A — R01: single owner for histogram bucket classification
+
+Files:
+
+- `examples/loadtest/src/main/scala/io/worxbend/tui/examples/loadtest/RunStats.scala`
+- new `examples/loadtest/src/test/scala/io/worxbend/tui/examples/loadtest/RunStatsSpec.scala`
+
+First add direct characterization for empty-batch identity, failed-batch tally/histogram retention, duplicate-preserving sorted merge, extrema/bucket changes, equal-value spans, explicit ordinary bucket/summary expectations, and a deterministic bounded contiguous-partition matrix against full rebuilds. Pin existing wrapping/overflow exceptions rather than correcting them. Run against unchanged production code, format only the new test, compile and run the complete loadtest suite, then commit tests alone.
+
+Named production refactoring: Extract Function. Both exact classification expressions call a non-public `Histogram.bucketIndex`. Preserve operand types/order, division/narrowing, edge construction, count updates, and invalid input behavior. No new validation or performance claim. Build + run the full loadtest suite, then format-check and Scalafix-check its main/test sources before the refactor commit.
+
+Exact command families (all Mill calls use the documented bounded external wrapper):
+
+    ./mill --no-server -j 2 examples.loadtest.compile + examples.loadtest.test.compile
+    ./mill --no-server -j 2 examples.loadtest.test
+    scalafmt-native --check <the two batch files>
+    ./mill --no-server -j 2 examples.loadtest.fix --check
+    ./mill --no-server -j 2 examples.loadtest.test.fix --check
+
+### Batch B — R02: keep failure policy out of resource orchestration
+
+Files:
+
+- `runtime/src/main/scala/io/worxbend/tui/runtime/TerminalRunner.scala`
+- `runtime/src/test/scala/io/worxbend/tui/runtime/RunnerLifecycleSpec.scala`
+
+First characterize three prior-primary cases (handler/backend/queued task) followed by fatal onStop and aggregated backend-close failure; separately pin fatal onStop after clean quit. Assert primary identity, exact suppression order/nesting, terminal/stream restoration and owner retirement. Tests must pass on the original production code and be committed alone. Existing tests retain coverage for nonfatal teardown, shared throwable deduplication, reporter escape, setup failures and fatal final-drain escape.
+
+Named production refactoring: Extract Class. A private run-owned outcome helper owns only result/escaping-error/cleanup/backend-close classification. Keep both final-drain report assignments, recorder/acquisition boundaries, every release call and their evaluation order, final rethrow after Console scoping, and public RunnerError unchanged. Build + run the complete runtime suite after extraction, then format/lint the owning main/test sources before committing. Do not change fatal policy to match preferred wording.
+
+    ./mill --no-server -j 2 runtime.compile + runtime.test.compile
+    ./mill --no-server -j 2 runtime.test
+    scalafmt-native --check <the two batch files>
+    ./mill --no-server -j 2 runtime.fix --check
+    ./mill --no-server -j 2 runtime.test.fix --check
+
+At most two fix-forward attempts per step; if still failing, reverse only that step's own edits and document the deferral. Never delete/skip/weaken tests or add lint suppression. A static independent review of both proposed patch pairs found no blocking drift, but is not a substitute for actual test-first execution.
+
+### Proposals requiring approval
+
+These are intentionally unimplemented. Proposed regression descriptions are future tests, not claims that such tests already exist or have failed.
+
+| Proposal | Required decision / prohibited change | Regression that would prove the desired correction |
+| --- | --- | --- |
+| P01 | Network/security behavior: accepted redirect origins and credential stripping/rejection policy | In `scripts/tests/test_release_validation.py`, exercise the real redirect handler with non-secret fixture headers: same-origin, other-host and HTTPS downgrade; assert no Authorization reaches a disallowed origin. Offline current-handler probe retained the header; no real credentials/network used. |
+| P02 | Widget output/numeric scale policy | Extend `StackedBarChartSpec` with `Seq(Long.MaxValue, 1L)`, pinned max 1, one-column `Rect(0,2,1,2)` in a taller sentinel buffer; assert row 4 untouched. Add automatic-scale positive stacks whose Long sum wraps. Current source-derived arithmetic paints rows 3 and 4 and wraps the automatic total to -2; Scala widget reproduction is still needed. |
+| P03 | Backend failure/retry semantics | Extend `GraphicsLayerSpec` / `JLineOutputFailureSpec` using a recoverable writer seam: first successful image frame, changed ordinary image frame whose write fails, identical retry; assert placement bytes are re-emitted and deletes aren't forgotten. Retain separate real PrintWriter latch coverage. |
+| P04 | Tape path/CLI behavior | New isolated shell characterization with fake Mill for default/relative/absolute/spaced export paths and odd argument counts; desired regression asserts an absolute exported directory and explicit invalid-argv failure. Then run a separately approved real recording check. |
+| P05 | CI deployment trigger behavior | Policy mutation test in `scripts/tests/test_ci_safeguards.py` requiring the static `docs/assets/**` input in Docs push paths; removing it must fail. No YAML edits in this pass. |
+| P06 | Published content/version discipline | Homepage coordinate consistency test against synchronized `publishVersion`; current JSX literal differs. Approval precedes content or discipline-boundary edits. |
+| P07 | Test synchronization strategy, with no production hook unless separately approved | Controlled old/new weather responses plus an actual Async-continuation delivery barrier; prove the stale result has been processed before asserting it cannot replace the new result. No longer sleep or weaker idle assertion. |
+| P08 | CI-policy-tool structure, despite unchanged intended semantics | Characterize Central/Packages mutations and simultaneous failures with exact ordered error strings, then extract only their shared validation checks. |
+| P11 | Overflow/validation semantics for example statistics | Existing new characterization pins current wrap/exception behavior; a separate desired-output test must follow an agreed large-latency/mean/bucket policy. Do not silently widen arithmetic in R01. |
+| P12 | Baseline DSL failure investigation and any resulting fix | Existing PixelImageElementSpec first case already failed at line 33 in this baseline. Establish encoder/delivery completion under load before proposing a production fix or stronger asynchronous test boundary. DSL remains untouched here. |
+
+No public-API change, new runtime dependency, schema/serialization/wire-format change, build/framework migration or excluded-path edit is proposed for implementation. P09/P10 remain low-priority characterization follow-ups, not authorization to change malformed-input handling, generation formats or I/O semantics. Existing dependency advisories are reported from the actual npm audit; dependency/lockfile changes are outside this pass.
+
+### Final verification and stopping rule
+
+Re-run the complete baseline command list, native smoke, independent syntax/discipline scans and meta-build format check. Compare named failures to baseline, not a green-looking subset. Record before/after test counts, warning-text counts, coverage unavailability and local function-span/duplicate-expression measures for touched production files. Review the final diff independently for API/ordering/behavior drift. Commit the completed report with exact batch commit hashes and deferred risks; never push. Stop once both medium structural findings are verified, or a stated stop condition requires deferral.
