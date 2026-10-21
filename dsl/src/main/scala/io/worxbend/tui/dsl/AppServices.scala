@@ -83,7 +83,8 @@ trait AppServices extends Notifications:
   /** The app's clipboard as text-entry nodes see it: a copy goes out through OSC 52 *and* into an in-app paste buffer,
     * and a paste answers that buffer — a terminal never lets an app read the system clipboard, so `Ctrl+V` in a text
     * node pastes what this app last copied or cut, while the terminal's own paste (bracketed paste) still lands as a
-    * paste event. [[Clipboard.Discard]] unless the services belong to a running app.
+    * paste event. [[io.worxbend.tui.widgets.Clipboard.Discard Clipboard.Discard]] unless the services belong to a
+    * running app.
     */
   def clipboard: Clipboard = Clipboard.Discard
 

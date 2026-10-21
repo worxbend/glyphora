@@ -18,13 +18,14 @@ import scala.concurrent.duration.{DurationInt, DurationLong, FiniteDuration}
   * **One signal per render loop, one shared origin.** The value is elapsed time since the process started rather than
   * since a particular runner, so it is meaningful without a runner (a plain unit test reads `Duration.Zero` until
   * something advances it) and two runners in one JVM agree on what time it is. The `Signal` carrying it, however, is
-  * per render loop, resolved through [[RenderThread.capture]] on every read and every advance. It has to be: a
-  * `Signal`'s subscriber set is a plain mutable set with no lock, confined to *a* render thread — and with one signal
-  * for the whole process, two runners' render threads both subscribe to and notify it at once. `checkRenderThread`
-  * cannot catch that, because both threads *are* render threads. What it cost was measurable and silent: with the
-  * shared signal put back, the regression test below — two loops, 2000 tracked reads each — sees one loop lose every
-  * one of its 2000 subscriptions. An app whose only reactive dependency is the ambient clock (any `spinner`,
-  * `orbitSpinner` or `indeterminateBar`) therefore froze mid-animation, with no exception to explain it.
+  * per render loop, resolved through [[io.worxbend.tui.runtime.RenderThread.capture RenderThread.capture]] on every
+  * read and every advance. It has to be: a `Signal`'s subscriber set is a plain mutable set with no lock, confined to
+  * *a* render thread — and with one signal for the whole process, two runners' render threads both subscribe to and
+  * notify it at once. `checkRenderThread` cannot catch that, because both threads *are* render threads. What it cost
+  * was measurable and silent: with the shared signal put back, the regression test below — two loops, 2000 tracked
+  * reads each — sees one loop lose every one of its 2000 subscriptions. An app whose only reactive dependency is the
+  * ambient clock (any `spinner`, `orbitSpinner` or `indeterminateBar`) therefore froze mid-animation, with no exception
+  * to explain it.
   *
   * A caller belonging to no runner resolves the one shared unattributed loop, so plain unit tests and [[freezeAt]]
   * still see a single clock between them.

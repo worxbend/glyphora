@@ -20,11 +20,12 @@ import java.nio.charset.StandardCharsets.UTF_8
   * behind.
   *
   * `width` and `colors` default to what [[detectedWidth]] and [[detectedColors]] read from the process: the terminal's
-  * width when standard output is one, else `COLUMNS`, else 80 columns; the colour depth [[ColorDepth.detect]] resolves
-  * (`NO_COLOR`, `FORCE_COLOR`, `CLICOLOR_FORCE`, `TERM=dumb` and the terminal's capability) when standard output is a
-  * terminal, and *no* colour when it is not, unless one of the force variables says otherwise. The height is the view's
-  * own measurement — `Element.intrinsicHeight` at that width — falling back to `LINES`, then 24 rows, for a view that
-  * cannot say (one whose root is `.fill`, say); pass `height` to decide yourself.
+  * width when standard output is one, else `COLUMNS`, else 80 columns; the colour depth
+  * [[io.worxbend.tui.terminal.ColorDepth.detect ColorDepth.detect]] resolves (`NO_COLOR`, `FORCE_COLOR`,
+  * `CLICOLOR_FORCE`, `TERM=dumb` and the terminal's capability) when standard output is a terminal, and *no* colour
+  * when it is not, unless one of the force variables says otherwise. The height is the view's own measurement —
+  * `Element.intrinsicHeight` at that width — falling back to `LINES`, then 24 rows, for a view that cannot say (one
+  * whose root is `.fill`, say); pass `height` to decide yourself.
   *
   * What it deliberately is not: interactive or animated, for the same reasons [[Snapshot]] is not. Focus is drawn on
   * the first focusable element, an animated element renders at whatever position it computes for the time it is handed,
@@ -120,10 +121,11 @@ object Console:
   def detectedHeight(env: Map[String, String] = sys.env): Int =
     positive(env, "LINES").getOrElse(FallbackHeight)
 
-  /** The colour depth to print with. On a terminal, what [[ColorDepth.detect]] resolves from `env`. Off a terminal — a
-    * file, a pipe — no colour at all, because `TERM` is still set in a piped process's environment and would otherwise
-    * fill the file with escape sequences; `FORCE_COLOR` or `CLICOLOR_FORCE` overrides that, which is how a pager or a
-    * CI log viewer that renders ANSI asks for it.
+  /** The colour depth to print with. On a terminal, what
+    * [[io.worxbend.tui.terminal.ColorDepth.detect ColorDepth.detect]] resolves from `env`. Off a terminal — a file, a
+    * pipe — no colour at all, because `TERM` is still set in a piped process's environment and would otherwise fill the
+    * file with escape sequences; `FORCE_COLOR` or `CLICOLOR_FORCE` overrides that, which is how a pager or a CI log
+    * viewer that renders ANSI asks for it.
     */
   def detectedColors(env: Map[String, String] = sys.env, terminal: Boolean = StandardOutput.isTerminal): ColorDepth =
     if terminal || ColorDepth.colorForced(env) then ColorDepth.detect(env) else ColorDepth.NoColor

@@ -98,8 +98,9 @@ object PromptSession:
     * default.
     *
     * The controlling terminal is probed for its capabilities once per process, not once per prompt: the first prompt's
-    * backend asks, and every later prompt's backend is opened with that answer ([[JLine3Backend.create]]'s
-    * `knownCapabilities`) and skips the round trip. A custom `open` is used as given and never handed a probe.
+    * backend asks, and every later prompt's backend is opened with that answer
+    * ([[io.worxbend.tui.terminal.JLine3Backend.create JLine3Backend.create]]'s `knownCapabilities`) and skips the round
+    * trip. A custom `open` is used as given and never handed a probe.
     *
     * @param fallbackWhen
     *   asked before every prompt; `true` answers it in the plain shape over standard input and output instead. The

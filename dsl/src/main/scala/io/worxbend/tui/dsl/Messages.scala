@@ -15,7 +15,8 @@ import scala.util.DynamicVariable
   * An application sets the table with `override def messages: Messages = Messages.Default.withDialogOk("Sí")` on its
   * `TuiApp`; the run binds it on the render thread around every frame and every event, so a factory called in `view`
   * and an overlay painted after it read the same table. Code that builds elements outside a run — a [[Snapshot]],
-  * `Console.print`, a `Prompt` — reads [[Default]] unless it is wrapped in [[Messages.scoped]].
+  * `Console.print`, a `Prompt` — reads [[io.worxbend.tui.dsl.Messages.Default Default]] unless it is wrapped in
+  * [[Messages.scoped]].
   *
   * Labels the application passes explicitly (`dialog(title, message, buttons = Seq("Vale"))`) are never touched: the
   * table only supplies the defaults. Strings are plain values with no placeholders except where a field's Scaladoc
@@ -271,7 +272,7 @@ object Messages:
   private[dsl] val current: DynamicVariable[Messages] = DynamicVariable(Default)
 
   /** The table in force on the calling thread: the running app's inside a frame or a handler, the one [[scoped]]
-    * installed inside its block, [[Default]] otherwise.
+    * installed inside its block, [[io.worxbend.tui.dsl.Messages.Default Default]] otherwise.
     */
   def active: Messages = current.value
 
