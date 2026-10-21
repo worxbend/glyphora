@@ -2,14 +2,17 @@
 import importlib.util
 import io
 from email.message import Message
+import os
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 import urllib.error
 import urllib.request
 from urllib.response import addinfourl
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("consumer_redirects", ROOT / "scripts/verify-packaged-consumer.py")
+assert SPEC is not None and SPEC.loader is not None
 consumer = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(consumer)
 ORIGIN = "https://maven.pkg.github.com"
@@ -17,10 +20,11 @@ FIXTURE_AUTH = "Basic explicit-non-secret-test-fixture"
 
 
 class Transport(urllib.request.HTTPSHandler, urllib.request.HTTPHandler):
-    def __init__(self, locations):
+    def __init__(self, locations, status=302):
         super().__init__()
         self.locations = iter(locations)
         self.delivered = []
+        self.status = status
 
     def https_open(self, request):
         self.delivered.append((request.full_url, request.get_header("Authorization")))
@@ -28,7 +32,7 @@ class Transport(urllib.request.HTTPSHandler, urllib.request.HTTPHandler):
         headers = Message()
         if location:
             headers["Location"] = location
-        response = addinfourl(io.BytesIO(b"fixture"), headers, request.full_url, 302 if location else 200)
+        response = addinfourl(io.BytesIO(b"fixture"), headers, request.full_url, self.status if location else 200)
         response.msg = "fixture"
         return response
 
@@ -36,8 +40,8 @@ class Transport(urllib.request.HTTPSHandler, urllib.request.HTTPHandler):
 
 
 class AuthenticatedRedirectTests(unittest.TestCase):
-    def fetch(self, locations):
-        transport = Transport(locations)
+    def fetch(self, locations, status=302):
+        transport = Transport(locations, status)
         # Use the production redirect handler, real OpenerDirector and urllib's
         # HTTPErrorProcessor; replace only the final network transport.
         policy = next(handler for handler in consumer.authenticated_opener(ORIGIN).handlers
@@ -70,6 +74,31 @@ class AuthenticatedRedirectTests(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError):
             self.fetch(["/start"] * 20)
         self.assertLess(len(self.transport.delivered), 20)
+
+    def test_every_supported_redirect_status_uses_same_policy(self):
+        for status in (301, 302, 303, 307, 308):
+            with self.subTest(status=status):
+                with self.fetch(["/second"], status):
+                    pass
+                self.assertEqual(len(self.transport.delivered), 2)
+                with self.assertRaisesRegex(ValueError, "authenticated redirect"):
+                    self.fetch(["https://example.com/leak"], status)
+                self.assertEqual(len(self.transport.delivered), 1)
+
+    def test_remote_verifier_really_installs_policy_before_downloading(self):
+        transport = Transport(["/second", "https://example.com/leak"])
+        build_opener = urllib.request.build_opener
+        def fixture_opener(*handlers):
+            return build_opener(*handlers, transport)
+        with patch.dict(os.environ, {"GITHUB_PACKAGES_USERNAME": "fixture-user",
+                                     "GITHUB_PACKAGES_PASSWORD": "fixture-password"}, clear=True), \
+                patch.object(urllib.request, "build_opener", side_effect=fixture_opener), \
+                patch.object(urllib.request, "urlopen", side_effect=AssertionError("authenticated urlopen bypass")):
+            with self.assertRaisesRegex(ValueError, "authenticated redirect"):
+                consumer.verify_remote_artifacts(Path("unused-fixture-repository"), ORIGIN + "/fixture", "0.0.0")
+        self.assertEqual(len(transport.delivered), 2)
+        self.assertEqual([url.split("/", 3)[2] for url, _ in transport.delivered], ["maven.pkg.github.com"] * 2)
+        self.assertTrue(all(auth and auth.startswith("Basic ") for _, auth in transport.delivered))
 
 
 if __name__ == "__main__":
