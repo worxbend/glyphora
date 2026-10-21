@@ -1,11 +1,57 @@
 package io.worxbend.tui.widgets
 
-import io.worxbend.tui.core.{Buffer, Color, Rect}
+import io.worxbend.tui.core.{Buffer, Cell, Color, Rect, Style}
 import io.worxbend.tui.testsupport.BufferAssertions.{rendered, trimmedLines}
 
 import org.scalatest.funsuite.AnyFunSuite
 
 final class StackedBarChartSpec extends AnyFunSuite:
+
+  test("extreme pinned segments cannot narrow into a negative height or paint below the area"):
+    val sentinel = Cell(".", Style.Default.withBg(Color.Red))
+    val buffer   = Buffer(Rect(0, 0, 1, 7))
+    (0 until 7).foreach(y => buffer.set(0, y, sentinel))
+    val chart    = StackedBarChart(Seq(("", Seq(Long.MaxValue, 1L))), barWidth = 1, max = Some(1L))
+    chart.render(Rect(0, 2, 1, 2), buffer)
+    assert(buffer.get(0, 4) == sentinel)
+    assert((0 until 7).filterNot(y => y == 2 || y == 3).forall(y => buffer.get(0, y) == sentinel))
+    assert((2 to 3).forall(y => buffer.get(0, y) == Cell("█", SeriesPalette.Default.head)))
+
+  test("automatic scale uses positive totals beyond Long without wrapping or saturating"):
+    val chart  = StackedBarChart(
+      Seq(("", Seq(Long.MaxValue, Long.MaxValue)), ("", Seq(Long.MaxValue, Long.MinValue))),
+      barWidth = 1,
+      barGap = 0,
+    )
+    val buffer = rendered(chart, 2, 4)
+    assert(
+      (0 until 4).map(y => buffer.get(0, y)) ==
+        Seq.fill(2)(Cell("█", SeriesPalette.Default(1))) ++ Seq.fill(2)(Cell("█", SeriesPalette.Default.head))
+    )
+    assert((0 until 4).map(y => buffer.get(1, y).symbol) == Seq(" ", " ", "█", "█"))
+
+  test("ordinary independent segment rounding retains full-cell frame parity"):
+    // Fixed ordinary frame: 1/4 of six rows rounds to two per segment (not cumulative rounding).
+    val buffer   = rendered(StackedBarChart(Seq(("", Seq(1L, 1L, 2L))), barWidth = 1), 1, 6)
+    val expected = Seq(2, 2, 1, 1, 0, 0).map(series => Cell("█", SeriesPalette.Default(series)))
+    assert((0 until 6).map(y => buffer.get(0, y)) == expected)
+
+  test("empty, negative and tiny extreme stacks keep sentinel cells outside their rectangles"):
+    val sentinel = Cell(".", Style.Default.withBg(Color.Red))
+    for
+      values  <- Seq(Seq.empty[Long], Seq(Long.MinValue, -1L, 0L), Seq(Long.MaxValue, Long.MaxValue))
+      area    <- Seq(Rect(2, 2, 0, 2), Rect(2, 2, 1, 0), Rect(2, 2, 1, 1), Rect(2, 2, 1, 2))
+      ceiling <- Seq(None, Some(0L), Some(-1L), Some(Long.MaxValue))
+    do
+      val buffer = Buffer.filled(Rect(0, 0, 5, 6), sentinel)
+      StackedBarChart(Seq(("", values)), barWidth = 1, max = ceiling).render(area, buffer)
+      for y <- 0 until 6; x <- 0 until 5 do
+        if x < area.x || x >= area.right || y < area.y || y >= area.bottom ||
+          !values.exists(_ > 0) || ceiling.exists(_ <= 0)
+        then assert(buffer.get(x, y) == sentinel)
+    val empty    = Buffer.filled(Rect(0, 0, 2, 2), sentinel)
+    StackedBarChart(Seq.empty).render(empty.area, empty)
+    assert((0 until 2).forall(y => (0 until 2).forall(x => empty.get(x, y) == sentinel)))
 
   test("stacked bars stack series segments bottom-up with palette styles"):
     val chart  = StackedBarChart(Seq(("x", Seq(1L, 1L)), ("y", Seq(2L, 2L))), barWidth = 1, barGap = 0)

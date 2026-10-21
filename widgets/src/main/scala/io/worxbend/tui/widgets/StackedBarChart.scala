@@ -8,6 +8,10 @@ import io.worxbend.tui.core.{Buffer, Cell, Rect, Style, Widget}
   * the tallest stack it was handed, which is what makes two of these charts side by side — or the same chart across two
   * frames — silently mean different things: a stack that stays the same size appears to shrink the moment a taller one
   * arrives beside it. Pin both charts to the same ceiling and the heights compare.
+  *
+  * Negative segments contribute zero. Automatic scaling uses the exact nonnegative sum of each stack, even beyond
+  * `Long.MaxValue`, then converts the largest total to `Double` for the same per-segment rounding as ordinary values.
+  * Totals are neither wrapped nor saturated to `Long.MaxValue`; each rounded height is clamped before narrowing.
   */
 final case class StackedBarChart(
     data: Seq[(String, Seq[Long])],
@@ -21,8 +25,12 @@ final case class StackedBarChart(
   def render(area: Rect, buffer: Buffer): Unit =
     val showLabels  = ColumnChart.showLabels(area, data.map((label, _) => label))
     val chartHeight = ColumnChart.chartHeight(area, showLabels)
-    val tallest     = data.map((_, values) => values.map(math.max(0L, _)).sum).maxOption.getOrElse(0L)
-    val maxTotal    = max.getOrElse(tallest)
+    // Sum exactly before converting to the floating-point scale: positive stacks may exceed Long.MaxValue.
+    val tallest     = data
+      .map((_, values) => values.iterator.map(value => BigInt(math.max(0L, value))).sum)
+      .maxOption
+      .getOrElse(BigInt(0))
+    val maxTotal    = max.fold(tallest.toDouble)(_.toDouble)
     if area.isEmpty || data.isEmpty || chartHeight <= 0 || maxTotal <= 0 then ()
     else
       val stride = ColumnChart.stride(barWidth, barGap)
@@ -47,11 +55,11 @@ final case class StackedBarChart(
       barLeft: Int,
       chartHeight: Int,
       values: Seq[Long],
-      maxTotal: Long,
+      maxTotal: Double,
   ): Unit =
     var bottom = area.y + chartHeight
     values.zipWithIndex.foreach { (value, series) =>
-      val cells = math.round(math.max(0L, value).toDouble / maxTotal * chartHeight).toInt
+      val cells = math.min(chartHeight.toLong, math.round(math.max(0L, value).toDouble / maxTotal * chartHeight)).toInt
       // each segment rounds up independently, so a tall stack can ask for more rows than the chart has
       val top   = math.max(area.y, bottom - cells)
       var y     = top
