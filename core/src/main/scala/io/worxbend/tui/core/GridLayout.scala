@@ -122,38 +122,50 @@ object GridLayout:
     var cursor   = 0L
     items.zip(explicit).map { (item, slot) =>
       slot.getOrElse {
-        val cols      = math.min(width, math.max(1, item.colSpan))
-        val rows      = math.max(1, item.rowSpan)
-        var row       = cursor / width
-        var from      = (cursor % width).toInt
-        var found     = false
-        var col       = 0
-        while !found && row <= Int.MaxValue do
-          val blockers                     = taken.filter(p => p.row.toLong < row + rows && p.row.toLong + p.rows > row)
-          def freeColumn(start: Int): Long =
-            var candidate = start.toLong
-            blockers.sortBy(_.col).foreach { p =>
-              if p.col.toLong < candidate + cols && p.col.toLong + p.cols > candidate then
-                candidate = p.col.toLong + p.cols
-            }
-            candidate
-          val candidate                    = freeColumn(from)
-          if candidate + cols <= width then
-            col = candidate.toInt
-            found = true
-          else
-            // A sparse cursor can leave a usable prefix behind; it is available again on the very next row.
-            val next = if from > 0 && freeColumn(0) + cols <= width then row + 1
-            else blockers.map(p => p.row.toLong + p.rows).filter(_ > row).minOption.getOrElse(row + 1)
-            row = next
-            from = 0
+        val cols       = math.min(width, math.max(1, item.colSpan))
+        val rows       = math.max(1, item.rowSpan)
+        val (row, col) = nextSlot(width, rows, cols, cursor, taken)
         // Coordinates beyond the public Int domain are unpaintable, rather than wrapping into an earlier row.
-        val placement = GridPlacement(math.min(row, Int.MaxValue.toLong).toInt, col, rows, cols)
+        val placement  = GridPlacement(math.min(row, Int.MaxValue.toLong).toInt, col, rows, cols)
         taken += placement
         cursor = row * width + col + cols
         placement
       }
     }
+
+  /** Finds a sparse slot without reserving it. The row stays widened even beyond paintable Int coordinates so the
+    * caller advances its cursor from the searched row, not the saturated public placement.
+    */
+  private def nextSlot(
+      width: Int,
+      rows: Int,
+      cols: Int,
+      cursor: Long,
+      taken: scala.collection.Seq[GridPlacement],
+  ): (Long, Int) =
+    var row   = cursor / width
+    var from  = (cursor % width).toInt
+    var found = false
+    var col   = 0
+    while !found && row <= Int.MaxValue do
+      val blockers                     = taken.filter(p => p.row.toLong < row + rows && p.row.toLong + p.rows > row)
+      def freeColumn(start: Int): Long =
+        var candidate = start.toLong
+        blockers.sortBy(_.col).foreach { p =>
+          if p.col.toLong < candidate + cols && p.col.toLong + p.cols > candidate then candidate = p.col.toLong + p.cols
+        }
+        candidate
+      val candidate                    = freeColumn(from)
+      if candidate + cols <= width then
+        col = candidate.toInt
+        found = true
+      else
+        // A sparse cursor can leave a usable prefix behind; it is available again on the very next row.
+        val next = if from > 0 && freeColumn(0) + cols <= width then row + 1
+        else blockers.map(p => p.row.toLong + p.rows).filter(_ > row).minOption.getOrElse(row + 1)
+        row = next
+        from = 0
+    (row, col)
 
 /** Named grid areas from a text template, the way CSS `grid-template-areas` spells them.
   *
