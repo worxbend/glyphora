@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
@@ -30,6 +31,29 @@ ARTIFACT_EDGES = {
 NS = {"m": "http://maven.apache.org/POM/4.0.0"}
 
 
+def authenticated_opener(url: str) -> urllib.request.OpenerDirector:
+    """Keep authenticated downloads on their initial HTTPS origin, at every hop."""
+    def origin(value):
+        parsed = urllib.parse.urlsplit(value)
+        if parsed.scheme != "https" or parsed.username is not None or parsed.password is not None:
+            raise ValueError("unsafe authenticated redirect")
+        return parsed.hostname, parsed.port or 443
+
+    expected = origin(url)
+
+    class SameOriginRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            try:
+                if origin(newurl) != expected:
+                    raise ValueError("unsafe authenticated redirect")
+            except ValueError:
+                fp.close()
+                raise
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    return urllib.request.build_opener(SameOriginRedirect())
+
+
 def verify_remote_artifacts(repository: Path, url: str, version: str) -> None:
     """Download all 28 release files and compare them with the validated build."""
     headers = {}
@@ -43,13 +67,14 @@ def verify_remote_artifacts(repository: Path, url: str, version: str) -> None:
         headers["Authorization"] = "Basic " + base64.b64encode(credentials.encode()).decode()
     else:
         raise ValueError("remote verification requires HTTPS GitHub Packages or Maven Central")
+    fetch = authenticated_opener(url).open if headers else urllib.request.urlopen
     for artifact in ARTIFACT_EDGES:
         for suffix in (".pom", ".jar", "-sources.jar", "-javadoc.jar"):
             relative = f"com/worxbend/{artifact}/{version}/{artifact}-{version}{suffix}"
             request = urllib.request.Request(f"{url.rstrip('/')}/{relative}", headers=headers)
             for attempt in range(attempts):
                 try:
-                    with urllib.request.urlopen(request, timeout=30) as response:
+                    with fetch(request, timeout=30) as response:
                         downloaded = response.read()
                     break
                 except urllib.error.HTTPError as error:

@@ -157,6 +157,12 @@ class RemoteArtifactsTests(unittest.TestCase):
         assert spec is not None and spec.loader is not None
         self.module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.module)
+        # Keep these byte-comparison/retry tests at the transport seam; redirect
+        # policy itself is exercised with a real opener in test_authenticated_redirects.
+        opener = patch.object(self.module, "authenticated_opener")
+        factory = opener.start()
+        factory.return_value.open.side_effect = lambda *args, **kwargs: self.module.urllib.request.urlopen(*args, **kwargs)
+        self.addCleanup(opener.stop)
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.repository = Path(self.directory.name)
