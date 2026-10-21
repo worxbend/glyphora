@@ -156,7 +156,7 @@ final class DeferredViewStateSpec extends AnyFunSuite:
         val node = keyed("child") {
           Element.responsive { _ =>
             val _ = useSignal(42)
-            throw new IllegalArgumentException("builder failed") // scalafix:ok DisableSyntax; exercises restoration
+            throw new IllegalArgumentException("builder failed")
           }
         }
         if resolve then
