@@ -58,15 +58,16 @@ final class PsProcessSource extends ProcessSource:
     val process = ProcessBuilder("ps", "-eo", "pid=,user=,pcpu=,pmem=,comm=")
       .redirectError(ProcessBuilder.Redirect.DISCARD)
       .start()
-    val lines   =
-      Using.resource(scala.io.Source.fromInputStream(process.getInputStream, "UTF-8"))(_.getLines().toVector)
-    if !process.waitFor(PsProcessSource.TimeoutSeconds, TimeUnit.SECONDS) then
-      val _ = process.destroyForcibly()
-    lines.flatMap(PsProcessSource.parse)
+    PsProcessSource.read(process, 2L, TimeUnit.SECONDS)
 
 object PsProcessSource:
 
-  private val TimeoutSeconds = 2L
+  private[procmon] def read(process: Process, timeout: Long, unit: TimeUnit): Seq[ProcessInfo] =
+    val lines =
+      Using.resource(scala.io.Source.fromInputStream(process.getInputStream, "UTF-8"))(_.getLines().toVector)
+    if !process.waitFor(timeout, unit) then
+      val _ = process.destroyForcibly()
+    lines.flatMap(parse)
 
   /** `"  1842 worxbend   28.4  1.9 firefox"` — the limit of 5 keeps a command containing spaces in one piece. */
   private def parse(line: String): Option[ProcessInfo] =
