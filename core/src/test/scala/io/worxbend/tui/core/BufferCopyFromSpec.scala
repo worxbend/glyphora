@@ -17,6 +17,51 @@ final class BufferCopyFromSpec extends AnyFunSuite:
     write(target)
     target
 
+  test("both copy paths preserve every plane at a nonzero origin and own independent mutable state"):
+    Seq[Buffer => Buffer](
+      source => source.snapshot,
+      source => {
+        val target = Buffer(source.area)
+        target.setString(7, 11, "stale", Style.Default)
+        target.placeGraphic(Rect(7, 12, 1, 1), RgbaImage.tabulate(1, 1)((_, _) => 0))
+        target.copyFrom(source)
+        target
+      },
+    ).foreach { copy =>
+      val source = Buffer(Rect(7, 11, 6, 2))
+      source.setString(7, 11, "漢ab", Style.Default.bold.withFg(Color.Red))
+      source.setDiffDirective(Rect(10, 11, 1, 1), DiffDirective.AlwaysUpdate)
+      source.placeGraphic(Rect(11, 12, 3, 1), RgbaImage.tabulate(2, 2)((_, _) => 0xff00ff00))
+      val target = copy(source)
+      val points = for y <- 11 until 13; x <- 7 until 13 yield (x, y)
+      assert(target.area == source.area)
+      points.foreach { (x, y) =>
+        assert(target.get(x, y) == source.get(x, y))
+        assert(target.isContinuation(x, y) == source.isContinuation(x, y))
+        assert(target.diffDirective(x, y) == source.diffDirective(x, y))
+      }
+      assert(target.graphics == source.graphics)
+      assert(target.graphics.head.crop.contains(GraphicCrop(3, 1, 0, 0)))
+      assert(!target.covers(target.graphics.head))
+      assert(Buffer(source.area).diff(target).toVector == Buffer(source.area).diff(source).toVector)
+
+      // Mutate all mutable planes on each side, not just the cell array.
+      source.reset()
+      assert(target.get(7, 11).symbol == "漢")
+      assert(target.isContinuation(8, 11))
+      assert(target.diffDirective(10, 11) == DiffDirective.AlwaysUpdate)
+      assert(target.diffDirective(11, 12) == DiffDirective.Skip)
+      assert(target.graphics.size == 1)
+      source.setString(7, 11, "界", Style.Default)
+      source.setDiffDirective(Rect(7, 12, 1, 1), DiffDirective.AlwaysUpdate)
+      target.reset()
+      assert(source.get(7, 11).symbol == "界")
+      assert(source.isContinuation(8, 11))
+      assert(source.diffDirective(7, 12) == DiffDirective.AlwaysUpdate)
+      assert(source.graphics.isEmpty)
+      assert(target.graphics.isEmpty)
+    }
+
   test("every cell of the source is reproduced in the target"):
     val source = buffer(_.setString(0, 0, "hi", Style.Default.bold))
     val target = buffer(_.setString(0, 0, "xxxxxx", Style.Default))
