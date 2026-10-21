@@ -7,11 +7,8 @@ import scala.collection.mutable
 /** What a backend owes the terminal for the pictures of one frame: the escape sequences to send before the frame's
   * cells, and those to send after them.
   */
-private[terminal] final case class GraphicsWrites(before: String, after: String):
+private[terminal] final case class GraphicsWrites(before: String, after: String, commit: () => Unit):
   def isEmpty: Boolean = before.isEmpty && after.isEmpty
-
-private[terminal] object GraphicsWrites:
-  val None: GraphicsWrites = GraphicsWrites("", "")
 
 /** Keeps the pictures on screen in step with the [[io.worxbend.tui.core.GraphicPlacement]]s of each frame — the
   * out-of-band half of drawing an image, which the cell diff cannot see.
@@ -39,6 +36,10 @@ private[terminal] final class GraphicsLayer:
   /** The pictures the terminal is showing now, each with the kitty image id it was sent under. */
   private var shown: Vector[(GraphicPlacement, Int)] = Vector.empty
 
+  // A failed flush may have delivered some image bytes. Keep their ids until a successful batch deletes them;
+  // they are never treated as a confirmed placement that an identical retry could skip.
+  private var uncertain: Vector[(GraphicPlacement, Int)] = Vector.empty
+
   private var nextId = 1
 
   private val payloads = mutable.LinkedHashMap.empty[(ImageProtocol, RgbaImage, Option[Rect]), String]
@@ -47,7 +48,8 @@ private[terminal] final class GraphicsLayer:
     *
     * Must run before `buffer` is diffed, because it changes which of its cells are skipped. `repaintAll` says the
     * screen was (or is about to be) repainted from scratch — after a resize, an erase or a handover — so nothing
-    * previously shown can be assumed to survive.
+    * previously shown can be assumed to survive. The returned update commits confirmed placements only after output
+    * succeeds; uncommitted image ids remain deletion obligations in case a failed batch was partly delivered.
     */
   def compose(buffer: Buffer, protocol: Option[ImageProtocol], repaintAll: Boolean): GraphicsWrites =
     buffer.dropGraphics(placement => protocol.nonEmpty && !buffer.covers(placement))
@@ -57,25 +59,33 @@ private[terminal] final class GraphicsLayer:
     val added          = live.filterNot(keptPlacements.contains)
     protocol match
       case None       =>
-        shown = Vector.empty
-        GraphicsWrites.None
+        prepared("", "", Vector.empty)
       case Some(kind) =>
         val before = kind match
-          case ImageProtocol.Kitty  => gone.map((_, id) => KittyGraphics.delete(id)).mkString
+          case ImageProtocol.Kitty  => (gone ++ uncertain).map((_, id) => KittyGraphics.delete(id)).mkString
           case ImageProtocol.ITerm2 => ""
         val placed = added.map(placement => (placement, allocateId()))
         val after  = placed.map((placement, id) => draw(kind, placement, id)).mkString
-        shown = kept ++ placed
-        GraphicsWrites(before, after)
+        uncertain ++= placed
+        prepared(before, after, kept ++ placed)
 
-  /** Forgets every picture the terminal shows, returning the deletes that take them down — for a backend about to lose
-    * the screen to something else (a scroll region it moved, a teardown).
-    */
-  def forgetAll(protocol: Option[ImageProtocol]): String =
+  /** Prepares deletes for a screen about to move. Commit only after their output succeeds, just like a frame. */
+  def forgetAll(protocol: Option[ImageProtocol]): GraphicsWrites =
     val deletes =
-      if protocol.contains(ImageProtocol.Kitty) then shown.map((_, id) => KittyGraphics.delete(id)).mkString else ""
-    shown = Vector.empty
-    deletes
+      if protocol.contains(ImageProtocol.Kitty) then
+        (shown ++ uncertain).map((_, id) => KittyGraphics.delete(id)).mkString
+      else ""
+    prepared(deletes, "", Vector.empty)
+
+  private def prepared(before: String, after: String, next: Vector[(GraphicPlacement, Int)]): GraphicsWrites =
+    GraphicsWrites(
+      before,
+      after,
+      () => {
+        shown = next
+        uncertain = Vector.empty
+      },
+    )
 
   private def allocateId(): Int =
     val id = nextId

@@ -1,6 +1,6 @@
 package io.worxbend.tui.terminal
 
-import io.worxbend.tui.core.{Buffer, Rect, Style}
+import io.worxbend.tui.core.{Buffer, Rect, RgbaImage, Style}
 
 import org.jline.terminal.{Attributes, Terminal}
 import org.jline.terminal.impl.LineDisciplineTerminal
@@ -103,6 +103,28 @@ final class JLineOutputFailureSpec extends AnyFunSuite:
       device.failing = true
       assert(backend.draw(buffer).isLeft)
       assert(backend.draw(buffer).isLeft, "a failed first draw must not make the identical retry a no-op")
+    finally terminal.close()
+
+  test("a real PrintWriter failure stays latched after a successful graphics baseline and device recovery"):
+    val device                      = Device()
+    val terminal                    =
+      LineDisciplineTerminal("graphics-device-latch", "xterm-256color", device, UTF_8, Terminal.SignalHandler.SIG_IGN)
+    val backend                     = JLine3Backend.wrapping(terminal, ColorDepth.TrueColor)
+    val area                        = Rect(0, 0, 2, 1)
+    def picture(color: Int): Buffer =
+      val buffer = Buffer(area)
+      buffer.placeGraphic(area, RgbaImage.tabulate(1, 1)((_, _) => color))
+      buffer
+    try
+      backend.capabilitiesOverride(TerminalCapabilities(kittyGraphics = Support.Yes))
+      assert(backend.draw(picture(0xff112233)).isRight)
+      device.failing = true
+      val changed = picture(0xffabcdef)
+      assert(backend.draw(changed).isLeft)
+      assert(terminal.writer().checkError())
+      device.failing = false
+      assert(backend.draw(changed).isLeft, "recovering the device does not clear PrintWriter's error latch")
+      assert(terminal.writer().checkError())
     finally terminal.close()
 
   test("successful inline close parks once and remains harmless when repeated"):

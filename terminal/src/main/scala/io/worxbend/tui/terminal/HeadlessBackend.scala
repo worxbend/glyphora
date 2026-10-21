@@ -115,6 +115,7 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
       // the same picture bookkeeping the JLine backend runs, so an app's images can be tested against either answer
       val pictures = graphics.compose(buffer, ImageProtocol.select(reported), repaintAll = false)
       if !pictures.isEmpty then rawWrites.synchronized { val _ = rawWrites += pictures.before + pictures.after }
+      pictures.commit()
       lastFrame = Some(buffer.snapshot)
       val _        = drawCounter.incrementAndGet()
     }

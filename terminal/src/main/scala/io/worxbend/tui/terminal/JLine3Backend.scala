@@ -201,15 +201,16 @@ final class JLine3Backend private (
     val erasing = ScreenReset.clearsOnShrink(baseline.area, buffer.area)
     val result  = Backend.attempt {
       screenOwnership.synchronized {
-        val frame = composeFrame(buffer, blank = forced || erasing, erasing)
+        val (frame, pictures) = composeFrame(buffer, blank = forced || erasing, erasing)
         // an unchanged frame writes nothing at all, so a redraw-on-tick app with a static screen stays silent — unless
         // the erase itself has to go out, which is the one case where "nothing changed" still needs a write
         if frame.nonEmpty then writeFrameAtomically(frame)
+        pictures.commit()
         baseline.commit(buffer)
       }
     }
-    // the forced frame never reached the terminal and the baseline was not updated: the request has not been served
-    if forced && result.isLeft then requestFullRedraw()
+    // A failed batch may have partly reached the terminal: repaint cells and retry all graphics obligations.
+    if result.isLeft then requestFullRedraw()
     result
 
   /** Composes the frame to write for `buffer`, diffed against the retained baseline — or "" when the frame is unchanged
@@ -220,7 +221,7 @@ final class JLine3Backend private (
     * blanked grid instead would emit only the frame's non-blank cells, leaving whatever the previous frame had drawn in
     * every column this one leaves empty.
     */
-  private def composeFrame(buffer: Buffer, blank: Boolean, erasing: Boolean): String =
+  private def composeFrame(buffer: Buffer, blank: Boolean, erasing: Boolean): (String, GraphicsWrites) =
     // A primary-screen run owns at most its reserved bottom strip, never the shell output above it. Use the current
     // height rather than the previous frame's origin, which can be outside the strip after a simultaneous resize.
     val erase    =
@@ -237,12 +238,14 @@ final class JLine3Backend private (
     val body     = source match
       case FrameSource.DiffAgainst(previous) => frameEncoder.encode(previous, buffer)
       case FrameSource.RepaintAll            => frameEncoder.encodeAll(buffer)
-    if body.nonEmpty || erasing || !pictures.isEmpty then
-      AnsiSequences.frame(
-        erase + pictures.before + body + pictures.after,
-        probed.synchronizedOutput.usable,
-      )
-    else ""
+    val frame    =
+      if body.nonEmpty || erasing || !pictures.isEmpty then
+        AnsiSequences.frame(
+          erase + pictures.before + body + pictures.after,
+          probed.synchronizedOutput.usable,
+        )
+      else ""
+    (frame, pictures)
 
   /** Writes one composed frame as a single atomic update: the terminal shows the previous frame until the whole batch
     * has arrived.
@@ -516,10 +519,9 @@ final class JLine3Backend private (
 
   override def clearRegion(kind: ClearType): Either[BackendError, Unit] =
     Backend.attempt {
-      write(AnsiSequences.clear(kind))
-      // the screen no longer shows what `baseline` describes, so a diff against it would leave the erased cells
-      // blank for as long as the app kept drawing them to the same values
-      requestFullRedraw()
+      // A failed flush can still have erased cells or images. In either case the baseline is no longer trustworthy.
+      try write(AnsiSequences.clear(kind))
+      finally requestFullRedraw()
     }
 
   /** Writes the XTerm "resize the text area" sequence.
@@ -557,8 +559,13 @@ final class JLine3Backend private (
     * the app now draws it.
     */
   private def takeDownPictures(): Either[BackendError, Unit] =
-    val deletes = graphics.forgetAll(ImageProtocol.select(probed))
-    if deletes.isEmpty then Right(()) else Backend.attempt(write(deletes))
+    Backend.attempt {
+      screenOwnership.synchronized {
+        val pictures = graphics.forgetAll(ImageProtocol.select(probed))
+        if !pictures.isEmpty then write(pictures.before)
+        pictures.commit()
+      }
+    }
 
   override def copyToClipboard(text: String): Either[BackendError, Unit] =
     Backend.attempt(write(AnsiSequences.clipboardCopy(text)))

@@ -6,7 +6,7 @@ import org.jline.terminal.Terminal
 import org.jline.terminal.impl.LineDisciplineTerminal
 import org.scalatest.funsuite.AnyFunSuite
 
-import java.io.ByteArrayOutputStream
+import java.io.{ByteArrayOutputStream, IOException, PrintWriter}
 import java.nio.charset.StandardCharsets.UTF_8
 
 /** Pictures across frames: drawn once when they appear, left alone while nothing changes, taken down while something
@@ -95,6 +95,130 @@ final class GraphicsLayerSpec extends AnyFunSuite:
       assert(sink.toString(UTF_8).isEmpty)
     finally
       val _ = backend.close()
+
+  /** Throws before handing a batch to the real writer, without setting PrintWriter's permanent error latch. */
+  private final class RecoverableWriter(sink: ByteArrayOutputStream) extends PrintWriter(sink, false, UTF_8):
+    var failing                                = false
+    var failAfterWrite                         = false
+    override def write(sequence: String): Unit =
+      if failing then throw new IOException("recoverable batch failure")
+      super.write(sequence)
+      if failAfterWrite then
+        super.flush()
+        throw new IOException("batch delivered but acknowledgement failed")
+
+  private def recovering(body: (JLine3Backend, RecoverableWriter, ByteArrayOutputStream) => Unit): Unit =
+    val sink        = ByteArrayOutputStream()
+    val batchWriter = RecoverableWriter(sink)
+    val terminal    =
+      new LineDisciplineTerminal("graphics-retry", "xterm-256color", sink, UTF_8, Terminal.SignalHandler.SIG_IGN):
+        override def writer(): PrintWriter = batchWriter
+    val backend     = JLine3Backend.wrapping(terminal, ColorDepth.TrueColor, Map.empty)
+    try
+      backend.capabilitiesOverride(TerminalCapabilities(kittyGraphics = Support.Yes))
+      body(backend, batchWriter, sink)
+    finally
+      batchWriter.failing = false
+      val _ = backend.close()
+
+  test("ordinary graphics update retries both the old delete and new image after a recoverable write failure"):
+    recovering { (backend, writer, sink) =>
+      assert(backend.draw(frame()).isRight)
+      val changed     = frame(placed = false)
+      val replacement = RgbaImage.tabulate(2, 2)((_, _) => 0xffabcdef)
+      changed.placeGraphic(area, replacement)
+      sink.reset()
+      writer.failing = true
+      assert(backend.draw(changed).isLeft)
+      assert(sink.toString(UTF_8).isEmpty)
+      writer.failing = false
+      assert(!writer.checkError(), "this seam recovers; a real PrintWriter device error does not")
+      assert(backend.draw(changed).isRight)
+      val retry       = sink.toString(UTF_8)
+      assert(retry.contains(KittyGraphics.delete(1)), "the old image still needs deleting")
+      assert(retry.contains(KittyGraphics.payload(replacement)), "the failed new image must be transmitted again")
+      assert(retry.indexOf(KittyGraphics.delete(1)) < retry.indexOf(KittyGraphics.payload(replacement)))
+      sink.reset()
+      assert(backend.draw(changed).isRight)
+      assert(sink.toString(UTF_8).isEmpty)
+    }
+
+  test("a failed image removal retries its delete after an established baseline"):
+    recovering { (backend, writer, sink) =>
+      assert(backend.draw(frame()).isRight)
+      val removed = frame(placed = false)
+      writer.failing = true
+      assert(backend.draw(removed).isLeft)
+      writer.failing = false
+      sink.reset()
+      assert(backend.draw(removed).isRight)
+      assert(sink.toString(UTF_8).contains(KittyGraphics.delete(1)))
+    }
+
+  test("failed forgetAll before hardware scroll retains the deletion obligation"):
+    recovering { (backend, writer, sink) =>
+      assert(backend.draw(frame()).isRight)
+      writer.failing = true
+      assert(backend.scrollRegionUp(RowRange(0, 3), 1).isLeft)
+      writer.failing = false
+      sink.reset()
+      assert(backend.scrollRegionUp(RowRange(0, 3), 1).isRight)
+      assert(sink.toString(UTF_8).startsWith(KittyGraphics.delete(1)))
+      sink.reset()
+      assert(backend.draw(frame()).isRight)
+      assert(sink.toString(UTF_8).contains(KittyGraphics.payload(image)))
+    }
+
+  test("an unacknowledged delivered image is deleted even when the next frame removes it"):
+    recovering { (backend, writer, sink) =>
+      assert(backend.draw(frame()).isRight)
+      val changed     = frame(placed = false)
+      val replacement = RgbaImage.tabulate(2, 2)((_, _) => 0xffabcdef)
+      changed.placeGraphic(area, replacement)
+      writer.failAfterWrite = true
+      assert(backend.draw(changed).isLeft)
+      writer.failAfterWrite = false
+      sink.reset()
+      assert(backend.draw(frame(placed = false)).isRight)
+      val retry       = sink.toString(UTF_8)
+      assert(retry.contains(KittyGraphics.delete(1)))
+      assert(retry.contains(KittyGraphics.delete(2)), "a failed flush can have delivered the newly allocated image")
+    }
+
+  test("failed repaint after clear resize or suspend retries the image and all deletion obligations"):
+    for disturbance <- Seq("clear", "resize", "suspend") do
+      recovering { (backend, writer, sink) =>
+        assert(backend.draw(frame()).isRight)
+        val next  = if disturbance == "resize" then
+          val widened = Buffer(Rect(0, 0, 12, 4))
+          widened.placeGraphic(area, image)
+          widened
+        else frame()
+        if disturbance == "clear" then assert(backend.clearRegion(ClearType.All).isRight)
+        if disturbance == "suspend" then assert(backend.suspend(()).isRight)
+        writer.failing = true
+        assert(backend.draw(next).isLeft)
+        writer.failing = false
+        sink.reset()
+        assert(backend.draw(next).isRight)
+        val retry = sink.toString(UTF_8)
+        assert(retry.contains(KittyGraphics.delete(1)), disturbance)
+        assert(retry.contains(KittyGraphics.payload(image)), disturbance)
+        sink.reset()
+        assert(backend.draw(next).isRight)
+        assert(sink.toString(UTF_8).isEmpty, disturbance)
+      }
+
+  test("a failed clear that may have reached the terminal invalidates the graphics baseline"):
+    recovering { (backend, writer, sink) =>
+      assert(backend.draw(frame()).isRight)
+      writer.failAfterWrite = true
+      assert(backend.clearRegion(ClearType.All).isLeft)
+      writer.failAfterWrite = false
+      sink.reset()
+      assert(backend.draw(frame()).isRight)
+      assert(sink.toString(UTF_8).contains(KittyGraphics.payload(image)))
+    }
 
   // ------------------------------------------------------------------ cropped pictures
 
