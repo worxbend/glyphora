@@ -60,11 +60,7 @@ def useEffect(deps: Any*)(start: => Cancelable): Unit =
   * [[ViewState]].
   */
 def useMemo[A](deps: Any*)(compute: => A): A =
-  val cell = ViewState.current.slot(() => ViewState.MemoCell(deps, compute))
-  if cell.deps != deps then
-    cell.deps = deps
-    cell.value = compute
-  cell.value
+  ViewState.current.memo(deps)(() => compute)
 
 /** Runs `work` on a background worker and answers its progress: [[Loadable.Loading]] until the result arrives on the
   * render thread, then [[Loadable.Ready]] or [[Loadable.Failed]]; the arrival schedules the frame that shows it.

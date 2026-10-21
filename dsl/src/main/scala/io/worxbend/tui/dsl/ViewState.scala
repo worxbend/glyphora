@@ -137,6 +137,14 @@ final class ViewState private[dsl] (private[dsl] val startResources: Boolean = t
         slot.generation = generation
     }
 
+  /** Refreshes one memo slot. Commit deps before rebuilding: a throwing rebuild retains the previous value. */
+  private[dsl] def memo[A](deps: Seq[Any])(build: () => A): A =
+    val cell = slot(() => ViewState.MemoCell(deps, build()))
+    if cell.deps != deps then
+      cell.deps = deps
+      cell.value = build()
+    cell.value
+
   /** How many slots are alive — for tests that want to prove a hidden subtree's state was actually released. */
   private[dsl] def slotCount: Int = slots.size
 
@@ -334,12 +342,7 @@ object ViewState:
     */
   private[dsl] def memoIfActive[A](deps: Seq[Any])(build: () => A): A =
     active match
-      case Some(store) =>
-        val cell = store.slot(() => MemoCell(deps, build()))
-        if cell.deps != deps then
-          cell.deps = deps
-          cell.value = build()
-        cell.value
+      case Some(store) => store.memo(deps)(build)
       case None        => build()
 
   /** Evaluates `body` with `store` installed as the one hooks attach to. */
