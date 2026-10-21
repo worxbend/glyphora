@@ -148,11 +148,12 @@ object GoldenFrames:
     val actual   = normalise(BufferExport.ansi(buffer))
     val recorded = normalise(expected)
     if actual != recorded then
-      val reports = StyledGoldens.writeReport(reportDirectory, name, StyledGoldens.parseAnsi(recorded), buffer)
+      val expectedBuffer = StyledGoldens.parseAnsi(recorded)
+      val reports        = StyledGoldens.writeReport(reportDirectory, name, expectedBuffer, buffer)
       CallSite.fail(
         s"styled frame differs from $FixtureDirectory/$name$StyledFixtureExtension" +
           s" — see the report:\n${reports.mkString("\n")}" +
-          s"\n--- expected (text) ---\n${BufferAssertions.text(StyledGoldens.parseAnsi(recorded))}" +
+          s"\n--- expected (text) ---\n${BufferAssertions.text(expectedBuffer)}" +
           s"\n--- actual (text) ---\n${BufferAssertions.text(buffer)}"
       )
 
