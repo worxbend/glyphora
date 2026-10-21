@@ -15,8 +15,8 @@ import io.worxbend.tui.core.{
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
 
-/** The machinery behind `GoldenFrames.assertMatchesStyled`: reads a styled fixture back into a [[Buffer]] and writes
-  * the visual report a mismatch produces.
+/** The machinery behind `GoldenFrames.assertMatchesStyled`: reads a styled fixture back into a
+  * [[io.worxbend.tui.core.Buffer Buffer]] and writes the visual report a mismatch produces.
   *
   * A styled fixture is the frame's `BufferExport.ansi` text — every row, every column, one absolute SGR per run of
   * same-styled cells, OSC 8 around a link. [[parseAnsi]] accepts exactly that grammar and nothing more: it is the
@@ -33,8 +33,9 @@ object StyledGoldens:
   private val Esc = '\u001b'
 
   /** The frame `text` — a `BufferExport.ansi` export, with or without a trailing newline — as a buffer whose area is
-    * `(0, 0)` to the widest row by the number of rows. Styles come back as the [[Style]] values that produced them, so
-    * a buffer exported and parsed again is equal to the original, continuation columns included.
+    * `(0, 0)` to the widest row by the number of rows. Styles come back as the [[io.worxbend.tui.core.Style Style]]
+    * values that produced them, so a buffer exported and parsed again is equal to the original, continuation columns
+    * included.
     */
   def parseAnsi(text: String): Buffer =
     val rows   = TrailingNewlines.replaceFirstIn(text, "").split("\n", -1).toSeq.map(parseRow)

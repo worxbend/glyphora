@@ -74,15 +74,17 @@ object BufferAssertions:
   /** An expected frame written out as plain rows: `rows.length` high, and as wide as the widest row's *display* width.
     *
     * Display width, not `String.length`: a row of three ideographs is six columns wide, and sizing the buffer by
-    * character count would leave the last one half off the edge, where [[Buffer.setString]] drops it entirely rather
-    * than draw a two-column glyph across a boundary. Every cell carries [[io.worxbend.tui.core.Style.Default]] — see
-    * the [[Line]] overload for an expected frame that carries styling.
+    * character count would leave the last one half off the edge, where
+    * [[io.worxbend.tui.core.Buffer.setString Buffer.setString]] drops it entirely rather than draw a two-column glyph
+    * across a boundary. Every cell carries [[io.worxbend.tui.core.Style.Default]] — see the
+    * [[io.worxbend.tui.core.Line Line]] overload for an expected frame that carries styling.
     */
   def buffered(rows: String*): Buffer =
     buffered(rows.map(Line.raw), Style.Default)
 
-  /** An expected frame built from styled [[Line]]s: each row is written with [[Buffer.setLine]], so the style cascade
-    * and the column advance are exactly the ones a widget drawing that `Line` would get.
+  /** An expected frame built from styled [[io.worxbend.tui.core.Line Line]]s: each row is written with
+    * [[io.worxbend.tui.core.Buffer.setLine Buffer.setLine]], so the style cascade and the column advance are exactly
+    * the ones a widget drawing that `Line` would get.
     *
     * This is the shape [[assertEquals]] is for — an expected frame that carries colour and modifiers, which a golden
     * fixture deliberately does not. `base` is the style the whole frame starts from (a theme's background, say); the
@@ -125,8 +127,8 @@ object BufferAssertions:
     val differences = cellDifferences(actual, expected)
     if differences.nonEmpty then CallSite.fail(differenceReport(prefix, actual, expected, differences))
 
-  /** Every position where `actual` and `expected` hold a different [[Cell]], in row-major order, each paired with the
-    * two cells as `(position, actualCell, expectedCell)`.
+  /** Every position where `actual` and `expected` hold a different [[io.worxbend.tui.core.Cell Cell]], in row-major
+    * order, each paired with the two cells as `(position, actualCell, expectedCell)`.
     *
     * Public rather than private so a suite can assert on the *shape* of a difference — "only the selected row changed
     * style" — without reading a failure message back apart.

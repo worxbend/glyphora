@@ -23,8 +23,9 @@ import scala.concurrent.duration.{Deadline, DurationInt, FiniteDuration}
 import scala.util.control.NonFatal
 import scala.util.{Failure, Success, Try}
 
-/** Drives a TUI app end-to-end without a terminal: the app runs on a background thread against a [[HeadlessBackend]];
-  * the test thread posts synthetic input and asserts on the rendered buffer.
+/** Drives a TUI app end-to-end without a terminal: the app runs on a background thread against a
+  * [[io.worxbend.tui.terminal.HeadlessBackend HeadlessBackend]]; the test thread posts synthetic input and asserts on
+  * the rendered buffer.
   *
   * All posting methods return `this` for chaining: `pilot.typeText("hi").press("enter").waitForIdle()`.
   *
@@ -33,8 +34,9 @@ import scala.util.{Failure, Success, Try}
   * *returned* a `Left(RunnerError)` — an orderly exit that still failed. `appFailure` and `runFailure` are owned by
   * [[Pilot.start]], each written once by the app thread and read by the test thread.
   *
-  * Ownership of the observed state: the frame and the input queue live in the [[HeadlessBackend]], not in the pilot.
-  * The app thread writes them (it draws frames and consumes posted events) and the test thread reads them through
+  * Ownership of the observed state: the frame and the input queue live in the
+  * [[io.worxbend.tui.terminal.HeadlessBackend HeadlessBackend]], not in the pilot. The app thread writes them (it draws
+  * frames and consumes posted events) and the test thread reads them through
   * `screenLines`/`screenText`/`lastFrame`/`cellAt` and `waitForIdle`. `HeadlessBackend` keeps that state in thread-safe
   * holders, so reading from the test thread is safe at any moment — but "safe" only means the read will not tear, never
   * that the app has caught up. Posting input and reading the frame without a `waitForIdle` in between can observe the
@@ -54,8 +56,8 @@ final class Pilot private (
     *
     * The specs are the ones an application declares its keys with — `binding("ctrl+s", "save")` and `press("ctrl+s")`
     * go through the same [[io.worxbend.tui.core.KeyEvent.parse]], so a test drives the app with the spelling the app
-    * was written against instead of a hand-translated [[KeyEvent]] that can drift away from it. Prefer this over
-    * [[pressKey]], which stays for tests that want to build the ADT value directly.
+    * was written against instead of a hand-translated [[io.worxbend.tui.core.KeyEvent KeyEvent]] that can drift away
+    * from it. Prefer this over [[pressKey]], which stays for tests that want to build the ADT value directly.
     *
     * A malformed spec throws [[IllegalArgumentException]] naming the spec and the parser's complaint, the same way
     * `binding` does: a key spec is written by hand and a typo in one is a mistake in the test, not a condition to
@@ -84,8 +86,9 @@ final class Pilot private (
     }
     this
 
-  /** Posts one key event built straight from the [[KeyCode]]/[[KeyModifiers]] ADT. [[press]] says the same thing in the
-    * application's own vocabulary and is what most tests want.
+  /** Posts one key event built straight from the
+    * [[io.worxbend.tui.core.KeyCode KeyCode]]/[[io.worxbend.tui.core.KeyModifiers KeyModifiers]] ADT. [[press]] says
+    * the same thing in the application's own vocabulary and is what most tests want.
     */
   def pressKey(code: KeyCode, modifiers: KeyModifiers = KeyModifiers.None): Pilot =
     backend.postEvent(Event.Key(KeyEvent(code, modifiers)))
@@ -94,10 +97,11 @@ final class Pilot private (
   /** Posts one key event per Unicode **code point** of `text`, in order.
     *
     * Code points, not UTF-16 code units and not grapheme clusters, because that is what a real terminal delivers: the
-    * `InputDecoder` recombines a surrogate pair into one [[KeyCode.Char]] and reports a combining mark as its own key
-    * event. A letter followed by a combining accent therefore drives the app with two events here, exactly as it would
-    * at a real keyboard, while an emoji outside the Basic Multilingual Plane arrives as the single key event it is —
-    * iterating `Char`s would have split it into two lone surrogates that mean nothing to the app.
+    * `InputDecoder` recombines a surrogate pair into one [[io.worxbend.tui.core.KeyCode.Char KeyCode.Char]] and reports
+    * a combining mark as its own key event. A letter followed by a combining accent therefore drives the app with two
+    * events here, exactly as it would at a real keyboard, while an emoji outside the Basic Multilingual Plane arrives
+    * as the single key event it is — iterating `Char`s would have split it into two lone surrogates that mean nothing
+    * to the app.
     */
   def typeText(text: String): Pilot =
     text.codePoints().forEach(cp => pressKey(KeyCode.Char(cp)))
@@ -111,8 +115,9 @@ final class Pilot private (
     */
   def click(x: Int, y: Int): Pilot = click(Position(x, y))
 
-  /** [[click]] with the target as a [[Position]] — for a test that already holds the coordinate as a value, such as one
-    * read back from [[cursorPosition]] or computed from a widget's bounds, rather than written as two literals.
+  /** [[click]] with the target as a [[io.worxbend.tui.core.Position Position]] — for a test that already holds the
+    * coordinate as a value, such as one read back from [[cursorPosition]] or computed from a widget's bounds, rather
+    * than written as two literals.
     */
   def click(position: Position): Pilot =
     mouseDown(position)
@@ -144,7 +149,7 @@ final class Pilot private (
     */
   def clickWith(x: Int, y: Int, button: MouseButton): Pilot = clickWith(Position(x, y), button)
 
-  /** [[clickWith]] with the target as a [[Position]]. */
+  /** [[clickWith]] with the target as a [[io.worxbend.tui.core.Position Position]]. */
   def clickWith(position: Position, button: MouseButton): Pilot =
     postMouse(position, MouseEventKind.Down, KeyModifiers.None, button)
     postMouse(position, MouseEventKind.Up, KeyModifiers.None, button)
@@ -158,7 +163,8 @@ final class Pilot private (
   ): Pilot =
     mouseDown(Position(x, y), modifiers, button)
 
-  /** [[mouseDown]] with the target as a [[Position]] — a left-button press without modifiers.
+  /** [[mouseDown]] with the target as a [[io.worxbend.tui.core.Position Position]] — a left-button press without
+    * modifiers.
     *
     * A separate overload rather than a defaulted parameter, because Scala does not allow default arguments on more than
     * one overload of the same method, and the defaults stay on the published `(x, y)` form.
@@ -166,7 +172,9 @@ final class Pilot private (
   def mouseDown(position: Position): Pilot =
     mouseDown(position, KeyModifiers.None, MouseButton.Left)
 
-  /** [[mouseDown]] with the target as a [[Position]], naming the modifiers and the button. */
+  /** [[mouseDown]] with the target as a [[io.worxbend.tui.core.Position Position]], naming the modifiers and the
+    * button.
+    */
   def mouseDown(position: Position, modifiers: KeyModifiers, button: MouseButton): Pilot =
     postMouse(position, MouseEventKind.Down, modifiers, button)
 
@@ -179,20 +187,21 @@ final class Pilot private (
   ): Pilot =
     mouseUp(Position(x, y), modifiers, button)
 
-  /** [[mouseUp]] with the target as a [[Position]] — a left-button release without modifiers, split out for the same
-    * reason as [[mouseDown(position:io\.worxbend\.tui\.core\.Position)*]].
+  /** [[mouseUp]] with the target as a [[io.worxbend.tui.core.Position Position]] — a left-button release without
+    * modifiers, split out for the same reason as [[mouseDown(position:io\.worxbend\.tui\.core\.Position)*]].
     */
   def mouseUp(position: Position): Pilot =
     mouseUp(position, KeyModifiers.None, MouseButton.Left)
 
-  /** [[mouseUp]] with the target as a [[Position]], naming the modifiers and the button. */
+  /** [[mouseUp]] with the target as a [[io.worxbend.tui.core.Position Position]], naming the modifiers and the button.
+    */
   def mouseUp(position: Position, modifiers: KeyModifiers, button: MouseButton): Pilot =
     postMouse(position, MouseEventKind.Up, modifiers, button)
 
   /** Posts a pointer move to `(x, y)` with no button held — what a terminal reports under mouse-motion tracking. */
   def mouseMove(x: Int, y: Int): Pilot = mouseMove(Position(x, y))
 
-  /** [[mouseMove]] with the target as a [[Position]]. */
+  /** [[mouseMove]] with the target as a [[io.worxbend.tui.core.Position Position]]. */
   def mouseMove(position: Position): Pilot =
     postMouse(position, MouseEventKind.Moved, KeyModifiers.None, MouseButton.Unknown)
 
@@ -212,13 +221,14 @@ final class Pilot private (
   ): Pilot =
     drag(Position(fromX, fromY), Position(toX, toY), modifiers, button)
 
-  /** [[drag]] with the endpoints as [[Position]]s — a left-button drag without modifiers, split out for the same reason
-    * as [[mouseDown(position:io\.worxbend\.tui\.core\.Position)*]].
+  /** [[drag]] with the endpoints as [[io.worxbend.tui.core.Position Position]]s — a left-button drag without modifiers,
+    * split out for the same reason as [[mouseDown(position:io\.worxbend\.tui\.core\.Position)*]].
     */
   def drag(from: Position, to: Position): Pilot =
     drag(from, to, KeyModifiers.None, MouseButton.Left)
 
-  /** [[drag]] with the endpoints as [[Position]]s, naming the modifiers and the button. */
+  /** [[drag]] with the endpoints as [[io.worxbend.tui.core.Position Position]]s, naming the modifiers and the button.
+    */
   def drag(from: Position, to: Position, modifiers: KeyModifiers, button: MouseButton): Pilot =
     postMouse(from, MouseEventKind.Down, modifiers, button)
     postMouse(to, MouseEventKind.Drag, modifiers, button)
@@ -228,13 +238,15 @@ final class Pilot private (
   def scrollUp(x: Int, y: Int, times: Int = 1, modifiers: KeyModifiers = KeyModifiers.None): Pilot =
     scrollUp(Position(x, y), times, modifiers)
 
-  /** [[scrollUp]] with the target as a [[Position]] — one notch without modifiers, split out for the same reason as
-    * [[mouseDown(position:io\.worxbend\.tui\.core\.Position)*]].
+  /** [[scrollUp]] with the target as a [[io.worxbend.tui.core.Position Position]] — one notch without modifiers, split
+    * out for the same reason as [[mouseDown(position:io\.worxbend\.tui\.core\.Position)*]].
     */
   def scrollUp(position: Position): Pilot =
     scrollUp(position, 1, KeyModifiers.None)
 
-  /** [[scrollUp]] with the target as a [[Position]], naming the notch count and the modifiers. */
+  /** [[scrollUp]] with the target as a [[io.worxbend.tui.core.Position Position]], naming the notch count and the
+    * modifiers.
+    */
   def scrollUp(position: Position, times: Int, modifiers: KeyModifiers): Pilot =
     scroll(position, MouseEventKind.ScrollUp, times, modifiers)
 
@@ -242,13 +254,15 @@ final class Pilot private (
   def scrollDown(x: Int, y: Int, times: Int = 1, modifiers: KeyModifiers = KeyModifiers.None): Pilot =
     scrollDown(Position(x, y), times, modifiers)
 
-  /** [[scrollDown]] with the target as a [[Position]] — one notch without modifiers, split out for the same reason as
-    * [[mouseDown(position:io\.worxbend\.tui\.core\.Position)*]].
+  /** [[scrollDown]] with the target as a [[io.worxbend.tui.core.Position Position]] — one notch without modifiers,
+    * split out for the same reason as [[mouseDown(position:io\.worxbend\.tui\.core\.Position)*]].
     */
   def scrollDown(position: Position): Pilot =
     scrollDown(position, 1, KeyModifiers.None)
 
-  /** [[scrollDown]] with the target as a [[Position]], naming the notch count and the modifiers. */
+  /** [[scrollDown]] with the target as a [[io.worxbend.tui.core.Position Position]], naming the notch count and the
+    * modifiers.
+    */
   def scrollDown(position: Position, times: Int, modifiers: KeyModifiers): Pilot =
     scroll(position, MouseEventKind.ScrollDown, times, modifiers)
 
@@ -259,13 +273,15 @@ final class Pilot private (
   def scrollLeft(x: Int, y: Int, times: Int = 1, modifiers: KeyModifiers = KeyModifiers.None): Pilot =
     scrollLeft(Position(x, y), times, modifiers)
 
-  /** [[scrollLeft]] with the target as a [[Position]] — one notch without modifiers, split out for the same reason as
-    * [[mouseDown(position:io\.worxbend\.tui\.core\.Position)*]].
+  /** [[scrollLeft]] with the target as a [[io.worxbend.tui.core.Position Position]] — one notch without modifiers,
+    * split out for the same reason as [[mouseDown(position:io\.worxbend\.tui\.core\.Position)*]].
     */
   def scrollLeft(position: Position): Pilot =
     scrollLeft(position, 1, KeyModifiers.None)
 
-  /** [[scrollLeft]] with the target as a [[Position]], naming the notch count and the modifiers. */
+  /** [[scrollLeft]] with the target as a [[io.worxbend.tui.core.Position Position]], naming the notch count and the
+    * modifiers.
+    */
   def scrollLeft(position: Position, times: Int, modifiers: KeyModifiers): Pilot =
     scroll(position, MouseEventKind.ScrollLeft, times, modifiers)
 
@@ -273,13 +289,15 @@ final class Pilot private (
   def scrollRight(x: Int, y: Int, times: Int = 1, modifiers: KeyModifiers = KeyModifiers.None): Pilot =
     scrollRight(Position(x, y), times, modifiers)
 
-  /** [[scrollRight]] with the target as a [[Position]] — one notch without modifiers, split out for the same reason as
-    * [[mouseDown(position:io\.worxbend\.tui\.core\.Position)*]].
+  /** [[scrollRight]] with the target as a [[io.worxbend.tui.core.Position Position]] — one notch without modifiers,
+    * split out for the same reason as [[mouseDown(position:io\.worxbend\.tui\.core\.Position)*]].
     */
   def scrollRight(position: Position): Pilot =
     scrollRight(position, 1, KeyModifiers.None)
 
-  /** [[scrollRight]] with the target as a [[Position]], naming the notch count and the modifiers. */
+  /** [[scrollRight]] with the target as a [[io.worxbend.tui.core.Position Position]], naming the notch count and the
+    * modifiers.
+    */
   def scrollRight(position: Position, times: Int, modifiers: KeyModifiers): Pilot =
     scroll(position, MouseEventKind.ScrollRight, times, modifiers)
 
@@ -311,10 +329,11 @@ final class Pilot private (
   /** Posts raw terminal input: the code units go through the *production* input decoder, and whatever events it
     * produces are queued for the app.
     *
-    * [[press]] builds a [[KeyEvent]] from a key spec and queues it directly, which never involves the decoder. That
-    * leaves one thing untested that this toolkit has already been bitten by: an application binding spelled `ctrl+s`
-    * and a decoder that turns the bytes a terminal sends for Ctrl+S into some *other* key both look correct on their
-    * own, while the app is dead in a real terminal. Sending the bytes exercises both vocabularies at once.
+    * [[press]] builds a [[io.worxbend.tui.core.KeyEvent KeyEvent]] from a key spec and queues it directly, which never
+    * involves the decoder. That leaves one thing untested that this toolkit has already been bitten by: an application
+    * binding spelled `ctrl+s` and a decoder that turns the bytes a terminal sends for Ctrl+S into some *other* key both
+    * look correct on their own, while the app is dead in a real terminal. Sending the bytes exercises both vocabularies
+    * at once.
     *
     * The values are UTF-16 code units as a terminal reader hands them back, not UTF-8 bytes. Use this for what a key
     * spec cannot say — a bracketed paste, an SGR mouse report, a kitty-protocol key — and for the sequences that must
@@ -742,8 +761,9 @@ object Pilot:
             case Some(first) => io.worxbend.tui.runtime.Cleanup.suppress(first, error)
             case None        => throw error
 
-  /** Starts an app against a backend this method owns: it builds a [[HeadlessBackend]] of `size`, hands that backend to
-    * `app`, and leaves it reachable afterwards as `pilot.backend`.
+  /** Starts an app against a backend this method owns: it builds a
+    * [[io.worxbend.tui.terminal.HeadlessBackend HeadlessBackend]] of `size`, hands that backend to `app`, and leaves it
+    * reachable afterwards as `pilot.backend`.
     *
     * Every pilot test used to write the same three lines — construct the backend, pass it to `start`, then name it a
     * second time inside the block as `app.runWith(backend)`. Here the block takes the backend as its parameter, so a
