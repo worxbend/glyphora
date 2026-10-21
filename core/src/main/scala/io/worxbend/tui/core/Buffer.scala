@@ -609,10 +609,7 @@ final class Buffer(val area: Rect):
     */
   def snapshot: Buffer =
     val copied = Buffer(area)
-    Array.copy(cells, 0, copied.cells, 0, cells.length)
-    Array.copy(continuations, 0, copied.continuations, 0, continuations.length)
-    Array.copy(directives, 0, copied.directives, 0, directives.length)
-    copied.placements = placements
+    copied.copyStateFrom(this)
     copied
 
   /** Overwrites this buffer's contents with `source`'s, allocating nothing.
@@ -634,11 +631,13 @@ final class Buffer(val area: Rect):
     */
   def copyFrom(source: Buffer): Unit =
     require(source.area == area, s"cannot copy a buffer covering ${source.area} into one covering $area")
-    if source ne this then
-      Array.copy(source.cells, 0, cells, 0, cells.length)
-      Array.copy(source.continuations, 0, continuations, 0, continuations.length)
-      Array.copy(source.directives, 0, directives, 0, directives.length)
-      placements = source.placements
+    if source ne this then copyStateFrom(source)
+
+  private def copyStateFrom(source: Buffer): Unit =
+    Array.copy(source.cells, 0, cells, 0, cells.length)
+    Array.copy(source.continuations, 0, continuations, 0, continuations.length)
+    Array.copy(source.directives, 0, directives, 0, directives.length)
+    placements = source.placements
 
   /** Resets every cell to [[Cell.Empty]], recycling the buffer for the next frame. */
   def reset(): Unit =
