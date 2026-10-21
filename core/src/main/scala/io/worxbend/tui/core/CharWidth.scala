@@ -136,7 +136,7 @@ object CharWidth:
       // fast path is valid under either mode because nothing printable-ASCII is East Asian Ambiguous
       text.substring(
         math.min(text.length, skipWidth)
-      ) // scalafix:ok DisableSyntax; ASCII fast path: exactly one column per char, so columns and chars coincide
+      )
     else
       val clusters  = graphemeClusters(text)
       val remainder = StringBuilder()
