@@ -166,12 +166,18 @@ final class RunStatsSpec extends AnyFunSuite:
 
   test("large multiplication and signed spans classify without overflow on rebuild and increment"):
     for values <- Vector(Vector(0L, 4611686018427387904L), Vector(Long.MinValue, Long.MaxValue)) do
-      val initial = record(values, 3)
+      val initial       = record(values, 3)
       assert(initial.histogram.map(_.count) == Vector(1, 0, 1))
       assert(initial.histogram.head.lowMicros == values.head)
       assert(initial.histogram.last.highMicros == values.last)
-      val next    = initial.record(Vector(Sample.Ok(values.last)), 3)
+      val expectedEdges =
+        if values.head == 0L then Vector(0L, 1537228672809129301L, 3074457345618258602L)
+        else Vector(Long.MinValue, -3074457345618258603L, 3074457345618258602L)
+      assert(initial.histogram.map(_.lowMicros) == expectedEdges)
+      assert(initial.histogram.map(_.highMicros) == (expectedEdges.tail :+ values.last))
+      val next          = initial.record(Vector(Sample.Ok(values.last)), 3)
       assert(next.histogram.map(_.count) == Vector(1, 0, 2))
       assert(next.histogram == Histogram.of(next.latencies, 3))
       assert(next.summary.mean == ((values.map(BigInt(_)).sum + BigInt(values.last)) / 3).toLong)
     assert(LatencySummary.ofSorted(Vector(Long.MinValue, Long.MaxValue)).mean == 0L)
+    assert(LatencySummary.ofSorted(Vector(Long.MinValue, Long.MinValue)).mean == Long.MinValue)
