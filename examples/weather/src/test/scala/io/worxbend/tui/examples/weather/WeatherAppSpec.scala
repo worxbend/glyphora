@@ -6,18 +6,19 @@ import io.worxbend.tui.testsupport.Pilot
 
 import org.scalatest.funsuite.AnyFunSuite
 
-import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
+import io.worxbend.tui.runtime.RenderThread
+
+import java.util.concurrent.{CountDownLatch, TimeUnit}
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
+import scala.concurrent.duration.DurationInt
 
 private final class FakeWeatherClient(
-    response: String => Either[WeatherError, WeatherReport],
-    delay: String => FiniteDuration = _ => Duration.Zero,
+    response: String => Either[WeatherError, WeatherReport]
 ) extends WeatherClient:
   @volatile var lastRequestedCity: Option[String] = None
 
   def fetch(city: String): Either[WeatherError, WeatherReport] =
     lastRequestedCity = Some(city)
-    val pause = delay(city)
-    if pause > Duration.Zero then Thread.sleep(pause.toMillis)
     response(city)
 
 final class WeatherAppSpec extends AnyFunSuite:
@@ -63,28 +64,47 @@ final class WeatherAppSpec extends AnyFunSuite:
       assert(pilot.awaitTermination(2.seconds))
     }
 
-  test("a slower earlier search cannot overwrite the result of a newer one"):
-    // Kyiv answers after 500ms, Lisbon immediately: Kyiv's fetch is still in flight when Lisbon's result lands, and
-    // its late completion is the stale write the request-generation guard exists to drop. Without the guard the
-    // screen would flip back to Kyiv's figures once the slow fetch finished.
-    val slow    = sampleReport.copy(city = "Kyiv", country = "", temperatureC = -3.0)
-    val client  = FakeWeatherClient(
-      response = city => Right(if city == "Kyiv" then slow else sampleReport),
-      delay = city => if city == "Kyiv" then 500.millis else Duration.Zero,
-    )
-    val backend = HeadlessBackend(Size(60, 16))
-    val app     = WeatherApp(client)
-    Pilot.using(backend) { app.runWith(backend) } { pilot =>
-      pilot.waitForIdle()
-      pilot.typeText("Kyiv").pressKey(KeyCode.Enter)
-      pilot.typeText("Lisbon").pressKey(KeyCode.Enter)
-      pilot.waitUntil("the fetched conditions to render")(pilot.screenText.contains("Lisbon, Portugal"))
-
-      // Wait out Kyiv's in-flight delay (plus its delivery to the render thread), then Lisbon must still own the
-      // screen and Kyiv's temperature must never have appeared.
-      Thread.sleep(750)
-      assert(pilot.screenText.contains("Lisbon, Portugal"))
-      assert(!pilot.screenText.contains("-3.0"))
-      pilot.pressKey(KeyCode.Escape)
-      assert(pilot.awaitTermination(2.seconds))
-    }
+  for outcome <- Vector("success", "failure", "throw") do
+    test(s"a delivered stale $outcome cannot overwrite a newer search"):
+      val started   = CountDownLatch(1)
+      val release   = CountDownLatch(1)
+      val owner     = AtomicReference[RenderThread.RenderLoop]()
+      val delivered = AtomicBoolean(false)
+      val client    = FakeWeatherClient { city =>
+        if city != "Kyiv" then Right(sampleReport)
+        else
+          started.countDown()
+          assert(release.await(5, TimeUnit.SECONDS), "stale request was not released")
+          outcome match
+            case "success" => Right(sampleReport.copy(city = "Kyiv", country = "", temperatureC = -3.0))
+            case "failure" => Left(WeatherError.NetworkFailure("stale failure"))
+            case _         => throw IllegalStateException("stale exception")
+      }
+      val backend   = HeadlessBackend(Size(60, 16))
+      val app       = WeatherApp(client)
+      Pilot.using(backend) {
+        RenderThread.observingRegistration(owner.set)(app.runWith(backend))
+      } { pilot =>
+        try
+          pilot.waitForIdle()
+          pilot.typeText("Kyiv").pressKey(KeyCode.Enter)
+          assert(started.await(5, TimeUnit.SECONDS), "old request never started")
+          pilot.typeText("Lisbon").pressKey(KeyCode.Enter)
+          pilot.waitUntil("new result")(pilot.screenText.contains("Lisbon, Portugal"))
+          release.countDown()
+          // isIdle includes Async's reserved delivery slot. A FIFO probe can observe it true only
+          // after the old continuation has run, not merely after fetch returned or the frame settled.
+          pilot.waitUntil("old Async continuation to be processed") {
+            val loop = owner.get()
+            val _    = loop.execute { if loop.isIdle then delivered.set(true) }
+            delivered.get()
+          }
+          pilot.waitForIdle()
+          assert(pilot.screenText.contains("Lisbon, Portugal"))
+          assert(!pilot.screenText.contains("-3.0"))
+          assert(!pilot.screenText.contains("stale failure"))
+          assert(!pilot.screenText.contains("stale exception"))
+          pilot.pressKey(KeyCode.Escape)
+          assert(pilot.awaitTermination(2.seconds))
+        finally release.countDown()
+      }
