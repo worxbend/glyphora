@@ -632,9 +632,7 @@ final case class DataTable[K](
         val isSelected = selected.contains(index)
         val rowStyle   = if isSelected then style.patch(highlightStyle) else style
         val y          = area.y + 1 + row
-        if symbolWidth > 0 then
-          val prefix = if isSelected then highlightSymbol else padding
-          buffer.setString(area.x, y, CharWidth.substringByWidth(prefix, symbolWidth), rowStyle)
+        renderGutter(buffer, area.x, y, symbolWidth, padding, isSelected, rowStyle)
         renderRow(buffer, segments, cells, y, cursorStyle(rowStyle, isSelected, cursor, _), Some(cells))
       }
     else
@@ -648,14 +646,26 @@ final case class DataTable[K](
         val isSelected = selected.contains(index)
         val rowStyle   = if isSelected then style.patch(highlightStyle) else style
         (0 until heightOf(view(index))).takeWhile(line => y + line < bottom).foreach { line =>
-          if symbolWidth > 0 then
-            val prefix = if isSelected && line == 0 then highlightSymbol else padding
-            buffer.setString(area.x, y + line, CharWidth.substringByWidth(prefix, symbolWidth), rowStyle)
+          renderGutter(buffer, area.x, y + line, symbolWidth, padding, isSelected && line == 0, rowStyle)
           val shown = lines.map(_.lift(line).getOrElse(""))
           renderRow(buffer, segments, shown, y + line, cursorStyle(rowStyle, isSelected, cursor, _), Some(cells))
         }
         y += heightOf(view(index))
         index += 1
+
+  /** Paints the reserved gutter in the row style only; continuation lines pass `showSymbol = false`. */
+  private def renderGutter(
+      buffer: Buffer,
+      x: Int,
+      y: Int,
+      symbolWidth: Int,
+      padding: String,
+      showSymbol: Boolean,
+      rowStyle: Style,
+  ): Unit =
+    if symbolWidth > 0 then
+      val prefix = if showSymbol then highlightSymbol else padding
+      buffer.setString(x, y, CharWidth.substringByWidth(prefix, symbolWidth), rowStyle)
 
   private def renderHeader(buffer: Buffer, segments: Seq[Rect], state: DataTableState[K]): Unit =
     columns.zipWithIndex.foreach { (title, index) =>
