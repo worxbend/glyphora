@@ -14,8 +14,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+if (( $# % 2 != 0 )); then
+  echo "render-tapes: arguments must be pairs: <mill module> <suite class>" >&2
+  exit 2
+fi
+
 export GLYPHORA_TAPE_OUTPUT="${GLYPHORA_TAPE_OUTPUT:-build/tapes}"
 mkdir -p "$GLYPHORA_TAPE_OUTPUT"
+# Mill runs suites in a sandbox; resolve relative paths from this checkout first.
+GLYPHORA_TAPE_OUTPUT="$(cd "$GLYPHORA_TAPE_OUTPUT" && pwd -P)"
 
 if [ "$#" -eq 0 ]; then
   set -- test-support io.worxbend.tui.testsupport.TapeSpec
