@@ -152,7 +152,7 @@ function Hero() {
           </div>
           <div className={styles.installLine} aria-label="Mill dependency">
             <span>$</span>
-            <code>mvn&quot;com.worxbend::tui-dsl:0.18.3&quot;</code>
+            <code>mvn&quot;com.worxbend::tui-dsl:0.21.0&quot;</code>
             <span className={styles.cursor} aria-hidden="true" />
           </div>
         </div>
