@@ -552,9 +552,9 @@ object Theme:
     * The one place the pure value in `tui-core` meets the environment reading in `tui-terminal`, so that an application
     * writing `theme = Theme.detected()` needs no import beyond `io.worxbend.tui.dsl.*`.
     *
-    * Only the ceiling moves; every colour in `base` is kept — it is [[withGlyphs]] over `base`. Call it once, at
-    * start-up, and hold the result: it reads the process environment, which does not change under a running
-    * application.
+    * Only the ceiling moves; every colour in `base` is kept — it is [[io.worxbend.tui.dsl.Theme.withGlyphs withGlyphs]]
+    * over `base`. Call it once, at start-up, and hold the result: it reads the process environment, which does not
+    * change under a running application.
     */
   def detected(base: Theme = Dark, env: Map[String, String] = sys.env): Theme =
     base.withGlyphs(TerminalGlyphs.detect(env))

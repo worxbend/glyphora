@@ -8,8 +8,9 @@ import io.worxbend.tui.core.{Position, Rect}
   * The two are not the same thing. The painted cell is what a sighted user sees, and it is all a frame snapshot
   * records. The terminal's cursor — the *hardware caret* — is what a screen reader announces as the insertion point and
   * what an input method editor anchors its candidate popup to; neither can see a styled cell. Every text node moves
-  * both by default, and `.caretStyle(...)` on the node picks one of them instead: [[Painted]] for an app that hid the
-  * terminal cursor on purpose and wants it to stay hidden, [[Hardware]] for one that would rather let the terminal draw
+  * both by default, and `.caretStyle(...)` on the node picks one of them instead:
+  * [[io.worxbend.tui.dsl.CaretStyle.Painted Painted]] for an app that hid the terminal cursor on purpose and wants it
+  * to stay hidden, [[io.worxbend.tui.dsl.CaretStyle.Hardware Hardware]] for one that would rather let the terminal draw
   * the caret in the user's own configured shape and colour than paint a block over the text.
   */
 enum CaretStyle:

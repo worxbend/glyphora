@@ -18,10 +18,10 @@ import io.worxbend.tui.widgets as w
 
 // ---- application chrome: menus, windows, trails, toolbars, steppers ----
 
-/** A clickable navigation trail over [[w.Breadcrumb]]: a left click on a visible item hands its index to `onSelect`;
-  * the `…` fold and the separators select nothing. One row; the trail folds its middle items when it runs out of
-  * columns. Not focusable — a breadcrumb is a pointer affordance, and the keyboard reaches the same places through the
-  * app's own back binding.
+/** A clickable navigation trail over [[io.worxbend.tui.widgets.Breadcrumb w.Breadcrumb]]: a left click on a visible
+  * item hands its index to `onSelect`; the `…` fold and the separators select nothing. One row; the trail folds its
+  * middle items when it runs out of columns. Not focusable — a breadcrumb is a pointer affordance, and the keyboard
+  * reaches the same places through the app's own back binding.
   */
 final case class BreadcrumbElement(
     items: Seq[String],
@@ -49,10 +49,10 @@ final case class BreadcrumbElement(
       else false
     }
 
-/** A group of `collapsible` sections of which at most one is open — the policy is [[w.AccordionState.toggle]]: opening
-  * a section closes the open one, toggling the open one closes it. Each header is a tab stop that Enter or Space
-  * toggles; a folded body leaves the tab order, exactly as a lone `collapsible`'s does. The open section fills the rows
-  * the headers leave.
+/** A group of `collapsible` sections of which at most one is open — the policy is
+  * [[io.worxbend.tui.widgets.AccordionState.toggle w.AccordionState.toggle]]: opening a section closes the open one,
+  * toggling the open one closes it. Each header is a tab stop that Enter or Space toggles; a folded body leaves the tab
+  * order, exactly as a lone `collapsible`'s does. The open section fills the rows the headers leave.
   */
 final case class AccordionElement(content: Element, state: w.AccordionState, props: ElementProps = ElementProps())
     extends Element:
@@ -85,11 +85,11 @@ final case class AccordionSection(title: String, content: Element)
   */
 final case class WizardStep(title: String, content: Element, validate: () => Option[String] = () => None)
 
-/** An ordered multi-step flow over a caller-owned [[w.WizardState]]: the [[w.Wizard]] progress header, the refusal
-  * message of the last failed `Next` (in the theme's error style), the current step's content, and a `Back` / `Next`
-  * row — `Next` reads `Finish` on the last step and runs `onFinish` once that step validates. `Back` is disabled on the
-  * first step. The two buttons carry the focus keys `wizard-back` and `wizard-next`, so focus stays on `Next` while the
-  * user walks forward.
+/** An ordered multi-step flow over a caller-owned [[io.worxbend.tui.widgets.WizardState w.WizardState]]: the
+  * [[io.worxbend.tui.widgets.Wizard Wizard]] progress header, the refusal message of the last failed `Next` (in the
+  * theme's error style), the current step's content, and a `Back` / `Next` row — `Next` reads `Finish` on the last step
+  * and runs `onFinish` once that step validates. `Back` is disabled on the first step. The two buttons carry the focus
+  * keys `wizard-back` and `wizard-next`, so focus stays on `Next` while the user walks forward.
   */
 final case class WizardElement(content: Element, state: w.WizardState, props: ElementProps = ElementProps())
     extends Element:
@@ -128,9 +128,10 @@ private[dsl] object WizardElement:
     WizardElement(ColumnElement(Seq(header) ++ error.toSeq ++ Seq(body, buttons)), state)
 
 /** The strip inside a [[Element.toolbar]] or [[Element.buttonGroup]]: its controls left to right at their natural
-  * widths over [[w.Toolbar]], `gap` columns apart with an optional `divider`. When they do not all fit, the strip shows
-  * the window that does, marked `«` / `»`, and slides it so the focused control is always on screen — the controls
-  * themselves stay in the enclosing focus group, so the arrows still reach every one of them.
+  * widths over [[io.worxbend.tui.widgets.Toolbar w.Toolbar]], `gap` columns apart with an optional `divider`. When they
+  * do not all fit, the strip shows the window that does, marked `«` / `»`, and slides it so the focused control is
+  * always on screen — the controls themselves stay in the enclosing focus group, so the arrows still reach every one of
+  * them.
   *
   * With an `overflow` state the `»` is also a button: a click on it opens a popup, floated through the frame root under
   * the marker, holding the controls the strip left out — the very same elements, so a click on one presses it and
@@ -340,11 +341,12 @@ private def popupFrame(area: Rect, fallbackHeight: Int): Rect =
   val screen = FrameCoordinates.translate(area)
   FrameCoordinates.frameBoundary.getOrElse(Rect(screen.x, screen.y, math.max(area.width, 80), fallbackHeight))
 
-/** A one-row menu bar over [[w.MenuBar]] with drop-downs drawn by the existing [[w.Menu]] through the frame root, over
-  * everything else. `Alt+<mnemonic>` opens a menu and the `menu-bar` framework key (`F10`) opens the first, whatever
-  * holds focus; while a menu is open `Left`/`Right` move to the neighbouring menu, `Up`/`Down` move the highlight,
-  * `Enter` runs the item through `onSelect(menu, item)` and closes the bar, `Esc` closes it. A click on a title opens
-  * or closes that menu, a click on an item runs it, a click anywhere else closes the bar.
+/** A one-row menu bar over [[io.worxbend.tui.widgets.MenuBar w.MenuBar]] with drop-downs drawn by the existing
+  * [[io.worxbend.tui.widgets.Menu w.Menu]] through the frame root, over everything else. `Alt+<mnemonic>` opens a menu
+  * and the `menu-bar` framework key (`F10`) opens the first, whatever holds focus; while a menu is open `Left`/`Right`
+  * move to the neighbouring menu, `Up`/`Down` move the highlight, `Enter` runs the item through `onSelect(menu, item)`
+  * and closes the bar, `Esc` closes it. A click on a title opens or closes that menu, a click on an item runs it, a
+  * click anywhere else closes the bar.
   *
   * The bar is not a tab stop: like the menu bars it imitates, it is reached by its keys and the pointer, and takes the
   * keyboard only while a menu is open (it swallows plain typing then, so letters do not leak into the control
@@ -485,10 +487,11 @@ private[dsl] final case class ContextTargetElement(target: Element, props: Eleme
     children.headOption.fold(this)(child => copy(target = child))
 
 /** A right-click menu around `target`: a right-button press anywhere inside it — that nothing inside consumed — opens
-  * the existing [[w.Menu]] over `items` at the cell clicked, drawn through the frame root and flipped to open leftwards
-  * or upwards near the frame's edges ([[w.ContextMenu.placement]]). While it is open `Up`/`Down` move the highlight
-  * whatever holds focus, `Enter` (or a click on an item) hands the item's index to `onSelect` and closes it, and `Esc`,
-  * `Tab` or a click elsewhere close it. Lays out, measures and paints exactly as `target`.
+  * the existing [[io.worxbend.tui.widgets.Menu w.Menu]] over `items` at the cell clicked, drawn through the frame root
+  * and flipped to open leftwards or upwards near the frame's edges ([[io.worxbend.tui.widgets.ContextMenu.placement
+  * ContextMenu.placement]]). While it is open `Up`/`Down` move the highlight whatever holds focus, `Enter` (or a click
+  * on an item) hands the item's index to `onSelect` and closes it, and `Esc`, `Tab` or a click elsewhere close it. Lays
+  * out, measures and paints exactly as `target`.
   *
   * `decorated` is the framework's slot for the decorated children; application code never sets it.
   */
@@ -572,9 +575,10 @@ private[dsl] final case class WindowBodyElement(content: Element, props: Element
   private[dsl] override def withChildren(children: Seq[Element]): WindowBodyElement =
     children.headOption.fold(this)(child => copy(content = child))
 
-/** A movable, resizable floating window over a caller-owned [[w.WindowState]], drawn by [[w.Window]]: a frame with the
-  * title on top and a `◢` grip in the bottom-right corner, its content inside. Place windows in a
-  * [[WindowStackElement]] (`windowStack`), which draws them at their state's rectangles in stacking order.
+/** A movable, resizable floating window over a caller-owned [[io.worxbend.tui.widgets.WindowState w.WindowState]],
+  * drawn by [[io.worxbend.tui.widgets.Window Window]]: a frame with the title on top and a `◢` grip in the bottom-right
+  * corner, its content inside. Place windows in a [[WindowStackElement]] (`windowStack`), which draws them at their
+  * state's rectangles in stacking order.
   *
   * Pointer: a press anywhere on the window raises it above the others; a drag that starts on the title row moves it and
   * one that starts on the grip resizes it — the press captures the pointer, so the drag keeps following once the

@@ -232,7 +232,8 @@ final case class ScrollViewElement(
 
   /** Searches the whole content for `state`'s query — below and above the fold, not just the window — highlighting
     * every match and scrolling to the current one when the query changes; `n`/`N` step to the next/previous match while
-    * the view is focused. Pair it with a [[searchBar]] over the same state to type the query. See [[w.SearchState]].
+    * the view is focused. Pair it with a [[searchBar]] over the same state to type the query. See
+    * [[io.worxbend.tui.widgets.SearchState w.SearchState]].
     */
   def searchable(state: w.SearchState): ScrollViewElement = copy(search = Some(state))
 

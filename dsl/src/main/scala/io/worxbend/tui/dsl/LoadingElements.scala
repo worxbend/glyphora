@@ -363,10 +363,11 @@ final case class SkeletonElement(
 
   private[dsl] def withProps(props: ElementProps): SkeletonElement = copy(props = props)
 
-/** Multi-task progress: one row per caller-owned [[w.ProgressTask]], each row the same [[w.ProgressColumn]]s, themed at
-  * construction from the [[LoadingTheme]]. The tasks are watched, so a background `task.advance(n)` posted back to the
-  * render thread repaints without a signal; while any task is still running the node also asks for animation ticks so a
-  * spinner column turns and the elapsed and ETA columns count.
+/** Multi-task progress: one row per caller-owned [[io.worxbend.tui.widgets.ProgressTask w.ProgressTask]], each row the
+  * same [[io.worxbend.tui.widgets.ProgressColumn ProgressColumn]]s, themed at construction from the [[LoadingTheme]].
+  * The tasks are watched, so a background `task.advance(n)` posted back to the render thread repaints without a signal;
+  * while any task is still running the node also asks for animation ticks so a spinner column turns and the elapsed and
+  * ETA columns count.
   */
 final case class MultiProgressElement(
     tasks: Seq[w.ProgressTask],
