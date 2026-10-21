@@ -3,7 +3,8 @@ package io.worxbend.tui.runtime
 import java.time.Instant
 import java.util.logging.{Handler, Level, Logger}
 
-/** Feeds `java.util.logging` into a [[LogRing]] through a plain [[Handler]] on a logger — the root logger by default.
+/** Feeds `java.util.logging` into a [[LogRing]] through a plain [[java.util.logging.Handler Handler]] on a logger — the
+  * root logger by default.
   *
   * A `Handler` rather than a `System.LoggerFinder`: the finder is discovered through `ServiceLoader`, which needs
   * reflection configuration under native-image, while adding a handler to a logger is an ordinary method call that

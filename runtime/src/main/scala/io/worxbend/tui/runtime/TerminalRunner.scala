@@ -8,7 +8,7 @@ import scala.util.control.NonFatal
 import scala.util.{Failure, Success, Try}
 
 /** The production [[Runner]]: raw mode + alternate screen setup, diff-driven redraws, tick emission, resize handling,
-  * and render-thread registration around a [[Backend]].
+  * and render-thread registration around a [[io.worxbend.tui.terminal.Backend Backend]].
   *
   * `nanoTime` is injectable so tick scheduling and opt-in frame phase timing are testable; production code uses the
   * system's monotonic elapsed-time clock, not a CPU-time clock.
@@ -635,7 +635,9 @@ private final class FrameComposer(
   * in one type is what lets [[LoopState]] answer "may I run another iteration?" once, rather than once per kind.
   */
 private enum LoopFailure:
-  /** A call into the [[Backend]] failed — reading input, drawing, an out-of-band terminal operation. */
+  /** A call into the [[io.worxbend.tui.terminal.Backend Backend]] failed — reading input, drawing, an out-of-band
+    * terminal operation.
+    */
   case Backend(error: BackendError)
 
   /** One of the callbacks the app supplied threw: the event handler, `onStart`, or the render function. */

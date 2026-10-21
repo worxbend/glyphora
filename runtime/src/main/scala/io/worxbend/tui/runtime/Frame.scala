@@ -25,7 +25,8 @@ final class Frame(val area: Rect, private[runtime] val buffer: Buffer, val count
   def renderStatefulWidget[S](widget: StatefulWidget[S], area: Rect, state: S): Unit =
     widget.render(area, buffer, state)
 
-  /** Applies a post-render [[Effect]] to what has been drawn so far — call after the widgets rendered.
+  /** Applies a post-render [[io.worxbend.tui.core.Effect Effect]] to what has been drawn so far — call after the
+    * widgets rendered.
     *
     * `elapsed` is time since **this effect** started, not since this frame began and not since the application started.
     * The frame does not track it: an effect is a pure function of the elapsed time it is given, so the caller is the

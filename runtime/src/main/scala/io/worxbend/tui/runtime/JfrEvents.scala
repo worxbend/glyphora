@@ -29,7 +29,7 @@ object JfrEvents:
   final val AsyncAdmittedName = "io.worxbend.tui.AsyncAdmitted"
   final val AsyncRejectedName = "io.worxbend.tui.AsyncRejected"
 
-  /** The constructor-free name of an [[Event]] case, as `EventRouted.kind` records it. */
+  /** The constructor-free name of an [[jdk.jfr.Event Event]] case, as `EventRouted.kind` records it. */
   def kindOf(event: Event): String =
     event match
       case Event.Key(_)                => "Key"
