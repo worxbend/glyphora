@@ -66,30 +66,14 @@ final class TerminalRunner(
 
     val capture = installCapture(loop)
 
-    var result: Either[RunnerError, Unit]   = Right(())
-    var thrown: Option[Throwable]           = None
+    val outcome                             = new RunOutcome
     var setupIncomplete                     = true
     var recorder: Option[AsciicastRecorder] = None
-
-    def recordCleanup(error: Throwable): Unit =
-      thrown match
-        case Some(primary) => Cleanup.suppress(primary, error)
-        case None          =>
-          result match
-            case Left(primary) =>
-              primary.addCleanupFailure(error)
-              error.getSuppressed.foreach(primary.addCleanupFailure)
-            case Right(())     =>
-              if NonFatal(error) then
-                val primary = RunnerError.Handler(error)
-                error.getSuppressed.foreach(primary.addCleanupFailure)
-                result = Left(primary)
-              else thrown = Some(error)
 
     def release(body: => Unit): Unit =
       val cleanup = new Cleanup
       cleanup.attempt(body)
-      cleanup.collected.foreach(recordCleanup)
+      cleanup.collected.foreach(outcome.recordCleanup)
 
     def execute(): Unit =
       try
@@ -97,15 +81,15 @@ final class TerminalRunner(
         // with the terminal untouched, instead of a frame later from inside the loop.
         openRecorder() match
           case Failure(error)  =>
-            result = Left(RunnerError.Handler(error))
+            outcome.recordResult(Left(RunnerError.Handler(error)))
           case Success(opened) =>
             recorder = opened
             setup() match
               case Left(error) =>
-                result = Left(RunnerError.Backend(error))
+                outcome.recordResult(Left(RunnerError.Backend(error)))
               case Right(())   =>
                 setupIncomplete = false
-                val outcome =
+                val loopOutcome =
                   runLoop(
                     onStart,
                     handleEvent,
@@ -115,24 +99,15 @@ final class TerminalRunner(
                     capture,
                     () => { opened.foreach(_.flush()); printAboveBatch.foreach(_.flush()) },
                   )
-                result = report(outcome, failures.collected)
+                outcome.recordResult(report(loopOutcome, failures.collected))
                 // One final bounded batch per queue, not a drain-until-empty: self-requeueing producers cannot postpone
                 // onStop and backend restoration forever. Remaining owned work is discarded by close after onStop.
                 RenderThread.drainPending(loop, RenderThread.FinalDrainBudget)
-                result = report(outcome, failures.collected)
+                outcome.recordResult(report(loopOutcome, failures.collected))
       catch
-        // What reaches here is a throwing `onTaskError` (non-fatal: `runLoop` guards the app's own callbacks and the
-        // loop's handler absorbs a `NonFatal` from a queued body) or a fatal from a body run in the final drain. The
-        // former is filed under an earlier `Left` as a cleanup failure; the latter must leave `run` whatever the loop
-        // had already reported — the same distinction `recordCleanup` makes for a fatal teardown throwable — carrying
-        // the earlier primary's throwable as a suppressed exception so its provenance survives.
-        case error: Throwable if NonFatal(error) =>
-          result match
-            case Left(primary) => primary.addCleanupFailure(error)
-            case Right(())     => thrown = Some(error)
-        case error: Throwable                    =>
-          result.left.foreach(primary => primary.primaryThrowable.foreach(Cleanup.suppress(error, _)))
-          thrown = Some(error)
+        // Keep this boundary around exactly the same execution and final-drain work: the outcome owns only how
+        // escaping failures are recorded, not which callbacks the runner guards.
+        case error: Throwable => outcome.recordEscaping(error)
       finally
         // Confined resources are disposed while their owner remains registered. Each release is attempted independently.
         // The recording is closed first, so the last frame is on disk whatever `onStop` does.
@@ -140,22 +115,7 @@ final class TerminalRunner(
         release(onStop())
         release(loop.close())
         release(RenderThread.unregister())
-        release {
-          backend.close() match
-            case Left(error) =>
-              if result.isRight && thrown.isEmpty then
-                val primary = RunnerError.Backend(error)
-                error match
-                  case BackendError.Io(cause) => cause.getSuppressed.foreach(primary.addCleanupFailure)
-                  case _                      => ()
-                result = Left(primary)
-              else
-                val cause = error match
-                  case BackendError.Io(primary) => primary
-                  case _                        => IllegalStateException(error.message)
-                recordCleanup(cause)
-            case Right(())   => ()
-        }
+        release(outcome.recordBackendClose(backend.close()))
         if setupIncomplete then release(backend.emergencyRestore())
         // last, once the terminal is the shell's again: the partial line this flushes belongs under the restored prompt,
         // not on an alternate screen that is about to be discarded
@@ -167,8 +127,7 @@ final class TerminalRunner(
     capture match
       case Some(active) => Console.withOut(active.outStream)(Console.withErr(active.errStream)(execute()))
       case None         => execute()
-    thrown.foreach(error => throw error)
-    result
+    outcome.finalResult
 
   /** Combines the loop's own outcome with the queued-task failures it absorbed into what [[run]] returns.
     *
@@ -336,6 +295,65 @@ object TerminalRunner:
         case Right(())                    => ()
     }
     cleanup.rethrow()
+
+/** Failure bookkeeping for one registered run, confined to its owner thread. Resource acquisition, release order and
+  * the final queued-work drain remain with the runner; this state only records their outcomes.
+  */
+private final class RunOutcome:
+  private var result: Either[RunnerError, Unit] = Right(())
+  private var thrown: Option[Throwable]         = None
+
+  def recordResult(value: Either[RunnerError, Unit]): Unit = result = value
+
+  /** A non-fatal reporter failure attaches to an earlier result or escapes a clean run. A fatal execution/final-drain
+    * failure always escapes, retaining the earlier primary throwable when one exists.
+    */
+  def recordEscaping(error: Throwable): Unit =
+    if NonFatal(error) then
+      result match
+        case Left(primary) => primary.addCleanupFailure(error)
+        case Right(())     => thrown = Some(error)
+    else
+      result.left.foreach(primary => primary.primaryThrowable.foreach(Cleanup.suppress(error, _)))
+      thrown = Some(error)
+
+  /** Unlike a fatal execution/final-drain failure, a fatal cleanup failure attaches to an earlier Left. Only a clean
+    * run promotes it to an escaping throwable. Preserve flattened cleanup secondaries only for a returned error.
+    */
+  def recordCleanup(error: Throwable): Unit =
+    thrown match
+      case Some(primary) => Cleanup.suppress(primary, error)
+      case None          =>
+        result match
+          case Left(primary) =>
+            primary.addCleanupFailure(error)
+            error.getSuppressed.foreach(primary.addCleanupFailure)
+          case Right(())     =>
+            if NonFatal(error) then
+              val primary = RunnerError.Handler(error)
+              error.getSuppressed.foreach(primary.addCleanupFailure)
+              result = Left(primary)
+            else thrown = Some(error)
+
+  def recordBackendClose(closed: Either[BackendError, Unit]): Unit =
+    closed match
+      case Left(error) =>
+        if result.isRight && thrown.isEmpty then
+          val primary = RunnerError.Backend(error)
+          error match
+            case BackendError.Io(cause) => cause.getSuppressed.foreach(primary.addCleanupFailure)
+            case _                      => ()
+          result = Left(primary)
+        else
+          val cause = error match
+            case BackendError.Io(primary) => primary
+            case _                        => IllegalStateException(error.message)
+          recordCleanup(cause)
+      case Right(())   => ()
+
+  def finalResult: Either[RunnerError, Unit] =
+    thrown.foreach(error => throw error)
+    result
 
 /** The event loop of one [[TerminalRunner.run]]: the per-iteration phases (redraw, guarded callback, dispatch,
   * frame-owed check) and the loop itself, gathered out of `runLoop` so each phase is one named method on the state it
