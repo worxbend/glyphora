@@ -2,11 +2,11 @@
 
 ## Executive summary
 
-- Two medium-priority structural findings are eligible for behavior-preserving work: duplicated histogram classification and scattered runner outcome bookkeeping. Characterization must pass on the original implementation before either refactor.
-- Potential correctness/security fixes are proposals only. In particular, stacked-chart numeric overflow, authenticated cross-origin redirects, and graphics bookkeeping on failed output must not be mixed into this pass.
-- Dependency direction, caller-owned widget state, compile-time derivation, Unicode width ownership, and render-thread confinement are deliberate strengths; no framework or public-API redesign is warranted.
-- Low-priority cleanup outside an accepted batch is deferred, as requested. Generated sources, third-party assets/launcher, lockfiles and build outputs are excluded from edits.
-- Fresh baseline and final evidence are recorded below. No coverage percentage or Sonar complexity score is claimed: this checkout configures neither coverage instrumentation nor Sonar analysis.
+- Approval-only risks remain: stacked-chart numeric overflow/rectangle containment, conditional authenticated cross-origin redirect forwarding, and graphics accounting after failed output. None was silently fixed or presented as a proven remote exploit.
+- Final verification passed **44/44 steps and 7,480 Scala tests**. The original baseline had one DSL test failure; it did not recur, but DSL was untouched and no fix is claimed.
+- Completed both safely addressable medium structural findings: one histogram classifier and a private runner-outcome owner, each behind separately committed, passing characterization tests. Sixteen tests were added.
+- Public library APIs, dependencies, wire formats, build/CI configuration, generated sources, fixtures and the original main branch remain unchanged. Low-priority unrelated cleanup and approval-only corrections are deferred.
+- Coverage and Sonar complexity are unavailable, not estimated. Existing lint/dependency/Scaladoc warnings and local-platform verification limits are explicitly reported below.
 
 ## Scope, isolation and method
 
@@ -29,7 +29,7 @@ To bound memory and avoid stale daemon state, all direct Mill gates use this ext
 
     JAVA_TOOL_OPTIONS='-Xmx2g -XX:+UseSerialGC' ./mill --no-server -j 2 <selectors>
 
-`GLYPHORA_GOLDEN_UPDATE` is unset. Scratch artifacts live under `/home/worxbend/.hermes/cache/scratch/glyphora-quality-20261022/` (subject to normal scratch retention). Exact argv, cwd, exit code, duration and full logs are saved by `gate.py` in each run's `results.json`.
+`GLYPHORA_GOLDEN_UPDATE` is unset. Scratch artifacts live under `/home/worxbend/.hermes/cache/scratch/glyphora-quality-20261022/` (subject to normal scratch retention). For full gates, exact argv, cwd, exit code, duration and log paths are saved by `gate.py` in each run's `results.json`; full logs are sibling files. Batch `results.json` records argv, exit, duration, test totals and failure lines, with logs as siblings and the repository root as cwd.
 
 ## Phase 0 baseline
 
@@ -127,11 +127,12 @@ Location line numbers below refer to the starting commit unless a final location
 | P07 | Medium | Test reliability / uncertain completion | `examples/weather/src/test/scala/io/worxbend/tui/examples/weather/WeatherAppSpec.scala:66-87` | A fixed 750ms sleep is not proof the older request's Async continuation was delivered under load. No flake reproduced. | FIRST; observable synchronization | Propose a controlled client plus a real queued-completion observation; do not replace negative assertion with waitForIdle or add a production hook. | Medium | M | partial | manual |
 | P08 | Low | CI-policy duplication | `scripts/validate-workflows.py:111-144` | Central and Packages validation repeat the same SHA/gate/version-order policy, with distinct Packages-only conditions. | Fowler Extract Function | Proposal only: even behavior-preserving CI-policy-tool changes require approval under this task. Pin exact ordered diagnostics first. | Medium | S | partial | manual |
 | P09 | Low | Boundary test gaps | `scripts/export-wiki.mjs:27-65,85-108,138-155`; `scripts/style-scaladoc.mjs:28-76`; `tools/generate-width-table.py:32-63`; `tools/generate-world-table.py:72-106` | Existing integration/property tests do not directly characterize malformed frontmatter/title collisions, bridge storage failures or generator parsing/quantization inputs. No production failure established. | Feathers characterization | Defer independent dependency-free test-only follow-ups; do not change generated data or accepted formats. | Low | M | partial | manual |
-| P11 | Medium | Existing example arithmetic behavior | `examples/loadtest/src/main/scala/io/worxbend/tui/examples/loadtest/RunStats.scala:88,122,151,155` | Extreme latency/bucket arithmetic can wrap edges and summary sums or produce a negative array index. R01 characterization intentionally pins these current outcomes; changing them is not refactoring. Scala execution is pending. | Explicit numeric contract | Approval-only overflow/validation policy with a separate expected-safe-output regression. | Medium | S | partial | manual |
+| P11 | Medium | Existing example arithmetic behavior | `examples/loadtest/src/main/scala/io/worxbend/tui/examples/loadtest/RunStats.scala:88,122,151,155` | Extreme latency/bucket arithmetic can wrap edges and summary sums or produce a negative array index. R01 characterization intentionally pins these current outcomes; changing them is not refactoring. Scala characterization now passes before and after R01; these outcomes were preserved, not repaired. | Explicit numeric contract | Approval-only overflow/validation policy with a separate expected-safe-output regression. | Medium | S | partial | manual |
 | P12 | Medium | Baseline test failure | `dsl/src/test/scala/io/worxbend/tui/dsl/PixelImageElementSpec.scala:22-33` | Fresh baseline failed the first kitty-draw assertion: 0 did not equal 1. The test waits for loop idle before an asynchronous encode, while a later case explicitly waits for encoded output. No production cause or repeatability is established. | FIRST; observable async completion | Record exact failing set; DSL is excluded from refactoring. A separate investigation must distinguish timing from graphics delivery before any approved correction. | Medium | S | yes | tool:ScalaTest |
+| L09 | Low | Existing lint diagnostics | `core/src/main/scala/io/worxbend/tui/core/CharWidth.scala:139:24`; `dsl/src/test/scala/io/worxbend/tui/dsl/DeferredViewStateSpec.scala:159:81` | Configured Scalafix emits two UnusedScalafixSuppression warnings. Their owners are outside accepted batches; DSL failed baseline. | Clear intentional exceptions | Defer unused-suppression cleanup; no suppression was added or removed here. | Low | S | yes | tool:Scalafix |
+| L10 | Low | API documentation links | `runtime/src/main/scala/io/worxbend/tui/runtime/Runner.scala:403,419,616`; `runtime/src/main/scala/io/worxbend/tui/runtime/TerminalRunner.scala:28`; `dsl/src/main/scala/io/worxbend/tui/dsl/AnimationClock.scala:38` | Final packaged-consumer regeneration surfaced 142 Scaladoc warnings, predominantly unresolved member-link queries. Baseline reused cached docs and did not emit them. The cited source links are unchanged; no runtime/compile failure resulted. | Accurate generated documentation | Defer a focused documentation-link pass. No build flags, published APIs or broad cross-module docs were changed to quiet this output. | Low | M | partial | tool:Scaladoc |
+| P13 | Medium | Dependency security boundary | `website/package.json:17-58`; `website/DEPENDENCY_SECURITY.md:19-35`; excluded resolved lockfile | Both actual npm audits report 48 affected-package entries (31 high, 15 moderate, two low), zero critical. Static-site/build boundary narrows exposure; this is not proof of zero vulnerabilities. | Explicit dependency trust boundary | Approval-only compatible dependency remediation with consumer, build and browser checks; never force upgrades or edit the excluded lockfile in this pass. | Medium | M | partial | tool:npm audit |
 | P10 | Low | Example boundary test gaps | `examples/weather/src/main/scala/io/worxbend/tui/examples/weather/Json.scala:34-183`; `examples/airsensor/src/main/scala/io/worxbend/tui/examples/airsensor/Sensor.scala:106-120`; `examples/procmon/src/main/scala/io/worxbend/tui/examples/procmon/ProcessSource.scala:55-79` | App tests inject clients/sources or permit fallback; they do not fully characterize real parser/HTTP/process boundaries. No concrete production bug established. | Feathers seams; tests at I/O boundary | Defer per-example characterization, without a shared HTTP/parser framework, new dependency or stricter accepted data. | Low | M | partial | manual |
-
-Additional tool findings: existing unused suppression warnings are **L09 / Low / tool:Scalafix**, at `core/src/main/scala/io/worxbend/tui/core/CharWidth.scala:139:24` and `dsl/src/test/scala/io/worxbend/tui/dsl/DeferredViewStateSpec.scala:159:81`. Removing them is deferred because neither file belongs to an accepted batch and DSL failed baseline. Existing npm advisories are **P13 / Medium / security / tool:npm audit**; location `website/package.json:17-58` and the excluded lockfile's resolved graph. Concrete evidence and risk boundaries are recorded above and in `website/DEPENDENCY_SECURITY.md:19-35`. Dependency remediation requires approval and compatibility/browser verification, not an autonomous forced upgrade.
 
 ### Leave as-is
 
@@ -161,7 +162,7 @@ Additional tool findings: existing unused suppression warnings are **L09 / Low /
 
 Only R01 and R02 are accepted implementation findings. They are the safely addressable medium structural findings, and both owning baselines passed. No high-priority structural blocker was established. The lower-risk R01 literal extraction precedes the higher-churn R02 lifecycle extraction. Each theme touches two files at most. Test and refactor commits remain separate; this review/plan is committed separately from code.
 
-All L01-L08 findings remain deferred: they are low-priority changes in files not otherwise touched by an accepted batch. P08 is additionally CI-policy tooling, which needs approval even for a structural change. P07 cannot be made deterministic merely by changing sleeps or assuming idle proves background completion; the missing observation strategy is a real safety boundary. No DSL changes are permitted after its baseline failure.
+All L01-L10 findings remain deferred: they are low-priority changes in files not otherwise touched by an accepted batch. P08 is additionally CI-policy tooling, which needs approval even for a structural change. P07 cannot be made deterministic merely by changing sleeps or assuming idle proves background completion; the missing observation strategy is a real safety boundary. No DSL changes are permitted after its baseline failure.
 
 ### Batch A — R01: single owner for histogram bucket classification
 
@@ -217,9 +218,166 @@ These are intentionally unimplemented. Proposed regression descriptions are futu
 | P08 | CI-policy-tool structure, despite unchanged intended semantics | Characterize Central/Packages mutations and simultaneous failures with exact ordered error strings, then extract only their shared validation checks. |
 | P11 | Overflow/validation semantics for example statistics | Existing new characterization pins current wrap/exception behavior; a separate desired-output test must follow an agreed large-latency/mean/bucket policy. Do not silently widen arithmetic in R01. |
 | P12 | Baseline DSL failure investigation and any resulting fix | Existing PixelImageElementSpec first case already failed at line 33 in this baseline. Establish encoder/delivery completion under load before proposing a production fix or stronger asynchronous test boundary. DSL remains untouched here. |
+| P13 | Dependency remediation and any tightened security threshold | Proposed strict audit regression (`npm audit --audit-level=high`, not run in this pass) would reject the observed high advisories; an approved compatible update must also pass existing Node compatibility tests, production build and real diagram/browser checks. Do not force overrides or edit the excluded lockfile autonomously. |
 
 No public-API change, new runtime dependency, schema/serialization/wire-format change, build/framework migration or excluded-path edit is proposed for implementation. P09/P10 remain low-priority characterization follow-ups, not authorization to change malformed-input handling, generation formats or I/O semantics. Existing dependency advisories are reported from the actual npm audit; dependency/lockfile changes are outside this pass.
 
 ### Final verification and stopping rule
 
 Re-run the complete baseline command list, native smoke, independent syntax/discipline scans and meta-build format check. Compare named failures to baseline, not a green-looking subset. Record before/after test counts, warning-text counts, coverage unavailability and local function-span/duplicate-expression measures for touched production files. Review the final diff independently for API/ordering/behavior drift. Commit the completed report with exact batch commit hashes and deferred risks; never push. Stop once both medium structural findings are verified, or a stated stop condition requires deferral.
+
+## Phase 3 execution and Phase 4 verification
+
+### Completed batches and commit evidence
+
+| Theme | Test-first commit | Production commit | Actual result |
+| --- | --- | --- | --- |
+| R01 — Extract Function for histogram classification | `c2114263` — 12 direct characterizations, production unchanged | `13726806` — both literal expressions call non-public `Histogram.bucketIndex` | Full loadtest suite **18/18 passed before and after**; compile, scoped format/check and main/test Scalafix all passed. |
+| R02 — Extract Class for run outcome bookkeeping | `39e8159b` — four fatal/mixed teardown characterizations, production unchanged | `66facb88` — private run-owned `RunOutcome` | Full runtime suite **323/323 passed before and after**; compile, scoped format/check and main/test Scalafix all passed. |
+
+Review-only commit: `e2abee3d` (`docs: add quality review`). Plan-only commit: `a4cc8a50`. The commit containing this completed section is the separate final-report commit; it does not modify source code. Both implementation themes changed two files overall, with one file per test/production commit. No fix-forward attempt, rollback, test weakening, suppression, skipped test or dependency addition was needed.
+
+R01's tests pin current integer means/percentile indexing, equal-value/zero-width buckets, failed-only histogram retention, empty identity, partition parity and wrapping/negative-index behavior. P11 is now executed Scala evidence, not merely a static hypothesis; it remains an approval-only correction. The extracted expression is exactly the original Long/Int operation sequence, not a new algorithm.
+
+R02's tests pin primary identity and suppression flattening/nesting across handler/backend/queued failures, fatal onStop, later backend failures, emergency restoration, closed/unregistered owners and restored process streams. Existing fatal final-drain escape and reporter-failure tests remain intact. `backend.close()` still runs inside by-name release; both final-drain report assignments and every acquisition/release boundary remain in place. The helper does not own resources or redefine RunnerError.
+
+All **24/24 batch checks** passed. Exact batch commands and exits follow. `M` expands to the bounded external Mill wrapper documented above; `F` is the downloaded pinned Scalafmt 3.11.5 binary. Paths are repository-relative here; the saved argv uses absolute formatter/file paths.
+
+| Batch stage | Executed command | Exit |
+| --- | --- | ---: |
+| histogram-test/format | `F examples/loadtest/src/test/scala/io/worxbend/tui/examples/loadtest/RunStatsSpec.scala` | 0 |
+| histogram-test/compile | `M examples.loadtest.compile + examples.loadtest.test.compile` | 0 |
+| histogram-test/tests | `M examples.loadtest.test` | 0 |
+| histogram-test/format-check | `F --check examples/loadtest/src/test/scala/io/worxbend/tui/examples/loadtest/RunStatsSpec.scala` | 0 |
+| histogram-test/lint-main | `M examples.loadtest.fix --check` | 0 |
+| histogram-test/lint-test | `M examples.loadtest.test.fix --check` | 0 |
+| histogram-refactor/format | `F examples/loadtest/src/test/scala/io/worxbend/tui/examples/loadtest/RunStatsSpec.scala examples/loadtest/src/main/scala/io/worxbend/tui/examples/loadtest/RunStats.scala` | 0 |
+| histogram-refactor/compile | `M examples.loadtest.compile + examples.loadtest.test.compile` | 0 |
+| histogram-refactor/tests | `M examples.loadtest.test` | 0 |
+| histogram-refactor/format-check | `F --check examples/loadtest/src/test/scala/io/worxbend/tui/examples/loadtest/RunStatsSpec.scala examples/loadtest/src/main/scala/io/worxbend/tui/examples/loadtest/RunStats.scala` | 0 |
+| histogram-refactor/lint-main | `M examples.loadtest.fix --check` | 0 |
+| histogram-refactor/lint-test | `M examples.loadtest.test.fix --check` | 0 |
+| runner-test/format | `F runtime/src/test/scala/io/worxbend/tui/runtime/RunnerLifecycleSpec.scala` | 0 |
+| runner-test/compile | `M runtime.compile + runtime.test.compile` | 0 |
+| runner-test/tests | `M runtime.test` | 0 |
+| runner-test/format-check | `F --check runtime/src/test/scala/io/worxbend/tui/runtime/RunnerLifecycleSpec.scala` | 0 |
+| runner-test/lint-main | `M runtime.fix --check` | 0 |
+| runner-test/lint-test | `M runtime.test.fix --check` | 0 |
+| runner-refactor/format | `F runtime/src/test/scala/io/worxbend/tui/runtime/RunnerLifecycleSpec.scala runtime/src/main/scala/io/worxbend/tui/runtime/TerminalRunner.scala` | 0 |
+| runner-refactor/compile | `M runtime.compile + runtime.test.compile` | 0 |
+| runner-refactor/tests | `M runtime.test` | 0 |
+| runner-refactor/format-check | `F --check runtime/src/test/scala/io/worxbend/tui/runtime/RunnerLifecycleSpec.scala runtime/src/main/scala/io/worxbend/tui/runtime/TerminalRunner.scala` | 0 |
+| runner-refactor/lint-main | `M runtime.fix --check` | 0 |
+| runner-refactor/lint-test | `M runtime.test.fix --check` | 0 |
+
+### Before / after results
+
+| Check or measure | Baseline | Final |
+| --- | --- | --- |
+| Full-gate steps | 43/44 passed; DSL step failed | **44/44 passed** |
+| Main and test compilation | passed, warnings-as-errors enforced | passed, same flags |
+| Scala tests | 7,464 run; 7,463 passed, one failed | **7,480 run and passed** |
+| Scala suites | 569 completed, zero aborted | 570 completed, zero aborted |
+| Canceled / ignored / pending tests | 0 / 0 / 0 | 0 / 0 / 0 |
+| Runtime suite | 319 passed | 323 passed |
+| Loadtest suite | 6 passed | 18 passed |
+| Python tests | 94 passed | 94 passed |
+| Node compatibility tests | 3 passed | 3 passed |
+| Native-image tasks / no-TTY smoke | 12 passed / passed | 12 passed / passed |
+| Scala format / Scalafix | passed / passed | passed / passed |
+| Meta-build formatting | 21 Mill files passed | same 21 files passed |
+| Independent syntax / discipline scans | 23 syntax checks; zero violations | same 23 checks; zero violations |
+| Workflow policy/actionlint | passed | passed |
+| Scala CLI / isolated packaged consumer | passed / passed | passed / passed |
+| Gallery drift / site / Wiki export | passed / passed / passed | passed / passed / passed |
+| npm critical-threshold audit | passed; 48 affected entries, zero critical | same counts and exit 0 |
+| Raw lines matching `warning` | 2,495 | 2,649 |
+| Unused Scalafix suppression diagnostics | 2 | same 2 |
+| Coverage | not configured; unavailable | unchanged; no percentage claimed |
+
+**Failure-set comparison:** baseline contained exactly PixelImageElementSpec's first kitty-graphics test, assertion line 33 (`0 did not equal 1`). Final contained **no failing/aborted tests**, and no new named failure. DSL source/tests were not changed. The failure's disappearance is consistent with intermittent behavior but does not establish its root cause or a fix; P12 remains open.
+
+**Warnings are not silently cleaned up:** the final packaged-consumer run regenerated documentation that baseline reused from cache. It reported 142 Scaladoc warnings (18 runtime, 95 DSL, 29 test-support), predominantly unresolved links; example diagnostics refer to unchanged Runner.scala links (`AwaitingIdle`, `Fail`, `BackendError.message`). This is newly observed output, not evidence that these refactors introduced those links. The raw warning-line counter also includes JVM/native-access warnings, summary lines and test titles containing “warning”; it is not a count of source defects. Compilation still passes the unchanged `-Werror` gate. No flags or suppressions were relaxed to hide output. L09/L10 record remaining diagnostics rather than a false warning-free claim.
+
+### Structural measurements and trade-offs
+
+Measurements use physical declaration/body line spans including comments/blank lines until the next same-indent declaration/comment, and exact expression occurrence counts; they are not cognitive complexity or a performance benchmark.
+
+| Production measure | Before | After |
+| --- | ---: | ---: |
+| TerminalRunner.scala file lines | 736 | 754 |
+| runRegistered span | 117 (lines 55-171) | 76 (lines 55-130) |
+| Literal bucket classifier copies | 2 | 1 |
+| RunStats.scala file lines | 156 | 159 |
+| Whole-file lexical branch tokens: TerminalRunner | 158 | 159 |
+| Whole-file lexical branch tokens: RunStats | 25 | 25 |
+
+The outcome helper adds named structure rather than deleting failure policy. Its principal operations are 8-line recordEscaping (`TerminalRunner.scala:311`), 14-line recordCleanup (`:323`), and 15-line recordBackendClose (`:338`). Final histogram calls are at `RunStats.scala:88,154`; canonical classifier at `:139-140`. No global complexity reduction, speedup, allocation improvement or coverage gain is inferred from these local measures.
+
+### Independent review, scope and source integrity
+
+- Two independent final reviewers found no concrete residual behavior drift, scope violation or commit-order problem. They checked actual base/head source and test diffs, not only draft patches. `clean-code-guard: clean`.
+- Review specifically checked literal arithmetic, failure/throwable identity, suppression order/nesting, by-name backend close, final-drain report replacement, release order, Console-scoping rethrow and private visibility. Static review is not an all-input or binary-compatibility proof.
+- The full final gate ran with all tracked source hashes unchanged. The final report was updated only after that frozen run. Baseline-to-final source scope is exactly two production files, their two characterization test files, and this review. Original `main` remains at the starting commit.
+- No public library API, serialization/wire contract, new runtime dependency, build/CI configuration, generated source, asset, lockfile or existing golden changed. No branch was pushed; no history was rewritten.
+
+### Findings disposition and residual risks
+
+R01/R02 are completed and verified. L01-L10 remain deferred low-priority findings; they do not justify unrelated churn. P01-P13 remain approval-only proposals or explicitly scoped test/coverage questions; no bug fix was smuggled into a refactor. P09/P10 are future characterization work, not established production defects. P07 needs an observable Async completion design; P12's baseline DSL failure remains recorded even though final passed.
+
+Highest remaining risks are conditional credential forwarding on redirected artifact downloads (P01), stacked-chart numeric/rectangle corruption at extreme values (P02), and failed-output graphics accounting (P03), plus the intermittent baseline DSL test (P12). P02's Critical label follows the supplied bug-priority rubric for a concrete bounds-contract counterexample; it does not assert remote exploitability, broad production exposure or data loss. Its chart evidence remains arithmetic/source analysis, not an executed Scala widget reproduction. P03/P04 likewise still need targeted end-to-end failure/path reproductions. Existing website advisories remain within their documented static-site/build boundary, not an assertion of zero risk.
+
+Not verified: Windows/macOS, JDK26, CI Node24, real terminal/kitty/IME/screen-reader interaction, browser visual rendering, exhaustive public input combinations, binary compatibility via a dedicated ABI checker, performance benchmarks or instrumented statement/branch coverage. None is replaced by synthetic success claims. No toolchain/service/secret blocker prevented the local Linux/JDK25 baseline or final gate.
+
+### Evidence locations and retention
+
+Primary durable evidence is this report: exact command exits, named baseline failure, before/after totals, accepted/deferred findings, preservation constraints and commit hashes. Detailed logs, hashes, original five audit reports, patch drafts, independent reviews, metadata and structural metrics are under `/home/worxbend/.hermes/cache/scratch/glyphora-quality-20261022/`. In particular: `baseline/`, `final/`, the four batch directories, `comparison.json`, `structural-metrics.json`, `approval-probes.json` and `final-review/`. Scratch has normal retention limits; the committed report does not depend on those files remaining forever.
+
+### Full command-by-command comparison
+`M` below is the actual external wrapper, equivalent to `JAVA_TOOL_OPTIONS="-Xmx2g -XX:+UseSerialGC" ./mill --no-server -j 2` from the repository root. Python uses `/usr/bin/python3`; website commands run in `website/`. Full-gate environment also unsets golden updates, sets scratch TMPDIR, and prepends `/usr/bin` for PyYAML.
+| Step | Executed command | Before exit | After exit |
+| --- | --- | ---: | ---: |
+| compile | `M __.compile + __.test.compile` | 0 | 0 |
+| format | `M mill.scalalib.scalafmt.ScalafmtModule/checkFormatAll __.sources` | 0 | 0 |
+| scalafix | `M __.fix --check` | 0 | 0 |
+| test-core | `M core.test` | 0 | 0 |
+| test-terminal | `M terminal.test` | 0 | 0 |
+| test-widgets | `M widgets.test` | 0 | 0 |
+| test-runtime | `M runtime.test` | 0 | 0 |
+| test-macros | `M macros.test` | 0 | 0 |
+| test-dsl | `M dsl.test` | 1 | 0 |
+| test-test-support | `M test-support.test` | 0 | 0 |
+| example-airsensor | `M examples.airsensor.test` | 0 | 0 |
+| example-counter | `M examples.counter.test` | 0 | 0 |
+| example-dashboard | `M examples.dashboard.test` | 0 | 0 |
+| example-doctor | `M examples.doctor.test` | 0 | 0 |
+| example-form-demo | `M examples.form-demo.test` | 0 | 0 |
+| example-gallery | `M examples.gallery.test` | 0 | 0 |
+| example-hello-world | `M examples.hello-world.test` | 0 | 0 |
+| example-loadtest | `M examples.loadtest.test` | 0 | 0 |
+| example-procmon | `M examples.procmon.test` | 0 | 0 |
+| example-showcase | `M examples.showcase.test` | 0 | 0 |
+| example-todo-list | `M examples.todo-list.test` | 0 | 0 |
+| example-weather | `M examples.weather.test` | 0 | 0 |
+| python-tests | `/usr/bin/python3 -m unittest discover -s scripts/tests -v` | 0 | 0 |
+| workflows | `bash scripts/check-workflows.sh` | 0 | 0 |
+| quickstart | `/usr/bin/python3 scripts/verify-scala-cli.py` | 0 | 0 |
+| packaged-consumer | `/usr/bin/python3 scripts/verify-packaged-consumer.py` | 0 | 0 |
+| gallery | `bash scripts/render-gallery.sh --check` | 0 | 0 |
+| website-tests | `npm test` | 0 | 0 |
+| website-audit | `npm audit --audit-level=critical --json` | 0 | 0 |
+| website-build | `npm run build` | 0 | 0 |
+| wiki | `node scripts/export-wiki.mjs --output <scratch>/final/wiki` | 0 | 0 |
+| native-airsensor | `M examples.airsensor.nativeImage` | 0 | 0 |
+| native-counter | `M examples.counter.nativeImage` | 0 | 0 |
+| native-dashboard | `M examples.dashboard.nativeImage` | 0 | 0 |
+| native-doctor | `M examples.doctor.nativeImage` | 0 | 0 |
+| native-form-demo | `M examples.form-demo.nativeImage` | 0 | 0 |
+| native-gallery | `M examples.gallery.nativeImage` | 0 | 0 |
+| native-hello-world | `M examples.hello-world.nativeImage` | 0 | 0 |
+| native-loadtest | `M examples.loadtest.nativeImage` | 0 | 0 |
+| native-procmon | `M examples.procmon.nativeImage` | 0 | 0 |
+| native-showcase | `M examples.showcase.nativeImage` | 0 | 0 |
+| native-todo-list | `M examples.todo-list.nativeImage` | 0 | 0 |
+| native-weather | `M examples.weather.nativeImage` | 0 | 0 |
+| native-smoke | `/usr/bin/python3 scripts/ci-examples.py smoke-native` | 0 | 0 |
