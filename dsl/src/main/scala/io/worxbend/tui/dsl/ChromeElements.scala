@@ -488,10 +488,10 @@ private[dsl] final case class ContextTargetElement(target: Element, props: Eleme
 
 /** A right-click menu around `target`: a right-button press anywhere inside it — that nothing inside consumed — opens
   * the existing [[io.worxbend.tui.widgets.Menu w.Menu]] over `items` at the cell clicked, drawn through the frame root
-  * and flipped to open leftwards or upwards near the frame's edges ([[io.worxbend.tui.widgets.ContextMenu.placement
-  * ContextMenu.placement]]). While it is open `Up`/`Down` move the highlight whatever holds focus, `Enter` (or a click
-  * on an item) hands the item's index to `onSelect` and closes it, and `Esc`, `Tab` or a click elsewhere close it. Lays
-  * out, measures and paints exactly as `target`.
+  * and flipped to open leftwards or upwards near the frame's edges. See
+  * [[io.worxbend.tui.widgets.ContextMenu.placement]]. While it is open `Up`/`Down` move the highlight whatever holds
+  * focus, `Enter` (or a click on an item) hands the item's index to `onSelect` and closes it, and `Esc`, `Tab` or a
+  * click elsewhere close it. Lays out, measures and paints exactly as `target`.
   *
   * `decorated` is the framework's slot for the decorated children; application code never sets it.
   */
