@@ -178,3 +178,30 @@ final class GalleryPropsSpec extends AnyFunSuite:
       pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)
       assert(pilot.awaitTermination())
     }
+
+  test("shell sidebar keeps every label in family order across navigation and prop edits"):
+    val app     = GalleryApp(fixtures)
+    val backend = HeadlessBackend(Size(120, app.pages.size + 8))
+    Pilot.using(backend)(app.runWith(backend)) { pilot =>
+      pilot.waitForIdle()
+      def sidebarText: Vector[String] = pilot.screenText.linesIterator.map(_.take(34).replace("> ", "  ")).toVector
+      val original                    = sidebarText
+      val labels                      = app.pages.map(p => f"${p.family.take(10)}%-10s ${p.factory}".take(30))
+      val sidebarRows                 = original.filter(row => labels.exists(row.contains))
+      assert(sidebarRows.size == labels.size)
+      assert(sidebarRows.zip(labels).forall((row, label) => row.contains(label)))
+      val target                      = app.pages.indexWhere(_.factory == "barChart")
+      (0 until target).foreach(_ => pilot.pressKey(KeyCode.Char('n'), KeyModifiers.Alt))
+      pilot.waitForIdle()
+      assert(sidebarText == original)
+      val before                      = pilot.screenText
+      pilot.readOnRenderThread {
+        app.pages(target).props.collectFirst { case Prop.Toggle("show values", value) => value }.get.set(true)
+      }
+      pilot.waitUntil("changed prop to paint")(pilot.screenText != before)
+      assert(sidebarText == original)
+      pilot.pressKey(KeyCode.Char('n'), KeyModifiers.Alt).waitForIdle()
+      pilot.pressKey(KeyCode.Char('p'), KeyModifiers.Alt).waitForIdle()
+      assert(sidebarText == original)
+      assert(pilot.screenText.contains("barChart —"))
+    }
