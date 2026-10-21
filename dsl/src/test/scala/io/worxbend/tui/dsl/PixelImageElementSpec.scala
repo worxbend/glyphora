@@ -20,30 +20,46 @@ final class PixelImageElementSpec extends AnyFunSuite with PilotFixture:
   private def kittyDeletes(sequences: Seq[String]): Int = sequences.count(_.contains(s"${Esc}_Ga=d,d=I,"))
 
   test("drawn once, silent while idle, taken down under a dialog and put back after it"):
-    val backend = HeadlessBackend(Size(40, 10))
+    val backend  = HeadlessBackend(Size(40, 10))
     backend.capabilitiesTo(TerminalCapabilities(kittyGraphics = Support.Yes))
-    val app     = new TuiApp:
+    val app      = new TuiApp:
       override def bindings: KeyBindings            = KeyBindings(
         binding("ctrl+d", "ask")(pushScreen(Screen.confirm("Quit", "Sure?")(popScreen(), popScreen()))),
         binding("ctrl+q", "quit")(quit()),
       )
       def view(using ReactiveScope, Theme): Element = pixelImage(picture)
-    val pilot   = startPilot(backend) { app.runWith(backend) }.waitForIdle()
+    val gate     = CountDownLatch(1)
+    val started  = CountDownLatch(1)
+    val original = PictureEncodings.encode
+    PictureEncodings.encode = (kind, image) =>
+      started.countDown()
+      assert(gate.await(10, TimeUnit.SECONDS), "the real encoder was not released")
+      original(kind, image)
+    try
+      val pilot = startPilot(backend) { app.runWith(backend) }.waitForIdle()
+      assert(started.await(10, TimeUnit.SECONDS), "the encoder did not start")
+      assert(kittyDraws(backend.rawSequences) == 0, "loop idle does not wait for the in-flight encoder")
+      assert(pilot.screenText.contains("▀"), "the fallback is drawn while encoding is blocked")
+      gate.countDown()
+      pilot.waitUntil("the real encoded picture to be drawn")(kittyDraws(backend.rawSequences) == 1)
+      assert(kittyDraws(backend.rawSequences) == 1)
+      pilot.tick(3).waitForIdle()
+      assert(kittyDraws(backend.rawSequences) == 1 && kittyDeletes(backend.rawSequences) == 0)
 
-    assert(kittyDraws(backend.rawSequences) == 1)
-    pilot.tick(3).waitForIdle()
-    assert(kittyDraws(backend.rawSequences) == 1 && kittyDeletes(backend.rawSequences) == 0)
+      pilot.pressKey(KeyCode.Char('d'), KeyModifiers.Ctrl).waitForIdle()
+      assert(pilot.screenText.contains("Sure?"))
+      assert(kittyDeletes(backend.rawSequences) == 1)
 
-    pilot.pressKey(KeyCode.Char('d'), KeyModifiers.Ctrl).waitForIdle()
-    assert(pilot.screenText.contains("Sure?"))
-    assert(kittyDeletes(backend.rawSequences) == 1)
+      pilot.pressKey(KeyCode.Escape).waitForIdle()
+      assert(!pilot.screenText.contains("Sure?"))
+      pilot.waitUntil("the picture to reappear after the dialog")(kittyDraws(backend.rawSequences) == 2)
+      assert(kittyDraws(backend.rawSequences) == 2)
 
-    pilot.pressKey(KeyCode.Escape).waitForIdle()
-    assert(!pilot.screenText.contains("Sure?"))
-    assert(kittyDraws(backend.rawSequences) == 2)
-
-    pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)
-    assert(pilot.awaitTermination())
+      pilot.pressKey(KeyCode.Char('q'), KeyModifiers.Ctrl)
+      assert(pilot.awaitTermination())
+    finally
+      gate.countDown()
+      PictureEncodings.encode = original
 
   test("on a terminal with no picture protocol the half-block fallback is what the screen shows"):
     val backend = HeadlessBackend(Size(20, 5))
