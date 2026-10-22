@@ -11,8 +11,9 @@ import io.worxbend.tui.core.{Color, ColorScheme}
 enum Support:
   case Yes, No, Unknown
 
-  /** Whether a feature in this state should be used. Everything except an explicit [No](Support.html#No-0) is a yes —
-    * see [[TerminalCapabilities]] for why silence means "carry on".
+  /** Whether a feature in this state should be used. Everything except an explicit
+    * [No](https://worxbend.github.io/glyphora/api/terminal/io/worxbend/tui/terminal/Support.html#No-0) is a yes — see
+    * [[TerminalCapabilities]] for why silence means "carry on".
     *
     * It lives on the state rather than on [[TerminalCapabilities]] so that reading a field says what it means at the
     * point of use — `probed.bracketedPaste.usable` — and so that a capability field added later carries the rule

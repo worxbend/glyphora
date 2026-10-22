@@ -9,9 +9,9 @@ package io.worxbend.tui.terminal
   * the app works exactly as before — so a widget may set a shape and must never depend on it.
   *
   * This is the mouse pointer, not the hardware caret; the caret's shape is [[CursorShape]].
-  * [Default](PointerShape.html#Default-0) hands the pointer back to the user's own configuration, and
-  * `AnsiSequences.RestoreAll` emits it so a process killed with a hand pointer up does not leave one behind in the
-  * shell.
+  * [Default](https://worxbend.github.io/glyphora/api/terminal/io/worxbend/tui/terminal/PointerShape.html#Default-0)
+  * hands the pointer back to the user's own configuration, and `AnsiSequences.RestoreAll` emits it so a process killed
+  * with a hand pointer up does not leave one behind in the shell.
   */
 enum PointerShape:
 
