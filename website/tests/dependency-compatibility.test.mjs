@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {once} from 'node:events';
+import {createServer} from 'node:http';
 import {createRequire} from 'node:module';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -32,6 +34,61 @@ test('Docusaurus packages and the Mermaid override stay aligned', async () => {
   const mermaidPackage = JSON.parse(await readFile(themeRequire.resolve('mermaid/package.json'), 'utf8'));
   assert.equal(mermaidPackage.version, manifest.overrides['@docusaurus/theme-mermaid'].mermaid);
   assert.match(mermaidPackage.version, /^11\./);
+});
+
+// Selector parser 7 changes insertion-during-iteration semantics, not the CJS
+// processor/node API these six cssnano plugins use. Exercise the consumers, not
+// just a separately imported parser. The 7.1.6 patch fixes GHSA-rj75-hqrm-r3gf.
+// https://github.com/postcss/postcss-selector-parser/blob/master/CHANGELOG.md
+for (const [name, input, expected, options] of [
+  ['postcss-calc', 'a[data-size="calc(3*3)"]{width:calc(1px + 2px)}',
+    'a[data-size="9"]{width:3px}', {selectors: true}],
+  ['postcss-discard-unused', '@namespace svg url(svg);@namespace unused url(unused);svg|a{color:red}',
+    '@namespace svg url(svg);svg|a{color:red}'],
+  ['postcss-merge-rules', '.a:hover{color:red}.b:hover{color:red}',
+    '.a:hover,.b:hover{color:red}'],
+  ['postcss-minify-selectors', 'a:nth-child(1), a::before, [x="abc"]{color:red}',
+    '[x=abc],a:before,a:first-child{color:red}'],
+  ['postcss-unique-selectors', '.b, .a, .a{color:red}', '.a,.b{color:red}'],
+  ['stylehacks', '* html .legacy{color:red}.modern{color:blue}', '.modern{color:blue}'],
+]) {
+  test(`patched selector parser works through ${name}`, async () => {
+    const consumerRequire = createRequire(require.resolve(name));
+    const parserVersion = consumerRequire('postcss-selector-parser/package.json').version;
+    assert.equal(parserVersion, manifest.overrides[name]['postcss-selector-parser']);
+    const result = await require('postcss')([require(name)(options)]).process(input, {from: undefined});
+    assert.equal(result.css, expected);
+    assert.deepEqual(result.warnings(), []);
+  });
+}
+
+// SockJS calls only require('uuid').v4() without options or an output buffer.
+// UUID 9 removes deep imports/UMD and 11 changes v1/v7 state, neither used here.
+// https://github.com/uuidjs/uuid/blob/v11.1.1/CHANGELOG.md
+// Exercise an actual SockJS HTTP transport, including its connection constructor.
+test('patched UUID supports the SockJS connection lifecycle', {timeout: 10000}, async () => {
+  const sockjsRequire = createRequire(require.resolve('sockjs'));
+  assert.equal(sockjsRequire('uuid/package.json').version, manifest.overrides.sockjs.uuid);
+  const sockjs = require('sockjs').createServer({log() {}});
+  const server = createServer();
+  let connection;
+  try {
+    sockjs.installHandlers(server, {prefix: '/compatibility'});
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const connected = once(sockjs, 'connection');
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/compatibility/000/test/xhr`, {method: 'POST'});
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), 'o\n');
+    [connection] = await connected;
+    assert.match(connection.id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    assert.equal(connection.readyState, 1);
+    connection.close(1000, 'compatibility test finished');
+  } finally {
+    connection?.destroy();
+    server.closeAllConnections();
+    await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  }
 });
 
 // Upstream's v7.0.0 release identifies Node >=20 as the breaking change;
