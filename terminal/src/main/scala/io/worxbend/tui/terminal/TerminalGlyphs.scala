@@ -18,9 +18,9 @@ object TerminalGlyphs:
     *
     * Precedence, highest first:
     *   1. `GLYPHORA_ASCII` set to any value other than empty or `0` forces
-    *      [[io.worxbend.tui.core.GlyphSupport.Ascii GlyphSupport.Ascii]]. This is the escape hatch for a terminal that
-    *      claims more than it can draw — a font with no braille coverage, say, where the spinner comes out as a row of
-    *      replacement boxes.
+    *      [GlyphSupport.Ascii](https://worxbend.github.io/glyphora/api/core/io/worxbend/tui/core/GlyphSupport.html#Ascii-0).
+    *      This is the escape hatch for a terminal that claims more than it can draw — a font with no braille coverage,
+    *      say, where the spinner comes out as a row of replacement boxes.
     *   2. A character encoding that is not UTF-8 (or no locale variable at all) means the bytes cannot even survive the
     *      trip, so
     *      [GlyphSupport.Ascii](https://worxbend.github.io/glyphora/api/core/io/worxbend/tui/core/GlyphSupport.html#Ascii-0).

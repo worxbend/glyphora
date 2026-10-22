@@ -72,8 +72,8 @@ final case class TerminalCapabilities(
     * Two sources, in order of authority. A mode 2031 colour-scheme report (`reportedColorScheme`) is the terminal's own
     * judgement and wins outright; failing that, the OSC 11 background colour (`backgroundColor`) is read through
     * [[io.worxbend.tui.core.ColorScheme.of]]. A terminal that answered neither is
-    * [[io.worxbend.tui.core.ColorScheme.Unknown ColorScheme.Unknown]], which every caller reads as "dark" — what every
-    * terminal was assumed to be before any of them could be asked.
+    * [ColorScheme.Unknown](https://worxbend.github.io/glyphora/api/core/io/worxbend/tui/core/ColorScheme.html#Unknown-0),
+    * which every caller reads as "dark" — what every terminal was assumed to be before any of them could be asked.
     */
   def colorScheme: ColorScheme =
     reportedColorScheme.orElse(backgroundColor.map(ColorScheme.of)).getOrElse(ColorScheme.Unknown)
