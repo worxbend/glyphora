@@ -11,8 +11,9 @@ import io.worxbend.tui.core.{Color, ColorScheme}
 enum Support:
   case Yes, No, Unknown
 
-  /** Whether a feature in this state should be used. Everything except an explicit [[No]] is a yes — see
-    * [[TerminalCapabilities]] for why silence means "carry on".
+  /** Whether a feature in this state should be used. Everything except an explicit
+    * [[io.worxbend.tui.terminal.Support.No No]] is a yes — see [[TerminalCapabilities]] for why silence means "carry
+    * on".
     *
     * It lives on the state rather than on [[TerminalCapabilities]] so that reading a field says what it means at the
     * point of use — `probed.bracketedPaste.usable` — and so that a capability field added later carries the rule
@@ -71,8 +72,9 @@ final case class TerminalCapabilities(
     *
     * Two sources, in order of authority. A mode 2031 colour-scheme report (`reportedColorScheme`) is the terminal's own
     * judgement and wins outright; failing that, the OSC 11 background colour (`backgroundColor`) is read through
-    * [[io.worxbend.tui.core.ColorScheme.of]]. A terminal that answered neither is [[ColorScheme.Unknown]], which every
-    * caller reads as "dark" — what every terminal was assumed to be before any of them could be asked.
+    * [[io.worxbend.tui.core.ColorScheme.of]]. A terminal that answered neither is
+    * [[io.worxbend.tui.core.ColorScheme.Unknown ColorScheme.Unknown]], which every caller reads as "dark" — what every
+    * terminal was assumed to be before any of them could be asked.
     */
   def colorScheme: ColorScheme =
     reportedColorScheme.orElse(backgroundColor.map(ColorScheme.of)).getOrElse(ColorScheme.Unknown)

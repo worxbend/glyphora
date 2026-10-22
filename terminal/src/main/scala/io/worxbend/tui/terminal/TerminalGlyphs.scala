@@ -17,19 +17,22 @@ object TerminalGlyphs:
   /** The glyph floor this environment justifies.
     *
     * Precedence, highest first:
-    *   1. `GLYPHORA_ASCII` set to any value other than empty or `0` forces [[GlyphSupport.Ascii]]. This is the escape
-    *      hatch for a terminal that claims more than it can draw — a font with no braille coverage, say, where the
-    *      spinner comes out as a row of replacement boxes.
+    *   1. `GLYPHORA_ASCII` set to any value other than empty or `0` forces
+    *      [[io.worxbend.tui.core.GlyphSupport.Ascii GlyphSupport.Ascii]]. This is the escape hatch for a terminal that
+    *      claims more than it can draw — a font with no braille coverage, say, where the spinner comes out as a row of
+    *      replacement boxes.
     *   2. A character encoding that is not UTF-8 (or no locale variable at all) means the bytes cannot even survive the
-    *      trip, so [[GlyphSupport.Ascii]]. `LC_ALL` wins over `LC_CTYPE`, which wins over `LANG`, which is the ordering
-    *      POSIX defines for them.
-    *   3. A Linux virtual console or a `vt`-class `TERM` gets [[GlyphSupport.BoxDrawing]]: its built-in font has the
+    *      trip, so [[io.worxbend.tui.core.GlyphSupport.Ascii GlyphSupport.Ascii]]. `LC_ALL` wins over `LC_CTYPE`, which
+    *      wins over `LANG`, which is the ordering POSIX defines for them.
+    *   3. A Linux virtual console or a `vt`-class `TERM` gets
+    *      [[io.worxbend.tui.core.GlyphSupport.BoxDrawing GlyphSupport.BoxDrawing]]: its built-in font has the
     *      box-drawing block and nothing beyond it.
-    *   4. Everything else gets [[GlyphSupport.Full]].
+    *   4. Everything else gets [[io.worxbend.tui.core.GlyphSupport.Full GlyphSupport.Full]].
     *
-    * There is deliberately no variable that forces the floor *up*. [[GlyphSupport.Full]] is already what any UTF-8
-    * environment resolves to, so an opt-in would only ever be used to overrule rule 2 or 3 — and both of those describe
-    * terminals that genuinely cannot draw the glyphs.
+    * There is deliberately no variable that forces the floor *up*.
+    * [[io.worxbend.tui.core.GlyphSupport.Full GlyphSupport.Full]] is already what any UTF-8 environment resolves to, so
+    * an opt-in would only ever be used to overrule rule 2 or 3 — and both of those describe terminals that genuinely
+    * cannot draw the glyphs.
     */
   def detect(env: Map[String, String] = sys.env): GlyphSupport =
     if forcedAscii(env) then GlyphSupport.Ascii

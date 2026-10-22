@@ -18,9 +18,10 @@ import scala.util.control.NonFatal
   * (which restores cooked mode, the main screen, and cursor visibility if still active). `draw` keeps a copy of the
   * last flushed frame and writes only the diff.
   *
-  * Signals are owned here rather than left to JLine's defaults. `INT`/`QUIT` become [[Event.Interrupt]] so the runner
-  * unwinds through its normal teardown; `TSTP`/`CONT` hand the terminal back to the shell and take it again on resume;
-  * `WINCH` posts a coalesced resize. See [[JLine3Backend.create]] for why the defaults are unusable.
+  * Signals are owned here rather than left to JLine's defaults. `INT`/`QUIT` become
+  * [[io.worxbend.tui.core.Event.Interrupt Event.Interrupt]] so the runner unwinds through its normal teardown;
+  * `TSTP`/`CONT` hand the terminal back to the shell and take it again on resume; `WINCH` posts a coalesced resize. See
+  * [[JLine3Backend.create]] for why the defaults are unusable.
   *
   * The mechanics live in package-private collaborators — [[FrameEncoder]] and [[FrameBaseline]] for the frame diff,
   * [[EventPump]] for the wake/poll machinery, [[ReplyQueries]] for the query/reply round trips, [[TerminalDressing]]
@@ -836,10 +837,11 @@ object JLine3Backend:
     * `colorDepth` defaults to environment-based detection (honoring `NO_COLOR`/`CLICOLOR_FORCE`); pass an explicit
     * value to force a palette regardless of the environment.
     *
-    * `knownCapabilities` is what an earlier backend on the same controlling terminal reported as its [[capabilities]]:
-    * given, entering raw mode skips the capability probe — one round trip of up to 100 ms — and reports these instead.
-    * A process that opens one backend after another (a run of one-shot prompts) probes once and hands the answer on; a
-    * terminal does not change what it supports while the process runs.
+    * `knownCapabilities` is what an earlier backend on the same controlling terminal reported as its
+    * [[io.worxbend.tui.terminal.JLine3Backend#capabilities capabilities]]: given, entering raw mode skips the
+    * capability probe — one round trip of up to 100 ms — and reports these instead. A process that opens one backend
+    * after another (a run of one-shot prompts) probes once and hands the answer on; a terminal does not change what it
+    * supports while the process runs.
     */
   def create(
       colorDepth: ColorDepth = ColorDepth.detect(),
