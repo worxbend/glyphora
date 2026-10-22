@@ -1,0 +1,2651 @@
+{
+  "schema_version": 1,
+  "scope": "Approved23qualityimprovements; local integration only",
+  "base_commit": "e03a40e71f310a28e28fc50a2e9c65adf7adc401",
+  "verified_source_commit": "def7734b340e314f24f239dcefa84e9a640d30fe",
+  "branch": "refactor/quality-pass-20261022",
+  "disposition_counts": {
+    "completed": 22,
+    "partial_upstream_blocker": 1
+  },
+  "dispositions": [
+    {
+      "id": "L01",
+      "status": "completed",
+      "assessment": "Buffer snapshot/copyFrom share the same private all-plane copier; area/self-copy guards preserved.",
+      "historical_source_reference": "core/src/main/scala/io/worxbend/tui/core/Buffer.scala:609-642; core/src/test/scala/io/worxbend/tui/core/BufferCopyFromSpec.scala:20-63",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "L02",
+      "status": "completed",
+      "assessment": "Private nextSlot preserves Long row/cursor arithmetic, free-prefix retry and reservation ordering.",
+      "historical_source_reference": "core/src/main/scala/io/worxbend/tui/core/GridLayout.scala:122-170; core/src/test/scala/io/worxbend/tui/core/GridLayoutSpec.scala:45-64",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "L03",
+      "status": "completed",
+      "assessment": "Both memo entrypoints use one refresh owner; strict/fallback admission, deps-before-throw and initial retry are asserted.",
+      "historical_source_reference": "dsl/src/main/scala/io/worxbend/tui/dsl/ViewState.scala:140-147,342-347; dsl/src/main/scala/io/worxbend/tui/dsl/Hooks.scala:62-63; dsl/src/test/scala/io/worxbend/tui/dsl/MemoRefreshSpec.scala:6-73",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "L04",
+      "status": "completed",
+      "assessment": "Private observer/focus stages retain every observer, ordering, focus-before-target, exception and gesture semantics.",
+      "historical_source_reference": "dsl/src/main/scala/io/worxbend/tui/dsl/ElementHost.scala:462-510; dsl/src/test/scala/io/worxbend/tui/dsl/MouseDispatchStagesSpec.scala:14-93",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "L05",
+      "status": "completed",
+      "assessment": "Grouped chart reuses existing centered label painter, not a new rendering abstraction; full Cell Unicode oracle retained.",
+      "historical_source_reference": "widgets/src/main/scala/io/worxbend/tui/widgets/GroupedBarChart.scala:103; widgets/src/test/scala/io/worxbend/tui/widgets/GroupedBarChartSpec.scala:10-30",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "L06",
+      "status": "completed",
+      "assessment": "One gutter helper serves flat/multiline paths; continuation padding, source callback order and style layering tested.",
+      "historical_source_reference": "widgets/src/main/scala/io/worxbend/tui/widgets/DataTable.scala:635-669; widgets/src/test/scala/io/worxbend/tui/widgets/DataTableGutterSpec.scala:9-90",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "L07",
+      "status": "completed",
+      "assessment": "Only immutable sidebar Line labels are hoisted; views/props remain live and navigation/prop edits are characterized.",
+      "historical_source_reference": "examples/gallery/src/main/scala/io/worxbend/tui/examples/gallery/Main.scala:33-59; examples/gallery/src/test/scala/io/worxbend/tui/examples/gallery/GallerySpec.scala:182-208",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "L08",
+      "status": "completed",
+      "assessment": "Expected styled diagnostic buffer parsed once in mismatch branch; exact diagnostic/report assertions remain.",
+      "historical_source_reference": "test-support/src/main/scala/io/worxbend/tui/testsupport/GoldenFrames.scala:148-159; test-support/src/test/scala/io/worxbend/tui/testsupport/StyledGoldensSpec.scala:64-82",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "L09",
+      "status": "completed",
+      "assessment": "Both original unused suppressions removed, core AND DSL; neither contribution counted twice.",
+      "historical_source_reference": "core/src/main/scala/io/worxbend/tui/core/CharWidth.scala:136-141; dsl/src/test/scala/io/worxbend/tui/dsl/DeferredViewStateSpec.scala:159",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "L10",
+      "status": "completed",
+      "assessment": "All observed member-query warnings removed; fresh seven-module API generation and strict mapped-link gate pass. Verified direct links repair silent enum spans and summary copies; private/non-emitted declarations use documented code-voice exceptions.",
+      "historical_source_reference": "build.mill:112-125; scripts/check-api-links.py; scripts/tests/test_api_links.py; results/doc-navigation/proof-committed.json",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0",
+      "final_evidence": [
+        "final-acceptance/api-member-warnings.log",
+        "final-acceptance/api-links.log",
+        "peer-review/doc-final.md",
+        "peer-review/doc-comments-final.md",
+        "peer-review/codec-final.md"
+      ]
+    },
+    {
+      "id": "P01",
+      "status": "completed",
+      "assessment": "Authenticated HTTPS origin checked on every redirect; real urllib handler tests cover chains, ports, downgrade/userinfo, statuses, loops and verifier wiring.",
+      "historical_source_reference": "scripts/verify-packaged-consumer.py:34-80; scripts/tests/test_authenticated_redirects.py:42-101; scripts/tests/test_release_validation.py",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "P02",
+      "status": "completed",
+      "assessment": "Exact nonnegative BigInt totals and pre-narrowing bounded heights; extreme automatic/pinned scale and sentinel containment regressions substantive.",
+      "historical_source_reference": "widgets/src/main/scala/io/worxbend/tui/widgets/StackedBarChart.scala:11-65; widgets/src/test/scala/io/worxbend/tui/widgets/StackedBarChartSpec.scala:10-54",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "P03",
+      "status": "completed",
+      "assessment": "Prepared graphics commits occur after successful writes; uncertain IDs retained; latest scroll wrapper invalidates after delete OR scroll failure. Four direction/batch cases recover through ordinary identical draw then become silent.",
+      "historical_source_reference": "terminal/src/main/scala/io/worxbend/tui/terminal/GraphicsLayer.scala:36-93; terminal/src/main/scala/io/worxbend/tui/terminal/JLine3Backend.scala:201-214,551-580; terminal/src/test/scala/io/worxbend/tui/terminal/GraphicsLayerSpec.scala:127-253; terminal/src/test/scala/io/worxbend/tui/terminal/JLineOutputFailureSpec.scala:108-128",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "P04",
+      "status": "completed",
+      "assessment": "Absolute physical output path exported before Mill, odd pairs rejected before invocation; fixture executions cover spaced/default/relative/absolute paths.",
+      "historical_source_reference": "scripts/render-tapes.sh:17-25; scripts/tests/test_render_tapes.py:44-67",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "P05",
+      "status": "completed",
+      "assessment": "Pages assets trigger added, removal rejected by actual policy mutation test.",
+      "historical_source_reference": ".github/workflows/docs.yml:10; scripts/validate-workflows.py:88-89; scripts/tests/test_ci_safeguards.py:232-237",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "P06",
+      "status": "completed",
+      "assessment": "Homepage coordinate matches shared release; test extracts actual JSX coordinate against sole publishVersion.",
+      "historical_source_reference": "website/src/pages/index.js:154; scripts/tests/test_homepage_version.py",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "P07",
+      "status": "completed",
+      "assessment": "Old weather result held/released after newer frame; FIFO owner isIdle includes Async reservation, establishing continuation delivery before final assertion; three outcome branches.",
+      "historical_source_reference": "examples/weather/src/test/scala/io/worxbend/tui/examples/weather/WeatherAppSpec.scala:67-126; runtime/src/main/scala/io/worxbend/tui/runtime/Async.scala; runtime/src/main/scala/io/worxbend/tui/runtime/RenderThread.scala",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "P08",
+      "status": "completed",
+      "assessment": "Shared publication checks preserve distinct Central/Packages order and exact diagnostics, including simultaneous failures.",
+      "historical_source_reference": "scripts/validate-workflows.py:114-151; scripts/tests/test_publication_policy.py:42-85",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "P09",
+      "status": "completed",
+      "assessment": "ALL named subparts: Wiki frontmatter/collision/link quirks; actual injected Scaladoc bridge VM storage/theme/idempotence; Unicode AND coastline parser/quantizer/CLI fixture generation. No accepted formats or generated tables changed.",
+      "historical_source_reference": "scripts/tests/test_wiki_export.py:35-94; scripts/tests/scaladoc.test.mjs:17-114; scripts/tests/test_scaladoc_theme.py; scripts/tests/test_generators.py:25-122",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "P10",
+      "status": "completed",
+      "assessment": "ALL examples: weather localhost HTTP/domain and JSON; AirGradient permissive numeric/missing-field scanner; procmon real ps, spaced/malformed child rows and post-EOF termination. No total deadline claim.",
+      "historical_source_reference": "examples/weather/src/test/scala/io/worxbend/tui/examples/weather/WeatherBoundarySpec.scala:64-119; examples/airsensor/src/test/scala/io/worxbend/tui/examples/airsensor/SensorPayloadSpec.scala:6-31; examples/procmon/src/test/scala/io/worxbend/tui/examples/procmon/PsProcessSourceSpec.scala:6-34",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "P11",
+      "status": "completed",
+      "assessment": "BigInt subtraction/multiplication/mean before conversion; endpoint saturation only where unrepresentable. Independent exact extreme edge/count/mean assertions supplement partition parity.",
+      "historical_source_reference": "examples/loadtest/src/main/scala/io/worxbend/tui/examples/loadtest/RunStats.scala:78-88,119-122,139-168; examples/loadtest/src/test/scala/io/worxbend/tui/examples/loadtest/RunStatsSpec.scala:149-183",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "P12",
+      "status": "completed",
+      "assessment": "Corrected first graphics case gates and delegates to real encoder, observes actual protocol draw, retains once/idle/dialog/reappearance assertions. No production delivery change claimed.",
+      "historical_source_reference": "dsl/src/test/scala/io/worxbend/tui/dsl/PixelImageElementSpec.scala:22-62",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0"
+    },
+    {
+      "id": "P13",
+      "status": "partial_upstream_blocker",
+      "assessment": "Verified compatible consumer-scoped dependency repairs, including KaTeX0.18.2 under Mermaid11 with matching CSS/fonts and actual browser hydration; both CI installs suppress lifecycle scripts. Remaining braces3.0.3 has no supported registry patch: plain audit exits1,29high entries,one advisory.",
+      "historical_source_reference": "website/package.json; website/package-lock.json; website/tests/dependency-compatibility.test.mjs:16-198; website/src/css/custom.css; .github/workflows/ci.yml:339; .github/workflows/docs.yml:76; scripts/tests/test_ci_safeguards.py:238-247; results/security-residuals/browser-math.json",
+      "source_reference_commit": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0",
+      "final_evidence": [
+        "website/DEPENDENCY_SECURITY.md",
+        "results/security-residuals/report.md",
+        "plain-audit-at-closure.json",
+        "braces-latest-final.json"
+      ]
+    }
+  ],
+  "verification": {
+    "summary": {
+      "planned_steps": 57,
+      "steps": 57,
+      "passed": 57,
+      "failed": [],
+      "scala_tests": 7526,
+      "frozen_source_unchanged": true,
+      "verified_head": "def7734b340e314f24f239dcefa84e9a640d30fe",
+      "original_main": "e80bb81ab4e59bf1eb0563cf00b82e5682145ab1",
+      "coverage": "Not configured; no coverage percentage claimed.",
+      "security_limit": "Critical-threshold audit is not a clean plain audit; braces remains separately documented."
+    },
+    "environment": {
+      "versions": {
+        "node": "v24.22.0",
+        "npm": "11.19.0"
+      },
+      "example_modules": [
+        "airsensor",
+        "counter",
+        "dashboard",
+        "doctor",
+        "form-demo",
+        "gallery",
+        "hello-world",
+        "loadtest",
+        "procmon",
+        "showcase",
+        "todo-list",
+        "weather"
+      ],
+      "planned_steps": 57,
+      "mill_jobs": 2,
+      "heap_limit": "2g",
+      "build_slots": 3
+    },
+    "python_tests": 142,
+    "website_tests": {
+      "tests": 12,
+      "pass": 12,
+      "fail": 0,
+      "skipped": 0
+    },
+    "mapped_api_links": {
+      "required_links": [
+        {
+          "source": "runtime/io/worxbend/tui/runtime/Frame.html",
+          "href": "https://worxbend.github.io/glyphora/api/core/io/worxbend/tui/core/Effect.html"
+        },
+        {
+          "source": "dsl/io/worxbend/tui/dsl/AccordionElement.html",
+          "href": "https://worxbend.github.io/glyphora/api/widgets/io/worxbend/tui/widgets/AccordionState.html#toggle-fffff3b3"
+        },
+        {
+          "source": "dsl/io/worxbend/tui/dsl/AnimationClock$.html",
+          "href": "https://worxbend.github.io/glyphora/api/runtime/io/worxbend/tui/runtime/RenderThread$.html#capture-cf"
+        },
+        {
+          "source": "test-support/io/worxbend/tui/testsupport/Pilot.html",
+          "href": "https://worxbend.github.io/glyphora/api/terminal/io/worxbend/tui/terminal/HeadlessBackend.html"
+        }
+      ],
+      "validated_anchors": 3748,
+      "other_invalid_anchors": [],
+      "edges": [
+        {
+          "source": "core",
+          "target": "core",
+          "count": 31,
+          "example": {
+            "source": "core/io/worxbend/tui/core.html",
+            "href": "https://worxbend.github.io/glyphora/api/core/io/worxbend/tui/core/ColorScheme.html#Unknown-0"
+          }
+        },
+        {
+          "source": "dsl",
+          "target": "core",
+          "count": 774,
+          "example": {
+            "source": "dsl/io/worxbend/tui/dsl.html",
+            "href": "https://worxbend.github.io/glyphora/api/core/io/worxbend/tui/core/Style.html"
+          }
+        },
+        {
+          "source": "dsl",
+          "target": "macros",
+          "count": 15,
+          "example": {
+            "source": "dsl/io/worxbend/tui/dsl.html",
+            "href": "https://worxbend.github.io/glyphora/api/macros/io/worxbend/tui/macros/Codec.html"
+          }
+        },
+        {
+          "source": "dsl",
+          "target": "runtime",
+          "count": 106,
+          "example": {
+            "source": "dsl/io/worxbend/tui/dsl.html",
+            "href": "https://worxbend.github.io/glyphora/api/runtime/io/worxbend/tui/runtime/RenderThread$.html#capture-cf"
+          }
+        },
+        {
+          "source": "dsl",
+          "target": "terminal",
+          "count": 128,
+          "example": {
+            "source": "dsl/io/worxbend/tui/dsl.html",
+            "href": "https://worxbend.github.io/glyphora/api/terminal/io/worxbend/tui/terminal/ColorDepth$.html#detect-ffffff15"
+          }
+        },
+        {
+          "source": "dsl",
+          "target": "widgets",
+          "count": 701,
+          "example": {
+            "source": "dsl/io/worxbend/tui/dsl.html",
+            "href": "https://worxbend.github.io/glyphora/api/widgets/io/worxbend/tui/widgets/AccordionState.html"
+          }
+        },
+        {
+          "source": "macros",
+          "target": "runtime",
+          "count": 2,
+          "example": {
+            "source": "macros/io/worxbend/tui/macros.html",
+            "href": "https://worxbend.github.io/glyphora/api/runtime/io/worxbend/tui/runtime/Persisted$.html"
+          }
+        },
+        {
+          "source": "runtime",
+          "target": "core",
+          "count": 46,
+          "example": {
+            "source": "runtime/io/worxbend/tui/runtime.html",
+            "href": "https://worxbend.github.io/glyphora/api/core/io/worxbend/tui/core/Rect.html"
+          }
+        },
+        {
+          "source": "runtime",
+          "target": "terminal",
+          "count": 36,
+          "example": {
+            "source": "runtime/io/worxbend/tui/runtime.html",
+            "href": "https://worxbend.github.io/glyphora/api/terminal/io/worxbend/tui/terminal/Backend.html#draw-fffffb0f"
+          }
+        },
+        {
+          "source": "terminal",
+          "target": "core",
+          "count": 91,
+          "example": {
+            "source": "terminal/io/worxbend/tui/terminal.html",
+            "href": "https://worxbend.github.io/glyphora/api/core/io/worxbend/tui/core/Buffer.html"
+          }
+        },
+        {
+          "source": "terminal",
+          "target": "terminal",
+          "count": 26,
+          "example": {
+            "source": "terminal/io/worxbend/tui/terminal.html",
+            "href": "https://worxbend.github.io/glyphora/api/terminal/io/worxbend/tui/terminal/ColorDepth.html#Monochrome-0"
+          }
+        },
+        {
+          "source": "test-support",
+          "target": "core",
+          "count": 138,
+          "example": {
+            "source": "test-support/io/worxbend/tui/testsupport.html",
+            "href": "https://worxbend.github.io/glyphora/api/core/io/worxbend/tui/core/Buffer.html"
+          }
+        },
+        {
+          "source": "test-support",
+          "target": "runtime",
+          "count": 11,
+          "example": {
+            "source": "test-support/io/worxbend/tui/testsupport/Pilot$.html",
+            "href": "https://worxbend.github.io/glyphora/api/runtime/io/worxbend/tui/runtime/RunnerError.html"
+          }
+        },
+        {
+          "source": "test-support",
+          "target": "terminal",
+          "count": 13,
+          "example": {
+            "source": "test-support/io/worxbend/tui/testsupport.html",
+            "href": "https://worxbend.github.io/glyphora/api/terminal/io/worxbend/tui/terminal/HeadlessBackend.html"
+          }
+        },
+        {
+          "source": "widgets",
+          "target": "core",
+          "count": 1630,
+          "example": {
+            "source": "widgets/io/worxbend/tui/widgets.html",
+            "href": "https://worxbend.github.io/glyphora/api/core/io/worxbend/tui/core/Style.html"
+          }
+        }
+      ]
+    },
+    "api_jars": [
+      {
+        "module": "core",
+        "sha256": "c748375e5d961c1643feee5720d2aee8f7b8aa7623abbf398901dd6133c1bf9b",
+        "html_pages": 136
+      },
+      {
+        "module": "terminal",
+        "sha256": "7383495b23f79cb56d0ff07fad02965ba8b9183a69ec10bad3981fa1e2e0a71b",
+        "html_pages": 42
+      },
+      {
+        "module": "widgets",
+        "sha256": "f6b05952322b0c4f712670a484ef79072c153d6d6e73a1946d5ba7bc647bffe8",
+        "html_pages": 330
+      },
+      {
+        "module": "runtime",
+        "sha256": "5977bfab12f405ad787f948d757f6c8440b39169903860608a8e287aad631e78",
+        "html_pages": 62
+      },
+      {
+        "module": "dsl",
+        "sha256": "2802c51c2b07b358ca7a2705e93c914c6ad4c6a1118ac9126b431e2c6b46258c",
+        "html_pages": 214
+      },
+      {
+        "module": "macros",
+        "sha256": "e63a32d9225000b487f72e3d549f7d8460500b7c0cc8478a83b7f11aa3295953",
+        "html_pages": 23
+      },
+      {
+        "module": "test-support",
+        "sha256": "3bc14206c2bfa801b7703afef7dc710c8389b8f0371272def810b9d59abe1c2a",
+        "html_pages": 22
+      }
+    ],
+    "api_html_pages": 829,
+    "member_query_warnings": 0,
+    "plain_audit_exit": 1,
+    "audit_counts": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 29,
+      "critical": 0,
+      "total": 29
+    },
+    "advisory_urls": [
+      "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm"
+    ],
+    "latest_braces_registry_version": "3.0.3",
+    "followup_commits_before_report": [
+      {
+        "sha": "169dc04cbb3e6a973a817ef7c3e213660e0227f0",
+        "subject": "docs: plan approved quality improvements",
+        "files": [
+          "QUALITY_IMPROVEMENTS.md"
+        ]
+      },
+      {
+        "sha": "8f2cfcb5df8ba7a60c25243661943b950d4dc1f6",
+        "subject": "test(core): characterize all buffer copy planes",
+        "files": [
+          "core/src/test/scala/io/worxbend/tui/core/BufferCopyFromSpec.scala"
+        ]
+      },
+      {
+        "sha": "904fb162b35d641338f1807443f9752d6431d443",
+        "subject": "refactor(core): consolidate buffer copy state",
+        "files": [
+          "core/src/main/scala/io/worxbend/tui/core/Buffer.scala"
+        ]
+      },
+      {
+        "sha": "9e3fa0de4a534fb2f54cdb3a611112dd4c6f4820",
+        "subject": "test(core): pin sparse grid search boundaries",
+        "files": [
+          "core/src/test/scala/io/worxbend/tui/core/GridLayoutSpec.scala"
+        ]
+      },
+      {
+        "sha": "1f04d25f069002bcb2cf1b7a0f32cd31f8638ee3",
+        "subject": "refactor(core): name sparse grid slot search",
+        "files": [
+          "core/src/main/scala/io/worxbend/tui/core/GridLayout.scala"
+        ]
+      },
+      {
+        "sha": "a9a01c8740d4c948da9425f8fc16faa7ebe8cbc2",
+        "subject": "chore(core): remove unused CharWidth lint suppression",
+        "files": [
+          "core/src/main/scala/io/worxbend/tui/core/CharWidth.scala"
+        ]
+      },
+      {
+        "sha": "f28c0256f5ad1719d061d23cb4c275f8dd70c6ac",
+        "subject": "fix(widgets): bound extreme stacked chart scaling",
+        "files": [
+          "widgets/src/main/scala/io/worxbend/tui/widgets/StackedBarChart.scala",
+          "widgets/src/test/scala/io/worxbend/tui/widgets/StackedBarChartSpec.scala"
+        ]
+      },
+      {
+        "sha": "abe5cebc2dd7f5e2e2372425afedaec17fdc64e4",
+        "subject": "test(widgets): characterize grouped chart label cells",
+        "files": [
+          "widgets/src/test/scala/io/worxbend/tui/widgets/GroupedBarChartSpec.scala"
+        ]
+      },
+      {
+        "sha": "3b973db038c76e607196ab357415e35a2a49dafb",
+        "subject": "refactor(widgets): reuse centred column chart labels",
+        "files": [
+          "widgets/src/main/scala/io/worxbend/tui/widgets/GroupedBarChart.scala"
+        ]
+      },
+      {
+        "sha": "7c2ebb403b63419bfea4d43ea6b061ee1abff08d",
+        "subject": "test(widgets): characterize table gutter and callback ordering",
+        "files": [
+          "widgets/src/test/scala/io/worxbend/tui/widgets/DataTableGutterSpec.scala"
+        ]
+      },
+      {
+        "sha": "ef66f01cbe9008f0adc6e3cc6ea834a86a50498b",
+        "subject": "refactor(widgets): share table highlight gutter painting",
+        "files": [
+          "widgets/src/main/scala/io/worxbend/tui/widgets/DataTable.scala"
+        ]
+      },
+      {
+        "sha": "5039d41da1f5a603dca6ea963cc4db208ac9baa1",
+        "subject": "test(dsl): characterize memo failures and mouse dispatch stages",
+        "files": [
+          "dsl/src/test/scala/io/worxbend/tui/dsl/MemoRefreshSpec.scala",
+          "dsl/src/test/scala/io/worxbend/tui/dsl/MouseDispatchStagesSpec.scala"
+        ]
+      },
+      {
+        "sha": "a51f8a38386d3989215ba22adc3970b88d1f4987",
+        "subject": "refactor(dsl): share memo slot refresh without changing failure order",
+        "files": [
+          "dsl/src/main/scala/io/worxbend/tui/dsl/Hooks.scala",
+          "dsl/src/main/scala/io/worxbend/tui/dsl/ViewState.scala"
+        ]
+      },
+      {
+        "sha": "6f2300810c1713cfe99bf88dfd9c21a99cf53172",
+        "subject": "refactor(dsl): name press observer and focus dispatch stages",
+        "files": [
+          "dsl/src/main/scala/io/worxbend/tui/dsl/ElementHost.scala"
+        ]
+      },
+      {
+        "sha": "dabe5e066c176a6284fc36c04fe72ab6adf640b7",
+        "subject": "fix(dsl): synchronize picture regression with real encoded draws",
+        "files": [
+          "dsl/src/test/scala/io/worxbend/tui/dsl/PixelImageElementSpec.scala"
+        ]
+      },
+      {
+        "sha": "bc0b0db3cbfabd805bd492a1b87ecbb9a5a8a493",
+        "subject": "chore(dsl): remove unused deferred builder lint suppression",
+        "files": [
+          "dsl/src/test/scala/io/worxbend/tui/dsl/DeferredViewStateSpec.scala"
+        ]
+      },
+      {
+        "sha": "d8d7757c3633947360ccec8e0d0a725501bffac4",
+        "subject": "fix(terminal): commit graphics only after output succeeds",
+        "files": [
+          "terminal/src/main/scala/io/worxbend/tui/terminal/GraphicsLayer.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/HeadlessBackend.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/JLine3Backend.scala",
+          "terminal/src/test/scala/io/worxbend/tui/terminal/GraphicsLayerSpec.scala",
+          "terminal/src/test/scala/io/worxbend/tui/terminal/JLineOutputFailureSpec.scala"
+        ]
+      },
+      {
+        "sha": "b538e3d7042a25762cded6f61abc07f937ea29c8",
+        "subject": "fix: confine authenticated artifact redirects to HTTPS origin",
+        "files": [
+          "scripts/tests/test_authenticated_redirects.py",
+          "scripts/tests/test_release_validation.py",
+          "scripts/verify-packaged-consumer.py"
+        ]
+      },
+      {
+        "sha": "bec759ce33d5baba416f4df4dc286a43c6239f7f",
+        "subject": "fix: resolve tape exports outside Mill sandboxes",
+        "files": [
+          "scripts/render-tapes.sh",
+          "scripts/tests/test_render_tapes.py"
+        ]
+      },
+      {
+        "sha": "48dbe8b8ca884dedf53caa1f2206b25afc2eb538",
+        "subject": "fix: deploy Pages when static documentation assets change",
+        "files": [
+          ".github/workflows/docs.yml",
+          "scripts/tests/test_ci_safeguards.py",
+          "scripts/validate-workflows.py"
+        ]
+      },
+      {
+        "sha": "3864e5879d65cc33e6fa54766a6928be5289e518",
+        "subject": "fix: synchronize homepage dependency with release version",
+        "files": [
+          "scripts/tests/test_homepage_version.py",
+          "website/src/pages/index.js"
+        ]
+      },
+      {
+        "sha": "7f030b21f1bea093c4e9c6d444d7160c0a057163",
+        "subject": "test: characterize ordered publication policy diagnostics",
+        "files": [
+          "scripts/tests/test_publication_policy.py"
+        ]
+      },
+      {
+        "sha": "bcb891a08a7919ba5307cd9e3471eeca4f3dda21",
+        "subject": "refactor: share publication trust checks without diagnostic drift",
+        "files": [
+          "scripts/validate-workflows.py"
+        ]
+      },
+      {
+        "sha": "54ebd9199addfbdb67c46e244e321057bc769cc2",
+        "subject": "test: characterize Wiki export boundaries with local documents",
+        "files": [
+          "scripts/tests/test_wiki_export.py"
+        ]
+      },
+      {
+        "sha": "357314326d66e3fbb717692a3280d4df21af2c95",
+        "subject": "test: exercise Scaladoc injection and theme bridge in Node VM",
+        "files": [
+          "scripts/tests/scaladoc.test.mjs",
+          "scripts/tests/test_scaladoc_theme.py"
+        ]
+      },
+      {
+        "sha": "d0a2effeb6fd084d64edbbf38adb42f31f043cfe",
+        "subject": "test: characterize Unicode and coastline generator boundaries",
+        "files": [
+          "scripts/tests/test_generators.py"
+        ]
+      },
+      {
+        "sha": "9934d1111fd17e8700b361ebd571ce35d007087a",
+        "subject": "test: verify authenticated redirect wiring and status variants",
+        "files": [
+          "scripts/tests/test_authenticated_redirects.py"
+        ]
+      },
+      {
+        "sha": "91bdb632ca31dca225deea5baa30e72970f946ae",
+        "subject": "fix: preserve explicit zero port in authenticated origin checks",
+        "files": [
+          "scripts/tests/test_authenticated_redirects.py",
+          "scripts/verify-packaged-consumer.py"
+        ]
+      },
+      {
+        "sha": "e6b9dde616fe063ae09a20c156f8c4098cbb9496",
+        "subject": "fix(loadtest): widen histogram and mean arithmetic safely",
+        "files": [
+          "examples/loadtest/src/main/scala/io/worxbend/tui/examples/loadtest/RunStats.scala",
+          "examples/loadtest/src/test/scala/io/worxbend/tui/examples/loadtest/RunStatsSpec.scala"
+        ]
+      },
+      {
+        "sha": "e451cf522ec01f8cbad1576c577f6c8b8c77128e",
+        "subject": "test(test-support): characterize styled mismatch diagnostics and reports",
+        "files": [
+          "test-support/src/test/scala/io/worxbend/tui/testsupport/StyledGoldensSpec.scala"
+        ]
+      },
+      {
+        "sha": "b465a0be983e55670620f54fed1a5d272a71d9eb",
+        "subject": "test(gallery): characterize shell labels across navigation and prop edits",
+        "files": [
+          "examples/gallery/src/test/scala/io/worxbend/tui/examples/gallery/GallerySpec.scala"
+        ]
+      },
+      {
+        "sha": "96942d3087f9b5c402a3fac9cf30fa8929de19ff",
+        "subject": "test(weather): gate stale continuation delivery deterministically",
+        "files": [
+          "examples/weather/src/test/scala/io/worxbend/tui/examples/weather/WeatherAppSpec.scala"
+        ]
+      },
+      {
+        "sha": "b8359f312e4dac1d64f4b8a9710f606c57124991",
+        "subject": "test(examples): cover weather HTTP JSON and sensor process boundaries",
+        "files": [
+          "examples/airsensor/src/test/scala/io/worxbend/tui/examples/airsensor/SensorPayloadSpec.scala",
+          "examples/procmon/src/test/scala/io/worxbend/tui/examples/procmon/PsProcessSourceSpec.scala",
+          "examples/weather/src/test/scala/io/worxbend/tui/examples/weather/WeatherBoundarySpec.scala"
+        ]
+      },
+      {
+        "sha": "4b61e0ccacc70fd023c22e66a4352ee8742dfff6",
+        "subject": "refactor(test-support): parse styled mismatch fixture once",
+        "files": [
+          "test-support/src/main/scala/io/worxbend/tui/testsupport/GoldenFrames.scala"
+        ]
+      },
+      {
+        "sha": "155798803db56029753bed73372574d94cd617c5",
+        "subject": "perf(gallery): retain immutable sidebar labels between frames",
+        "files": [
+          "examples/gallery/src/main/scala/io/worxbend/tui/examples/gallery/Main.scala"
+        ]
+      },
+      {
+        "sha": "c7532e7c1a9fe215a07aceecfbc9d1ec56089e12",
+        "subject": "test(procmon): exercise real process parsing and timeout termination",
+        "files": [
+          "examples/procmon/src/main/scala/io/worxbend/tui/examples/procmon/ProcessSource.scala",
+          "examples/procmon/src/test/scala/io/worxbend/tui/examples/procmon/PsProcessSourceSpec.scala"
+        ]
+      },
+      {
+        "sha": "c3a798ae5513e560aef17c1059651016b239db16",
+        "subject": "test(loadtest): pin exact widened histogram edge rounding",
+        "files": [
+          "examples/loadtest/src/test/scala/io/worxbend/tui/examples/loadtest/RunStatsSpec.scala"
+        ]
+      },
+      {
+        "sha": "a1ece9246ee9db7bd69093848da535c24e9d85ff",
+        "subject": "test(weather): bound and close local HTTP fixtures",
+        "files": [
+          "examples/weather/src/test/scala/io/worxbend/tui/examples/weather/WeatherBoundarySpec.scala"
+        ]
+      },
+      {
+        "sha": "6ac7393eb7e95950c3c4382f6e9f2cfb15eba20a",
+        "subject": "docs: qualify runner policy and terminal protocol links",
+        "files": [
+          "runtime/src/main/scala/io/worxbend/tui/runtime/CaptureStdio.scala",
+          "runtime/src/main/scala/io/worxbend/tui/runtime/Runner.scala",
+          "runtime/src/main/scala/io/worxbend/tui/runtime/Viewport.scala"
+        ]
+      },
+      {
+        "sha": "64d7e8154d4b3289b1af6ba957f5714cf847cab2",
+        "subject": "docs: qualify frame and bridge documentation links",
+        "files": [
+          "runtime/src/main/scala/io/worxbend/tui/runtime/Frame.scala",
+          "runtime/src/main/scala/io/worxbend/tui/runtime/JfrEvents.scala",
+          "runtime/src/main/scala/io/worxbend/tui/runtime/JulBridge.scala",
+          "runtime/src/main/scala/io/worxbend/tui/runtime/TerminalRunner.scala"
+        ]
+      },
+      {
+        "sha": "a4dfe0c5cf5844b80c1e5f5c271b352c4b195a55",
+        "subject": "docs: qualify widget factory and node documentation links",
+        "files": [
+          "dsl/src/main/scala/io/worxbend/tui/dsl/ChoiceElements.scala",
+          "dsl/src/main/scala/io/worxbend/tui/dsl/CollectionElements.scala",
+          "dsl/src/main/scala/io/worxbend/tui/dsl/DisplayElements.scala",
+          "dsl/src/main/scala/io/worxbend/tui/dsl/ElementFactories.scala",
+          "dsl/src/main/scala/io/worxbend/tui/dsl/TextEntryElements.scala"
+        ]
+      },
+      {
+        "sha": "b7c5953b453c160330b4cec751fbc05bb888d953",
+        "subject": "docs: repair chrome and appearance documentation links",
+        "files": [
+          "dsl/src/main/scala/io/worxbend/tui/dsl/CaretStyle.scala",
+          "dsl/src/main/scala/io/worxbend/tui/dsl/ChromeElements.scala",
+          "dsl/src/main/scala/io/worxbend/tui/dsl/LoadingElements.scala",
+          "dsl/src/main/scala/io/worxbend/tui/dsl/NavigationElements.scala",
+          "dsl/src/main/scala/io/worxbend/tui/dsl/Theme.scala"
+        ]
+      },
+      {
+        "sha": "632b85c8507f54981bb32b009d070f34c67f44e2",
+        "subject": "docs: qualify service and runtime documentation links",
+        "files": [
+          "dsl/src/main/scala/io/worxbend/tui/dsl/AnimationClock.scala",
+          "dsl/src/main/scala/io/worxbend/tui/dsl/AppServices.scala",
+          "dsl/src/main/scala/io/worxbend/tui/dsl/Console.scala",
+          "dsl/src/main/scala/io/worxbend/tui/dsl/Messages.scala",
+          "dsl/src/main/scala/io/worxbend/tui/dsl/PromptSession.scala"
+        ]
+      },
+      {
+        "sha": "ffeb60e0e650cc5075688e2d85fadf49d33854fc",
+        "subject": "docs: repair extension links and literal interpolation examples",
+        "files": [
+          "dsl/src/main/scala/io/worxbend/tui/dsl/Grammar.scala",
+          "dsl/src/main/scala/io/worxbend/tui/dsl/KeySequence.scala",
+          "dsl/src/main/scala/io/worxbend/tui/dsl/Notifications.scala",
+          "dsl/src/main/scala/io/worxbend/tui/dsl/ViewState.scala",
+          "dsl/src/main/scala/io/worxbend/tui/dsl/dsl.scala"
+        ]
+      },
+      {
+        "sha": "c46ffc48893661e20cdab96d9a05e78356802678",
+        "subject": "docs: qualify pilot and buffer assertion documentation links",
+        "files": [
+          "test-support/src/main/scala/io/worxbend/tui/testsupport/BufferAssertions.scala",
+          "test-support/src/main/scala/io/worxbend/tui/testsupport/Pilot.scala",
+          "test-support/src/main/scala/io/worxbend/tui/testsupport/StyledGoldens.scala"
+        ]
+      },
+      {
+        "sha": "f8faee6a2dd00ac5664ebab6d52d273b1814339e",
+        "subject": "docs: preserve context-menu link across Scalafmt wrapping",
+        "files": [
+          "dsl/src/main/scala/io/worxbend/tui/dsl/ChromeElements.scala"
+        ]
+      },
+      {
+        "sha": "60b02cbb93ede4ecc45d3f4fbe085e097a36350c",
+        "subject": "fix(website): patch compatible vulnerable transitive dependencies",
+        "files": [
+          "website/DEPENDENCY_SECURITY.md",
+          "website/package-lock.json",
+          "website/package.json",
+          "website/tests/dependency-compatibility.test.mjs"
+        ]
+      },
+      {
+        "sha": "1127e4c4fad19e666744b730353b5c3d5f1e7258",
+        "subject": "fix(docs): map local module symbols to published API roots",
+        "files": [
+          ".github/workflows/docs.yml",
+          "build.mill",
+          "scripts/check-api-links.py",
+          "scripts/tests/test_api_links.py"
+        ]
+      },
+      {
+        "sha": "1d8c1b9834ca5f806f0dc3349eecbe8a062052e3",
+        "subject": "fix(website): verify and patch Mermaid KaTeX consumer",
+        "files": [
+          "website/DEPENDENCY_SECURITY.md",
+          "website/package-lock.json",
+          "website/package.json",
+          "website/src/css/custom.css",
+          "website/tests/dependency-compatibility.test.mjs"
+        ]
+      },
+      {
+        "sha": "4511aba82a6c2c804958d5e8b4a78b9fb0c888b4",
+        "subject": "fix(terminal): repaint after partially delivered scroll failures",
+        "files": [
+          "terminal/src/main/scala/io/worxbend/tui/terminal/JLine3Backend.scala",
+          "terminal/src/test/scala/io/worxbend/tui/terminal/GraphicsLayerSpec.scala"
+        ]
+      },
+      {
+        "sha": "49d60b4317c3786e80ef87dbd6b59feacbd4abee",
+        "subject": "style(build): format documentation mappings with pinned Scalafmt",
+        "files": [
+          "build.mill"
+        ]
+      },
+      {
+        "sha": "ec2bc2b11ed6d6e536049c10ed989aa4b924bbd0",
+        "subject": "fix(ci): disable unreviewed website install scripts",
+        "files": [
+          ".github/workflows/ci.yml",
+          ".github/workflows/docs.yml",
+          "scripts/tests/test_ci_safeguards.py",
+          "scripts/validate-workflows.py",
+          "website/DEPENDENCY_SECURITY.md"
+        ]
+      },
+      {
+        "sha": "cd4d677828b1e98d77f9cae24ff4657b506fedf9",
+        "subject": "fix(docs): repair generated enum and parameter API anchors",
+        "files": [
+          ".github/workflows/docs.yml",
+          "build.mill",
+          "runtime/src/main/scala/io/worxbend/tui/runtime/Runner.scala",
+          "scripts/normalize-api-links.py",
+          "scripts/tests/test_api_link_normalization.py"
+        ]
+      },
+      {
+        "sha": "780bc138a8729e21cab270cba7c5dd663b6bb8ba",
+        "subject": "test(docs): reject all invalid mapped internal API anchors",
+        "files": [
+          "scripts/check-api-links.py",
+          "scripts/tests/test_api_links.py"
+        ]
+      },
+      {
+        "sha": "b9261568db28d82d33b6fd5ff5fa44dcf6beebbe",
+        "subject": "docs(core): qualify Scaladoc member destinations (batch 1)",
+        "files": [
+          "core/src/main/scala/io/worxbend/tui/core/ColorScheme.scala",
+          "core/src/main/scala/io/worxbend/tui/core/DiffDirective.scala",
+          "core/src/main/scala/io/worxbend/tui/core/GlyphSupport.scala",
+          "core/src/main/scala/io/worxbend/tui/core/Spacing.scala",
+          "core/src/main/scala/io/worxbend/tui/core/Style.scala"
+        ]
+      },
+      {
+        "sha": "3afbc7a101a3cbee3fb0915eb32b722b21665cf2",
+        "subject": "docs(core): qualify Scaladoc member destinations (batch 2)",
+        "files": [
+          "core/src/main/scala/io/worxbend/tui/core/Buffer.scala",
+          "core/src/main/scala/io/worxbend/tui/core/Constraint.scala",
+          "core/src/main/scala/io/worxbend/tui/core/Layout.scala",
+          "core/src/main/scala/io/worxbend/tui/core/Spring.scala",
+          "core/src/main/scala/io/worxbend/tui/core/WidthMode.scala"
+        ]
+      },
+      {
+        "sha": "3c277336d0ac6389d02baa4ff10ba75f31ca1b76",
+        "subject": "docs(core): qualify Scaladoc member destinations (batch 3)",
+        "files": [
+          "core/src/main/scala/io/worxbend/tui/core/Flex.scala"
+        ]
+      },
+      {
+        "sha": "a6d00837d8d3008054e144db92faae1718e309c9",
+        "subject": "docs(terminal): qualify Scaladoc member destinations (batch 4)",
+        "files": [
+          "terminal/src/main/scala/io/worxbend/tui/terminal/ColorDepth.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/JLine3Backend.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/PointerShape.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/TerminalCapabilities.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/TerminalGlyphs.scala"
+        ]
+      },
+      {
+        "sha": "64c66c50eef949c42f78f7dff529bddb446e9ed9",
+        "subject": "docs(terminal): qualify Scaladoc member destinations (batch 5)",
+        "files": [
+          "terminal/src/main/scala/io/worxbend/tui/terminal/Backend.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/CursorShape.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/DesktopNotificationProtocol.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/HeadlessBackend.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/TaskbarState.scala"
+        ]
+      },
+      {
+        "sha": "1dff639ed34a549c2c4714dc9298e7fc83f74bbf",
+        "subject": "docs(core): retain enum-case navigation with verified anchors (batch 6)",
+        "files": [
+          "core/src/main/scala/io/worxbend/tui/core/ColorScheme.scala",
+          "core/src/main/scala/io/worxbend/tui/core/DiffDirective.scala",
+          "core/src/main/scala/io/worxbend/tui/core/GlyphSupport.scala"
+        ]
+      },
+      {
+        "sha": "eb26e477b0995d5ffe199add1c6bccbf3bda4573",
+        "subject": "docs(core): retain enum-case navigation with verified anchors (batch 7)",
+        "files": [
+          "core/src/main/scala/io/worxbend/tui/core/WidthMode.scala"
+        ]
+      },
+      {
+        "sha": "a47e03a0b29c423e511cd8e9d75e648e7fe20260",
+        "subject": "docs(core): retain enum-case navigation with verified anchors (batch 8)",
+        "files": [
+          "core/src/main/scala/io/worxbend/tui/core/Flex.scala"
+        ]
+      },
+      {
+        "sha": "fc615cf285df99575f5c8f65324218a80579e0b8",
+        "subject": "docs(terminal): retain enum-case navigation with verified anchors (batch 9)",
+        "files": [
+          "terminal/src/main/scala/io/worxbend/tui/terminal/ColorDepth.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/JLine3Backend.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/PointerShape.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/TerminalCapabilities.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/TerminalGlyphs.scala"
+        ]
+      },
+      {
+        "sha": "63db5c6522e1aed8a03b28a943c870fceaa18e2a",
+        "subject": "docs(terminal): retain enum-case navigation with verified anchors (batch 10)",
+        "files": [
+          "terminal/src/main/scala/io/worxbend/tui/terminal/CursorShape.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/HeadlessBackend.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/TaskbarState.scala"
+        ]
+      },
+      {
+        "sha": "5b737043ab84f80c3100b5eb05f00a3734d09ea6",
+        "subject": "docs(terminal): retain enum-case navigation with verified anchors (batch 9)",
+        "files": [
+          "terminal/src/main/scala/io/worxbend/tui/terminal/TerminalCapabilities.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/TerminalGlyphs.scala"
+        ]
+      },
+      {
+        "sha": "befbf17db52de098ff1821a2bdf12ed6c8b0aed7",
+        "subject": "docs(core): keep enum anchors valid in package summaries (batch 11)",
+        "files": [
+          "core/src/main/scala/io/worxbend/tui/core/ColorScheme.scala",
+          "core/src/main/scala/io/worxbend/tui/core/DiffDirective.scala",
+          "core/src/main/scala/io/worxbend/tui/core/GlyphSupport.scala"
+        ]
+      },
+      {
+        "sha": "2b8a22492eef9c65508fcfa70b33c4cad1106cb2",
+        "subject": "docs(core): keep enum anchors valid in package summaries (batch 12)",
+        "files": [
+          "core/src/main/scala/io/worxbend/tui/core/WidthMode.scala"
+        ]
+      },
+      {
+        "sha": "20a00e3a16d8aab9d6c00b4ee7b4949a248bc2d5",
+        "subject": "docs(core): keep enum anchors valid in package summaries (batch 13)",
+        "files": [
+          "core/src/main/scala/io/worxbend/tui/core/Flex.scala"
+        ]
+      },
+      {
+        "sha": "6c27ff59ac59eae445463cef35a1fcae8d8dca79",
+        "subject": "docs(terminal): keep enum anchors valid in package summaries (batch 14)",
+        "files": [
+          "terminal/src/main/scala/io/worxbend/tui/terminal/ColorDepth.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/PointerShape.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/TerminalCapabilities.scala"
+        ]
+      },
+      {
+        "sha": "a7d5b83ffd95e7ba484ef72e547d8a2d076798a9",
+        "subject": "docs(terminal): keep enum anchors valid in package summaries (batch 15)",
+        "files": [
+          "terminal/src/main/scala/io/worxbend/tui/terminal/CursorShape.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/HeadlessBackend.scala",
+          "terminal/src/main/scala/io/worxbend/tui/terminal/TaskbarState.scala"
+        ]
+      },
+      {
+        "sha": "113959891daab3b6e17a827e26855e8b6638a999",
+        "subject": "docs(widgets): qualify frame and table API links",
+        "files": [
+          "widgets/src/main/scala/io/worxbend/tui/widgets/BorderType.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/Clear.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/TableCell.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/Toolbar.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/TreeTable.scala"
+        ]
+      },
+      {
+        "sha": "66a3cc0838c7110935163881dc9550f45c2a530d",
+        "subject": "docs(widgets): link editing and measurement contracts",
+        "files": [
+          "widgets/src/main/scala/io/worxbend/tui/widgets/Dropdown.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/PromptComposer.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/Row.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/Shadow.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/SyntaxHighlighter.scala"
+        ]
+      },
+      {
+        "sha": "2729764163d6072187e280fa319afe1a08192b4e",
+        "subject": "docs(widgets): qualify drawing and table layout links",
+        "files": [
+          "widgets/src/main/scala/io/worxbend/tui/widgets/Canvas.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/Grid.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/HexViewer.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/OrbitSpinner.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/Table.scala"
+        ]
+      },
+      {
+        "sha": "ae7a69932aa1dcb0bce503217b07575f33b47a5e",
+        "subject": "docs(widgets): repair text and selection API links",
+        "files": [
+          "widgets/src/main/scala/io/worxbend/tui/widgets/DataTable.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/HighlightSpacing.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/Inspect.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/ListDirection.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/Paragraph.scala"
+        ]
+      },
+      {
+        "sha": "126e1cd6d339d6626685ecaed51a9292619cde13",
+        "subject": "docs(widgets): repair scrolling and overflow API links",
+        "files": [
+          "widgets/src/main/scala/io/worxbend/tui/widgets/DiffView.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/Flow.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/ListView.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/Overflow.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/SearchState.scala"
+        ]
+      },
+      {
+        "sha": "93d818428babe1cda47ddbdfc6a1d65b339acf09",
+        "subject": "docs(widgets): link log alignment and progress columns",
+        "files": [
+          "widgets/src/main/scala/io/worxbend/tui/widgets/Column.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/Log.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/ProgressColumn.scala"
+        ]
+      },
+      {
+        "sha": "ad34f53aa00c6c63fdc4445297662e757d484307",
+        "subject": "docs(widgets): retain direct navigation to enum entries",
+        "files": [
+          "widgets/src/main/scala/io/worxbend/tui/widgets/BorderType.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/Canvas.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/HighlightSpacing.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/ListDirection.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/Shadow.scala"
+        ]
+      },
+      {
+        "sha": "0818aed526349f3fad9b0daa191f5dbddce2c18b",
+        "subject": "docs(widgets): target emitted enum and line documentation",
+        "files": [
+          "widgets/src/main/scala/io/worxbend/tui/widgets/Log.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/Overflow.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/ProgressColumn.scala",
+          "widgets/src/main/scala/io/worxbend/tui/widgets/Table.scala"
+        ]
+      },
+      {
+        "sha": "def7734b340e314f24f239dcefa84e9a640d30fe",
+        "subject": "fix(docs): link Codec to runtime persistence without a dependency edge",
+        "files": [
+          "macros/src/main/scala/io/worxbend/tui/macros/Codec.scala"
+        ]
+      }
+    ],
+    "followup_changed_paths": [
+      ".github/workflows/ci.yml",
+      ".github/workflows/docs.yml",
+      "QUALITY_IMPROVEMENTS.md",
+      "build.mill",
+      "core/src/main/scala/io/worxbend/tui/core/Buffer.scala",
+      "core/src/main/scala/io/worxbend/tui/core/CharWidth.scala",
+      "core/src/main/scala/io/worxbend/tui/core/ColorScheme.scala",
+      "core/src/main/scala/io/worxbend/tui/core/Constraint.scala",
+      "core/src/main/scala/io/worxbend/tui/core/DiffDirective.scala",
+      "core/src/main/scala/io/worxbend/tui/core/Flex.scala",
+      "core/src/main/scala/io/worxbend/tui/core/GlyphSupport.scala",
+      "core/src/main/scala/io/worxbend/tui/core/GridLayout.scala",
+      "core/src/main/scala/io/worxbend/tui/core/Layout.scala",
+      "core/src/main/scala/io/worxbend/tui/core/Spacing.scala",
+      "core/src/main/scala/io/worxbend/tui/core/Spring.scala",
+      "core/src/main/scala/io/worxbend/tui/core/Style.scala",
+      "core/src/main/scala/io/worxbend/tui/core/WidthMode.scala",
+      "core/src/test/scala/io/worxbend/tui/core/BufferCopyFromSpec.scala",
+      "core/src/test/scala/io/worxbend/tui/core/GridLayoutSpec.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/AnimationClock.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/AppServices.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/CaretStyle.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/ChoiceElements.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/ChromeElements.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/CollectionElements.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/Console.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/DisplayElements.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/ElementFactories.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/ElementHost.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/Grammar.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/Hooks.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/KeySequence.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/LoadingElements.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/Messages.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/NavigationElements.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/Notifications.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/PromptSession.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/TextEntryElements.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/Theme.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/ViewState.scala",
+      "dsl/src/main/scala/io/worxbend/tui/dsl/dsl.scala",
+      "dsl/src/test/scala/io/worxbend/tui/dsl/DeferredViewStateSpec.scala",
+      "dsl/src/test/scala/io/worxbend/tui/dsl/MemoRefreshSpec.scala",
+      "dsl/src/test/scala/io/worxbend/tui/dsl/MouseDispatchStagesSpec.scala",
+      "dsl/src/test/scala/io/worxbend/tui/dsl/PixelImageElementSpec.scala",
+      "examples/airsensor/src/test/scala/io/worxbend/tui/examples/airsensor/SensorPayloadSpec.scala",
+      "examples/gallery/src/main/scala/io/worxbend/tui/examples/gallery/Main.scala",
+      "examples/gallery/src/test/scala/io/worxbend/tui/examples/gallery/GallerySpec.scala",
+      "examples/loadtest/src/main/scala/io/worxbend/tui/examples/loadtest/RunStats.scala",
+      "examples/loadtest/src/test/scala/io/worxbend/tui/examples/loadtest/RunStatsSpec.scala",
+      "examples/procmon/src/main/scala/io/worxbend/tui/examples/procmon/ProcessSource.scala",
+      "examples/procmon/src/test/scala/io/worxbend/tui/examples/procmon/PsProcessSourceSpec.scala",
+      "examples/weather/src/test/scala/io/worxbend/tui/examples/weather/WeatherAppSpec.scala",
+      "examples/weather/src/test/scala/io/worxbend/tui/examples/weather/WeatherBoundarySpec.scala",
+      "macros/src/main/scala/io/worxbend/tui/macros/Codec.scala",
+      "runtime/src/main/scala/io/worxbend/tui/runtime/CaptureStdio.scala",
+      "runtime/src/main/scala/io/worxbend/tui/runtime/Frame.scala",
+      "runtime/src/main/scala/io/worxbend/tui/runtime/JfrEvents.scala",
+      "runtime/src/main/scala/io/worxbend/tui/runtime/JulBridge.scala",
+      "runtime/src/main/scala/io/worxbend/tui/runtime/Runner.scala",
+      "runtime/src/main/scala/io/worxbend/tui/runtime/TerminalRunner.scala",
+      "runtime/src/main/scala/io/worxbend/tui/runtime/Viewport.scala",
+      "scripts/check-api-links.py",
+      "scripts/normalize-api-links.py",
+      "scripts/render-tapes.sh",
+      "scripts/tests/scaladoc.test.mjs",
+      "scripts/tests/test_api_link_normalization.py",
+      "scripts/tests/test_api_links.py",
+      "scripts/tests/test_authenticated_redirects.py",
+      "scripts/tests/test_ci_safeguards.py",
+      "scripts/tests/test_generators.py",
+      "scripts/tests/test_homepage_version.py",
+      "scripts/tests/test_publication_policy.py",
+      "scripts/tests/test_release_validation.py",
+      "scripts/tests/test_render_tapes.py",
+      "scripts/tests/test_scaladoc_theme.py",
+      "scripts/tests/test_wiki_export.py",
+      "scripts/validate-workflows.py",
+      "scripts/verify-packaged-consumer.py",
+      "terminal/src/main/scala/io/worxbend/tui/terminal/Backend.scala",
+      "terminal/src/main/scala/io/worxbend/tui/terminal/ColorDepth.scala",
+      "terminal/src/main/scala/io/worxbend/tui/terminal/CursorShape.scala",
+      "terminal/src/main/scala/io/worxbend/tui/terminal/DesktopNotificationProtocol.scala",
+      "terminal/src/main/scala/io/worxbend/tui/terminal/GraphicsLayer.scala",
+      "terminal/src/main/scala/io/worxbend/tui/terminal/HeadlessBackend.scala",
+      "terminal/src/main/scala/io/worxbend/tui/terminal/JLine3Backend.scala",
+      "terminal/src/main/scala/io/worxbend/tui/terminal/PointerShape.scala",
+      "terminal/src/main/scala/io/worxbend/tui/terminal/TaskbarState.scala",
+      "terminal/src/main/scala/io/worxbend/tui/terminal/TerminalCapabilities.scala",
+      "terminal/src/main/scala/io/worxbend/tui/terminal/TerminalGlyphs.scala",
+      "terminal/src/test/scala/io/worxbend/tui/terminal/GraphicsLayerSpec.scala",
+      "terminal/src/test/scala/io/worxbend/tui/terminal/JLineOutputFailureSpec.scala",
+      "test-support/src/main/scala/io/worxbend/tui/testsupport/BufferAssertions.scala",
+      "test-support/src/main/scala/io/worxbend/tui/testsupport/GoldenFrames.scala",
+      "test-support/src/main/scala/io/worxbend/tui/testsupport/Pilot.scala",
+      "test-support/src/main/scala/io/worxbend/tui/testsupport/StyledGoldens.scala",
+      "test-support/src/test/scala/io/worxbend/tui/testsupport/StyledGoldensSpec.scala",
+      "website/DEPENDENCY_SECURITY.md",
+      "website/package-lock.json",
+      "website/package.json",
+      "website/src/css/custom.css",
+      "website/src/pages/index.js",
+      "website/tests/dependency-compatibility.test.mjs",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/BorderType.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/Canvas.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/Clear.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/Column.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/DataTable.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/DiffView.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/Dropdown.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/Flow.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/Grid.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/GroupedBarChart.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/HexViewer.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/HighlightSpacing.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/Inspect.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/ListDirection.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/ListView.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/Log.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/OrbitSpinner.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/Overflow.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/Paragraph.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/ProgressColumn.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/PromptComposer.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/Row.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/SearchState.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/Shadow.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/StackedBarChart.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/SyntaxHighlighter.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/Table.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/TableCell.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/Toolbar.scala",
+      "widgets/src/main/scala/io/worxbend/tui/widgets/TreeTable.scala",
+      "widgets/src/test/scala/io/worxbend/tui/widgets/DataTableGutterSpec.scala",
+      "widgets/src/test/scala/io/worxbend/tui/widgets/GroupedBarChartSpec.scala",
+      "widgets/src/test/scala/io/worxbend/tui/widgets/StackedBarChartSpec.scala"
+    ],
+    "excluded_paths_changed": [],
+    "max_commit_files": 5,
+    "main_unchanged": true,
+    "source_snapshot_sha256": "3b8334d8d4cdbf0a59c8f8a32f483e107a533b0fde973f6e94ed365afc2c6c6a",
+    "steps": [
+      {
+        "name": "compile",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "__.compile",
+          "+",
+          "__.test.compile"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 48.31,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/compile.log"
+      },
+      {
+        "name": "format",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "mill.scalalib.scalafmt.ScalafmtModule/checkFormatAll",
+          "__.sources"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 13.79,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/format.log"
+      },
+      {
+        "name": "build-format",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-20261022/scalafmt-native",
+          "--check",
+          "build.mill"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 0.03,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/build-format.log"
+      },
+      {
+        "name": "scalafix",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "__.fix",
+          "--check"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 56.53,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/scalafix.log"
+      },
+      {
+        "name": "test-core",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "core.test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 31.22,
+        "test_totals": [
+          5,
+          29,
+          6,
+          10,
+          16,
+          24,
+          9,
+          7,
+          11,
+          11,
+          7,
+          74,
+          4,
+          10,
+          9,
+          9,
+          48,
+          12,
+          10,
+          8,
+          3,
+          46,
+          7,
+          7,
+          13,
+          13,
+          3,
+          10,
+          3,
+          9,
+          12,
+          27,
+          3,
+          9,
+          14,
+          6,
+          2395,
+          5,
+          4,
+          7,
+          5,
+          12,
+          14,
+          32,
+          8,
+          7,
+          12,
+          4,
+          16,
+          10,
+          8,
+          2,
+          10,
+          13,
+          7,
+          4,
+          19,
+          22,
+          10,
+          7,
+          20,
+          13,
+          12,
+          6,
+          11,
+          7,
+          15,
+          8,
+          14,
+          8,
+          14,
+          2,
+          6,
+          8,
+          9
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/test-core.log"
+      },
+      {
+        "name": "test-terminal",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "terminal.test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 36.02,
+        "test_totals": [
+          1,
+          4,
+          4,
+          6,
+          4,
+          3,
+          18,
+          4,
+          26,
+          14,
+          4,
+          7,
+          6,
+          15,
+          4,
+          4,
+          11,
+          2,
+          12,
+          5,
+          7,
+          6,
+          28,
+          19,
+          7,
+          1,
+          3,
+          8,
+          6,
+          11,
+          3,
+          53,
+          50,
+          15,
+          1,
+          18,
+          6,
+          5,
+          2,
+          9,
+          18,
+          12,
+          6,
+          6,
+          5,
+          8,
+          2,
+          16,
+          17,
+          1,
+          3,
+          3,
+          6,
+          7,
+          18,
+          14,
+          11,
+          12,
+          9,
+          4,
+          16
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/test-terminal.log"
+      },
+      {
+        "name": "test-widgets",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "widgets.test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 67.94,
+        "test_totals": [
+          4,
+          61,
+          14,
+          23,
+          13,
+          10,
+          3,
+          10,
+          19,
+          15,
+          8,
+          13,
+          13,
+          5,
+          5,
+          2,
+          23,
+          7,
+          19,
+          8,
+          11,
+          10,
+          10,
+          12,
+          13,
+          32,
+          1,
+          11,
+          6,
+          2,
+          5,
+          11,
+          5,
+          7,
+          3,
+          8,
+          3,
+          4,
+          3,
+          46,
+          12,
+          18,
+          6,
+          6,
+          17,
+          9,
+          4,
+          11,
+          2,
+          14,
+          12,
+          6,
+          4,
+          22,
+          12,
+          5,
+          9,
+          11,
+          2,
+          6,
+          13,
+          4,
+          1,
+          10,
+          11,
+          3,
+          12,
+          7,
+          13,
+          6,
+          4,
+          2,
+          12,
+          3,
+          1,
+          22,
+          6,
+          18,
+          24,
+          4,
+          7,
+          8,
+          14,
+          10,
+          5,
+          1,
+          7,
+          9,
+          8,
+          16,
+          14,
+          10,
+          3,
+          8,
+          9,
+          52,
+          12,
+          3,
+          7,
+          6,
+          3,
+          15,
+          10,
+          4,
+          9,
+          1,
+          6,
+          3,
+          7,
+          5,
+          7,
+          9,
+          10,
+          35,
+          2,
+          15,
+          12,
+          13,
+          2,
+          20,
+          18,
+          15,
+          10,
+          14,
+          7,
+          34,
+          11,
+          6,
+          5,
+          4,
+          20,
+          11,
+          1,
+          7,
+          8,
+          3,
+          8,
+          17,
+          9,
+          1,
+          7,
+          3,
+          5,
+          4,
+          8,
+          6,
+          7,
+          162,
+          19,
+          3,
+          1,
+          8,
+          7,
+          4,
+          2
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/test-widgets.log"
+      },
+      {
+        "name": "test-runtime",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "runtime.test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 25.61,
+        "test_totals": [
+          6,
+          1,
+          8,
+          3,
+          11,
+          9,
+          2,
+          9,
+          3,
+          7,
+          4,
+          6,
+          9,
+          3,
+          4,
+          5,
+          2,
+          10,
+          7,
+          5,
+          3,
+          5,
+          11,
+          30,
+          3,
+          6,
+          18,
+          7,
+          4,
+          1,
+          33,
+          4,
+          5,
+          7,
+          11,
+          7,
+          6,
+          7,
+          2,
+          5,
+          4,
+          7,
+          5,
+          8,
+          1,
+          9
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/test-runtime.log"
+      },
+      {
+        "name": "test-macros",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "macros.test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 6.07,
+        "test_totals": [
+          8,
+          8,
+          10,
+          33,
+          3,
+          5,
+          2
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/test-macros.log"
+      },
+      {
+        "name": "test-dsl",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "dsl.test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 147.52,
+        "test_totals": [
+          13,
+          7,
+          5,
+          8,
+          5,
+          3,
+          7,
+          3,
+          9,
+          1,
+          6,
+          23,
+          6,
+          17,
+          11,
+          11,
+          4,
+          6,
+          10,
+          1,
+          13,
+          6,
+          6,
+          2,
+          6,
+          8,
+          3,
+          12,
+          6,
+          3,
+          4,
+          3,
+          5,
+          4,
+          6,
+          6,
+          2,
+          2,
+          1,
+          8,
+          4,
+          17,
+          21,
+          2,
+          12,
+          7,
+          9,
+          8,
+          6,
+          1,
+          3,
+          16,
+          6,
+          6,
+          6,
+          1,
+          15,
+          1,
+          4,
+          3,
+          29,
+          8,
+          8,
+          10,
+          4,
+          1,
+          5,
+          6,
+          6,
+          1,
+          3,
+          16,
+          13,
+          11,
+          16,
+          10,
+          1,
+          10,
+          5,
+          4,
+          10,
+          3,
+          4,
+          5,
+          4,
+          11,
+          13,
+          2,
+          4,
+          6,
+          11,
+          5,
+          7,
+          6,
+          4,
+          10,
+          10,
+          8,
+          26,
+          1,
+          5,
+          12,
+          5,
+          6,
+          3,
+          11,
+          5,
+          6,
+          3,
+          4,
+          1,
+          5,
+          4,
+          6,
+          6,
+          1,
+          8,
+          20,
+          1,
+          10,
+          3,
+          5,
+          9,
+          5,
+          5,
+          13,
+          7,
+          1,
+          10,
+          3,
+          4,
+          3,
+          4,
+          3,
+          8,
+          10,
+          12,
+          8,
+          3,
+          17,
+          8,
+          18,
+          17,
+          14,
+          6,
+          4,
+          6,
+          10,
+          11,
+          6,
+          2,
+          6,
+          9,
+          3,
+          8,
+          3,
+          2,
+          1,
+          1,
+          7,
+          2,
+          6,
+          16,
+          4,
+          8,
+          3,
+          4,
+          7,
+          5,
+          5,
+          7,
+          8,
+          3,
+          4,
+          3,
+          4,
+          11,
+          3,
+          7,
+          12,
+          12,
+          1,
+          12,
+          11,
+          3,
+          10,
+          4,
+          9,
+          5,
+          3,
+          3,
+          1,
+          5,
+          2,
+          8,
+          1,
+          8
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/test-dsl.log"
+      },
+      {
+        "name": "test-test-support",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "test-support.test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 10.68,
+        "test_totals": [
+          3,
+          8,
+          6,
+          15,
+          9,
+          6,
+          6,
+          7,
+          7,
+          13,
+          5,
+          11,
+          4,
+          7,
+          4,
+          4,
+          5,
+          5
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/test-test-support.log"
+      },
+      {
+        "name": "example-airsensor",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.airsensor.test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 4.97,
+        "test_totals": [
+          3,
+          9
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/example-airsensor.log"
+      },
+      {
+        "name": "example-counter",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.counter.test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 4.47,
+        "test_totals": [
+          1
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/example-counter.log"
+      },
+      {
+        "name": "example-dashboard",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.dashboard.test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 4.32,
+        "test_totals": [
+          1
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/example-dashboard.log"
+      },
+      {
+        "name": "example-doctor",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.doctor.test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 4.47,
+        "test_totals": [
+          2
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/example-doctor.log"
+      },
+      {
+        "name": "example-form-demo",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.form-demo.test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 4.47,
+        "test_totals": [
+          4
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/example-form-demo.log"
+      },
+      {
+        "name": "example-gallery",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.gallery.test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 8.68,
+        "test_totals": [
+          3,
+          4
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/example-gallery.log"
+      },
+      {
+        "name": "example-hello-world",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.hello-world.test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 4.32,
+        "test_totals": [
+          2
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/example-hello-world.log"
+      },
+      {
+        "name": "example-loadtest",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.loadtest.test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 5.47,
+        "test_totals": [
+          12,
+          6
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/example-loadtest.log"
+      },
+      {
+        "name": "example-procmon",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.procmon.test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 10.18,
+        "test_totals": [
+          3,
+          8
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/example-procmon.log"
+      },
+      {
+        "name": "example-showcase",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.showcase.test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 5.87,
+        "test_totals": [
+          5
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/example-showcase.log"
+      },
+      {
+        "name": "example-todo-list",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.todo-list.test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 5.07,
+        "test_totals": [
+          3
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/example-todo-list.log"
+      },
+      {
+        "name": "example-weather",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.weather.test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 6.42,
+        "test_totals": [
+          4,
+          5
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/example-weather.log"
+      },
+      {
+        "name": "python-tests",
+        "command": [
+          "/usr/bin/python3",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "scripts/tests",
+          "-v"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 4.02,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/python-tests.log"
+      },
+      {
+        "name": "workflows",
+        "command": [
+          "bash",
+          "scripts/check-workflows.sh"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 0.66,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/workflows.log"
+      },
+      {
+        "name": "quickstart",
+        "command": [
+          "/usr/bin/python3",
+          "scripts/verify-scala-cli.py"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 6.88,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/quickstart.log"
+      },
+      {
+        "name": "api-clean",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "clean",
+          "{core,terminal,widgets,runtime,dsl,macros,test-support}.scalaDocGenerated"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 2.42,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/api-clean.log"
+      },
+      {
+        "name": "packaged-consumer",
+        "command": [
+          "/usr/bin/python3",
+          "scripts/verify-packaged-consumer.py"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 91.17,
+        "test_totals": [
+          4
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/packaged-consumer.log"
+      },
+      {
+        "name": "gallery",
+        "command": [
+          "bash",
+          "scripts/render-gallery.sh",
+          "--check"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 15.04,
+        "test_totals": [
+          4
+        ],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/gallery.log"
+      },
+      {
+        "name": "website-install",
+        "command": [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora/website",
+        "exit": 0,
+        "seconds": 6.58,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/website-install.log"
+      },
+      {
+        "name": "website-tree",
+        "command": [
+          "npm",
+          "ls",
+          "--all"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora/website",
+        "exit": 0,
+        "seconds": 0.72,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/website-tree.log"
+      },
+      {
+        "name": "website-tests",
+        "command": [
+          "npm",
+          "test"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora/website",
+        "exit": 0,
+        "seconds": 5.43,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/website-tests.log"
+      },
+      {
+        "name": "website-critical-audit",
+        "command": [
+          "npm",
+          "audit",
+          "--audit-level=critical",
+          "--json"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora/website",
+        "exit": 0,
+        "seconds": 2.02,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/website-critical-audit.log"
+      },
+      {
+        "name": "website-build",
+        "command": [
+          "npm",
+          "run",
+          "build"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora/website",
+        "exit": 0,
+        "seconds": 20.67,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/website-build.log"
+      },
+      {
+        "name": "wiki",
+        "command": [
+          "node",
+          "scripts/export-wiki.mjs",
+          "--output",
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/wiki"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 0.06,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/wiki.log"
+      },
+      {
+        "name": "api-core",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "core.docJar"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 2.12,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/api-core.log"
+      },
+      {
+        "name": "api-terminal",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "terminal.docJar"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 2.22,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/api-terminal.log"
+      },
+      {
+        "name": "api-widgets",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "widgets.docJar"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 2.17,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/api-widgets.log"
+      },
+      {
+        "name": "api-runtime",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "runtime.docJar"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 2.42,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/api-runtime.log"
+      },
+      {
+        "name": "api-macros",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "macros.docJar"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 2.12,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/api-macros.log"
+      },
+      {
+        "name": "api-dsl",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "dsl.docJar"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 2.42,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/api-dsl.log"
+      },
+      {
+        "name": "api-test-support",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "test-support.docJar"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 2.87,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/api-test-support.log"
+      },
+      {
+        "name": "api-links",
+        "command": [
+          "/usr/bin/python3",
+          "scripts/check-api-links.py",
+          "--out",
+          "out"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 5.62,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/api-links.log"
+      },
+      {
+        "name": "api-member-warnings",
+        "command": [
+          "/usr/bin/python3",
+          "-c",
+          "from pathlib import Path; import sys; p=Path(sys.argv[1]); logs=[p/'packaged-consumer.log',*p.glob('api-*.log')]; bad=[str(f)+': '+line for f in logs for line in f.read_text(errors='replace').splitlines() if \"Couldn't resolve a member for the given link query\" in line]; print('Unresolved member-link warnings:',len(bad)); print('\\n'.join(bad)); sys.exit(bool(bad))",
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 0.03,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/api-member-warnings.log"
+      },
+      {
+        "name": "native-airsensor",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.airsensor.nativeImage"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 40.29,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/native-airsensor.log"
+      },
+      {
+        "name": "native-counter",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.counter.nativeImage"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 32.66,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/native-counter.log"
+      },
+      {
+        "name": "native-dashboard",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.dashboard.nativeImage"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 29.67,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/native-dashboard.log"
+      },
+      {
+        "name": "native-doctor",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.doctor.nativeImage"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 30.11,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/native-doctor.log"
+      },
+      {
+        "name": "native-form-demo",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.form-demo.nativeImage"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 30.33,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/native-form-demo.log"
+      },
+      {
+        "name": "native-gallery",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.gallery.nativeImage"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 33.72,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/native-gallery.log"
+      },
+      {
+        "name": "native-hello-world",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.hello-world.nativeImage"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 30.36,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/native-hello-world.log"
+      },
+      {
+        "name": "native-loadtest",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.loadtest.nativeImage"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 47.51,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/native-loadtest.log"
+      },
+      {
+        "name": "native-procmon",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.procmon.nativeImage"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 30.5,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/native-procmon.log"
+      },
+      {
+        "name": "native-showcase",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.showcase.nativeImage"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 29.41,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/native-showcase.log"
+      },
+      {
+        "name": "native-todo-list",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.todo-list.nativeImage"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 30.62,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/native-todo-list.log"
+      },
+      {
+        "name": "native-weather",
+        "command": [
+          "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/mill.sh",
+          "examples.weather.nativeImage"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 39.9,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/native-weather.log"
+      },
+      {
+        "name": "native-smoke",
+        "command": [
+          "/usr/bin/python3",
+          "scripts/ci-examples.py",
+          "smoke-native"
+        ],
+        "cwd": "/home/worxbend/Projects/Github/glyphora",
+        "exit": 0,
+        "seconds": 0.37,
+        "test_totals": [],
+        "failure_lines": [],
+        "log": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022/final-acceptance/native-smoke.log"
+      }
+    ]
+  },
+  "browser_verification": {
+    "environment": "Node24.22.0 and Chromium145",
+    "evidence": "results/security-residuals/browser-math.json",
+    "coverage": [
+      "both existing Mermaid pages:9/6nodes",
+      "nativeMathML",
+      "forcedlegacyKaTeX CSS/fonts",
+      "nonmathlabels",
+      "rejectedunsafeMathLinks"
+    ],
+    "limit": "Retained real worker evidence; no cross-browser/accessibility claim."
+  },
+  "limits": [
+    "Plain npm audit is not clean; braces remains partially mitigated and unresolved.",
+    "Procmon timeout tests characterize postEOF forced termination, not a total stdout sampling deadline.",
+    "API link gate validates mapped known-module pages/fragments; rewritten relative links were independently checked, not every vendor/external link.",
+    "Four owner comments omitted by Scaladoc were not claimed rendered.",
+    "Normalized ZIP payload preservation is not exact metadata/byte identity.",
+    "Classpath/JVM/native-access warnings remain unsuppressed; zero refers to unresolved member-query warnings.",
+    "No coverage percentage or Sonar complexity score; no Windows/macOS/JDK26/live graphical kitty coverage.",
+    "Only acceptance report/evidence files were authored after the verified source commit."
+  ],
+  "evidence_root": "/home/worxbend/.hermes/cache/scratch/glyphora-quality-followup-20261022"
+}
