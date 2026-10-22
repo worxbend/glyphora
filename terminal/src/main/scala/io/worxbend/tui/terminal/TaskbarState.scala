@@ -25,7 +25,9 @@ enum TaskbarState:
   case Paused(fraction: Double)
 
   /** The fraction this state shows, for a backend that can only draw a determinate bar or nothing: `None` for
-    * [Cleared](TaskbarState.html#Cleared-0) and [Indeterminate](TaskbarState.html#Indeterminate-0).
+    * [Cleared](https://worxbend.github.io/glyphora/api/terminal/io/worxbend/tui/terminal/TaskbarState.html#Cleared-0)
+    * and
+    * [Indeterminate](https://worxbend.github.io/glyphora/api/terminal/io/worxbend/tui/terminal/TaskbarState.html#Indeterminate-0).
     */
   def progress: Option[Double] =
     this match
