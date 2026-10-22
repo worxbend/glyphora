@@ -19,9 +19,9 @@ import scala.util.control.NonFatal
   * last flushed frame and writes only the diff.
   *
   * Signals are owned here rather than left to JLine's defaults. `INT`/`QUIT` become
-  * [[io.worxbend.tui.core.Event.Interrupt Event.Interrupt]] so the runner unwinds through its normal teardown;
-  * `TSTP`/`CONT` hand the terminal back to the shell and take it again on resume; `WINCH` posts a coalesced resize. See
-  * [[JLine3Backend.create]] for why the defaults are unusable.
+  * [Event.Interrupt](https://worxbend.github.io/glyphora/api/core/io/worxbend/tui/core/Event.html#Interrupt-0) so the
+  * runner unwinds through its normal teardown; `TSTP`/`CONT` hand the terminal back to the shell and take it again on
+  * resume; `WINCH` posts a coalesced resize. See [[JLine3Backend.create]] for why the defaults are unusable.
   *
   * The mechanics live in package-private collaborators — [[FrameEncoder]] and [[FrameBaseline]] for the frame diff,
   * [[EventPump]] for the wake/poll machinery, [[ReplyQueries]] for the query/reply round trips, [[TerminalDressing]]

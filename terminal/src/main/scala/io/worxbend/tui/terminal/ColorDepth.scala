@@ -6,18 +6,18 @@ import java.util.Locale
 
 /** How many colors the terminal can actually show; RGB output is downsampled to fit.
   *
-  * The rungs run from most to least capable. [[io.worxbend.tui.terminal.ColorDepth.Monochrome Monochrome]] and
-  * [[io.worxbend.tui.terminal.ColorDepth.NoColor NoColor]] are the two ways of coping with a terminal that cannot show
-  * a palette, and they are not the same thing:
-  *   - [[io.worxbend.tui.terminal.ColorDepth.Monochrome Monochrome]] still emits color codes, but every color is
-  *     thresholded to black or white by how bright it is. A selection that is conveyed only by a background color stays
-  *     visible, which is what a two-tone terminal — or a black-and-white screen capture of a colorful app — needs.
-  *   - [[io.worxbend.tui.terminal.ColorDepth.NoColor NoColor]] is not a device capability but an explicit opt-out: when
-  *     it is in effect the backend emits text attributes (bold, underline, …) but no foreground/background color at
-  *     all. It is what honoring the `NO_COLOR` convention resolves to.
+  * The rungs run from most to least capable. [Monochrome](ColorDepth.html#Monochrome-0) and
+  * [NoColor](ColorDepth.html#NoColor-0) are the two ways of coping with a terminal that cannot show a palette, and they
+  * are not the same thing:
+  *   - [Monochrome](ColorDepth.html#Monochrome-0) still emits color codes, but every color is thresholded to black or
+  *     white by how bright it is. A selection that is conveyed only by a background color stays visible, which is what
+  *     a two-tone terminal — or a black-and-white screen capture of a colorful app — needs.
+  *   - [NoColor](ColorDepth.html#NoColor-0) is not a device capability but an explicit opt-out: when it is in effect
+  *     the backend emits text attributes (bold, underline, …) but no foreground/background color at all. It is what
+  *     honoring the `NO_COLOR` convention resolves to.
   *
-  * Nothing in the environment ever resolves to [[io.worxbend.tui.terminal.ColorDepth.Monochrome Monochrome]]; it is
-  * opt-in, by overriding the application's `colorDepth`.
+  * Nothing in the environment ever resolves to [Monochrome](ColorDepth.html#Monochrome-0); it is opt-in, by overriding
+  * the application's `colorDepth`.
   */
 enum ColorDepth:
   case TrueColor, Ansi256, Ansi16, Monochrome, NoColor
@@ -45,14 +45,12 @@ object ColorDepth:
     *   2. `CLICOLOR_FORCE` is set to a non-zero value, or `FORCE_COLOR` to anything but `0`, which forces color on even
     *      when the line above asks for none or the output is not a TTY. A `FORCE_COLOR` of `1`, `2` or `3` also picks
     *      the depth — sixteen colours, the 256 palette, true colour — the way Node's `supports-color` reads it.
-    *   3. `TERM=dumb` resolves to [[io.worxbend.tui.terminal.ColorDepth.NoColor NoColor]]: by convention such a
-    *      terminal understands no escape sequences at all, so a `COLORTERM` inherited from an outer terminal must not
-    *      resurrect color.
+    *   3. `TERM=dumb` resolves to [NoColor](ColorDepth.html#NoColor-0): by convention such a terminal understands no
+    *      escape sequences at all, so a `COLORTERM` inherited from an outer terminal must not resurrect color.
     *   4. Otherwise `COLORTERM=truecolor|24bit` wins (subject to the corrections in [[capability]]), a `256color`
     *      `TERM` falls back to the 256 palette, and everything else to the classic 16.
-    *   5. An unset or empty `TERM` with no `COLORTERM` signal resolves to
-    *      [[io.worxbend.tui.terminal.ColorDepth.NoColor NoColor]]: that is what output redirected into a file looks
-    *      like from inside the process.
+    *   5. An unset or empty `TERM` with no `COLORTERM` signal resolves to [NoColor](ColorDepth.html#NoColor-0): that is
+    *      what output redirected into a file looks like from inside the process.
     *
     * A `CLICOLOR_FORCE` lifts steps 3 and 5 too: if the environment would otherwise say "no color at all", forcing
     * color on yields the classic sixteen.
@@ -142,14 +140,14 @@ object ColorDepth:
     env.get("TERM_PROGRAM_VERSION").flatMap(_.takeWhile(_.isDigit).toIntOption).exists(_ >= 465)
 
   /** Reduces `color` to something `depth` can represent (identity for capable terminals).
-    * [[io.worxbend.tui.terminal.ColorDepth.NoColor NoColor]] is handled by the SGR encoder dropping color codes, so
-    * this returns the color unchanged for it.
+    * [NoColor](ColorDepth.html#NoColor-0) is handled by the SGR encoder dropping color codes, so this returns the color
+    * unchanged for it.
     *
-    * [[io.worxbend.tui.core.Color.Reset Color.Reset]] survives every rung untouched, because it is not a colour at all:
-    * it is the instruction "use the terminal's own foreground/background", SGR 39/49. Under
-    * [[io.worxbend.tui.terminal.ColorDepth.Monochrome Monochrome]] it used to go through the luminance threshold like
-    * any other value — `Color.approximateRgb(Reset)` is a light grey — and an application that asked for the terminal's
-    * default background got an explicit white block painted instead.
+    * [Color.Reset](https://worxbend.github.io/glyphora/api/core/io/worxbend/tui/core/Color.html#Reset-0) survives every
+    * rung untouched, because it is not a colour at all: it is the instruction "use the terminal's own
+    * foreground/background", SGR 39/49. Under [Monochrome](ColorDepth.html#Monochrome-0) it used to go through the
+    * luminance threshold like any other value — `Color.approximateRgb(Reset)` is a light grey — and an application that
+    * asked for the terminal's default background got an explicit white block painted instead.
     */
   def downsample(color: Color, depth: ColorDepth): Color =
     if color == Color.Reset then color
@@ -181,13 +179,13 @@ object ColorDepth:
     val (r, g, b) = Color.approximateRgb(color)
     (2126 * r + 7152 * g + 722 * b) / 10000
 
-  /** Which of the two tones [[io.worxbend.tui.terminal.ColorDepth.Monochrome Monochrome]] maps `color` to: `true` is
-    * the light one (white), `false` the dark one.
+  /** Which of the two tones [Monochrome](ColorDepth.html#Monochrome-0) maps `color` to: `true` is the light one
+    * (white), `false` the dark one.
     */
   private def isLight(color: Color): Boolean = luminance(color) >= 128
 
-  /** Keeps a style legible under [[io.worxbend.tui.terminal.ColorDepth.Monochrome Monochrome]], where every color
-    * collapses onto one of two tones.
+  /** Keeps a style legible under [Monochrome](ColorDepth.html#Monochrome-0), where every color collapses onto one of
+    * two tones.
     *
     * Two colors that differ on a full palette can land on the same tone — red text on a blue background both threshold
     * to dark — and the text would then be invisible. When that happens the background keeps the tone it thresholds to
@@ -205,9 +203,9 @@ object ColorDepth:
     * Modifiers are not touched by color depth, so `Modifiers.Reverse` remains the way to express a highlight that
     * survives every rung of the ladder.
     *
-    * Every depth but [[io.worxbend.tui.terminal.ColorDepth.Monochrome Monochrome]] answers `style` untouched, so a
-    * caller may hand every style through this without checking the depth first — the unconditional call is doing no
-    * hidden work at the other rungs.
+    * Every depth but [Monochrome](ColorDepth.html#Monochrome-0) answers `style` untouched, so a caller may hand every
+    * style through this without checking the depth first — the unconditional call is doing no hidden work at the other
+    * rungs.
     */
   private[terminal] def legible(style: Style, depth: ColorDepth): Style =
     if depth != Monochrome then style
