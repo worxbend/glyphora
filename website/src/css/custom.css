@@ -1,3 +1,5 @@
+/* Match Mermaid's overridden KaTeX, including its legacy MathML fallback. */
+@import 'katex/dist/katex.min.css';
 @import '@fontsource-variable/space-grotesk/wght.css';
 @import '@fontsource-variable/ibm-plex-sans/wght.css';
 @import '@fontsource-variable/ibm-plex-sans/wght-italic.css';

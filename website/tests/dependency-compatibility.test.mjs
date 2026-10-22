@@ -32,8 +32,45 @@ test('Docusaurus packages and the Mermaid override stay aligned', async () => {
   assert.equal(versions.size, 1);
   const themeRequire = createRequire(require.resolve('@docusaurus/theme-mermaid'));
   const mermaidPackage = JSON.parse(await readFile(themeRequire.resolve('mermaid/package.json'), 'utf8'));
-  assert.equal(mermaidPackage.version, manifest.overrides['@docusaurus/theme-mermaid'].mermaid);
+  assert.equal(mermaidPackage.version, manifest.overrides['@docusaurus/theme-mermaid'].mermaid['.']);
   assert.match(mermaidPackage.version, /^11\./);
+});
+
+// Mermaid 11 calls only the public renderToString API, not __defineFunction.
+// KaTeX 0.18 prefixes internal HTML classes; ship CSS/fonts from that same copy.
+// Actual hydrated Mermaid math/native and legacy rendering is also browser-tested.
+// https://github.com/KaTeX/KaTeX/blob/v0.18.2/CHANGELOG.md
+const mermaidRequire = createRequire(require.resolve('mermaid'));
+const katex = mermaidRequire('katex');
+test('Mermaid resolves patched KaTeX with matching HTML CSS and font assets', async () => {
+  assert.equal(katex.version, manifest.overrides['@docusaurus/theme-mermaid'].mermaid.katex);
+  assert.equal(require.resolve('katex/dist/katex.min.css'), mermaidRequire.resolve('katex/dist/katex.min.css'));
+  const css = await readFile(mermaidRequire.resolve('katex/dist/katex.min.css'), 'utf8');
+  const customCss = await readFile(new URL('../src/css/custom.css', import.meta.url), 'utf8');
+  assert.match(customCss, /@import 'katex\/dist\/katex.min.css'/);
+  const formula = String.raw`\frac{1}{2}+\sqrt{x^2}+\sum_{i=1}^{n}i`;
+  const mathml = katex.renderToString(formula, {throwOnError: true, displayMode: true, output: 'mathml'});
+  assert.match(mathml, /<mfrac>/);
+  assert.match(mathml, /<msqrt>/);
+  const html = katex.renderToString(formula, {throwOnError: true, displayMode: true, output: 'htmlAndMathml'});
+  assert.match(html, /katex-html/);
+  assert.match(html, /katex-base/);
+  assert.ok(css.includes('.katex-base'));
+  const fonts = [...css.matchAll(/url\((?:["']?)(fonts\/[^)"']+)/g)].map(match => match[1]);
+  assert.ok(fonts.length > 0);
+  for (const font of new Set(fonts)) {
+    assert.ok((await readFile(mermaidRequire.resolve(`katex/dist/${font}`))).length > 0);
+  }
+});
+
+test('patched KaTeX ignores inherited trust and blocks untrusted link/image output', () => {
+  // Use an options prototype rather than polluting the shared test process.
+  const options = Object.assign(Object.create({trust: true}), {throwOnError: true, output: 'htmlAndMathml'});
+  for (const formula of [String.raw`\href{javascript:alert(1)}{click}`, String.raw`\includegraphics{https://example.invalid/a.png}`]) {
+    const html = katex.renderToString(formula, options);
+    assert.doesNotMatch(html, /<(?:a|img)\b/);
+    assert.doesNotMatch(html, /(?:href|src)="(?:javascript:|https:)/);
+  }
 });
 
 // Selector parser 7 changes insertion-during-iteration semantics, not the CJS

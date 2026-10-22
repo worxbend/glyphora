@@ -63,13 +63,74 @@ nine to two; inherited parent entries are not independent vulnerabilities or
 attack paths. Plain `npm audit` still exits 1. **P13 is partially remediated, not
 fully resolved.**
 
-## Remaining upstream blockers
+## Independent residual-advisory review (2026-10-22)
 
-| Dependency | Consequence and boundary | Constraint, alternatives, and next action |
-| --- | --- | --- |
-| braces 3.0.3 — high | Deeply nested glob patterns can exhaust the build/development process stack. Not shipped browser logic. [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm). | The registry's latest remains 3.0.3, which is affected: there is **no published patch**, not merely an old lockfile. Micromatch 4.x requires `^3.0.3`; Chokidar 3.x requires `~3.0.2`. No override to a nonexistent patched version is possible. Replacing the glob/watch pipeline is a separate dependency migration. Keep build/glob inputs reviewed, builds time-bounded, and dev servers loopback-only; follow an upstream patch. |
-| katex 0.16.47 — low | Browser-side trust restrictions can be bypassed if prototype pollution already exists. No such pollution path was established here; diagrams are repository-authored. [GHSA-238p-pmpm-9mq7](https://github.com/advisories/GHSA-238p-pmpm-9mq7). | Mermaid 11.16.1 requires `^0.16.45`; the patch starts at 0.18.2, with no patched 0.16.x release. [KaTeX 0.17/0.18](https://github.com/KaTeX/KaTeX/blob/v0.18.2/CHANGELOG.md) changes the internal function API and prefixes internal CSS classes. A blind override would not prove compatibility of math labels, sanitization, or CSS. Mermaid 12 is an alternative, but its [breaking release](https://github.com/mermaid-js/mermaid/releases/tag/mermaid%4012.0.0) changes the default layout/theme, removes renderer options, and raises browser requirements to ES2024/Safari 17.4+. Do not silently migrate the framework/diagram rendering contract. Follow a compatible Mermaid backport or separately review a math/CSS/browser migration; continue disallowing untrusted diagrams. |
+**KaTeX: repaired.** Mermaid remains 11.16.1. Its KaTeX dependency is overridden
+only under `@docusaurus/theme-mermaid > mermaid` to **0.18.2**, fixing
+[GHSA-238p-pmpm-9mq7](https://github.com/advisories/GHSA-238p-pmpm-9mq7).
+The original `^0.16.45` range excludes the patch, but this is not an API blocker:
+Mermaid's actual `dist/mermaid.core.mjs` consumer dynamically imports `katex` and
+calls public `renderToString` with `throwOnError`, `displayMode`, and `output`.
+It does not call `__defineFunction`, the internal API changed in 0.17.
+[KaTeX 0.18's class-prefix change](https://github.com/KaTeX/KaTeX/blob/v0.18.2/CHANGELOG.md)
+is handled by importing `katex/dist/katex.min.css` from the same resolved package,
+including its fonts, rather than retaining 0.16 CSS or a remote CDN stylesheet.
+Mermaid's `.node .katex path` selector still targets the unchanged outer class.
+No Mermaid 12/framework migration or browser-target change is needed.
 
-Re-check registry/advisory status before changing these notes. Compatible updates
-must retain the lockfile and pass consumer tests, a production build, and real
-browser hydration checks; a passing critical-threshold audit alone is insufficient.
+Node 24.22.0 verification: fresh `npm ci --ignore-scripts`, `npm ls --all`, twelve
+consumer tests, and production build pass. Tests cover both KaTeX output modes,
+matching CSS/font resolution, and rejection of inherited `trust` options, unsafe
+links, and external images. Actual Chromium 145 Docusaurus hydration additionally
+renders temporary repository-authored Mermaid fixtures for native MathML
+(fraction/radical), `forceLegacyMathML` (sum with matching loaded KaTeX fonts),
+nonmath labels, and an untrusted `javascript:` math link. The unsafe link remains
+noninteractive; no observed errors/warnings or failed resources. Fixtures are not
+published. Both final existing pages still hydrate (intro: nine nodes;
+architecture: six). This evidence is not a cross-browser/accessibility audit.
+
+Fresh audit now has **29 high affected-package entries, one independent advisory
+URL, no low/moderate/critical findings**. Plain audit still exits 1; critical-only
+audit policy is unchanged. These counts supersede the earlier 31-entry snapshot.
+
+**braces: patch blocked; exposure mitigated, not repaired.**
+[GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)
+still lists `<=3.0.3` and `first_patched_version: null`; the registry's latest is
+3.0.3. Its recursion guards only character length, not AST nesting depth.
+Independent Node 24.22.0 probes of `compile(parse(pattern))` and
+`expand(parse(pattern))` at 4,999 nested braces / 9,999 characters completed;
+this does **not** invalidate the advisory's Node 26 reproducer or prove safety
+for other AST shapes/stack contexts.
+
+- Latest Micromatch 4.0.8 still requires `braces: ^3.0.3`. It is independently
+  reached through Docusaurus utils (`micromatch: ^4.0.5`), fast-glob (`^4.0.8`),
+  and http-proxy-middleware (`^4.0.2`). Therefore changing only the watcher cannot
+  eliminate the finding.
+- Docusaurus core requires Chokidar `^3.5.3`; webpack-dev-server requires
+  `^3.6.0`; Chokidar 3.6.0 requires `braces: ~3.0.2`. Chokidar 6 removes braces
+  but is outside both ranges and drops glob support; it is not a compatible
+  isolated override, and would still leave Micromatch's braces copy.
+- Upstream [issue 70](https://github.com/micromatch/braces/issues/70) and open
+  PRs 78/79/82/87/88 contain proposed depth guards, not a maintainer-published
+  fixed artifact. Inspected PR 88 at `a795ee83ecd011131b2d618fe754ac5a8e124dae`
+  changes parsing and all recursive walkers; its combined commit status was
+  `pending`, and it was unmerged. No verified supported patched artifact was
+  established. Do not vendor a proposed patch or mislabel a Git snapshot as a
+  patched registry version merely to clear audit.
+- Existing controls limit exposure: no public Node service is deployed; patterns
+  come from repository configuration, not HTTP requests. Pages builds run only
+  on main/manual dispatch, with read-only build permissions and a separate deploy
+  job; website build steps have 15-minute (CI) / 30-minute (Pages) bounds.
+  These bounds contain runaway execution, not immediate stack crashes. PR code
+  is still potentially hostile and must remain isolated from secrets/deploy.
+- Keep glob/watch configuration reviewed, reject any future feature accepting
+  arbitrary external patterns unless it enforces a small nesting/length limit
+  **before** all glob consumers, and keep development servers loopback-only
+  (`npm start -- --host 127.0.0.1`). Do not claim the upstream `rangeLimit` setting
+  limits nesting or globally monkey-patch transitive consumers. Recheck the
+  registry and upstream depth-guard work before a targeted update.
+
+**P13 remains partially remediated.** No audit suppression, fabricated patch
+version, broad lockfile refresh, new runtime dependency, or framework migration
+was used. Re-run full install/tree/test/build and hydrated math checks when either
+the scoped override or its parents change.

@@ -48,7 +48,10 @@
       "tinypool": "2.1.2"
     },
     "@docusaurus/theme-mermaid": {
-      "mermaid": "11.16.1"
+      "mermaid": {
+        ".": "11.16.1",
+        "katex": "0.18.2"
+      }
     },
     "copy-webpack-plugin": {
       "serialize-javascript": "7.0.5"
