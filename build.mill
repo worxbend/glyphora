@@ -109,14 +109,14 @@ object `package` extends Module {
 
     def moduleDescription: String
 
-    /** Link dependency symbols to the same per-module API roots deployed by docs.yml. Match Mill's actual local
-      * class directories, not Maven coordinates: documentation also builds before these artifacts are published.
+    /** Link dependency symbols to the same per-module API roots deployed by docs.yml. Match Mill's actual local class
+      * directories, not Maven coordinates: documentation also builds before these artifacts are published.
       */
     private def documentedDependencies: Seq[TuiPublishModule] =
       recursiveModuleDeps.collect { case module: TuiPublishModule => module }
 
     override def scalaDocOptions: T[Seq[String]] = Task {
-      val classes = Task.traverse(documentedDependencies)(_.compile)().map(_.classes.path)
+      val classes  = Task.traverse(documentedDependencies)(_.compile)().map(_.classes.path)
       val mappings = documentedDependencies.zip(classes).map { case (module, path) =>
         val origin = java.util.regex.Pattern.quote(path.toString) + ".*"
         s"$origin::scaladoc3::https://worxbend.github.io/glyphora/api/${module.moduleSegments.render}/"
