@@ -549,10 +549,16 @@ final class JLine3Backend private (
     }
 
   override def scrollRegionUp(region: RowRange, lines: Int): Either[BackendError, Unit] =
-    takeDownPictures().flatMap(_ => scrollRegions.scroll(region, lines, ScrollDirection.Up))
+    scrollRegion(region, lines, ScrollDirection.Up)
 
   override def scrollRegionDown(region: RowRange, lines: Int): Either[BackendError, Unit] =
-    takeDownPictures().flatMap(_ => scrollRegions.scroll(region, lines, ScrollDirection.Down))
+    scrollRegion(region, lines, ScrollDirection.Down)
+
+  private def scrollRegion(region: RowRange, lines: Int, direction: ScrollDirection): Either[BackendError, Unit] =
+    val result = takeDownPictures().flatMap(_ => scrollRegions.scroll(region, lines, direction))
+    // Either batch may have reached the terminal before its writer reported failure.
+    if result.isLeft then requestFullRedraw()
+    result
 
   /** Deletes every picture on screen before the terminal moves rows itself: a kitty picture scrolls with the text, so
     * after the move it is no longer where the graphics layer believes it is. The next frame places it again wherever

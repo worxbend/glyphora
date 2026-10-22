@@ -100,10 +100,11 @@ final class GraphicsLayerSpec extends AnyFunSuite:
   private final class RecoverableWriter(sink: ByteArrayOutputStream) extends PrintWriter(sink, false, UTF_8):
     var failing                                = false
     var failAfterWrite                         = false
+    var failAfterScroll                        = false
     override def write(sequence: String): Unit =
       if failing then throw new IOException("recoverable batch failure")
       super.write(sequence)
-      if failAfterWrite then
+      if failAfterWrite || (failAfterScroll && sequence.contains(AnsiSequences.setScrollRegion(0, 3))) then
         super.flush()
         throw new IOException("batch delivered but acknowledgement failed")
 
@@ -119,6 +120,8 @@ final class GraphicsLayerSpec extends AnyFunSuite:
       body(backend, batchWriter, sink)
     finally
       batchWriter.failing = false
+      batchWriter.failAfterWrite = false
+      batchWriter.failAfterScroll = false
       val _ = backend.close()
 
   test("ordinary graphics update retries both the old delete and new image after a recoverable write failure"):
@@ -168,6 +171,36 @@ final class GraphicsLayerSpec extends AnyFunSuite:
       assert(backend.draw(frame()).isRight)
       assert(sink.toString(UTF_8).contains(KittyGraphics.payload(image)))
     }
+
+  for
+    direction   <- Seq(ScrollDirection.Up, ScrollDirection.Down)
+    failedBatch <- Seq("delete", "scroll")
+  do
+    test(s"a delivered $failedBatch failure while scrolling $direction forces the next ordinary draw to repaint"):
+      recovering { (backend, writer, sink) =>
+        assert(backend.draw(frame()).isRight)
+        sink.reset()
+        writer.failAfterWrite = failedBatch == "delete"
+        writer.failAfterScroll = failedBatch == "scroll"
+        val result = direction match
+          case ScrollDirection.Up   => backend.scrollRegionUp(RowRange(0, 3), 1)
+          case ScrollDirection.Down => backend.scrollRegionDown(RowRange(0, 3), 1)
+        assert(result.isLeft)
+        assert(sink.toString(UTF_8).contains(KittyGraphics.delete(1)), "the deletion reached the terminal")
+        if failedBatch == "scroll" then assert(sink.toString(UTF_8).contains(AnsiSequences.setScrollRegion(0, 3)))
+        writer.failAfterWrite = false
+        writer.failAfterScroll = false
+        assert(backend.redrawOwed, "a partially delivered scroll must invalidate the unchanged frame")
+        sink.reset()
+        assert(backend.draw(frame()).isRight)
+        val retry  = sink.toString(UTF_8)
+        assert(retry.contains(KittyGraphics.payload(image)), "ordinary draw must replace the deleted picture")
+        if failedBatch == "delete" then
+          assert(retry.indexOf(KittyGraphics.delete(1)) < retry.indexOf(KittyGraphics.payload(image)))
+        sink.reset()
+        assert(backend.draw(frame()).isRight)
+        assert(sink.toString(UTF_8).isEmpty, "successful recovery must restore unchanged-frame silence")
+      }
 
   test("an unacknowledged delivered image is deleted even when the next frame removes it"):
     recovering { (backend, writer, sink) =>
