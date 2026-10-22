@@ -4,6 +4,26 @@ All seven `com.worxbend::tui-*` artifacts share one version. Before 1.0, a minor
 source compatibility; every break is listed under **Breaking** with a pointer to its migration
 note in [Versioning & releases](website/docs/versioning.md).
 
+## 0.21.1
+
+### Fixed
+
+- Keep stacked bars inside their drawing area for extreme values and prevent histogram/latency-summary overflow.
+- Commit graphics accounting only after successful output; recover uncertain image deletion and partially delivered hardware scrolling through the next ordinary draw.
+- Keep authenticated artifact redirects within the approved HTTPS origin; normalize tape output paths and reject incomplete arguments.
+- Resolve Scaladoc member queries and validate real cross-module pages/fragments, including enum-entry and parameter anchors.
+- Synchronize installation coordinates and deploy Pages when served assets change.
+
+### Changed
+
+- Consolidate characterized buffer copying, sparse grid search, memo refresh, mouse-dispatch stages and widget painting without changing public APIs.
+- Make async graphics/weather regressions deterministic and expand tooling, generator and external-input example coverage.
+- Apply consumer-scoped website dependency repairs, including KaTeX 0.18.2 with matching CSS/fonts, and disable unreviewed install lifecycle scripts in CI.
+
+### Security notes
+
+- The website's braces dependency remains affected by GHSA-vfj7-8cjw-p6xm with no supported patched release. Plain npm audit still reports high-severity entries; see [dependency security](website/DEPENDENCY_SECURITY.md). No audit suppression or forced framework upgrade is included.
+
 ## 0.21.0
 
 ### Fixed

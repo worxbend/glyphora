@@ -19,19 +19,19 @@ All publishable modules in this checkout share one synchronized version under `c
 
 ```scala
 // Mill
-def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.21.0")
+def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.21.1")
 ```
 
 ```scala
 // sbt
-libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.21.0"
+libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.21.1"
 ```
 
 Applications normally need only `tui-dsl`. Lower-tier artifacts are `tui-core`,
 `tui-terminal`, `tui-widgets`, `tui-runtime`, and `tui-macros`; `tui-test` carries the
 headless test harness and belongs in the test configuration only.
 
-Version `0.21.0` is released from the `v0.21.0` tag. Its Publish workflow validates the
+Version `0.21.1` is released from the `v0.21.1` tag. Its Publish workflow validates the
 exact tag commit before uploading to Maven Central under `com.worxbend` (see
 [Release process](#release-process)); check that workflow before expecting a newly
 pushed tag to resolve. Central keeps earlier releases, so builds pinned to `0.20.0`
@@ -43,6 +43,19 @@ See [Getting started](./getting-started#1-add-glyphora) for both options.
 
 GitHub Packages releases through `v0.18.1` used `io.worxbend`. Update dependency
 coordinates to `com.worxbend` when moving to `0.18.3`; Scala imports use `io.worxbend.tui`.
+
+## Upgrading to 0.21.1
+
+0.21.1 preserves the public APIs of 0.21.0. It fixes overflow in stacked charts and
+loadtest statistics, and ensures a failed graphics write or hardware-scroll teardown
+is repainted on the next ordinary draw. Internal refactorings retain the characterized
+memo, event-ordering, buffer-copy and layout behavior. No source migration is required;
+recompile downstream applications as described in the compatibility policy below.
+
+Generated API navigation is validated against the actual packaged pages and fragments.
+The website's compatible dependency repairs include KaTeX with matching CSS/fonts;
+[braces remains an explicitly documented upstream security blocker](https://github.com/worxbend/glyphora/blob/main/website/DEPENDENCY_SECURITY.md).
+A passing critical-threshold audit is not a claim of zero high-severity advisories.
 
 ## Migrating to 0.21.0
 
@@ -1332,7 +1345,7 @@ dependencies fail the release workflow.
 To publish the current main commit manually:
 
 ```sh
-gh workflow run publish-packages.yml --ref main -f version=0.21.0
+gh workflow run publish-packages.yml --ref main -f version=0.21.1
 ```
 
 Treat released versions as immutable. Increment the shared `publishVersion`

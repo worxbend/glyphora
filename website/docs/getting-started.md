@@ -27,7 +27,7 @@ import mill.*, scalalib.*
 
 object app extends ScalaModule:
   def scalaVersion = "3.9.0"
-  def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.21.0")
+  def mvnDeps = Seq(mvn"com.worxbend::tui-dsl:0.21.1")
 ```
 
 Put application sources under `app/src/`, then run them with `mill app.run` (or
@@ -37,7 +37,7 @@ Put application sources under `app/src/`, then run them with `mill app.run` (or
 
 ```scala title="build.sbt"
 scalaVersion := "3.9.0"
-libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.21.0"
+libraryDependencies += "com.worxbend" %% "tui-dsl" % "0.21.1"
 ```
 
 Put application sources under `src/main/scala/`, then use `sbt run`.
@@ -60,7 +60,7 @@ dependencies, which is the quickest way to see glyphora in a terminal:
 ```scala title="hello.scala"
 //> using scala 3.9.0
 //> using jvm 25
-//> using dep com.worxbend::tui-dsl:0.21.0
+//> using dep com.worxbend::tui-dsl:0.21.1
 //> using javaOpt --enable-native-access=ALL-UNNAMED
 //> using mainClass io.worxbend.tui.examples.scalacli.Main
 
@@ -135,7 +135,7 @@ cd glyphora
 ./mill __.publishLocal
 ```
 
-This installs all seven libraries at `0.21.0` into `~/.ivy2/local`. Mill reads that
+This installs all seven libraries at `0.21.1` into `~/.ivy2/local`. Mill reads that
 cache by default. An sbt build also needs `resolvers += Resolver.defaultLocal`.
 
 <details>

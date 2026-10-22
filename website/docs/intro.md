@@ -20,7 +20,7 @@ structured enough for dashboards, forms, file browsers, and full-screen tools.
 
 :::info Install from Maven Central
 
-Add `com.worxbend::tui-dsl:0.21.0` to your Mill dependencies. Central is the default
+Add `com.worxbend::tui-dsl:0.21.1` to your Mill dependencies. Central is the default
 resolver and requires no credentials for downloads. The optional GitHub Packages
 resolver and local installation are covered in
 [Getting started](./getting-started#1-add-glyphora).

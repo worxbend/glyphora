@@ -3,7 +3,7 @@
 // Pinned to the current glyphora release; CI also compiles this file against the current checkout.
 //> using scala 3.9.0
 //> using jvm 25
-//> using dep com.worxbend::tui-dsl:0.21.0
+//> using dep com.worxbend::tui-dsl:0.21.1
 //> using javaOpt --enable-native-access=ALL-UNNAMED
 //> using mainClass io.worxbend.tui.examples.scalacli.Main
 
