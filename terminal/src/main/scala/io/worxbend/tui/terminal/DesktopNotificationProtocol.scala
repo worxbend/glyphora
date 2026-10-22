@@ -6,8 +6,8 @@ import java.util.Locale
   *
   * There is no query for this, and the three dialects are not interchangeable: a terminal that speaks two of them shows
   * two notifications for one message, and one that speaks none ignores all three. So exactly one is sent, chosen from
-  * the environment once per backend by [[detect]], and the choice is a best guess that errs towards the dialect most
-  * terminals accept.
+  * the environment once per backend by [[io.worxbend.tui.terminal.DesktopNotificationProtocol.detect detect]], and the
+  * choice is a best guess that errs towards the dialect most terminals accept.
   */
 enum DesktopNotificationProtocol:
 

@@ -338,9 +338,9 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
     *
     * The inherited implementation would render the widget and then flatten it to plain strings for [[printAbove]],
     * which throws away the styling that is the whole reason this method exists — a test could then never tell a bold
-    * red `ERROR` prefix from the word "ERROR". The block is kept as a [[Buffer]] for [[insertedAbove]] to hand out, and
-    * its text is *also* appended to [[printedAbove]], so a test written against the plain-text view still sees
-    * everything the app emitted above the UI, in the order it emitted it.
+    * red `ERROR` prefix from the word "ERROR". The block is kept as a [[io.worxbend.tui.core.Buffer Buffer]] for
+    * [[insertedAbove]] to hand out, and its text is *also* appended to [[printedAbove]], so a test written against the
+    * plain-text view still sees everything the app emitted above the UI, in the order it emitted it.
     */
   override def insertBefore(height: Int, widget: Widget): Either[BackendError, Unit] =
     if height <= 0 then Right(())
@@ -421,11 +421,11 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
 
   /** Feeds raw terminal input through the *production* [[InputDecoder]] and queues whatever it decodes.
     *
-    * [[postEvent]] hands the runner an [[Event]] a test built by hand, which skips the decoder entirely. That is the
-    * right thing for most tests and the wrong thing for one: an application binding spelled `ctrl+s` and a decoder that
-    * turns byte `0x13` into some other key would both look correct on their own, and the app would still be dead in a
-    * real terminal. Posting the bytes joins the two halves — the key spec the app is written with, and the sequence a
-    * terminal actually sends.
+    * [[postEvent]] hands the runner an [[io.worxbend.tui.core.Event Event]] a test built by hand, which skips the
+    * decoder entirely. That is the right thing for most tests and the wrong thing for one: an application binding
+    * spelled `ctrl+s` and a decoder that turns byte `0x13` into some other key would both look correct on their own,
+    * and the app would still be dead in a real terminal. Posting the bytes joins the two halves — the key spec the app
+    * is written with, and the sequence a terminal actually sends.
     *
     * `codeUnits` are UTF-16 code units as a terminal reader hands them back (that is what `JLine3Backend` reads), not
     * UTF-8 bytes. A sequence the decoder deliberately drops — a device-attributes reply, say — queues nothing at all,
@@ -544,8 +544,9 @@ final class HeadlessBackend(initialSize: Size) extends Backend:
   /** The erases requested via [[clearRegion]], in order. */
   def clearedRegions: Seq[ClearType] = clears.synchronized(clears.toSeq)
 
-  /** The styled blocks emitted above the app via [[insertBefore]], in order, each as the [[Buffer]] the widget was
-    * rendered into. Their text also appears in [[printedAbove]]; this is the view that still carries the styling.
+  /** The styled blocks emitted above the app via [[insertBefore]], in order, each as the
+    * [[io.worxbend.tui.core.Buffer Buffer]] the widget was rendered into. Their text also appears in [[printedAbove]];
+    * this is the view that still carries the styling.
     */
   def insertedAbove: Seq[Buffer] = insertedBlocks.synchronized(insertedBlocks.toSeq)
 
@@ -624,8 +625,9 @@ object HeadlessBackend:
     * Deliberately not one case per [[Backend]] method. These are the operations whose failure a caller above `terminal`
     * has to *do* something about — dress the terminal, read input, flush a frame, hand the terminal back — and listing
     * the rest would fill the enum with cases no test has a reason to reach for while suggesting the coverage is
-    * complete. Both `enableMouseCapture` overloads share [[EnableMouseCapture]], because the no-argument one delegates
-    * to the other.
+    * complete. Both `enableMouseCapture` overloads share
+    * [[io.worxbend.tui.terminal.HeadlessBackend.Op.EnableMouseCapture EnableMouseCapture]], because the no-argument one
+    * delegates to the other.
     */
   enum Op:
 

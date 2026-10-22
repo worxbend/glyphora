@@ -10,8 +10,8 @@ import scala.util.control.NonFatal
 /** A terminal a TUI can draw to and read input from.
   *
   * Implementations own the physical (or simulated) terminal: raw mode, the alternate screen, cursor visibility, and
-  * translating [[Buffer]] diffs into whatever the device understands. Everything above this trait — runtime, widgets,
-  * DSL — is backend-agnostic.
+  * translating [[io.worxbend.tui.core.Buffer Buffer]] diffs into whatever the device understands. Everything above this
+  * trait — runtime, widgets, DSL — is backend-agnostic.
   *
   * I/O failures are values (`Either[BackendError, A]`) because callers can meaningfully degrade (log and continue vs.
   * abort); `throw` is reserved for genuine defects.
@@ -96,8 +96,8 @@ trait Backend:
     * This is the caret the operating system knows about: an input method editor (IME, the software that turns a
     * sequence of keystrokes into a Chinese, Japanese or Korean character) anchors its candidate popup to it, and a
     * screen reader reports it as the insertion point. It is *not* the highlighted cell a text widget paints into the
-    * [[Buffer]]; a focused text field normally wants both, because the painted block is what a sighted user sees and
-    * the hardware caret is what everything else follows.
+    * [[io.worxbend.tui.core.Buffer Buffer]]; a focused text field normally wants both, because the painted block is
+    * what a sighted user sees and the hardware caret is what everything else follows.
     *
     * Position only: visibility stays with [[hideCursor]] and [[showCursor]]. Before this method existed the caret was
     * hidden once at start-up and then left wherever the last cell of the frame diff happened to leave it; now a caller
@@ -129,8 +129,8 @@ trait Backend:
     *   - A terminal that does not implement the report never answers at all. That is the ordinary outcome, not a
     *     defect, and it is why there is a timeout rather than a blocking read.
     *
-    * The position is zero-based, in the same space as every other [[Position]] in glyphora; the wire format is
-    * one-based and is converted once, in the decoder.
+    * The position is zero-based, in the same space as every other [[io.worxbend.tui.core.Position Position]] in
+    * glyphora; the wire format is one-based and is converted once, in the decoder.
     *
     * What it is for: anchoring an *inline* viewport. An app that draws below the shell prompt rather than taking the
     * alternate screen has to know which row the prompt left the cursor on, or it draws over the user's scrollback.

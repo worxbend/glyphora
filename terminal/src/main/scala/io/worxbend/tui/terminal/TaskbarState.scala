@@ -25,7 +25,8 @@ enum TaskbarState:
   case Paused(fraction: Double)
 
   /** The fraction this state shows, for a backend that can only draw a determinate bar or nothing: `None` for
-    * [[Cleared]] and [[Indeterminate]].
+    * [[io.worxbend.tui.terminal.TaskbarState.Cleared Cleared]] and
+    * [[io.worxbend.tui.terminal.TaskbarState.Indeterminate Indeterminate]].
     */
   def progress: Option[Double] =
     this match
