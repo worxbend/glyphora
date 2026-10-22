@@ -8,11 +8,12 @@ package io.worxbend.tui.core
   * the CJK fonts they use have full-width glyphs for them. Nothing an application sends can tell the emulator which to
   * do, and nothing it receives says which was chosen — the choice lives in the user's terminal settings and font.
   *
-  * This is a *measurement* policy, not a rendering policy. Everything glyphora lays out and draws uses [[Narrow]], and
-  * that does not change: a widget and the buffer it clips against have to agree on every column, so the answer the
-  * renderer uses has exactly one source. Passing [[Wide]] to the width functions that accept a mode answers a different
-  * question — "how many columns would a CJK-locale terminal give this text?" — which is what an application needs to
-  * detect the mismatch and compensate, for example by choosing ASCII borders or by leaving a margin.
+  * This is a *measurement* policy, not a rendering policy. Everything glyphora lays out and draws uses
+  * [[io.worxbend.tui.core.WidthMode.Narrow Narrow]], and that does not change: a widget and the buffer it clips against
+  * have to agree on every column, so the answer the renderer uses has exactly one source. Passing
+  * [[io.worxbend.tui.core.WidthMode.Wide Wide]] to the width functions that accept a mode answers a different question
+  * — "how many columns would a CJK-locale terminal give this text?" — which is what an application needs to detect the
+  * mismatch and compensate, for example by choosing ASCII borders or by leaving a margin.
   *
   * The values are a sealed enumeration rather than a boolean flag so that a call site says which policy it means:
   * `CharWidth.of(text, WidthMode.Wide)` reads as an answer about a locale, where `CharWidth.of(text, true)` would read

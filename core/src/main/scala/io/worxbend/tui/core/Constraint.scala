@@ -27,16 +27,18 @@ enum Constraint:
   case Auto
   case Bounded(min: Int, max: Int, base: Constraint)
 
-  /** This constraint with a floor of `cells`: the segment never comes out shorter. On a [[Bounded]] the floor is
-    * replaced; on anything else the result is `Bounded(cells, Int.MaxValue, this)`.
+  /** This constraint with a floor of `cells`: the segment never comes out shorter. On a
+    * [[io.worxbend.tui.core.Constraint.Bounded Bounded]] the floor is replaced; on anything else the result is
+    * `Bounded(cells, Int.MaxValue, this)`.
     */
   def atLeast(cells: Int): Constraint =
     this match
       case Bounded(_, max, base) => Bounded(cells, max, base)
       case other                 => Bounded(cells, Int.MaxValue, other)
 
-  /** This constraint with a ceiling of `cells`: the segment never comes out longer. On a [[Bounded]] the ceiling is
-    * replaced; on anything else the result is `Bounded(0, cells, this)`.
+  /** This constraint with a ceiling of `cells`: the segment never comes out longer. On a
+    * [[io.worxbend.tui.core.Constraint.Bounded Bounded]] the ceiling is replaced; on anything else the result is
+    * `Bounded(0, cells, this)`.
     */
   def atMost(cells: Int): Constraint =
     this match

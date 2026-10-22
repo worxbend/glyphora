@@ -24,8 +24,8 @@ package io.worxbend.tui.core
   * expected to add fields here. A case class rewrites `apply`, `copy` and `unapply` on every new field, and a consumer
   * compiled against the old shape fails with `NoSuchMethodError`; here the compatibility surface is
   * [[Layout.horizontal]], [[Layout.vertical]] and the builders [[withSpacing]], [[withFlex]], [[withCrossAlign]],
-  * [[spaced]] and [[withoutBetween]], all of which a new field leaves untouched. There is no `copy` and no pattern
-  * extractor; equality and `hashCode` are structural over every field.
+  * [[io.worxbend.tui.core.Layout#spaced spaced]] and [[withoutBetween]], all of which a new field leaves untouched.
+  * There is no `copy` and no pattern extractor; equality and `hashCode` are structural over every field.
   */
 final class Layout private (
     val direction: Direction,
@@ -245,7 +245,8 @@ final class Layout private (
     new Layout(direction, constraints, this.spacing, flex, Some(spacing), crossAlign)
 
   /** This layout with no explicit [[between]], so [[spacing]] is what it spends between segments again. The way back
-    * from [[spaced]] — and the call that makes a later [[withSpacing]] take effect on a layout that was `spaced`.
+    * from [[io.worxbend.tui.core.Layout#spaced spaced]] — and the call that makes a later [[withSpacing]] take effect
+    * on a layout that was `spaced`.
     */
   def withoutBetween: Layout = new Layout(direction, constraints, spacing, flex, None, crossAlign)
 
@@ -299,7 +300,8 @@ object Layout:
     * renumbers its default-argument getters, so a consumer compiled against `Layout(direction, constraints, spacing =
     * …)` still fails with `NoSuchMethodError` on the next field until it recompiles; at that growth the previous arity
     * is kept as a plain default-free overload so compiled callers keep working. Code that must survive a new field
-    * without recompiling starts from [[horizontal]] or [[vertical]] and builds with the `with*` methods and [[spaced]].
+    * without recompiling starts from [[horizontal]] or [[vertical]] and builds with the `with*` methods and
+    * [[io.worxbend.tui.core.Layout#spaced spaced]].
     */
   def apply(
       direction: Direction,

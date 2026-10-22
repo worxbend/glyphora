@@ -658,8 +658,8 @@ final class Buffer(val area: Rect):
     *
     * One column is emitted even when its content did not change: a column that was the right half of a wide grapheme in
     * this (previous) frame, is not one in `next`, and whose grapheme painted a style that shows through a blank — see
-    * [[visibleOnBlank]]. Both frames hold [[Cell.Empty]] there, so a plain content compare calls it unchanged, yet the
-    * terminal is still painting the old glyph's background across that half-cell.
+    * `Style.visibleOnBlank`. Both frames hold [[Cell.Empty]] there, so a plain content compare calls it unchanged, yet
+    * the terminal is still painting the old glyph's background across that half-cell.
     *
     * `next`'s [[DiffDirective]]s override the content comparison, and are read from `next` alone — the request belongs
     * to the frame being drawn, not to the one being replaced. A [[DiffDirective.Skip]] position is never emitted; a
