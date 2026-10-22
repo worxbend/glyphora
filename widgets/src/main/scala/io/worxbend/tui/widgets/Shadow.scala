@@ -4,10 +4,10 @@ import io.worxbend.tui.core.{Buffer, Cell, Rect, Style}
 
 /** What a shadow does to the cells it falls on.
   *
-  * [[io.worxbend.tui.widgets.ShadowFill.Dim Dim]] is the one that reads as a real shadow over live content: the glyph
-  * underneath is kept and only its style changes, so the text behind a floating dialog stays legible while visibly
-  * receding. The shade variants overwrite instead, which is the right choice on a terminal that renders the dim
-  * attribute as nothing at all — a good many do.
+  * [Dim](ShadowFill.html#Dim-0) is the one that reads as a real shadow over live content: the glyph underneath is kept
+  * and only its style changes, so the text behind a floating dialog stays legible while visibly receding. The shade
+  * variants overwrite instead, which is the right choice on a terminal that renders the dim attribute as nothing at all
+  * — a good many do.
   */
 enum ShadowFill:
 
