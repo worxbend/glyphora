@@ -23,9 +23,9 @@ import scala.concurrent.duration.{DurationInt, FiniteDuration}
   * @param maxRows
   *   the most rows the draft grows to before it scrolls
   *
-  * [[Versioned]] over its own fields as well as the draft: [[version]] is the editor's version plus a count of this
-  * state's own writes (history recall, the reverse search, the completion popup, pastes, submits), so any of them made
-  * between frames schedules the frame that shows it.
+  * [[io.worxbend.tui.core.Versioned Versioned]] over its own fields as well as the draft: [[version]] is the editor's
+  * version plus a count of this state's own writes (history recall, the reverse search, the completion popup, pastes,
+  * submits), so any of them made between frames schedules the frame that shows it.
   */
 final class PromptComposerState(
     initialHistory: Seq[String] = Nil,

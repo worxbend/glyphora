@@ -128,10 +128,10 @@ final case class Dropdown(
 
   /** Natural height: one row.
     *
-    * This reports the *closed* height on purpose, even when the list happens to be open. [[Measured]] answers from the
-    * widget value alone and is handed no state, so it cannot see whether this particular dropdown is open; reporting
-    * anything else would be a guess. A caller that needs the open height asks [[openHeight]], which is exactly what the
-    * DSL node does.
+    * This reports the *closed* height on purpose, even when the list happens to be open.
+    * [[io.worxbend.tui.core.Measured Measured]] answers from the widget value alone and is handed no state, so it
+    * cannot see whether this particular dropdown is open; reporting anything else would be a guess. A caller that needs
+    * the open height asks [[openHeight]], which is exactly what the DSL node does.
     */
   override def heightAt(width: Int): Option[Int] =
     val _ = width

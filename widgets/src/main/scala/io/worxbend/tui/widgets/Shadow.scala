@@ -4,9 +4,10 @@ import io.worxbend.tui.core.{Buffer, Cell, Rect, Style}
 
 /** What a shadow does to the cells it falls on.
   *
-  * [[Dim]] is the one that reads as a real shadow over live content: the glyph underneath is kept and only its style
-  * changes, so the text behind a floating dialog stays legible while visibly receding. The shade variants overwrite
-  * instead, which is the right choice on a terminal that renders the dim attribute as nothing at all — a good many do.
+  * [[io.worxbend.tui.widgets.ShadowFill.Dim Dim]] is the one that reads as a real shadow over live content: the glyph
+  * underneath is kept and only its style changes, so the text behind a floating dialog stays legible while visibly
+  * receding. The shade variants overwrite instead, which is the right choice on a terminal that renders the dim
+  * attribute as nothing at all — a good many do.
   */
 enum ShadowFill:
 
@@ -35,7 +36,7 @@ enum ShadowFill:
 /** An offset drop shadow: the band of cells a box casts down and to the right of itself.
   *
   * This is what makes a dialog or a popup read as floating above the screen rather than cut into it. It is a plain
-  * immutable value that knows how to repaint a band of an existing [[Buffer]]; it is not a
+  * immutable value that knows how to repaint a band of an existing [[io.worxbend.tui.core.Buffer Buffer]]; it is not a
   * [[io.worxbend.tui.core.Widget]] of its own, because a shadow is never the thing being drawn — it is something a
   * widget such as [[Block]] casts.
   *

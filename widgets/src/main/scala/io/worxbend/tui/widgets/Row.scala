@@ -3,7 +3,7 @@ package io.worxbend.tui.widgets
 import io.worxbend.tui.core.{Buffer, Constraint, CrossAlign, Direction, Flex, Layout, Measured, Rect, Widget}
 
 /** One slot of a [[Row]] or [[Column]]: how much space the slot claims, what renders inside it, and — when set — where
-  * it sits across the container's axis, overriding the container's own [[CrossAlign]].
+  * it sits across the container's axis, overriding the container's own [[io.worxbend.tui.core.CrossAlign CrossAlign]].
   */
 final case class LayoutItem(constraint: Constraint, widget: Widget, align: Option[CrossAlign] = None)
 
@@ -79,9 +79,9 @@ object LayoutItem:
 
 /** Lays its items out left-to-right using the core constraint solver and renders each into its segment.
   *
-  * An item constrained `Constraint.Auto` gets the columns its widget measures through [[Measured.widthAt]]; each item
-  * is placed vertically by its own `align` or by [[crossAlign]] (the default, `Stretch`, gives it the row's full
-  * height).
+  * An item constrained `Constraint.Auto` gets the columns its widget measures through
+  * [[io.worxbend.tui.core.Measured#widthAt Measured.widthAt]]; each item is placed vertically by its own `align` or by
+  * [[crossAlign]] (the default, `Stretch`, gives it the row's full height).
   *
   * Measurement uses the identical horizontal allocation. A zero-width child contributes zero (render skips it); any
   * visible unmeasurable child makes the row unmeasurable. Its width is the sum of its items' — each a `Length` or its

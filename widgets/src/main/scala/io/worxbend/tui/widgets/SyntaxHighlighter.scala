@@ -29,9 +29,9 @@ final case class SyntaxTheme(
   * so a block comment, a triple-quoted string or a YAML block scalar that spans lines is highlighted on every line it
   * covers. [[highlight]] threads it through a whole text, and so do a Markdown fence and a `TextArea`. The two-argument
   * form lexes one line on its own, from [[LexState.Initial]]; a lexer that keeps no state implements only that one, and
-  * the stateful form defaults to it. The spans of the returned [[Line]] must concatenate back to `line` exactly — an
-  * editor maps them onto its grapheme clusters, and a lexer that drops or adds characters has its styling ignored
-  * there.
+  * the stateful form defaults to it. The spans of the returned [[io.worxbend.tui.core.Line Line]] must concatenate back
+  * to `line` exactly — an editor maps them onto its grapheme clusters, and a lexer that drops or adds characters has
+  * its styling ignored there.
   *
   * Implementations are immutable values and safe to share between threads; [[aliases]] are the lower-case info-string
   * names (```` ```yaml ````) a Markdown fence resolves through [[Lexer.among]].
@@ -54,7 +54,9 @@ trait Lexer:
     val _ = state // a stateless lexer starts every line afresh, whatever the line above ended in
     LexedLine(highlightLine(line, theme), LexState.Initial)
 
-  /** Highlights multi-line `code`, one [[Line]] per source line, carrying the [[LexState]] from line to line. */
+  /** Highlights multi-line `code`, one [[io.worxbend.tui.core.Line Line]] per source line, carrying the [[LexState]]
+    * from line to line.
+    */
   def highlight(code: String, theme: SyntaxTheme): Text =
     var state = LexState.Initial
     Text(Text.splitLines(code).toIndexedSeq.map { line =>
@@ -231,7 +233,9 @@ object Language:
   */
 object SyntaxHighlighter:
 
-  /** Highlights multi-line `code` as a [[Text]] (one [[Line]] per source line). */
+  /** Highlights multi-line `code` as a [[io.worxbend.tui.core.Text Text]] (one [[io.worxbend.tui.core.Line Line]] per
+    * source line).
+    */
   def highlight(code: String, lexer: Lexer, theme: SyntaxTheme = SyntaxTheme()): Text =
     lexer.highlight(code, theme)
 
