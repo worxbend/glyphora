@@ -51,8 +51,8 @@ final class InspectState extends VersionedState:
   * node's row and its children below. Atoms are always one row, however wide, and are cut at the area's edge like every
   * other line, by display width through `CharWidth`.
   *
-  * The tree is laid out once, when the widget is built, so the inspector is [[Measured]]: one row per line and the
-  * widest line's width, at any area size.
+  * The tree is laid out once, when the widget is built, so the inspector is [[io.worxbend.tui.core.Measured Measured]]:
+  * one row per line and the widest line's width, at any area size.
   *
   * Rendered with an [[InspectState]] the tree is collapsible: a node the state folds keeps its header row, followed by
   * ` …`, and hides everything under it, and the selected row's label and text are drawn in `highlightStyle`. Only a

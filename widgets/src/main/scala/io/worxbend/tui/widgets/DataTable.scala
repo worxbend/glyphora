@@ -431,8 +431,9 @@ final case class DataTableOptions(
   *   the body rows — see [[KeyedRow]] for the key's contract. Any sequence; a [[TableRows]] provider for data that
   *   should be read a row at a time rather than held in memory
   * @param widths
-  *   one [[Constraint]] per column. An empty sequence means "equal columns": each of the `columns` titles gets an equal
-  *   share of the area. Before that fallback existed an empty sequence drew a blank rectangle instead.
+  *   one [[io.worxbend.tui.core.Constraint Constraint]] per column. An empty sequence means "equal columns": each of
+  *   the `columns` titles gets an equal share of the area. Before that fallback existed an empty sequence drew a blank
+  *   rectangle instead.
   */
 final case class DataTable[K](
     columns: Seq[String],

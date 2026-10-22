@@ -18,14 +18,15 @@ import scala.collection.mutable
 
 /** Multi-line styled text with alignment and optional wrapping.
   *
-  * `alignment` places every line, and it is the last word rather than the first: a [[Line]] that carries an alignment
-  * of its own overrides it for that one row, and failing that the [[Text]]'s own alignment overrides it for every row.
-  * A wrapped line keeps its alignment on every row it spills onto.
+  * `alignment` places every line, and it is the last word rather than the first: a [[io.worxbend.tui.core.Line Line]]
+  * that carries an alignment of its own overrides it for that one row, and failing that the
+  * [[io.worxbend.tui.core.Text Text]]'s own alignment overrides it for every row. A wrapped line keeps its alignment on
+  * every row it spills onto.
   *
   * `style` is likewise the outermost style layer, not the only one. Every character is drawn with this style, then the
-  * text's own [[io.worxbend.tui.core.Text.style]] on top of it, then the line's, then the span's — each step a
-  * [[io.worxbend.tui.core.Style.patch]], so the more specific layer wins wherever it speaks. A `Paragraph` given a
-  * `style` therefore no longer erases a style the `Text` was built with; it sits underneath it.
+  * text's own [[io.worxbend.tui.core.Text#style Text.style]] on top of it, then the line's, then the span's — each step
+  * a [[io.worxbend.tui.core.Style#patch Style.patch]], so the more specific layer wins wherever it speaks. A
+  * `Paragraph` given a `style` therefore no longer erases a style the `Text` was built with; it sits underneath it.
   *
   * With [[Overflow.Wrap]] the text breaks at word boundaries: a word moves to the next row whole rather than being cut
   * in half, and the blanks that sat at the break are dropped instead of becoming a stray indent on the next row. A word
