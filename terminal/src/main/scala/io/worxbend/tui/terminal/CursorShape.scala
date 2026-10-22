@@ -8,10 +8,10 @@ package io.worxbend.tui.terminal
   * *hardware* caret — the one an input method editor anchors its candidate popup to and a screen reader reports as the
   * insertion point — not of a highlighted cell a widget paints into a `Buffer`.
   *
-  * [[io.worxbend.tui.terminal.CursorShape.Default Default]] hands the shape back to whatever the user configured in
-  * their terminal. It is what `AnsiSequences.RestoreAll` emits, so a process killed mid-edit does not leave a bar
-  * cursor behind in the shell it came from. A terminal that does not implement DECSCUSR ignores the sequence, so asking
-  * for a shape is never an error, merely sometimes without effect.
+  * [Default](CursorShape.html#Default-0) hands the shape back to whatever the user configured in their terminal. It is
+  * what `AnsiSequences.RestoreAll` emits, so a process killed mid-edit does not leave a bar cursor behind in the shell
+  * it came from. A terminal that does not implement DECSCUSR ignores the sequence, so asking for a shape is never an
+  * error, merely sometimes without effect.
   */
 enum CursorShape:
   case Default, BlinkingBlock, SteadyBlock, BlinkingUnderline, SteadyUnderline, BlinkingBar, SteadyBar

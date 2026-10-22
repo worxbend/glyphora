@@ -626,8 +626,8 @@ object HeadlessBackend:
     * has to *do* something about — dress the terminal, read input, flush a frame, hand the terminal back — and listing
     * the rest would fill the enum with cases no test has a reason to reach for while suggesting the coverage is
     * complete. Both `enableMouseCapture` overloads share
-    * [[io.worxbend.tui.terminal.HeadlessBackend.Op.EnableMouseCapture EnableMouseCapture]], because the no-argument one
-    * delegates to the other.
+    * [EnableMouseCapture](HeadlessBackend$$Op.html#EnableMouseCapture-0), because the no-argument one delegates to the
+    * other.
     */
   enum Op:
 
