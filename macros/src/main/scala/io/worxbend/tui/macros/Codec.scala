@@ -20,8 +20,10 @@ import scala.deriving.Mirror
   * [[version]] is 1 unless it was built with [[versioned]], whose migration hook reads an older version's text into
   * today's type — `Codec.derived[Prefs].versioned(2) { case 1 => Codec.readAs[PrefsV1](old => Prefs(...)) }`. Text with
   * no tag, which is what a pre-tag release wrote, is version 1; no untagged text can start with `@`, because every atom
-  * starts with a digit. A version the codec cannot read decodes as a `Left`, which [[Persisted]] in `tui-runtime`
-  * treats as "start from the initial value". The tag is written once, at the top: a nested value carries none.
+  * starts with a digit. A version the codec cannot read decodes as a `Left`, which
+  * [Persisted](https://worxbend.github.io/glyphora/api/runtime/io/worxbend/tui/runtime/Persisted$.html) in
+  * `tui-runtime` treats as "start from the initial value". The tag is written once, at the top: a nested value carries
+  * none.
   *
   * Instances for the primitives, `Option` and the immutable collections are in the companion, and so is
   * [[Codec.derived]], which hands any case class, enum or sealed hierarchy the codec [[deriveCodec]] builds — so a
