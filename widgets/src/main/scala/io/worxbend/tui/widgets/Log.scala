@@ -111,8 +111,8 @@ final class LogState(maxLines: Int = 1000) extends VersionedState:
 
 /** An append-only scrolling text panel (build/log output, chat transcripts).
   *
-  * Each line is drawn at its own [[io.worxbend.tui.core.Line#alignment Line.alignment]] — a centred banner stays
-  * centred — and left-aligned when it names none.
+  * Each [[io.worxbend.tui.core.Line Line]] is drawn at its own `alignment` — a centred banner stays centred — and
+  * left-aligned when it names none.
   *
   * Rendered with a [[SearchState]] (the four-argument `render`), the log searches every line it holds — not only the
   * ones on screen — highlights the matches in `matchStyle`, the current one in `currentMatchStyle`, where the line is

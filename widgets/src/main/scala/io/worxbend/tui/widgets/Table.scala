@@ -36,7 +36,8 @@ import io.worxbend.tui.core.{Alignment, Buffer, Constraint, Direction, Flex, Lay
   * @param flex
   *   where the columns sit when they do not fill the area. Constraints like `Length(8)` can leave the table narrower
   *   than the space it was given; before this parameter the leftover always trailed off the right-hand side, because
-  *   the widget passed no flex to the layout and took the [[io.worxbend.tui.core.Flex.Start Flex.Start]] default. Now a
+  *   the widget passed no flex to the layout and took the
+  *   [Flex.Start](https://worxbend.github.io/glyphora/api/core/io/worxbend/tui/core/Flex.html#Start-0) default. Now a
   *   table of fixed-width columns can be centred or right-aligned in its area, the same way a `row` can. Has no effect
   *   when a `Fill` or `Min` column is already absorbing the leftover, because then there is none.
   */

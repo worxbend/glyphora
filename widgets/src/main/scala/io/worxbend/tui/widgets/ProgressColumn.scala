@@ -8,9 +8,9 @@ import java.util.Locale
   *
   * Every column except [[io.worxbend.tui.widgets.ProgressColumn.Bar Bar]] is text, measured with `CharWidth` and padded
   * to the widest value any row of the table produces, so a column lines up down the table. Numeric columns are
-  * right-aligned, [[io.worxbend.tui.widgets.ProgressColumn.Description Description]] is left-aligned. A value that
-  * cannot be known yet — an ETA before any progress, a percentage of an unknown total — prints a placeholder (`-`,
-  * `--:--`) rather than a zero, because a zero is a claim.
+  * right-aligned, [Description](ProgressColumn.html#Description-0) is left-aligned. A value that cannot be known yet —
+  * an ETA before any progress, a percentage of an unknown total — prints a placeholder (`-`, `--:--`) rather than a
+  * zero, because a zero is a claim.
   */
 enum ProgressColumn:
 

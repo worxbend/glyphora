@@ -24,10 +24,9 @@ package io.worxbend.tui.widgets
   *                " bullet"
   * }}}
   *
-  * Pick [[io.worxbend.tui.widgets.Overflow.Wrap Wrap]] for a document whose indentation is structure and whose breaks
-  * are incidental — which is nearly always. Pick [[io.worxbend.tui.widgets.Overflow.WrapTrimmed WrapTrimmed]] for prose
-  * pasted in with an indent nobody wants on screen. Pick
-  * [[io.worxbend.tui.widgets.Overflow.WrapPreserved WrapPreserved]] when the text is a rendering of something
+  * Pick [Wrap](Overflow.html#Wrap-0) for a document whose indentation is structure and whose breaks are incidental —
+  * which is nearly always. Pick [WrapTrimmed](Overflow.html#WrapTrimmed-0) for prose pasted in with an indent nobody
+  * wants on screen. Pick [WrapPreserved](Overflow.html#WrapPreserved-0) when the text is a rendering of something
   * whitespace-significant and dropping a blank would misrepresent it.
   */
 enum Overflow:
@@ -47,31 +46,29 @@ enum Overflow:
     */
   case Wrap
 
-  /** Like [[io.worxbend.tui.widgets.Overflow.Wrap Wrap]], but the line's own leading blanks are dropped too, so every
-    * row — the first one included — starts flush against the left edge of the area. The choice for prose that arrived
-    * with an indentation the layout, not the text, is supposed to decide.
+  /** Like [Wrap](Overflow.html#Wrap-0), but the line's own leading blanks are dropped too, so every row — the first one
+    * included — starts flush against the left edge of the area. The choice for prose that arrived with an indentation
+    * the layout, not the text, is supposed to decide.
     */
   case WrapTrimmed
 
-  /** Like [[io.worxbend.tui.widgets.Overflow.Wrap Wrap]], but no blank is ever dropped: the run of blanks a break
-    * landed on is carried onto the next row and indents it. The choice for text where a blank is data rather than
-    * spacing.
+  /** Like [Wrap](Overflow.html#Wrap-0), but no blank is ever dropped: the run of blanks a break landed on is carried
+    * onto the next row and indents it. The choice for text where a blank is data rather than spacing.
     *
     * A run of blanks that would not leave room for the word after it on a row of its own is still dropped — keeping it
     * would push the word off the row entirely and cost a row that shows nothing.
     */
   case WrapPreserved
 
-  /** Whether this mode breaks content onto further rows. True for every case but
-    * [[io.worxbend.tui.widgets.Overflow.Clip Clip]].
+  /** Whether this mode breaks content onto further rows. True for every case but [Clip](Overflow.html#Clip-0).
     *
     * Callers that only need to know "does the height depend on the width" ask this instead of matching every wrapping
     * case, so adding a fourth wrapping mode does not reopen every one of those matches.
     *
-    * Consistent with `wrapBlanks` by construction: every case but [[io.worxbend.tui.widgets.Overflow.Clip Clip]] wraps,
-    * and every case but [[io.worxbend.tui.widgets.Overflow.Clip Clip]] names a blank rule. Deliberately not defined as
-    * `wrapBlanks.isDefined` — `wraps` is asked once per frame from several render paths, and routing it through an
-    * `Option` would allocate there for no correctness gain.
+    * Consistent with `wrapBlanks` by construction: every case but [Clip](Overflow.html#Clip-0) wraps, and every case
+    * but [Clip](Overflow.html#Clip-0) names a blank rule. Deliberately not defined as `wrapBlanks.isDefined` — `wraps`
+    * is asked once per frame from several render paths, and routing it through an `Option` would allocate there for no
+    * correctness gain.
     */
   def wraps: Boolean = this != Overflow.Clip
 
