@@ -6,10 +6,11 @@ import java.util.Locale
 
 /** One column of a [[MultiProgress]] row: what it reads off a [[ProgressTask]] and how it prints it.
   *
-  * Every column except [[Bar]] is text, measured with `CharWidth` and padded to the widest value any row of the table
-  * produces, so a column lines up down the table. Numeric columns are right-aligned, [[Description]] is left-aligned. A
-  * value that cannot be known yet — an ETA before any progress, a percentage of an unknown total — prints a placeholder
-  * (`-`, `--:--`) rather than a zero, because a zero is a claim.
+  * Every column except [[io.worxbend.tui.widgets.ProgressColumn.Bar Bar]] is text, measured with `CharWidth` and padded
+  * to the widest value any row of the table produces, so a column lines up down the table. Numeric columns are
+  * right-aligned, [[io.worxbend.tui.widgets.ProgressColumn.Description Description]] is left-aligned. A value that
+  * cannot be known yet — an ETA before any progress, a percentage of an unknown total — prints a placeholder (`-`,
+  * `--:--`) rather than a zero, because a zero is a claim.
   */
 enum ProgressColumn:
 
@@ -52,7 +53,9 @@ enum ProgressColumn:
       case Percentage => 4
       case _          => 0
 
-  /** The column's text for `task`; empty for [[Bar]], which draws instead of printing. */
+  /** The column's text for `task`; empty for [[io.worxbend.tui.widgets.ProgressColumn.Bar Bar]], which draws instead of
+    * printing.
+    */
   private[widgets] def textFor(task: ProgressTask): String =
     this match
       case Description            => task.label

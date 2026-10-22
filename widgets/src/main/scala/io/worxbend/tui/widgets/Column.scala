@@ -4,9 +4,9 @@ import io.worxbend.tui.core.{Buffer, CrossAlign, Direction, Flex, Measured, Rect
 
 /** Lays its items out top-to-bottom using the core constraint solver and renders each into its segment.
   *
-  * An item constrained `Constraint.Auto` gets the rows its widget measures through [[Measured.heightAt]], and each item
-  * is placed across the column by its own `align`, or by [[crossAlign]] when it sets none — see [[Row]], which this
-  * mirrors one axis over.
+  * An item constrained `Constraint.Auto` gets the rows its widget measures through
+  * [[io.worxbend.tui.core.Measured#heightAt Measured.heightAt]], and each item is placed across the column by its own
+  * `align`, or by [[crossAlign]] when it sets none — see [[Row]], which this mirrors one axis over.
   *
   * Measurement: a column is as tall as its items plus the gaps between them, where an item's height is its `Length`
   * when it has one and its widget's own measurement otherwise; any item that can say neither makes the column

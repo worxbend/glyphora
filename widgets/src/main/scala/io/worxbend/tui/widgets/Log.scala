@@ -41,11 +41,11 @@ final class LogState(maxLines: Int = 1000) extends VersionedState:
 
   /** Appends `text` as one or more lines, split on `\n` (a lone `\r` before it is trimmed, so CRLF input splits clean).
     * A caller piping raw chunks from a process or a socket — the ordinary way a [[Log]] gets its content — routinely
-    * hands this a chunk spanning several lines; treating the whole chunk as one [[Line]] would not wrap it, it would
-    * render it as one row with every embedded `\n` silently gone, because `Character.isISOControl` (see
-    * [[io.worxbend.tui.core.CharWidth]]) gives a control character zero display width and [[Buffer.setString]] never
-    * writes a zero-width cluster at all. Splitting here is what makes `append` behave the way appending to a log looks
-    * like it should.
+    * hands this a chunk spanning several lines; treating the whole chunk as one [[io.worxbend.tui.core.Line Line]]
+    * would not wrap it, it would render it as one row with every embedded `\n` silently gone, because
+    * `Character.isISOControl` (see [[io.worxbend.tui.core.CharWidth]]) gives a control character zero display width and
+    * [[io.worxbend.tui.core.Buffer#setString Buffer.setString]] never writes a zero-width cluster at all. Splitting
+    * here is what makes `append` behave the way appending to a log looks like it should.
     */
   def append(text: String): Unit = text.split("\n", -1).foreach(raw => append(Line.raw(raw.stripSuffix("\r"))))
 
@@ -111,8 +111,8 @@ final class LogState(maxLines: Int = 1000) extends VersionedState:
 
 /** An append-only scrolling text panel (build/log output, chat transcripts).
   *
-  * Each line is drawn at its own [[Line.alignment]] — a centred banner stays centred — and left-aligned when it names
-  * none.
+  * Each line is drawn at its own [[io.worxbend.tui.core.Line#alignment Line.alignment]] — a centred banner stays
+  * centred — and left-aligned when it names none.
   *
   * Rendered with a [[SearchState]] (the four-argument `render`), the log searches every line it holds — not only the
   * ones on screen — highlights the matches in `matchStyle`, the current one in `currentMatchStyle`, where the line is
