@@ -32,9 +32,9 @@ final case class SearchMatch(row: Int, column: Int, width: Int)
   * The query is edited through [[input]], the [[TextInputState]] a DSL `searchBar(state)` types into; [[query_=]] sets
   * it in one go.
   *
-  * Render-thread-only. Every mutation — typing into [[input]] included — raises `version` (see [[Versioned]]), so a DSL
-  * node that paints this state schedules the frame that shows it. Matches recorded by a render do not move it: a frame
-  * must not schedule another frame just by having been drawn.
+  * Render-thread-only. Every mutation — typing into [[input]] included — raises `version` (see
+  * [[io.worxbend.tui.core.Versioned Versioned]]), so a DSL node that paints this state schedules the frame that shows
+  * it. Matches recorded by a render do not move it: a frame must not schedule another frame just by having been drawn.
   */
 final class SearchState private (
     /** The editable query: what a `searchBar` types into. Reading [[query]] reads this. Shared with every [[view]]. */

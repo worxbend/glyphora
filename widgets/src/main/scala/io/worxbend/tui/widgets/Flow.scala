@@ -5,11 +5,11 @@ import io.worxbend.tui.core.{Buffer, Measured, Rect, Widget}
 /** Lays items left to right at their natural widths and wraps onto a new line when the next one does not fit — tags,
   * chips, a bar of buttons.
   *
-  * An item's width is its [[Measured.widthAt]] answer, which for text is its display width through `CharWidth`, so a
-  * CJK label takes two columns per character; its height is its `heightAt` at that width, or one row when it cannot
-  * say. An item that cannot say how wide it is takes a whole line of its own, and an item wider than the area starts a
-  * line of its own and is clipped at the right edge. Each line is as tall as its tallest item, `spacing` blank columns
-  * separate neighbours on a line and `rowSpacing` blank rows separate lines.
+  * An item's width is its [[io.worxbend.tui.core.Measured#widthAt Measured.widthAt]] answer, which for text is its
+  * display width through `CharWidth`, so a CJK label takes two columns per character; its height is its `heightAt` at
+  * that width, or one row when it cannot say. An item that cannot say how wide it is takes a whole line of its own, and
+  * an item wider than the area starts a line of its own and is clipped at the right edge. Each line is as tall as its
+  * tallest item, `spacing` blank columns separate neighbours on a line and `rowSpacing` blank rows separate lines.
   *
   * Measurement replays exactly the placement render uses, so `heightAt(width)` is the rows `render` fills at that
   * width. Stateless and immutable; render-thread use only, like every widget.

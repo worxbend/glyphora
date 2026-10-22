@@ -124,22 +124,23 @@ object ListState:
   * Named `ListView` rather than the reference libraries' `List` to avoid colliding with `scala.List` at every call
   * site.
   *
-  * An item is a plain `String`, a multi-style [[Line]], or a whole [[Text]], and the three may be mixed in one list.
-  * The union type saves every caller with plain text the `items.map(Line.raw)` ceremony without closing the door on a
-  * styled row; it follows the shape `Layout.apply` already uses for its `Int | Double | Constraint` constraints.
-  * Normalising a plain `String` into a [[Line]] happens per drawn row, in [[linesOf]], and only for the rows the
-  * viewport actually shows: the DSL builds a fresh `ListView` value every frame, so converting the whole `items`
-  * sequence up front would put the cost of the entire list — 50 000 items is 3 MiB of `Line`s — on every repaint to
-  * draw at most a screenful.
+  * An item is a plain `String`, a multi-style [[io.worxbend.tui.core.Line Line]], or a whole
+  * [[io.worxbend.tui.core.Text Text]], and the three may be mixed in one list. The union type saves every caller with
+  * plain text the `items.map(Line.raw)` ceremony without closing the door on a styled row; it follows the shape
+  * `Layout.apply` already uses for its `Int | Double | Constraint` constraints. Normalising a plain `String` into a
+  * [[io.worxbend.tui.core.Line Line]] happens per drawn row, in [[linesOf]], and only for the rows the viewport
+  * actually shows: the DSL builds a fresh `ListView` value every frame, so converting the whole `items` sequence up
+  * front would put the cost of the entire list — 50 000 items is 3 MiB of `Line`s — on every repaint to draw at most a
+  * screenful.
   *
   * `itemPrefix` supplies an optional per-item marker, evaluated only for painted rows. It does not change row heights
   * or the source identity used by the layout cache: rebuilding a multi-select list must not project every item merely
   * to add a check mark. Prefixes repeat on each visible line of a multi-row item and clip inside the list's area.
   *
-  * A [[Text]] item occupies one row per line it holds, which is how a row says a title on one line and a dimmed
-  * subtitle under it. Selection, the keyboard moves and the scroll offset all still count *items*, not rows, so one
-  * press of Down moves past the whole block; the offset arithmetic that keeps the selection on screen is
-  * [[ScrollWindow.offsetForItems]]. A `Text` with no lines at all still takes one blank row, so an item can never
+  * A [[io.worxbend.tui.core.Text Text]] item occupies one row per line it holds, which is how a row says a title on one
+  * line and a dimmed subtitle under it. Selection, the keyboard moves and the scroll offset all still count *items*,
+  * not rows, so one press of Down moves past the whole block; the offset arithmetic that keeps the selection on screen
+  * is [[ScrollWindow.offsetForItems]]. A `Text` with no lines at all still takes one blank row, so an item can never
   * become invisible and therefore unreachable. The last item on screen may be cut off part way through, which is what
   * lets a block taller than the whole viewport still show its top — or, in a bottom-to-top list, its bottom: the cut
   * always falls on the lines past the far edge, so a block keeps its reading order whichever edge the list grows from,
@@ -294,10 +295,10 @@ final case class ListView(
         row += math.min(lines.size, area.height - row)
       }
 
-  /** The rows every item together occupies — the sum of the items' own heights, which is one row each until a [[Text]]
-    * item brings more. Always an answer: a list knows its items without a layout pass. The `width` is ignored because a
-    * list clips rather than wraps, so no width changes how many rows an item takes. Measured once per widget value, so
-    * asking twice costs one walk.
+  /** The rows every item together occupies — the sum of the items' own heights, which is one row each until a
+    * [[io.worxbend.tui.core.Text Text]] item brings more. Always an answer: a list knows its items without a layout
+    * pass. The `width` is ignored because a list clips rather than wraps, so no width changes how many rows an item
+    * takes. Measured once per widget value, so asking twice costs one walk.
     */
   override def heightAt(width: Int): Option[Int] = Some(measured.totalRows)
 

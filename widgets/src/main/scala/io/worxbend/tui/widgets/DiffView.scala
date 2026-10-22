@@ -208,7 +208,7 @@ private[widgets] final case class DiffFold(file: Int, hunk: Int, segment: Int)
   * clipped. See [[DiffViewOptions]] for folding context, word highlighting and syntax highlighting.
   *
   * Scrolling and hunk navigation live in the caller-owned [[DiffViewState]]; the widget value is immutable. It measures
-  * its height — one row per header, line and folded run — through [[Measured]].
+  * its height — one row per header, line and folded run — through [[io.worxbend.tui.core.Measured Measured]].
   */
 final case class DiffView(patch: Patch, options: DiffViewOptions = DiffViewOptions())
     extends StatefulWidget[DiffViewState]
