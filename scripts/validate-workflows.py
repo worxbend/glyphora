@@ -78,7 +78,7 @@ def validate(workflows: dict[str, dict], actions: dict[str, dict]) -> None:
     for filename, job_name in (("ci.yml", "website-build"), ("docs.yml", "build")):
         build_steps = [step for step in workflows[filename]["jobs"][job_name]["steps"]
                        if step.get("working-directory") == "website"]
-        expected = ["npm ci", "npm test", "npm audit --audit-level=critical", "npm run build"]
+        expected = ["npm ci --ignore-scripts", "npm test", "npm audit --audit-level=critical", "npm run build"]
         commands = [line.strip() for step in build_steps for line in step.get("run", "").splitlines()
                     if line.strip() and not line.lstrip().startswith("#")]
         require(len(build_steps) == 1 and commands == expected,

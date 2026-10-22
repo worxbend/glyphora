@@ -11,8 +11,9 @@ is not a measure of deployed browser exposure.
 
 From `website/`, run `npm ci --ignore-scripts`, `npm ls --all`, `npm test`,
 `npm audit --json`, and `npm run build`. Review lifecycle scripts before enabling
-them; the verified build does not need install scripts. CI and Pages deployment
-reject critical findings with `npm audit --audit-level=critical`. This threshold
+them; the verified build does not need install scripts. Both CI and Pages installs
+use `--ignore-scripts`; workflow policy rejects re-enabling lifecycle scripts.
+CI and Pages deployment reject critical findings with `npm audit --audit-level=critical`. This threshold
 is not a claim that the dependency graph has no high-severity advisories.
 
 ## Compatible repairs verified on 2026-10-22

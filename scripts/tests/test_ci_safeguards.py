@@ -235,6 +235,17 @@ class WorkflowPolicyTests(unittest.TestCase):
         paths.remove("docs/assets/**")
         self.fails("docs: static assets must trigger Pages")
 
+    def test_website_install_scripts_cannot_be_enabled(self):
+        for filename, job in (("ci.yml", "website-build"), ("docs.yml", "build")):
+            with self.subTest(workflow=filename):
+                workflows = copy.deepcopy(self.workflows)
+                build = next(step for step in workflows[filename]["jobs"][job]["steps"]
+                             if step.get("working-directory") == "website")
+                self.assertIn("npm ci --ignore-scripts", build["run"])
+                build["run"] = build["run"].replace("npm ci --ignore-scripts", "npm ci")
+                with self.assertRaisesRegex(ValueError, "website dependency checks"):
+                    self.tool.validate(workflows, self.actions)
+
     def test_website_compatibility_tests_cannot_be_skipped(self):
         for filename, job in (("ci.yml", "website-build"), ("docs.yml", "build")):
             with self.subTest(workflow=filename):

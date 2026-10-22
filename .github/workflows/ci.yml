@@ -336,7 +336,7 @@ jobs:
         timeout-minutes: 15
         working-directory: website
         run: |
-          npm ci
+          npm ci --ignore-scripts
           npm test
           # Remaining upstream advisories are tracked in website/DEPENDENCY_SECURITY.md.
           npm audit --audit-level=critical
