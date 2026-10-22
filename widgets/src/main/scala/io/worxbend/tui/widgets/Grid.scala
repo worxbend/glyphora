@@ -5,7 +5,7 @@ import io.worxbend.tui.core.{Buffer, Constraint, GridLayout, GridPlacement, Grid
 /** One child of a [[Grid]]: where it sits and what it draws. */
 final case class GridEntry(placement: GridPlacement, widget: Widget)
 
-/** Renders each cell into the rectangle its placement covers in a [[GridLayout]].
+/** Renders each cell into the rectangle its placement covers in a [[io.worxbend.tui.core.GridLayout GridLayout]].
   *
   * The geometry is the layout's; this widget adds content measurement for `Constraint.Auto` tracks. An `Auto` column is
   * as wide as the widest cell sitting in that column alone (a cell spanning several columns does not size any one of

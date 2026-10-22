@@ -45,8 +45,9 @@ final class HexViewerState extends VersionedState:
   * outside `0x20..0x7e` as `.`), with the selected byte highlighted in both columns.
   *
   * The layout is fixed-width and pure ASCII, so it is the same at every terminal width: the viewer measures exactly one
-  * row per `bytesPerRow` bytes and a full row's width ([[Measured]]), and a narrower area clips each row on the right.
-  * Only the rows on screen are formatted, so a large buffer costs its viewport, not its size.
+  * row per `bytesPerRow` bytes and a full row's width ([[io.worxbend.tui.core.Measured Measured]]), and a narrower area
+  * clips each row on the right. Only the rows on screen are formatted, so a large buffer costs its viewport, not its
+  * size.
   *
   * @param bytes
   *   the data; indexed, so a row is read without walking from the start. `ArraySeq.unsafeWrapArray(array)` views an

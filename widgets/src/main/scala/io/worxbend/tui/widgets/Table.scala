@@ -15,15 +15,15 @@ import io.worxbend.tui.core.{Alignment, Buffer, Constraint, Direction, Flex, Lay
   *
   * @param rows
   *   each row is either a bare sequence of cells — one terminal line tall — or a [[TableRow]], which adds a height, top
-  *   and bottom margins, and a per-row style. A cell in either shape is a [[Line]] covering one column, or a
-  *   [[TableCell]] covering several. All the shapes may appear in the same table; see [[TableRow]] and [[TableCell]]
-  *   for what the extra room and the spans are for.
+  *   and bottom margins, and a per-row style. A cell in either shape is a [[io.worxbend.tui.core.Line Line]] covering
+  *   one column, or a [[TableCell]] covering several. All the shapes may appear in the same table; see [[TableRow]] and
+  *   [[TableCell]] for what the extra room and the spans are for.
   *
   * @param widths
-  *   one [[Constraint]] per column. An empty sequence means "equal columns": the table counts the cells in the header
-  *   and in the rows it is about to draw, and gives each column an equal share of the area. That fallback exists
-  *   because an empty sequence used to render a blank rectangle, and the DSL's `table(rows)` — whose widths are
-  *   varargs, so writing none of them is a legal call — landed straight in it.
+  *   one [[io.worxbend.tui.core.Constraint Constraint]] per column. An empty sequence means "equal columns": the table
+  *   counts the cells in the header and in the rows it is about to draw, and gives each column an equal share of the
+  *   area. That fallback exists because an empty sequence used to render a blank rectangle, and the DSL's `table(rows)`
+  *   — whose widths are varargs, so writing none of them is a legal call — landed straight in it.
   * @param footer
   *   an optional summary row — a totals line, a "last updated" note — pinned to the *bottom* of the area rather than
   *   following the last data row. Pinning it is the point: a table whose rows do not fill the area would otherwise
@@ -36,9 +36,9 @@ import io.worxbend.tui.core.{Alignment, Buffer, Constraint, Direction, Flex, Lay
   * @param flex
   *   where the columns sit when they do not fill the area. Constraints like `Length(8)` can leave the table narrower
   *   than the space it was given; before this parameter the leftover always trailed off the right-hand side, because
-  *   the widget passed no flex to the layout and took the [[Flex.Start]] default. Now a table of fixed-width columns
-  *   can be centred or right-aligned in its area, the same way a `row` can. Has no effect when a `Fill` or `Min` column
-  *   is already absorbing the leftover, because then there is none.
+  *   the widget passed no flex to the layout and took the [[io.worxbend.tui.core.Flex.Start Flex.Start]] default. Now a
+  *   table of fixed-width columns can be centred or right-aligned in its area, the same way a `row` can. Has no effect
+  *   when a `Fill` or `Min` column is already absorbing the leftover, because then there is none.
   */
 final case class Table(
     rows: Seq[TableRow.Source],
@@ -108,10 +108,11 @@ object Table:
 
   /** A table of plain unstyled text.
     *
-    * The cells of a table are [[Line]]s so that any one of them can carry several styles, but the common case is a grid
-    * of `String`s and every such caller was writing the same `rows.map(_.map(Line.raw))` incantation. This does that
-    * once. A `Seq[Seq[String | Line]]` union would have removed the need for a second factory altogether, but a union
-    * two collections deep is unpleasant to read and to infer, so the two shapes get two names instead.
+    * The cells of a table are [[io.worxbend.tui.core.Line Line]]s so that any one of them can carry several styles, but
+    * the common case is a grid of `String`s and every such caller was writing the same `rows.map(_.map(Line.raw))`
+    * incantation. This does that once. A `Seq[Seq[String | Line]]` union would have removed the need for a second
+    * factory altogether, but a union two collections deep is unpleasant to read and to infer, so the two shapes get two
+    * names instead.
     *
     * The parameter list mirrors [[Table]]'s, and that mirror is a maintenance contract: a new [[Table]] parameter
     * belongs here too. The forwarding call below passes every argument by name, so a parameter added to one and not the

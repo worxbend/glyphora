@@ -175,14 +175,14 @@ final case class OrbitSpinnerOptions(
   * vertical resolution on a terminal with no braille block. `options.marker` is read at that resolution only.
   *
   * ONE STYLE PER CELL — the constraint this widget is shaped around. A braille cell packs eight dots and carries one
-  * [[Style]], so dot resolution is 2x4 per cell while *colour* resolution is 1 per cell. Two rules follow, both chosen
-  * rather than fallen into. Masks are OR-ed, so a cell holding both arc and path dots keeps every dot and the resting
-  * path never erodes. Styles take the brightest dot in the cell, so such a cell reads as arc: the head is never
-  * overwritten by its own tail, and the quantisation error runs in one predictable direction — a cell can read brighter
-  * than it should, never dimmer, so the arc never appears to break. The budget, measured rather than estimated: the
-  * default radius-4 braille ring is 24 dots but only 11 cells, so a ramped comet shows 11 shades, not 24 (5 at the
-  * default sweep), and `thickness` buys geometry rather than colour. The alternative — one dot per cell, so colour and
-  * geometry agree — throws away the resolution braille was chosen for, and is rejected.
+  * [[io.worxbend.tui.core.Style Style]], so dot resolution is 2x4 per cell while *colour* resolution is 1 per cell. Two
+  * rules follow, both chosen rather than fallen into. Masks are OR-ed, so a cell holding both arc and path dots keeps
+  * every dot and the resting path never erodes. Styles take the brightest dot in the cell, so such a cell reads as arc:
+  * the head is never overwritten by its own tail, and the quantisation error runs in one predictable direction — a cell
+  * can read brighter than it should, never dimmer, so the arc never appears to break. The budget, measured rather than
+  * estimated: the default radius-4 braille ring is 24 dots but only 11 cells, so a ramped comet shows 11 shades, not 24
+  * (5 at the default sweep), and `thickness` buys geometry rather than colour. The alternative — one dot per cell, so
+  * colour and geometry agree — throws away the resolution braille was chosen for, and is rejected.
   *
   * The consequence worth knowing before reaching for this on a monochrome terminal: because the mask never erodes, the
   * *glyphs* are a pure function of the geometry and the whole animation lives in the per-cell style. A golden frame
@@ -259,7 +259,7 @@ final case class OrbitSpinner(
     */
   def preferredSize: Option[Size] = radius.map(OrbitSpinner.sizeFor(_, resolution))
 
-  /** One [[Style]] per cell, from the brightest dot that cell holds.
+  /** One [[io.worxbend.tui.core.Style Style]] per cell, from the brightest dot that cell holds.
     *
     * `1.0` is the head, so a ramp reads the way a progress ramp does — its far stop is the "most" end.
     */
