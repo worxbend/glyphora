@@ -4,8 +4,8 @@ package io.worxbend.tui.core
   *
   * Three states and not a `Boolean`, for the reason `terminal.Support` gives: "the terminal said light", "the terminal
   * said dark" and "the terminal said nothing" call for different behaviour. An application picking a theme reads
-  * [[Unknown]] as "dark", which is what every terminal looked like before any of them could be asked — so a terminal
-  * that cannot say gets exactly what it always got.
+  * [[io.worxbend.tui.core.ColorScheme.Unknown Unknown]] as "dark", which is what every terminal looked like before any
+  * of them could be asked — so a terminal that cannot say gets exactly what it always got.
   *
   * A pure value in `tui-core` rather than in `tui-terminal`, because it travels in two directions that cross the tier
   * boundary: upward as the payload of [[Event.ColorSchemeChanged]], and downward into whichever widget or theme wants
@@ -38,7 +38,7 @@ object ColorScheme:
     *
     * Decided by [[Color.luminance]], so a `Color.Rgb` answers exactly and a named or indexed colour answers against the
     * nominal palette `Color.approximateRgb` assumes. Only [[Color.Reset]] — "the terminal's own default", which is the
-    * very thing being asked about — has no answer and stays [[Unknown]].
+    * very thing being asked about — has no answer and stays [[io.worxbend.tui.core.ColorScheme.Unknown Unknown]].
     */
   def of(background: Color): ColorScheme =
     background match

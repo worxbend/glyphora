@@ -24,11 +24,12 @@ enum UnderlineStyle:
   * Text attributes are carried in *two* bitsets, not one (ratatui's `add_modifier`/`sub_modifier` pair). [[modifiers]]
   * is what the cell renders with; [[clearedModifiers]] records the flags the style was asked to turn off. Without the
   * second set a style has no way to say "not bold" — only "bold" or "silent about bold" — and the moment it is layered
-  * onto a bolder one with [[patch]], the flag it deliberately dropped comes back.
+  * onto a bolder one with [[io.worxbend.tui.core.Style#patch patch]], the flag it deliberately dropped comes back.
   *
   * @param clearedModifiers
-  *   flags this style turns off when it is layered onto another with [[patch]]. Always disjoint from [[modifiers]]:
-  *   every builder that sets a flag clears it here and vice versa, so the last call in a chain wins.
+  *   flags this style turns off when it is layered onto another with [[io.worxbend.tui.core.Style#patch patch]]. Always
+  *   disjoint from [[modifiers]]: every builder that sets a flag clears it here and vice versa, so the last call in a
+  *   chain wins.
   */
 final class Style private (
     val fg: Option[Color],
@@ -56,8 +57,9 @@ final class Style private (
   /** Attaches an OSC 8 hyperlink target — terminals that support it make the cells clickable. */
   def withLink(url: String): Style = updated(link = Some(url))
 
-  /** Drops the hyperlink target. `link = None` is the silent case in [[patch]], so a style layered onto a linked one
-    * afterwards leaves the link in place; there is no spelling for "no link, and I mean it".
+  /** Drops the hyperlink target. `link = None` is the silent case in [[io.worxbend.tui.core.Style#patch patch]], so a
+    * style layered onto a linked one afterwards leaves the link in place; there is no spelling for "no link, and I mean
+    * it".
     */
   def withoutLink: Style          = updated(link = None)
   def withBg(color: Color): Style = updated(bg = Some(color))
@@ -98,8 +100,8 @@ final class Style private (
     * style inherited from a theme or parent.
     *
     * The flags are both removed from [[modifiers]] and recorded in [[clearedModifiers]], which is what makes the clear
-    * survive [[patch]]: a style that merely lacks a flag says nothing about it, while one that recorded the clear turns
-    * it off in whatever it is layered onto.
+    * survive [[io.worxbend.tui.core.Style#patch patch]]: a style that merely lacks a flag says nothing about it, while
+    * one that recorded the clear turns it off in whatever it is layered onto.
     */
   def without(flags: Modifiers): Style =
     updated(modifiers = modifiers.without(flags), clearedModifiers = clearedModifiers | flags)
@@ -115,7 +117,7 @@ final class Style private (
   def notRapidBlink: Style = without(Modifiers.RapidBlink)
 
   /** Sets the foreground to [[Color.Reset]] — the terminal's default — and, exactly like [[without]] does for text
-    * attributes, makes that choice survive [[patch]].
+    * attributes, makes that choice survive [[io.worxbend.tui.core.Style#patch patch]].
     *
     * Leaving `fg` at `None` would not do: a style that merely *lacks* a foreground says nothing about it, so the color
     * of whatever it is layered onto comes straight back. Recording the clear as an explicit `Some(Color.Reset)` is what
@@ -124,7 +126,8 @@ final class Style private (
   def withoutFg: Style = updated(fg = Some(Color.Reset))
 
   /** Sets the background to [[Color.Reset]] — the terminal's default — and, exactly like [[without]] does for text
-    * attributes, makes that choice survive [[patch]]. See [[withoutFg]] for why `None` is not the same thing.
+    * attributes, makes that choice survive [[io.worxbend.tui.core.Style#patch patch]]. See [[withoutFg]] for why `None`
+    * is not the same thing.
     */
   def withoutBg: Style = updated(bg = Some(Color.Reset))
 
@@ -285,8 +288,9 @@ object Style:
     *
     * [[Default]] is the opposite value. It is silent about every field, so layering it changes nothing. `Reset` is loud
     * about every field it can be loud about: foreground, background and underline color become [[Color.Reset]] (the
-    * terminal default, an explicit choice that wins in [[patch]] the way any other color does), and every text
-    * attribute is recorded in [[Style.clearedModifiers]] so the clear survives the layering too.
+    * terminal default, an explicit choice that wins in [[io.worxbend.tui.core.Style#patch patch]] the way any other
+    * color does), and every text attribute is recorded in [[Style.clearedModifiers]] so the clear survives the layering
+    * too.
     *
     * It deliberately does *not* reset [[Style.underlineStyle]] or [[Style.link]]. `patch` treats `UnderlineStyle.None`
     * and `link = None` as the silent cases, so neither field has a spelling for "explicitly off" that could be put

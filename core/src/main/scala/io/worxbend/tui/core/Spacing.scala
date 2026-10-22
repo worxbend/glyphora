@@ -20,8 +20,9 @@ enum Spacing:
   case Gap(cells: Int)
   case Overlap(cells: Int)
 
-  /** How far the layout advances *past* the end of one segment before starting the next: positive for a [[Gap]],
-    * negative for an [[Overlap]], zero for either with a count of zero.
+  /** How far the layout advances *past* the end of one segment before starting the next: positive for a
+    * [[io.worxbend.tui.core.Spacing.Gap Gap]], negative for an [[io.worxbend.tui.core.Spacing.Overlap Overlap]], zero
+    * for either with a count of zero.
     *
     * This is the single number every step of the layout arithmetic reads, so no step can budget for a gap while another
     * places an overlap.

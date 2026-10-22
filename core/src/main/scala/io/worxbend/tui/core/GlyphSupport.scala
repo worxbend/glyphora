@@ -6,12 +6,13 @@ package io.worxbend.tui.core
   * a measurement — nothing here can interrogate the font a terminal is drawing with, so a rung says "do not go above
   * this", never "this is definitely renderable".
   *
-  *   - [[Ascii]] — nothing above U+007E. What survives a non-UTF-8 locale, a serial console, or a log file that someone
-  *     will later open in an editor that is not a terminal at all.
-  *   - [[BoxDrawing]] — the U+2500 box-drawing block on top of that. Present in essentially every fixed-width font,
-  *     including the Linux virtual console's built-in one, which is why it is a rung of its own.
-  *   - [[Full]] — anything glyphora draws, braille spinners and emoji included. The default, because a modern terminal
-  *     emulator with a UTF-8 locale renders all of it.
+  *   - [[io.worxbend.tui.core.GlyphSupport.Ascii Ascii]] — nothing above U+007E. What survives a non-UTF-8 locale, a
+  *     serial console, or a log file that someone will later open in an editor that is not a terminal at all.
+  *   - [[io.worxbend.tui.core.GlyphSupport.BoxDrawing BoxDrawing]] — the U+2500 box-drawing block on top of that.
+  *     Present in essentially every fixed-width font, including the Linux virtual console's built-in one, which is why
+  *     it is a rung of its own.
+  *   - [[io.worxbend.tui.core.GlyphSupport.Full Full]] — anything glyphora draws, braille spinners and emoji included.
+  *     The default, because a modern terminal emulator with a UTF-8 locale renders all of it.
   *
   * A pure value with no environment reading of its own: `tui-terminal`'s `TerminalGlyphs.detect` is what turns an
   * environment into one of these, and it lives up there so that this type — and therefore `tui-widgets` — stays free of
