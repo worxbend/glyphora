@@ -61,7 +61,9 @@ def check(out):
             for href in page.links:
                 url = urlsplit(href)
                 target_module, _, target_path = unquote(url.path.removeprefix("/glyphora/api/")).partition("/")
-                target = pages.get(target_module, {}).get(target_path)
+                if target_module not in MODULES:
+                    continue  # Vendor/external documentation is outside the local mapped corpus.
+                target = pages[target_module].get(target_path)
                 if target is None or (url.fragment and unquote(url.fragment) not in target.ids):
                     errors.append(f"{module}/{source}: missing target {href}")
                     continue
@@ -77,11 +79,11 @@ def check(out):
         if not sources or problem:
             raise ValueError(problem or f"Missing required anchor in {module}/{filename}: {href}")
         required.append({"source": f"{module}/{sources[0]}", "href": href})
+    if errors:
+        raise ValueError("Invalid internal API anchors:\n" + "\n".join(errors))
     return {
         "required_links": required,
         "validated_anchors": sum(counts.values()),
-        # Scaladoc can emit wrong enum companion/member anchors even with correct
-        # mappings. Report these separately; the focused gate above must not hide them.
         "other_invalid_anchors": errors,
         "edges": [dict(source=s, target=t, count=n, example=examples[(s, t)])
                   for (s, t), n in sorted(counts.items())],

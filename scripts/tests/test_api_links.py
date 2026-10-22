@@ -67,10 +67,30 @@ class ApiLinksTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Missing local classpath mapping"):
             API.check(self.out)
 
-    def test_unrelated_invalid_anchor_is_reported(self):
+    def test_unrelated_invalid_internal_page_fails(self):
         self.pages(f'<a href="{API.API_ROOT}core/Effect.html#render-1">Effect</a>'
                    f'<a href="{API.API_ROOT}core/Missing.html">Missing</a>', '<div id="render-1"></div>')
-        self.assertEqual(len(API.check(self.out)["other_invalid_anchors"]), 1)
+        with self.assertRaisesRegex(ValueError, "Invalid internal API anchors"):
+            API.check(self.out)
+
+    def test_unrelated_invalid_member_fragment_fails(self):
+        self.pages(f'<a href="{API.API_ROOT}core/Effect.html#render-1">Effect</a>'
+                   f'<a href="{API.API_ROOT}core/Effect.html#missing-0">member</a>', '<div id="render-1"></div>')
+        with self.assertRaisesRegex(ValueError, "missing-0"):
+            API.check(self.out)
+
+    def test_invalid_enum_companion_fragment_fails_even_when_required_links_pass(self):
+        self.pages(f'<a href="{API.API_ROOT}core/Effect.html#render-1">Effect</a>'
+                   f'<a href="{API.API_ROOT}core/GlyphSupport$.html#Full-0">Full</a>', '<div id="render-1"></div>')
+        with self.assertRaisesRegex(ValueError, "Invalid internal API anchors"):
+            API.check(self.out)
+
+    def test_vendor_and_external_links_are_outside_the_gate(self):
+        self.pages(f'<a href="{API.API_ROOT}core/Effect.html#render-1">Effect</a>'
+                   f'<a href="{API.API_ROOT}vendor/Missing.html#absent">vendor</a>'
+                   '<a href="https://vendor.example/Missing.html#absent">external</a>', '<div id="render-1"></div>')
+        self.assertEqual(API.check(self.out)["validated_anchors"], 1)
+        self.assertEqual(API.check(self.out)["other_invalid_anchors"], [])
 
     def test_bare_href_is_not_an_anchor(self):
         self.assertEqual(API.Page('<a href>empty</a>').links, [])
