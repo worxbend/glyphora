@@ -124,6 +124,36 @@ object `package` extends Module {
       super.scalaDocOptions() ++ mappings.flatMap(mapping => Seq("-external-mappings", mapping))
     }
 
+    /** Repair known Scaladoc enum/parameter links against the actual dependency HTML before packaging. Keep the
+      * original jar immutable; dependencies follow the existing acyclic module graph.
+      */
+    def apiLinkNormalizer = Task.Source(mill.api.BuildCtx.workspaceRoot / "scripts" / "normalize-api-links.py")
+
+    override def docJar: T[PathRef] = Task {
+      val original     = super.docJar()
+      val dependencies = Task.traverse(documentedDependencies)(_.docJar)()
+      val arguments    = documentedDependencies.zip(dependencies).flatMap { case (module, jar) =>
+        Seq("--dependency", s"${module.moduleSegments.render}=${jar.path}")
+      }
+      val output       = Task.dest / "out.jar"
+      val repair       = os
+        .proc(
+          Seq(
+            "python3",
+            apiLinkNormalizer().path.toString,
+            "--module",
+            moduleSegments.render,
+            "--source",
+            original.path.toString,
+            "--output",
+            output.toString,
+          ) ++ arguments
+        )
+        .call()
+      os.write(Task.dest / "repairs.json", repair.out.text())
+      PathRef(output)
+    }
+
     def pomSettings = PomSettings(
       description = moduleDescription,
       organization = "com.worxbend",

@@ -11,7 +11,9 @@ on:
       - "scripts/export-wiki.mjs"
       - "scripts/style-scaladoc.mjs"
       - "scripts/check-api-links.py"
+      - "scripts/normalize-api-links.py"
       - "scripts/tests/test_api_links.py"
+      - "scripts/tests/test_api_link_normalization.py"
       - "core/**"
       - "terminal/**"
       - "widgets/**"
@@ -92,7 +94,7 @@ jobs:
       - name: Verify cross-module API navigation
         timeout-minutes: 5
         run: |
-          python3 -m unittest discover -s scripts/tests -p test_api_links.py
+          python3 -m unittest discover -s scripts/tests -p 'test_api_link*.py'
           python3 scripts/check-api-links.py
 
       - name: Apply glyphora style to Scaladoc

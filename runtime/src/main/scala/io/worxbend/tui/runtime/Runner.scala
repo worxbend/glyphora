@@ -624,8 +624,9 @@ enum RunnerError:
     *
     * The generated `toString` of an enum case is a constructor call — `Backend(Io(java.io.IOException: ...),None)` —
     * which is a fine debugging string and a poor thing to print at someone. This is the sentence to print instead;
-    * [[RunnerError.Backend]] delegates to [[io.worxbend.tui.terminal.BackendError.message BackendError.message]] for
-    * its half. When teardown failed as well, the line ends with how many [[cleanupFailures]] there were —
+    * [[RunnerError.Backend]] delegates to `BackendError.message` (documented on the concrete
+    * [[https://worxbend.github.io/glyphora/api/terminal/io/worxbend/tui/terminal/BackendError$$Io.html#message-0 message]]
+    * member) for its half. When teardown failed as well, the line ends with how many [[cleanupFailures]] there were —
     * ` (+2 cleanup failures)` — so the one line an app prints admits that `onStop` or the terminal restore went wrong
     * too, rather than leaving that to a field nobody reads.
     */
