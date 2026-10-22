@@ -48,9 +48,9 @@ object Toolbar:
   final case class Placement(index: Int, rect: Rect)
 
 /** A one-row strip of controls, drawn on the first row of its area — a toolbar, a segmented button group — laid left to
-  * right at each item's natural width ([[Measured.widthAt]]; an item that cannot say takes one column), `gap` blank
-  * columns apart, with `divider` drawn in the middle of every gap when given (`gap = 0, divider = Some("│")` joins the
-  * items into one segmented control).
+  * right at each item's natural width ([[io.worxbend.tui.core.Measured#widthAt Measured.widthAt]]; an item that cannot
+  * say takes one column), `gap` blank columns apart, with `divider` drawn in the middle of every gap when given (`gap =
+  * 0, divider = Some("│")` joins the items into one segmented control).
   *
   * When the items do not all fit, the strip shows the window of them that does and marks what is cut off: `»` in the
   * last column when items follow, `« ` at the start when items precede. The window starts at the first item, unless the

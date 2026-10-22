@@ -11,10 +11,10 @@ import io.worxbend.tui.core.{Buffer, CharWidth, Constraint, Direction, Flex, Lay
   * extracts otherwise — so an application keeps its records in a `Map` by that key and looks them up, rather than
   * smuggling them into node labels. It is called only for the rows on screen.
   *
-  * The header row is pinned; the body scrolls to keep the selection visible. Columns are laid out by the [[Layout]]
-  * solver from `widths`, and every cell is cut to its column through `CharWidth`, so a CJK or emoji cell never spills a
-  * half character into its neighbour. A row with fewer cells than columns leaves the rest blank; extra cells are
-  * ignored.
+  * The header row is pinned; the body scrolls to keep the selection visible. Columns are laid out by the
+  * [[io.worxbend.tui.core.Layout Layout]] solver from `widths`, and every cell is cut to its column through
+  * `CharWidth`, so a CJK or emoji cell never spills a half character into its neighbour. A row with fewer cells than
+  * columns leaves the rest blank; extra cells are ignored.
   *
   * @tparam K
   *   the state's key type

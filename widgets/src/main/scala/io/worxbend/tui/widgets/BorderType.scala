@@ -9,21 +9,28 @@ import io.worxbend.tui.core.GlyphSupport
   * Every glyph in every set here is one terminal column wide, so choosing a set never changes a block's [[Block.inner]]
   * geometry — only its look.
   *
-  *   - [[Plain]] `┌─┐`, [[Rounded]] `╭─╮`, [[Double]] `╔═╗`, [[Thick]] `┏━┓` — the four classic box-drawing weights.
-  *   - [[Ascii]] `+-+` — plain ASCII, for a terminal or a font with no box-drawing glyphs, and for output that has to
-  *     survive being pasted somewhere that is not a terminal at all.
+  *   - [[io.worxbend.tui.widgets.BorderType.Plain Plain]] `┌─┐`, [[io.worxbend.tui.widgets.BorderType.Rounded Rounded]]
+  *     `╭─╮`, [[io.worxbend.tui.widgets.BorderType.Double Double]] `╔═╗`,
+  *     [[io.worxbend.tui.widgets.BorderType.Thick Thick]] `┏━┓` — the four classic box-drawing weights.
+  *   - [[io.worxbend.tui.widgets.BorderType.Ascii Ascii]] `+-+` — plain ASCII, for a terminal or a font with no
+  *     box-drawing glyphs, and for output that has to survive being pasted somewhere that is not a terminal at all.
   *   - The six dashed sets — light or heavy, broken into two, three or four dashes per cell — draw a frame that reads
   *     as provisional or inactive next to a solid one. Their corners stay solid, because a dashed corner glyph does not
   *     exist.
-  *   - [[QuadrantInside]] and [[QuadrantOutside]] treat each cell as a 2x2 grid of half-cell "pixels", so the frame
-  *     sits half a cell inside the block's area or half a cell outside it. Two nested blocks drawn one inside and one
-  *     outside meet with no gap between them.
-  *   - [[OneEighthWide]] and [[OneEighthTall]] are the "McGugan box", named after Will McGugan: one-eighth block
-  *     elements pushed right up against the cell edge, which reads as a hairline rather than as a row of glyphs.
-  *   - [[ProportionalWide]] and [[ProportionalTall]] compensate for a terminal cell being about twice as tall as it is
-  *     wide, so the frame looks the same thickness horizontally and vertically.
-  *   - [[Full]] `█` is a solid slab, and [[Blank]] draws spaces — the way to give a block a border-styled margin, or to
-  *     keep a title's border row without any frame under it.
+  *   - [[io.worxbend.tui.widgets.BorderType.QuadrantInside QuadrantInside]] and
+  *     [[io.worxbend.tui.widgets.BorderType.QuadrantOutside QuadrantOutside]] treat each cell as a 2x2 grid of
+  *     half-cell "pixels", so the frame sits half a cell inside the block's area or half a cell outside it. Two nested
+  *     blocks drawn one inside and one outside meet with no gap between them.
+  *   - [[io.worxbend.tui.widgets.BorderType.OneEighthWide OneEighthWide]] and
+  *     [[io.worxbend.tui.widgets.BorderType.OneEighthTall OneEighthTall]] are the "McGugan box", named after Will
+  *     McGugan: one-eighth block elements pushed right up against the cell edge, which reads as a hairline rather than
+  *     as a row of glyphs.
+  *   - [[io.worxbend.tui.widgets.BorderType.ProportionalWide ProportionalWide]] and
+  *     [[io.worxbend.tui.widgets.BorderType.ProportionalTall ProportionalTall]] compensate for a terminal cell being
+  *     about twice as tall as it is wide, so the frame looks the same thickness horizontally and vertically.
+  *   - [[io.worxbend.tui.widgets.BorderType.Full Full]] `█` is a solid slab, and
+  *     [[io.worxbend.tui.widgets.BorderType.Blank Blank]] draws spaces — the way to give a block a border-styled
+  *     margin, or to keep a title's border row without any frame under it.
   */
 enum BorderType:
   case Plain, Rounded, Double, Thick
@@ -35,12 +42,14 @@ enum BorderType:
   case ProportionalWide, ProportionalTall
   case Full, Blank
 
-  /** This border set, or [[Ascii]] when `support` does not reach the rung this set needs.
+  /** This border set, or [[io.worxbend.tui.widgets.BorderType.Ascii Ascii]] when `support` does not reach the rung this
+    * set needs.
     *
     * What lets an application pick a frame once and still run on a terminal that cannot draw it. Every set above needs
-    * at least [[io.worxbend.tui.core.GlyphSupport.BoxDrawing]] except [[Ascii]] and [[Blank]], which need nothing, so
-    * the question is only ever "is box drawing available?" — the quadrant, one-eighth and proportional sets are all
-    * box-drawing-block or block-element glyphs and travel together.
+    * at least [[io.worxbend.tui.core.GlyphSupport.BoxDrawing]] except
+    * [[io.worxbend.tui.widgets.BorderType.Ascii Ascii]] and [[io.worxbend.tui.widgets.BorderType.Blank Blank]], which
+    * need nothing, so the question is only ever "is box drawing available?" — the quadrant, one-eighth and proportional
+    * sets are all box-drawing-block or block-element glyphs and travel together.
     *
     * The replacement is a full set like any other, and, like every set, does not change `Block.inner`.
     */

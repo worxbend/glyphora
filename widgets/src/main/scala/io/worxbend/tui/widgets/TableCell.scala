@@ -4,9 +4,9 @@ import io.worxbend.tui.core.{Line, Rect}
 
 /** One cell of a [[Table]] row, and how many columns it covers.
   *
-  * A [[Table]] accepts either a bare [[Line]] — a cell in one column, which is all a cell could be before this type
-  * existed — or a `TableCell`, and the two may be mixed in one row. That union is the same shape [[TableRow]] and
-  * [[ListView]] use, so nothing written against the older signature has to change.
+  * A [[Table]] accepts either a bare [[io.worxbend.tui.core.Line Line]] — a cell in one column, which is all a cell
+  * could be before this type existed — or a `TableCell`, and the two may be mixed in one row. That union is the same
+  * shape [[TableRow]] and [[ListView]] use, so nothing written against the older signature has to change.
   *
   * A spanning cell is what a grouped header is made of. Given four columns, a header row of `TableCell(Line.raw("in"),
   * 2)`, `TableCell(Line.raw("out"), 2)` writes two captions each centred over its own pair of data columns. Without
@@ -29,7 +29,7 @@ object TableCell:
   /** Either shape a [[Table]] accepts for one cell. */
   type Source = Line | TableCell
 
-  /** A bare [[Line]] read as the single-column cell it has always meant. */
+  /** A bare [[io.worxbend.tui.core.Line Line]] read as the single-column cell it has always meant. */
   def of(source: Source): TableCell =
     source match
       case cell: TableCell => cell
